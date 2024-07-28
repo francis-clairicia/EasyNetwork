@@ -28,7 +28,7 @@ import trio
 from ..... import _utils, socket as socket_tools
 from ....transports.abc import AsyncStreamTransport
 from ...abc import AsyncBackend
-from .._trio_utils import convert_trio_resource_errors, silently_close_socket_in_destructor
+from .._trio_utils import convert_trio_resource_errors
 
 if TYPE_CHECKING:
     from _typeshed import WriteableBuffer
@@ -56,7 +56,7 @@ class TrioStreamSocketAdapter(AsyncStreamTransport):
             stream = None
         if stream is not None and stream.socket.fileno() >= 0:
             _warn(f"unclosed transport {self!r}", ResourceWarning, source=self)
-            silently_close_socket_in_destructor(stream.socket)
+            stream.socket.close()
 
     async def aclose(self) -> None:
         await self.__stream.aclose()

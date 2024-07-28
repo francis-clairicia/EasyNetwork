@@ -30,7 +30,6 @@ import trio
 from ..... import _utils, socket as socket_tools
 from ....transports.abc import AsyncDatagramListener
 from ...abc import AsyncBackend, TaskGroup
-from .._trio_utils import silently_close_socket_in_destructor
 
 
 @final
@@ -62,7 +61,7 @@ class TrioDatagramListenerSocketAdapter(AsyncDatagramListener[tuple[Any, ...]]):
             listener = None
         if listener is not None and listener.fileno() >= 0:
             _warn(f"unclosed listener {self!r}", ResourceWarning, source=self)
-            silently_close_socket_in_destructor(listener)
+            listener.close()
 
     async def aclose(self) -> None:
         self.__listener.close()

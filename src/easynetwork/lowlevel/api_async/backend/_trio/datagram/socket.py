@@ -29,7 +29,6 @@ import trio
 from ..... import _utils, socket as socket_tools
 from ....transports.abc import AsyncDatagramTransport
 from ...abc import AsyncBackend
-from .._trio_utils import silently_close_socket_in_destructor
 
 
 @final
@@ -59,7 +58,7 @@ class TrioDatagramSocketAdapter(AsyncDatagramTransport):
             socket = None
         if socket is not None and socket.fileno() >= 0:
             _warn(f"unclosed transport {self!r}", ResourceWarning, source=self)
-            silently_close_socket_in_destructor(socket)
+            socket.close()
 
     async def aclose(self) -> None:
         self.__socket.close()

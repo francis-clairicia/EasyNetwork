@@ -17,7 +17,7 @@
 
 from __future__ import annotations
 
-__all__ = ["convert_trio_resource_errors", "silently_close_socket_in_destructor"]
+__all__ = ["convert_trio_resource_errors"]
 
 import contextlib
 import errno as _errno
@@ -26,17 +26,6 @@ import types
 import trio
 
 from .... import _utils
-
-
-def silently_close_socket_in_destructor(sock: trio.socket.SocketType) -> None:
-    """
-    Calls ``sock.close()`` but hides any RuntimeError raised by :meth:`trio.lowlevel.notify_closing`.
-
-    Because __del__ can be called in the garbage collector thread (if the socket was taken into a circual reference edge case),
-    :meth:`trio.lowlevel.notify_closing` will not understand the move.
-    """
-    with contextlib.suppress(RuntimeError):
-        sock.close()
 
 
 class convert_trio_resource_errors(contextlib.AbstractContextManager[None]):

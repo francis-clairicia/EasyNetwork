@@ -29,7 +29,7 @@ import trio
 from ..... import _utils, socket as socket_tools
 from ....transports.abc import AsyncListener
 from ...abc import AsyncBackend, TaskGroup
-from .._trio_utils import convert_trio_resource_errors, silently_close_socket_in_destructor
+from .._trio_utils import convert_trio_resource_errors
 from .socket import TrioStreamSocketAdapter
 
 
@@ -57,7 +57,7 @@ class TrioListenerSocketAdapter(AsyncListener[TrioStreamSocketAdapter]):
             listener = None
         if listener is not None and listener.socket.fileno() >= 0:
             _warn(f"unclosed listener {self!r}", ResourceWarning, source=self)
-            silently_close_socket_in_destructor(listener.socket)
+            listener.socket.close()
 
     async def aclose(self) -> None:
         return await self.__listener.aclose()
