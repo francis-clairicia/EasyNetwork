@@ -37,14 +37,16 @@ async def _echo_client(client: trio.socket.SocketType, addr: Any) -> None:
     except (OSError, NameError):
         pass
 
+    lock = trio.Lock()
     with client:
         while True:
             data = await client.recv(102400)
             if not data:
                 break
-            while data:
-                sent = await client.send(data)
-                data = data[sent:]
+            async with lock:
+                while data:
+                    sent = await client.send(data)
+                    data = data[sent:]
     LOGGER.info(f"{addr}: Connection closed")
 
 
@@ -70,6 +72,8 @@ def _getaddr_from_stream(stream: trio.SocketStream | trio.SSLStream[trio.SocketS
 async def echo_client_streams(stream: trio.SocketStream | trio.SSLStream[trio.SocketStream]) -> None:
     addr = _getaddr_from_stream(stream)
     LOGGER.info(f"Connection from {addr}")
+
+    lock = trio.Lock()
     async with stream:
         while True:
             try:
@@ -78,7 +82,8 @@ async def echo_client_streams(stream: trio.SocketStream | trio.SSLStream[trio.So
                 break
             if not data:
                 break
-            await stream.send_all(data)
+            async with lock:
+                await stream.send_all(data)
     LOGGER.info(f"{addr}: Connection closed")
 
 
