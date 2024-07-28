@@ -346,6 +346,23 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
         "client": _tcp_readline_client,
     },
     {
+        "name": "readline-easynetwork-trio",
+        "title": "TCP readline server (easynetwork+trio)",
+        "server": (
+            *_python_cmd,
+            "/usr/src/servers/easynetwork_tcp_echoserver.py",
+            f"--port={EXPOSED_PORT}",
+            "--readline",
+            "--trio",
+        ),
+        "ping": {
+            "server_address": _tcp_server_address,
+            "ping_request": b"ping\n",
+            "socket_type": SOCK_STREAM,
+        },
+        "client": _tcp_readline_client,
+    },
+    {
         "name": "readline-easynetwork-buffered-asyncio",
         "title": "TCP readline server (easynetwork+buffered+asyncio)",
         "server": (
@@ -372,6 +389,24 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             "--readline",
             "--buffered",
             "--uvloop",
+        ),
+        "ping": {
+            "server_address": _tcp_server_address,
+            "ping_request": b"ping\n",
+            "socket_type": SOCK_STREAM,
+        },
+        "client": _tcp_readline_client,
+    },
+    {
+        "name": "readline-easynetwork-buffered-trio",
+        "title": "TCP readline server (easynetwork+buffered+trio)",
+        "server": (
+            *_python_cmd,
+            "/usr/src/servers/easynetwork_tcp_echoserver.py",
+            f"--port={EXPOSED_PORT}",
+            "--readline",
+            "--buffered",
+            "--trio",
         ),
         "ping": {
             "server_address": _tcp_server_address,
