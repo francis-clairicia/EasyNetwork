@@ -41,7 +41,7 @@ else:
 
 from ....exceptions import UnsupportedOperation
 from ... import _utils, constants, socket as socket_tools
-from ..backend.abc import AsyncBackend, TaskGroup
+from ..backend.abc import AsyncBackend, IEvent, TaskGroup
 from .abc import AsyncListener, AsyncStreamReadTransport, AsyncStreamTransport
 from .utils import aclose_forcefully
 
@@ -69,9 +69,11 @@ class AsyncTLSStreamTransport(AsyncStreamTransport):
     _data_deque: deque[memoryview] = dataclasses.field(init=False, default_factory=deque)
     __incoming_reader: _IncomingDataReader = dataclasses.field(init=False)
     __closing: bool = dataclasses.field(init=False, default=False)
+    __closed: IEvent = dataclasses.field(init=False)
 
     def __post_init__(self) -> None:
         self.__incoming_reader = _IncomingDataReader(transport=self._transport)
+        self.__closed = self._transport.backend().create_event()
 
     @classmethod
     async def wrap(
@@ -160,13 +162,16 @@ class AsyncTLSStreamTransport(AsyncStreamTransport):
     async def aclose(self) -> None:
         assert _ssl_module is not None, "stdlib ssl module not available"  # nosec assert_used
 
-        already_closing = self.__closing
+        if self.__closing:
+            await self.__closed.wait()
+            return
         with contextlib.ExitStack() as stack:
+            stack.callback(self.__closed.set)
             stack.callback(self.__incoming_reader.close)
             stack.callback(self._data_deque.clear)
 
             self.__closing = True
-            if not already_closing and self._standard_compatible and not self._transport.is_closing():
+            if self._standard_compatible and not self._transport.is_closing():
                 with self._transport.backend().move_on_after(self._shutdown_timeout) as shutdown_timeout_scope:
                     try:
                         try:
