@@ -36,7 +36,7 @@ from abc import ABCMeta, abstractmethod
 from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
 from contextlib import AbstractContextManager
 from types import TracebackType
-from typing import Any, Generic, NoReturn, ParamSpec, Protocol, Self, TypeVar, TypeVarTuple, Unpack
+from typing import Any, Generic, Literal, NoReturn, ParamSpec, Protocol, Self, TypeVar, TypeVarTuple, Unpack
 
 from ..transports import abc as _transports
 
@@ -82,7 +82,7 @@ class ILock(Protocol):
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
         /,
-    ) -> bool | None: ...
+    ) -> Literal[False] | None: ...
 
     @abstractmethod
     async def acquire(self) -> Any:
