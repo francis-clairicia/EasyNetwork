@@ -52,11 +52,11 @@ class convert_trio_resource_errors(contextlib.AbstractContextManager[None]):
 
         try:
             if issubclass(exc_type, trio.ClosedResourceError):
-                raise self.__get_error_from_cause(exc_value, traceback, _errno.EBADF)
+                raise self.__get_error_from_cause(exc_value, _errno.EBADF)
             if issubclass(exc_type, trio.BrokenResourceError):
-                raise self.__get_error_from_cause(exc_value, traceback, self.__broken_resource_errno)
+                raise self.__get_error_from_cause(exc_value, self.__broken_resource_errno)
             if issubclass(exc_type, trio.BusyResourceError):
-                raise self.__get_error_from_cause(exc_value, traceback, _errno.EBUSY)
+                raise self.__get_error_from_cause(exc_value, _errno.EBUSY)
         except BaseException as new_exc:
             _utils.remove_traceback_frames_in_place(new_exc, 1)
             raise
@@ -66,7 +66,6 @@ class convert_trio_resource_errors(contextlib.AbstractContextManager[None]):
     @staticmethod
     def __get_error_from_cause(
         exc_value: BaseException,
-        traceback: types.TracebackType | None,
         fallback_errno: int,
     ) -> OSError:
         match exc_value.__cause__:
@@ -76,7 +75,6 @@ class convert_trio_resource_errors(contextlib.AbstractContextManager[None]):
                 return error
             case _:
                 error = _utils.error_from_errno(fallback_errno)
-                error.__context__ = exc_value.__context__
-                error.__cause__ = exc_value.__cause__
+                error.__cause__ = exc_value
                 error.__suppress_context__ = True
-                return error.with_traceback(traceback)
+                return error.with_traceback(None)
