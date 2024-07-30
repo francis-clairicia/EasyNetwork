@@ -405,6 +405,9 @@ class _ConnectedClientAPI(AsyncStreamClient[_T_Response]):
                 raise ClientClosedError("Closed client")
             await self.__client.send_packet(packet)
 
+    def backend(self) -> AsyncBackend:
+        return self.__client.backend()
+
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         if (extra_attributes_cache := self.__extra_attributes_cache) is not None:

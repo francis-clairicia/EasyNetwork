@@ -28,10 +28,13 @@ __all__ = [
 import contextlib
 from abc import ABCMeta, abstractmethod
 from collections.abc import AsyncGenerator, Coroutine
-from typing import Any, Generic
+from typing import TYPE_CHECKING, Any, Generic
 
 from .._typevars import _T_Request, _T_Response
 from ..lowlevel import socket as socket_tools, typed_attr
+
+if TYPE_CHECKING:
+    from ..lowlevel.api_async.backend.abc import AsyncBackend
 
 
 class INETClientAttribute(typed_attr.TypedAttributeSet):
@@ -81,6 +84,14 @@ class AsyncBaseClientInterface(typed_attr.TypedAttributeProvider, Generic[_T_Res
 
         Returns:
             the client state.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def backend(self) -> AsyncBackend:
+        """
+        Returns:
+            The backend implementation linked to the server.
         """
         raise NotImplementedError
 

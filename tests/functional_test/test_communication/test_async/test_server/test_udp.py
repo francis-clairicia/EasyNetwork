@@ -155,7 +155,7 @@ class TimeoutContextRequestHandler(AsyncDatagramRequestHandler[str, str]):
             await client.send_packet(request)
         try:
             with pytest.raises(TimeoutError):
-                async with asyncio.timeout(self.request_timeout):
+                with client.backend().timeout(self.request_timeout):
                     yield
             await client.send_packet("successfully timed out")
         except BaseException:
