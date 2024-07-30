@@ -62,6 +62,10 @@ class DatagramClientContext(Generic[_T_Response, _T_Address]):
     server: AsyncDatagramServer[Any, _T_Response, _T_Address]
     """The server which receives the datagram."""
 
+    @_utils.inherit_doc(_transports.AsyncBaseTransport)
+    def backend(self) -> AsyncBackend:
+        return self.server.backend()
+
 
 class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T_Response, _T_Address]):
     """

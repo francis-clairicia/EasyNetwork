@@ -19,7 +19,6 @@ from easynetwork.exceptions import (
 from easynetwork.lowlevel.api_async.backend._asyncio._asyncio_utils import create_connection
 from easynetwork.lowlevel.api_async.backend._asyncio.backend import AsyncIOBackend
 from easynetwork.lowlevel.api_async.backend._asyncio.stream.listener import ListenerSocketAdapter
-from easynetwork.lowlevel.api_async.backend.abc import AsyncBackend
 from easynetwork.lowlevel.socket import SocketAddress, enable_socket_linger
 from easynetwork.protocol import AnyStreamProtocolType
 from easynetwork.servers.async_tcp import AsyncTCPNetworkServer
@@ -186,12 +185,8 @@ class TimeoutYieldedRequestHandler(AsyncStreamRequestHandler[str, str]):
 
 
 class TimeoutContextRequestHandler(AsyncStreamRequestHandler[str, str]):
-    backend: AsyncBackend
     request_timeout: float = 1.0
     timeout_on_second_yield: bool = False
-
-    async def service_init(self, exit_stack: contextlib.AsyncExitStack, server: AsyncTCPNetworkServer[Any, Any]) -> None:
-        self.backend = server.backend()
 
     async def on_connection(self, client: AsyncStreamClient[str]) -> None:
         await client.send_packet("milk")
@@ -202,7 +197,7 @@ class TimeoutContextRequestHandler(AsyncStreamRequestHandler[str, str]):
             await client.send_packet(request)
         try:
             with pytest.raises(TimeoutError):
-                with self.backend.timeout(self.request_timeout):
+                with client.backend().timeout(self.request_timeout):
                     yield
             await client.send_packet("successfully timed out")
         finally:

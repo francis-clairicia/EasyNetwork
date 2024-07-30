@@ -218,6 +218,9 @@ class _ClientAPI(AsyncDatagramClient[_T_Response]):
             raise ClientClosedError("Closed client")
         await server.send_packet_to(packet, address)
 
+    def backend(self) -> AsyncBackend:
+        return self.__context.backend()
+
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         if (extra_attributes_cache := self.__extra_attributes_cache) is not None:
