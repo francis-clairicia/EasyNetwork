@@ -128,7 +128,7 @@ class ThreadsPortal(AbstractThreadsPortal):
         def schedule_task() -> None:
             self.__task_group.start_soon(coroutine, name=TaskUtils.compute_task_name_from_func(coro_func))
 
-        self.run_sync(schedule_task)
+        self.run_sync_soon(schedule_task)
         return future
 
     def run_sync_soon(self, func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> concurrent.futures.Future[_T]:

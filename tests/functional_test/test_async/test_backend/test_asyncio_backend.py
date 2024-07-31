@@ -1228,7 +1228,6 @@ class TestAsyncioBackend:
 
         def thread() -> None:
             future = threads_portal.run_coroutine_soon(coroutine)
-            assert future.done()
             assert future.result() == 42
 
         async with backend.create_threads_portal() as threads_portal:
