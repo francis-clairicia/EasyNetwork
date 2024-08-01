@@ -166,16 +166,18 @@ class TimeoutContextRequestHandler(AsyncDatagramRequestHandler[str, str]):
 
 
 class ConcurrencyTestRequestHandler(AsyncDatagramRequestHandler[str, str]):
-    sleep_time_before_second_yield: float = 0.0
-    sleep_time_before_response: float = 0.0
+    sleep_time_before_second_yield: float | None = None
+    sleep_time_before_response: float | None = None
     recreate_generator: bool = True
 
     async def handle(self, client: AsyncDatagramClient[str]) -> AsyncGenerator[None, str]:
         while True:
             assert (yield) == "something"
-            await asyncio.sleep(self.sleep_time_before_second_yield)
+            if self.sleep_time_before_second_yield is not None:
+                await asyncio.sleep(self.sleep_time_before_second_yield)
             request = yield
-            await asyncio.sleep(self.sleep_time_before_response)
+            if self.sleep_time_before_response is not None:
+                await asyncio.sleep(self.sleep_time_before_response)
             await client.send_packet(f"After wait: {request}")
             if self.recreate_generator:
                 break
@@ -660,9 +662,16 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         await endpoint.sendto(b"something", None)
         await asyncio.sleep(0.1)
         await endpoint.sendto(b"hello, world.", None)
+        for i in range(3):
+            await endpoint.sendto(b"something", None)
+            await endpoint.sendto(f"hello, world {i+2} times.".encode(), None)
         await endpoint.sendto(b"something", None)
         await asyncio.sleep(0.1)
+        request_handler.sleep_time_before_response = None
         await endpoint.sendto(b"hello, world. new game +", None)
         async with asyncio.timeout(5):
             assert (await endpoint.recvfrom())[0] == b"After wait: hello, world."
+            assert (await endpoint.recvfrom())[0] == b"After wait: hello, world 2 times."
+            assert (await endpoint.recvfrom())[0] == b"After wait: hello, world 3 times."
+            assert (await endpoint.recvfrom())[0] == b"After wait: hello, world 4 times."
             assert (await endpoint.recvfrom())[0] == b"After wait: hello, world. new game +"

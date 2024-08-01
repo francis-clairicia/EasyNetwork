@@ -213,7 +213,6 @@ class TestClientData:
         # Arrange
 
         # Act & Assert
-        assert isinstance(client_data.task_lock, asyncio.Lock)
         assert client_data.state is None
 
     def test____client_state____regular_state_transition(
