@@ -80,14 +80,15 @@ class TrioDatagramListenerSocketAdapter(AsyncDatagramListener[tuple[Any, ...]]):
             if task_group is None:
                 task_group = await stack.enter_async_context(self.__backend.create_task_group())
 
-            max_datagram_bufsize: int = self.MAX_DATAGRAM_BUFSIZE
+            buffer: memoryview = stack.enter_context(memoryview(bytearray(self.MAX_DATAGRAM_BUFSIZE)))
+
             listener = self.__listener
             while True:
-                datagram, client_address = await listener.recvfrom(max_datagram_bufsize)
+                nbytes, client_address = await listener.recvfrom_into(buffer)
 
-                task_group.start_soon(handler, datagram, client_address)
-                # Always drop buffer reference on loop end
-                del datagram, client_address
+                task_group.start_soon(handler, bytes(buffer[:nbytes]), client_address)
+                # Always drop references on loop end
+                del nbytes, client_address
 
         raise AssertionError("Expected code to be unreachable.")
 

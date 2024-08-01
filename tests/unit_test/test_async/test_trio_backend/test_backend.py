@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from collections.abc import Callable, Sequence
+from socket import AF_INET, AF_INET6, AF_UNSPEC, IPPROTO_TCP, IPPROTO_UDP, SOCK_DGRAM, SOCK_STREAM
+from typing import TYPE_CHECKING, Any, Final
 
 from easynetwork.lowlevel.api_async.backend._trio.backend import TrioBackend
 
@@ -12,12 +14,25 @@ if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
 
+_TRIO_BACKEND_MODULE: Final[str] = "easynetwork.lowlevel.api_async.backend._trio"
+
+
 @pytest.mark.feature_trio
 class TestTrioBackend:
     @pytest.fixture
     @staticmethod
     def backend() -> TrioBackend:
         return TrioBackend()
+
+    @pytest.fixture(params=[("local_address", 12345), None], ids=lambda addr: f"local_address=={addr}")
+    @staticmethod
+    def local_address(request: pytest.FixtureRequest) -> tuple[str, int] | None:
+        return request.param
+
+    @pytest.fixture(params=[("remote_address", 5000)], ids=lambda addr: f"remote_address=={addr}")
+    @staticmethod
+    def remote_address(request: pytest.FixtureRequest) -> tuple[str, int] | None:
+        return request.param
 
     async def test____get_cancelled_exc_class____returns_trio_Cancelled(
         self,
@@ -131,6 +146,470 @@ class TestTrioBackend:
         # Assert
         assert resolved_addr is mocker.sentinel.resolved_addr
         mock_trio_getnameinfo.assert_awaited_once_with(mocker.sentinel.sockaddr, mocker.sentinel.flags)
+
+    @pytest.mark.parametrize("happy_eyeballs_delay", [None, 42], ids=lambda p: f"happy_eyeballs_delay=={p}")
+    async def test____create_tcp_connection____create_trio_stream(
+        self,
+        happy_eyeballs_delay: float | None,
+        local_address: tuple[str, int] | None,
+        remote_address: tuple[str, int],
+        backend: TrioBackend,
+        mock_tcp_socket: MagicMock,
+        mock_trio_tcp_socket: MagicMock,
+        mock_trio_socket_stream: MagicMock,
+        mock_trio_socket_from_stdlib: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        from easynetwork.lowlevel.api_async.backend._trio.dns_resolver import TrioDNSResolver
+
+        mock_trio_socket_stream.socket = mock_trio_tcp_socket
+        mock_TrioStreamSocketAdapter: MagicMock = mocker.patch(
+            f"{_TRIO_BACKEND_MODULE}.stream.socket.TrioStreamSocketAdapter",
+            return_value=mocker.sentinel.socket,
+        )
+        mock_trio_SocketStream = mocker.patch(
+            "trio.SocketStream",
+            return_value=mock_trio_socket_stream,
+        )
+        mock_trio_socket_from_stdlib.return_value = mock_trio_tcp_socket
+        mock_own_create_connection: AsyncMock = mocker.patch.object(
+            TrioDNSResolver,
+            "create_stream_connection",
+            new_callable=mocker.AsyncMock,
+            return_value=mock_tcp_socket,
+        )
+
+        expected_happy_eyeballs_delay: float = 0.25
+        if happy_eyeballs_delay is not None:
+            expected_happy_eyeballs_delay = happy_eyeballs_delay
+
+        # Act
+        socket = await backend.create_tcp_connection(
+            *remote_address,
+            happy_eyeballs_delay=happy_eyeballs_delay,
+            local_address=local_address,
+        )
+
+        # Assert
+        mock_own_create_connection.assert_awaited_once_with(
+            backend,
+            *remote_address,
+            happy_eyeballs_delay=expected_happy_eyeballs_delay,
+            local_address=local_address,
+        )
+        mock_trio_socket_from_stdlib.assert_called_once_with(mock_tcp_socket)
+        mock_trio_SocketStream.assert_called_once_with(mock_trio_tcp_socket)
+        mock_TrioStreamSocketAdapter.assert_called_once_with(backend, mock_trio_socket_stream)
+        assert socket is mocker.sentinel.socket
+
+    async def test____wrap_stream_socket____create_trio_stream(
+        self,
+        backend: TrioBackend,
+        mock_tcp_socket: MagicMock,
+        mock_trio_tcp_socket: MagicMock,
+        mock_trio_socket_stream: MagicMock,
+        mock_trio_socket_from_stdlib: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_trio_socket_stream.socket = mock_trio_tcp_socket
+        mock_TrioStreamSocketAdapter: MagicMock = mocker.patch(
+            f"{_TRIO_BACKEND_MODULE}.stream.socket.TrioStreamSocketAdapter",
+            return_value=mocker.sentinel.socket,
+        )
+        mock_trio_SocketStream = mocker.patch(
+            "trio.SocketStream",
+            return_value=mock_trio_socket_stream,
+        )
+        mock_trio_socket_from_stdlib.return_value = mock_trio_tcp_socket
+
+        # Act
+        socket = await backend.wrap_stream_socket(mock_tcp_socket)
+
+        # Assert
+        mock_trio_socket_from_stdlib.assert_called_once_with(mock_tcp_socket)
+        mock_trio_SocketStream.assert_called_once_with(mock_trio_tcp_socket)
+        mock_TrioStreamSocketAdapter.assert_called_once_with(backend, mock_trio_socket_stream)
+        assert socket is mocker.sentinel.socket
+
+    async def test____create_tcp_listeners____open_listener_sockets(
+        self,
+        backend: TrioBackend,
+        mock_tcp_socket: MagicMock,
+        mock_trio_tcp_socket: MagicMock,
+        mock_trio_socket_listener: MagicMock,
+        mock_trio_socket_from_stdlib: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        from easynetwork.lowlevel.api_async.backend._trio.dns_resolver import TrioDNSResolver
+
+        remote_host, remote_port = "remote_address", 5000
+        addrinfo_list = [
+            (
+                mocker.sentinel.family,
+                mocker.sentinel.type,
+                mocker.sentinel.proto,
+                mocker.sentinel.canonical_name,
+                (remote_host, remote_port),
+            )
+        ]
+        mock_resolve_listener_addresses = mocker.patch.object(
+            TrioDNSResolver,
+            "resolve_listener_addresses",
+            new_callable=mocker.AsyncMock,
+            return_value=addrinfo_list,
+        )
+        mock_open_listeners = mocker.patch(
+            "easynetwork.lowlevel._utils.open_listener_sockets_from_getaddrinfo_result",
+            return_value=[mock_tcp_socket],
+        )
+        mock_trio_socket_from_stdlib.side_effect = [mock_trio_tcp_socket]
+        mock_trio_SocketListener: MagicMock = mocker.patch("trio.SocketListener", side_effect=[mock_trio_socket_listener])
+        mock_ListenerSocketAdapter: MagicMock = mocker.patch(
+            f"{_TRIO_BACKEND_MODULE}.stream.listener.TrioListenerSocketAdapter",
+            return_value=mocker.sentinel.listener_socket,
+        )
+
+        # Act
+        listener_sockets: Sequence[Any] = await backend.create_tcp_listeners(
+            remote_host,
+            remote_port,
+            backlog=123456789,
+            reuse_port=mocker.sentinel.reuse_port,
+        )
+
+        # Assert
+        mock_resolve_listener_addresses.assert_awaited_once_with(
+            backend,
+            [remote_host],
+            remote_port,
+            SOCK_STREAM,
+        )
+        mock_open_listeners.assert_called_once_with(
+            addrinfo_list,
+            backlog=123456789,
+            reuse_address=mocker.ANY,  # Determined according to OS
+            reuse_port=mocker.sentinel.reuse_port,
+        )
+        mock_trio_socket_from_stdlib.assert_called_once_with(mock_tcp_socket)
+        mock_trio_SocketListener.assert_called_once_with(mock_trio_tcp_socket)
+        mock_ListenerSocketAdapter.assert_called_once_with(backend, mock_trio_socket_listener)
+        assert listener_sockets == [mocker.sentinel.listener_socket]
+
+    @pytest.mark.parametrize("remote_host", [None, "", ["::", "0.0.0.0"]], ids=repr)
+    async def test____create_tcp_listeners____bind_to_all_interfaces(
+        self,
+        remote_host: str | list[str] | None,
+        backend: TrioBackend,
+        mock_trio_socket_from_stdlib: MagicMock,
+        mock_tcp_socket_factory: Callable[[int], MagicMock],
+        mock_trio_tcp_socket_factory: Callable[[int], MagicMock],
+        mock_trio_socket_listener_factory: Callable[[MagicMock], MagicMock],
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        from easynetwork.lowlevel.api_async.backend._trio.dns_resolver import TrioDNSResolver
+
+        mock_tcp_socket_ipv4 = mock_tcp_socket_factory(AF_INET)
+        mock_tcp_socket_ipv6 = mock_tcp_socket_factory(AF_INET6)
+        mock_trio_tcp_socket_ipv4 = mock_trio_tcp_socket_factory(AF_INET)
+        mock_trio_tcp_socket_ipv6 = mock_trio_tcp_socket_factory(AF_INET6)
+        mock_trio_socket_listener_ipv4 = mock_trio_socket_listener_factory(mock_trio_tcp_socket_ipv4)
+        mock_trio_socket_listener_ipv6 = mock_trio_socket_listener_factory(mock_trio_tcp_socket_ipv6)
+        remote_port = 5000
+        addrinfo_list = [
+            (
+                AF_INET6,
+                SOCK_STREAM,
+                IPPROTO_TCP,
+                "",
+                ("::", remote_port),
+            ),
+            (
+                AF_INET,
+                SOCK_STREAM,
+                IPPROTO_TCP,
+                "",
+                ("0.0.0.0", remote_port),
+            ),
+        ]
+        mock_resolve_listener_addresses = mocker.patch.object(
+            TrioDNSResolver,
+            "resolve_listener_addresses",
+            new_callable=mocker.AsyncMock,
+            return_value=addrinfo_list,
+        )
+        mock_open_listeners = mocker.patch(
+            "easynetwork.lowlevel._utils.open_listener_sockets_from_getaddrinfo_result",
+            return_value=[mock_tcp_socket_ipv6, mock_tcp_socket_ipv4],
+        )
+        mock_trio_socket_from_stdlib.side_effect = [mock_trio_tcp_socket_ipv6, mock_trio_tcp_socket_ipv4]
+        mock_trio_SocketListener: MagicMock = mocker.patch(
+            "trio.SocketListener",
+            side_effect=[mock_trio_socket_listener_ipv6, mock_trio_socket_listener_ipv4],
+        )
+        mock_ListenerSocketAdapter: MagicMock = mocker.patch(
+            f"{_TRIO_BACKEND_MODULE}.stream.listener.TrioListenerSocketAdapter",
+            side_effect=[mocker.sentinel.listener_socket_ipv6, mocker.sentinel.listener_socket_ipv4],
+        )
+
+        # Act
+        listener_sockets: Sequence[Any] = await backend.create_tcp_listeners(
+            remote_host,
+            remote_port,
+            backlog=123456789,
+            reuse_port=mocker.sentinel.reuse_port,
+        )
+
+        # Assert
+        if isinstance(remote_host, list):
+            mock_resolve_listener_addresses.assert_awaited_once_with(
+                backend,
+                remote_host,
+                remote_port,
+                SOCK_STREAM,
+            )
+        else:
+            mock_resolve_listener_addresses.assert_awaited_once_with(
+                backend,
+                [None],
+                remote_port,
+                SOCK_STREAM,
+            )
+        mock_open_listeners.assert_called_once_with(
+            addrinfo_list,
+            backlog=123456789,
+            reuse_address=mocker.ANY,  # Determined according to OS
+            reuse_port=mocker.sentinel.reuse_port,
+        )
+        assert mock_trio_socket_from_stdlib.call_args_list == [
+            mocker.call(sock) for sock in [mock_tcp_socket_ipv6, mock_tcp_socket_ipv4]
+        ]
+        assert mock_trio_SocketListener.call_args_list == [
+            mocker.call(trio_sock) for trio_sock in [mock_trio_tcp_socket_ipv6, mock_trio_tcp_socket_ipv4]
+        ]
+        assert mock_ListenerSocketAdapter.call_args_list == [
+            mocker.call(backend, listener) for listener in [mock_trio_socket_listener_ipv6, mock_trio_socket_listener_ipv4]
+        ]
+        assert listener_sockets == [mocker.sentinel.listener_socket_ipv6, mocker.sentinel.listener_socket_ipv4]
+
+    @pytest.mark.parametrize("socket_family", [None, AF_INET, AF_INET6], ids=lambda p: f"family=={p}")
+    async def test____create_udp_endpoint____create_datagram_socket(
+        self,
+        local_address: tuple[str, int] | None,
+        remote_address: tuple[str, int],
+        socket_family: int | None,
+        backend: TrioBackend,
+        mock_udp_socket: MagicMock,
+        mock_trio_udp_socket: MagicMock,
+        mock_trio_socket_from_stdlib: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        from easynetwork.lowlevel.api_async.backend._trio.dns_resolver import TrioDNSResolver
+
+        mock_TrioDatagramSocketAdapter: MagicMock = mocker.patch(
+            f"{_TRIO_BACKEND_MODULE}.datagram.socket.TrioDatagramSocketAdapter",
+            return_value=mocker.sentinel.socket,
+        )
+        mock_trio_socket_from_stdlib.return_value = mock_trio_udp_socket
+        mock_own_create_connection: AsyncMock = mocker.patch.object(
+            TrioDNSResolver,
+            "create_datagram_connection",
+            new_callable=mocker.AsyncMock,
+            return_value=mock_udp_socket,
+        )
+
+        # Act
+        if socket_family is None:
+            socket = await backend.create_udp_endpoint(*remote_address, local_address=local_address)
+        else:
+            socket = await backend.create_udp_endpoint(*remote_address, local_address=local_address, family=socket_family)
+
+        # Assert
+        mock_own_create_connection.assert_awaited_once_with(
+            backend,
+            *remote_address,
+            local_address=local_address,
+            family=AF_UNSPEC if socket_family is None else socket_family,
+        )
+        mock_trio_socket_from_stdlib.assert_called_once_with(mock_udp_socket)
+        mock_TrioDatagramSocketAdapter.assert_called_once_with(backend, mock_trio_udp_socket)
+
+        assert socket is mocker.sentinel.socket
+
+    async def test____wrap_connected_datagram_socket____create_datagram_socket(
+        self,
+        backend: TrioBackend,
+        mock_udp_socket: MagicMock,
+        mock_trio_udp_socket: MagicMock,
+        mock_trio_socket_from_stdlib: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_TrioDatagramSocketAdapter: MagicMock = mocker.patch(
+            f"{_TRIO_BACKEND_MODULE}.datagram.socket.TrioDatagramSocketAdapter",
+            return_value=mocker.sentinel.socket,
+        )
+        mock_trio_socket_from_stdlib.return_value = mock_trio_udp_socket
+
+        # Act
+        socket = await backend.wrap_connected_datagram_socket(mock_udp_socket)
+
+        # Assert
+        mock_trio_socket_from_stdlib.assert_called_once_with(mock_udp_socket)
+        mock_TrioDatagramSocketAdapter.assert_called_once_with(backend, mock_trio_udp_socket)
+
+        assert socket is mocker.sentinel.socket
+
+    async def test____create_udp_listeners____open_listener_sockets(
+        self,
+        backend: TrioBackend,
+        mock_udp_socket: MagicMock,
+        mock_trio_udp_socket: MagicMock,
+        mock_trio_socket_from_stdlib: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        from easynetwork.lowlevel.api_async.backend._trio.dns_resolver import TrioDNSResolver
+
+        remote_host, remote_port = "remote_address", 5000
+        addrinfo_list = [
+            (
+                mocker.sentinel.family,
+                mocker.sentinel.type,
+                mocker.sentinel.proto,
+                mocker.sentinel.canonical_name,
+                (remote_host, remote_port),
+            )
+        ]
+        mock_resolve_listener_addresses = mocker.patch.object(
+            TrioDNSResolver,
+            "resolve_listener_addresses",
+            new_callable=mocker.AsyncMock,
+            return_value=addrinfo_list,
+        )
+        mock_open_listeners = mocker.patch(
+            "easynetwork.lowlevel._utils.open_listener_sockets_from_getaddrinfo_result",
+            return_value=[mock_udp_socket],
+        )
+        mock_trio_socket_from_stdlib.side_effect = [mock_trio_udp_socket]
+        mock_DatagramListenerSocketAdapter: MagicMock = mocker.patch(
+            f"{_TRIO_BACKEND_MODULE}.datagram.listener.TrioDatagramListenerSocketAdapter",
+            return_value=mocker.sentinel.listener_socket,
+        )
+
+        # Act
+        listener_sockets: Sequence[Any] = await backend.create_udp_listeners(
+            remote_host,
+            remote_port,
+            reuse_port=mocker.sentinel.reuse_port,
+        )
+
+        # Assert
+        mock_resolve_listener_addresses.assert_awaited_once_with(
+            backend,
+            [remote_host],
+            remote_port,
+            SOCK_DGRAM,
+        )
+        mock_open_listeners.assert_called_once_with(
+            addrinfo_list,
+            backlog=None,
+            reuse_address=False,
+            reuse_port=mocker.sentinel.reuse_port,
+        )
+        mock_trio_socket_from_stdlib.assert_called_once_with(mock_udp_socket)
+        mock_DatagramListenerSocketAdapter.assert_called_once_with(backend, mock_trio_udp_socket)
+        assert listener_sockets == [mocker.sentinel.listener_socket]
+
+    @pytest.mark.parametrize("remote_host", [None, "", ["::", "0.0.0.0"]], ids=repr)
+    async def test____create_udp_listeners____bind_to_all_interfaces(
+        self,
+        remote_host: str | list[str] | None,
+        backend: TrioBackend,
+        mock_udp_socket_factory: Callable[[int], MagicMock],
+        mock_trio_udp_socket_factory: Callable[[int], MagicMock],
+        mock_trio_socket_from_stdlib: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        from easynetwork.lowlevel.api_async.backend._trio.dns_resolver import TrioDNSResolver
+
+        mock_udp_socket_ipv4 = mock_udp_socket_factory(AF_INET)
+        mock_udp_socket_ipv6 = mock_udp_socket_factory(AF_INET6)
+        mock_trio_udp_socket_ipv4 = mock_trio_udp_socket_factory(AF_INET)
+        mock_trio_udp_socket_ipv6 = mock_trio_udp_socket_factory(AF_INET6)
+        remote_port = 5000
+        addrinfo_list = [
+            (
+                AF_INET6,
+                SOCK_DGRAM,
+                IPPROTO_UDP,
+                "",
+                ("::1", remote_port),
+            ),
+            (
+                AF_INET,
+                SOCK_DGRAM,
+                IPPROTO_UDP,
+                "",
+                ("127.0.0.1", remote_port),
+            ),
+        ]
+        mock_resolve_listener_addresses = mocker.patch.object(
+            TrioDNSResolver,
+            "resolve_listener_addresses",
+            new_callable=mocker.AsyncMock,
+            return_value=addrinfo_list,
+        )
+        mock_open_listeners = mocker.patch(
+            "easynetwork.lowlevel._utils.open_listener_sockets_from_getaddrinfo_result",
+            return_value=[mock_udp_socket_ipv6, mock_udp_socket_ipv4],
+        )
+        mock_trio_socket_from_stdlib.side_effect = [mock_trio_udp_socket_ipv6, mock_trio_udp_socket_ipv4]
+        mock_DatagramListenerSocketAdapter: MagicMock = mocker.patch(
+            f"{_TRIO_BACKEND_MODULE}.datagram.listener.TrioDatagramListenerSocketAdapter",
+            side_effect=[mocker.sentinel.listener_socket_ipv6, mocker.sentinel.listener_socket_ipv4],
+        )
+
+        # Act
+        listener_sockets: Sequence[Any] = await backend.create_udp_listeners(
+            remote_host,
+            remote_port,
+            reuse_port=mocker.sentinel.reuse_port,
+        )
+
+        # Assert
+        if isinstance(remote_host, list):
+            mock_resolve_listener_addresses.assert_awaited_once_with(
+                backend,
+                remote_host,
+                remote_port,
+                SOCK_DGRAM,
+            )
+        else:
+            mock_resolve_listener_addresses.assert_awaited_once_with(
+                backend,
+                [None],
+                remote_port,
+                SOCK_DGRAM,
+            )
+        mock_open_listeners.assert_called_once_with(
+            addrinfo_list,
+            backlog=None,
+            reuse_address=False,
+            reuse_port=mocker.sentinel.reuse_port,
+        )
+        assert mock_trio_socket_from_stdlib.call_args_list == [
+            mocker.call(sock) for sock in [mock_udp_socket_ipv6, mock_udp_socket_ipv4]
+        ]
+        assert mock_DatagramListenerSocketAdapter.call_args_list == [
+            mocker.call(backend, trio_sock) for trio_sock in [mock_trio_udp_socket_ipv6, mock_trio_udp_socket_ipv4]
+        ]
+        assert listener_sockets == [mocker.sentinel.listener_socket_ipv6, mocker.sentinel.listener_socket_ipv4]
 
     async def test____create_lock____use_trio_Lock_class(
         self,
