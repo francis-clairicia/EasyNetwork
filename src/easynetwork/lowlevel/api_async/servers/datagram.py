@@ -33,7 +33,7 @@ from ....exceptions import DatagramProtocolParseError
 from ....protocol import DatagramProtocol
 from ... import _utils
 from ..._asyncgen import AsyncGenAction, SendAction, ThrowAction, anext_without_asyncgen_hook
-from ..backend.abc import AsyncBackend, ICondition, ILock, TaskGroup
+from ..backend.abc import AsyncBackend, ICondition, TaskGroup
 from ..transports import abc as _transports
 
 _T_Address = TypeVar("_T_Address", bound=Hashable)
@@ -75,7 +75,6 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
     __slots__ = (
         "__listener",
         "__protocol",
-        "__sendto_lock",
         "__serve_guard",
     )
 
@@ -96,7 +95,6 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
 
         self.__listener: _transports.AsyncDatagramListener[_T_Address] = listener
         self.__protocol: DatagramProtocol[_T_Response, _T_Request] = protocol
-        self.__sendto_lock: ILock = listener.backend().create_lock()
         self.__serve_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently receiving datagrams")
 
     def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
@@ -142,8 +140,8 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
             datagram: bytes = self.__protocol.make_datagram(packet)
         except Exception as exc:
             raise RuntimeError("protocol.make_datagram() crashed") from exc
-        async with self.__sendto_lock:
-            await self.__listener.send_to(datagram, address)
+
+        await self.__listener.send_to(datagram, address)
 
     async def serve(
         self,
@@ -212,20 +210,19 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
         task_group: TaskGroup,
         default_context: contextvars.Context,
     ) -> None:
-        async with client.data.task_lock:
-            client.data.mark_running()
-            try:
-                await self.__client_coroutine_inner_loop(
-                    request_handler_generator=datagram_received_cb(client.ctx),
-                    client_data=client.data,
-                )
-            finally:
-                self.__on_task_done(
-                    datagram_received_cb=datagram_received_cb,
-                    client=client,
-                    task_group=task_group,
-                    default_context=default_context,
-                )
+        client.data.mark_running()
+        try:
+            await self.__client_coroutine_inner_loop(
+                request_handler_generator=datagram_received_cb(client.ctx),
+                client_data=client.data,
+            )
+        finally:
+            self.__on_task_done(
+                datagram_received_cb=datagram_received_cb,
+                client=client,
+                task_group=task_group,
+                default_context=default_context,
+            )
 
     async def __client_coroutine_inner_loop(
         self,
@@ -284,7 +281,18 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
             return
 
         client.data.mark_pending()
-        default_context.run(
+
+        # Why copy the context before calling run()?
+        # Short answer: asyncio.eager_task_factory :)
+        #
+        # If asyncio's eager task is enabled in this event loop, there is a chance
+        # to have a nested call if the request handler does not yield
+        # and we end up with this error:
+        # RuntimeError: cannot enter context: <_contextvars.Context object at ...> is already entered
+        # To avoid that, we always use a new context. The performance cost is negligible.
+        # See this functional test for a real situation:
+        # test____serve_forever____too_many_datagrams_while_request_handle_is_performed
+        default_context.copy().run(
             task_group.start_soon,
             self.__client_coroutine,
             datagram_received_cb,
@@ -342,7 +350,6 @@ class _ClientToken(Generic[_T_Response, _T_Address]):
 class _ClientData:
     __slots__ = (
         "__backend",
-        "__task_lock",
         "__state",
         "_queue_condition",
         "_datagram_queue",
@@ -350,7 +357,6 @@ class _ClientData:
 
     def __init__(self, backend: AsyncBackend) -> None:
         self.__backend: AsyncBackend = backend
-        self.__task_lock: ILock = backend.create_lock()
         self.__state: _ClientState | None = None
         self._queue_condition: ICondition = backend.create_condition_var()
         self._datagram_queue: deque[bytes] = deque()
@@ -358,10 +364,6 @@ class _ClientData:
     @property
     def backend(self) -> AsyncBackend:
         return self.__backend
-
-    @property
-    def task_lock(self) -> ILock:
-        return self.__task_lock
 
     @property
     def state(self) -> _ClientState | None:

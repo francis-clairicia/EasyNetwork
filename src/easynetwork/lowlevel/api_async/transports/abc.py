@@ -288,6 +288,9 @@ class AsyncDatagramListener(AsyncBaseTransport, Generic[_T_Address]):
         """
         Send the `data` bytes to the remote peer `address`.
 
+        Important:
+            This method should be safe to call from multiple tasks.
+
         Parameters:
             data: the bytes to send.
             address: the remote peer.
