@@ -102,9 +102,7 @@ class ThreadsPortal(AbstractThreadsPortal):
             except BaseException as exc:
                 if future.set_running_or_notify_cancel():
                     future.set_exception(exc)
-                if not isinstance(exc, Exception):
-                    raise
-                elif future.cancelled():
+                else:
                     loop = asyncio.get_running_loop()
                     loop.call_soon(
                         loop.call_exception_handler,
@@ -142,8 +140,6 @@ class ThreadsPortal(AbstractThreadsPortal):
                     raise _utils.exception_with_notes(TypeError(msg), note)
             except BaseException as exc:
                 future.set_exception(exc)
-                if not isinstance(exc, Exception):
-                    raise
             else:
                 future.set_result(result)
 

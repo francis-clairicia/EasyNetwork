@@ -22,7 +22,6 @@ __all__ = ["ThreadsPortal"]
 import concurrent.futures
 import contextlib
 import contextvars
-import functools
 import inspect
 import threading
 from collections.abc import Awaitable, Callable
@@ -117,9 +116,7 @@ class ThreadsPortal(AbstractThreadsPortal):
                 except BaseException as exc:
                     if future.set_running_or_notify_cancel():
                         future.set_exception(exc)
-                    if not isinstance(exc, Exception):
-                        raise
-                    elif future.cancelled():
+                    else:
                         exception_handler(trio.lowlevel.current_task(), exc)
                 else:
                     if future.set_running_or_notify_cancel():
@@ -162,7 +159,7 @@ class ThreadsPortal(AbstractThreadsPortal):
         # trio already sets sniffio.thread_local.name
         ctx.run(sniffio.current_async_library_cvar.set, None)
 
-        trio_token.run_sync_soon(functools.partial(ctx.run, callback))
+        trio_token.run_sync_soon(ctx.run, callback)
         return future
 
     def __check_current_token(self) -> trio.lowlevel.TrioToken:

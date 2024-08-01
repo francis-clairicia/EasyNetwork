@@ -758,21 +758,11 @@ class TestTrioBackend:
             return threads_portal.run_coroutine(coroutine, 42)
 
         threads_portal = backend.create_threads_portal()
-        if issubclass(exception_cls, Exception):
-            async with threads_portal:
-                with pytest.raises(BaseException) as exc_info:
-                    await backend.run_in_thread(thread)
+        async with threads_portal:
+            with pytest.raises(BaseException) as exc_info:
+                await backend.run_in_thread(thread)
 
-            assert exc_info.value is expected_exception
-        else:
-            with pytest.raises(BaseExceptionGroup) as exc_group_info:
-                async with threads_portal:
-                    with pytest.raises(BaseException) as exc_info:
-                        await backend.run_in_thread(thread)
-
-                assert exc_info.value is expected_exception
-
-            assert exc_group_info.value.exceptions[0] is expected_exception
+        assert exc_info.value is expected_exception
 
     async def test____create_threads_portal____run_coroutine_from_thread____explicit_concurrent_future_Cancelled(
         self,
