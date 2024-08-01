@@ -159,7 +159,8 @@ class ThreadsPortal(AbstractThreadsPortal):
             run_sync_soon_waiter.attach_from_any_thread()
 
         ctx: contextvars.Context = contextvars.copy_context()
-        ctx.run(sniffio.current_async_library_cvar.set, "trio")
+        # trio already sets sniffio.thread_local.name
+        ctx.run(sniffio.current_async_library_cvar.set, None)
 
         trio_token.run_sync_soon(functools.partial(ctx.run, callback))
         return future

@@ -805,7 +805,7 @@ class TestTrioBackend:
             cvar_inner = await backend.run_in_thread(thread)
             cvar_outer = sniffio.current_async_library_cvar.get()
 
-        assert cvar_inner == "trio"
+        assert cvar_inner is None
         assert cvar_outer == "main"
 
     async def test____create_threads_portal____run_sync_from_thread_in_event_loop(
@@ -929,7 +929,7 @@ class TestTrioBackend:
             cvar_inner = await backend.run_in_thread(thread)
             cvar_outer = sniffio.current_async_library_cvar.get()
 
-        assert cvar_inner == "trio"
+        assert cvar_inner is None
         assert cvar_outer == "main"
 
     async def test____create_threads_portal____run_sync_soon____future_cancelled_before_call(
