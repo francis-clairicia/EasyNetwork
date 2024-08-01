@@ -1014,7 +1014,7 @@ def main() -> None:
 
             print("Warming up server...")
             warmup_cmd = benchmark["client"] + warmup
-            print(" ".join(warmup_cmd))
+            print(shlex.join(warmup_cmd))
             subprocess.check_output(warmup_cmd)
             print()
 
