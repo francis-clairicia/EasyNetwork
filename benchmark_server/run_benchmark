@@ -789,7 +789,6 @@ def _start_docker_instance(
             server_cmd,
             name=container_name,
             remove=True,
-            tty=True,
             detach=True,
             ports=ports,
         ),
