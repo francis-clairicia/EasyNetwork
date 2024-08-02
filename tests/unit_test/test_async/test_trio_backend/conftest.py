@@ -4,12 +4,19 @@ from collections.abc import Callable
 from socket import AF_INET, IPPROTO_TCP, IPPROTO_UDP, SOCK_DGRAM, SOCK_STREAM
 from typing import TYPE_CHECKING
 
+from easynetwork.lowlevel.api_async.backend._trio.backend import TrioBackend
+
 import pytest
 
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
 
     from pytest_mock import MockerFixture
+
+
+@pytest.fixture(scope="package")
+def trio_backend() -> TrioBackend:
+    return TrioBackend()
 
 
 @pytest.fixture
@@ -19,6 +26,8 @@ def mock_trio_socket_from_stdlib(mocker: MockerFixture) -> MagicMock:
 
 @pytest.fixture
 def mock_trio_socket_factory(mocker: MockerFixture) -> Callable[[], MagicMock]:
+    from types import MethodType
+
     import trio
 
     def factory(family: int = -1, type: int = -1, proto: int = -1, fileno: int = 123) -> MagicMock:
@@ -43,6 +52,13 @@ def mock_trio_socket_factory(mocker: MockerFixture) -> Callable[[], MagicMock]:
 
         mock_socket.close.side_effect = close_side_effect
         mock_socket.detach.side_effect = detached_side_effect
+        for async_method in ("recv", "recv_into", "recvfrom", "recvfrom_into", "send", "sendmsg"):
+            if hasattr(mock_socket, async_method):
+                setattr(
+                    mock_socket,
+                    async_method,
+                    mocker.AsyncMock(spec=MethodType(getattr(trio.socket.SocketType, async_method), mock_socket)),
+                )
         return mock_socket
 
     return factory

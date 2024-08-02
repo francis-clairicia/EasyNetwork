@@ -88,7 +88,7 @@ class TrioDatagramListenerSocketAdapter(AsyncDatagramListener[tuple[Any, ...]]):
 
                 task_group.start_soon(handler, bytes(buffer[:nbytes]), client_address)
                 # Always drop references on loop end
-                del nbytes, client_address
+                del client_address
 
         raise AssertionError("Expected code to be unreachable.")
 

@@ -70,11 +70,13 @@ class TrioListenerSocketAdapter(AsyncListener[TrioStreamSocketAdapter]):
         handler: Callable[[TrioStreamSocketAdapter], Coroutine[Any, Any, None]],
         task_group: TaskGroup | None = None,
     ) -> NoReturn:
+        from errno import EBADF
+
         async with contextlib.AsyncExitStack() as stack:
             stack.enter_context(self.__serve_guard)
             if task_group is None:
                 task_group = await stack.enter_async_context(self.__backend.create_task_group())
-            stack.enter_context(convert_trio_resource_errors())
+            stack.enter_context(convert_trio_resource_errors(broken_resource_errno=EBADF))
 
             while True:
                 # Always drop socket reference on loop begin

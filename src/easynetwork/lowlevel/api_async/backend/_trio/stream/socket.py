@@ -19,16 +19,20 @@ from __future__ import annotations
 
 __all__ = ["TrioStreamSocketAdapter"]
 
+import errno as _errno
+import itertools
 import warnings
-from collections.abc import Callable, Mapping
+from collections import deque
+from collections.abc import Callable, Iterable, Mapping
 from typing import TYPE_CHECKING, Any, final
 
 import trio
 
-from ..... import _utils, socket as socket_tools
+from ..... import _utils, constants, socket as socket_tools
 from ....transports.abc import AsyncStreamTransport
 from ...abc import AsyncBackend
 from .._trio_utils import convert_trio_resource_errors
+from ._sendmsg import supports_async_socket_sendmsg
 
 if TYPE_CHECKING:
     from _typeshed import WriteableBuffer
@@ -52,7 +56,8 @@ class TrioStreamSocketAdapter(AsyncStreamTransport):
     def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
         try:
             stream = self.__stream
-        except AttributeError:
+        except AttributeError:  # pragma: no cover
+            # Technically possible but not with the common usage because this constructor does not raise.
             stream = None
         if stream is not None and stream.socket.fileno() >= 0:
             _warn(f"unclosed transport {self!r}", ResourceWarning, source=self)
@@ -65,18 +70,38 @@ class TrioStreamSocketAdapter(AsyncStreamTransport):
         return self.__stream.socket.fileno() < 0
 
     async def recv(self, bufsize: int) -> bytes:
-        with convert_trio_resource_errors():
+        with convert_trio_resource_errors(broken_resource_errno=_errno.ECONNABORTED):
             return await self.__stream.receive_some(bufsize)
 
     async def recv_into(self, buffer: WriteableBuffer) -> int:
         return await self.__stream.socket.recv_into(buffer)
 
     async def send_all(self, data: bytes | bytearray | memoryview) -> None:
-        with convert_trio_resource_errors():
+        with convert_trio_resource_errors(broken_resource_errno=_errno.ECONNABORTED):
             return await self.__stream.send_all(data)
 
+    async def send_all_from_iterable(self, iterable_of_data: Iterable[bytes | bytearray | memoryview]) -> None:
+        if constants.SC_IOV_MAX <= 0:
+            return await super().send_all_from_iterable(iterable_of_data)
+
+        socket = self.__stream.socket
+        if not supports_async_socket_sendmsg(socket):
+            return await super().send_all_from_iterable(iterable_of_data)
+
+        buffers: deque[memoryview] = deque(map(memoryview, iterable_of_data))
+        del iterable_of_data
+
+        if not buffers:
+            return await self.send_all(b"")
+
+        while buffers:
+            # Do not send the islice directly because if sendmsg() blocks,
+            # it would retry with an already consumed iterator.
+            sent = await socket.sendmsg(list(itertools.islice(buffers, constants.SC_IOV_MAX)))
+            _utils.adjust_leftover_buffer(buffers, sent)
+
     async def send_eof(self) -> None:
-        with convert_trio_resource_errors():
+        with convert_trio_resource_errors(broken_resource_errno=_errno.ECONNABORTED):
             await self.__stream.send_eof()
 
     def backend(self) -> AsyncBackend:

@@ -29,10 +29,7 @@ from .... import _utils
 
 
 class convert_trio_resource_errors(contextlib.AbstractContextManager[None]):
-    def __init__(self, *, broken_resource_errno: int | None = None) -> None:
-        if broken_resource_errno is None:
-            broken_resource_errno = _errno.ECONNABORTED
-
+    def __init__(self, *, broken_resource_errno: int) -> None:
         self.__broken_resource_errno: int = broken_resource_errno
 
     def __enter__(self) -> None:
@@ -48,7 +45,7 @@ class convert_trio_resource_errors(contextlib.AbstractContextManager[None]):
             return
 
         if exc_value is None:
-            exc_value = exc_type()
+            exc_value = exc_type()  # pragma: no cover
 
         try:
             if issubclass(exc_type, trio.ClosedResourceError):
