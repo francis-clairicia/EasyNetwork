@@ -2,16 +2,17 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable
-from typing import TYPE_CHECKING, Any, final
+from typing import TYPE_CHECKING, Any, final, no_type_check
 
 from easynetwork.lowlevel.api_async.backend.abc import TaskInfo
 
 import pytest
 
+from ...._utils import partial_eq
 from ._fake_backends import BaseFakeBackend
 
 if TYPE_CHECKING:
-    from unittest.mock import MagicMock
+    from unittest.mock import AsyncMock, MagicMock
 
     from pytest_mock import MockerFixture
 
@@ -23,6 +24,7 @@ class MockBackend(BaseFakeBackend):
         self.mock_coro_yield: MagicMock = mocker.MagicMock(side_effect=lambda: asyncio.sleep(0))
         self.mock_current_time: MagicMock = mocker.MagicMock(return_value=123456789)
         self.mock_sleep = mocker.AsyncMock(return_value=None)
+        self.mock_run_in_thread: AsyncMock = mocker.AsyncMock(side_effect=lambda func, /, *args, **options: func(*args))
 
     async def coro_yield(self) -> None:
         await self.mock_coro_yield()
@@ -41,6 +43,10 @@ class MockBackend(BaseFakeBackend):
 
     async def ignore_cancellation(self, coroutine: Awaitable[Any]) -> Any:
         return await coroutine
+
+    @no_type_check
+    async def run_in_thread(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.mock_run_in_thread(*args, **kwargs)
 
 
 class TestTaskInfo:
@@ -111,3 +117,61 @@ class TestAsyncBackend:
         # Assert
         backend.mock_current_time.assert_called_once_with()
         backend.mock_sleep.assert_awaited_once_with(0)
+
+    async def test____getaddrinfo____run_stdlib_function_in_thread(
+        self,
+        backend: MockBackend,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_getaddrinfo = mocker.patch("socket.getaddrinfo", return_value=mocker.sentinel.addrinfo_list)
+
+        # Act
+        addrinfo_list = await backend.getaddrinfo(
+            host=mocker.sentinel.host,
+            port=mocker.sentinel.port,
+            family=mocker.sentinel.family,
+            type=mocker.sentinel.type,
+            proto=mocker.sentinel.proto,
+            flags=mocker.sentinel.flags,
+        )
+
+        # Assert
+        assert addrinfo_list is mocker.sentinel.addrinfo_list
+        backend.mock_run_in_thread.assert_awaited_once_with(
+            partial_eq(
+                mock_getaddrinfo,
+                mocker.sentinel.host,
+                mocker.sentinel.port,
+                family=mocker.sentinel.family,
+                type=mocker.sentinel.type,
+                proto=mocker.sentinel.proto,
+                flags=mocker.sentinel.flags,
+            ),
+            abandon_on_cancel=True,
+        )
+
+    async def test____getnameinfo____run_stdlib_function_in_thread(
+        self,
+        backend: MockBackend,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_getnameinfo = mocker.patch("socket.getnameinfo", return_value=mocker.sentinel.resolved_addr)
+
+        # Act
+        resolved_addr = await backend.getnameinfo(
+            sockaddr=mocker.sentinel.sockaddr,
+            flags=mocker.sentinel.flags,
+        )
+
+        # Assert
+        assert resolved_addr is mocker.sentinel.resolved_addr
+        backend.mock_run_in_thread.assert_awaited_once_with(
+            partial_eq(
+                mock_getnameinfo,
+                mocker.sentinel.sockaddr,
+                mocker.sentinel.flags,
+            ),
+            abandon_on_cancel=True,
+        )

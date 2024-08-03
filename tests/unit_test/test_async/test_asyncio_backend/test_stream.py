@@ -174,11 +174,11 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket, BaseTestAsyncSock
         mocker: MockerFixture,
         sleep_time: float = 0,
     ) -> Callable[[], Coroutine[Any, Any, MagicMock]]:
-        accept_cb = mocker.MagicMock(side_effect=side_effect)
+        accept_cb = mocker.AsyncMock(side_effect=side_effect)
 
         async def accept_side_effect() -> MagicMock:
             await asyncio.sleep(sleep_time)
-            return accept_cb()
+            return await accept_cb()
 
         return accept_side_effect
 

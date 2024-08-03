@@ -47,5 +47,6 @@
         "reportUnsupportedDunderAll": "warning",
         "reportShadowedImports": "none"
     },
-    "python.analysis.autoImportCompletions": true
+    "python.analysis.autoImportCompletions": true,
+    "css.format.spaceAroundSelectorSeparator": true
 }

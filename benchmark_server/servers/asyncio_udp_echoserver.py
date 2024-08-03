@@ -22,6 +22,7 @@ async def echo_server(address: tuple[str, int]) -> NoReturn:
     sock.bind(address)
     sock.setblocking(False)
     LOGGER.info(f"Server listening at {sock.getsockname()}")
+
     async with contextlib.AsyncExitStack() as stack:
         stack.enter_context(sock)
         task_group = await stack.enter_async_context(asyncio.TaskGroup())
@@ -44,8 +45,8 @@ async def _echo_datagram_client(
 
 async def echo_server_stream(address: tuple[str, int]) -> NoReturn:
     stream = await asyncio_dgram.bind(address)
-
     LOGGER.info(f"Server listening at {stream.sockname}")
+
     async with contextlib.AsyncExitStack() as stack:
         stack.enter_context(contextlib.closing(stream))
         task_group = await stack.enter_async_context(asyncio.TaskGroup())

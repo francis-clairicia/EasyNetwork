@@ -104,9 +104,15 @@ and the request handler instance.
          :linenos:
          :caption: server.py
 
-   .. group-tab:: Asynchronous
+   .. group-tab:: Asynchronous (asyncio)
 
-      .. literalinclude:: ../_include/examples/tutorials/echo_client_server_tcp/async_server.py
+      .. literalinclude:: ../_include/examples/tutorials/echo_client_server_tcp/async_server_asyncio.py
+         :linenos:
+         :caption: server.py
+
+   .. group-tab:: Asynchronous (trio)
+
+      .. literalinclude:: ../_include/examples/tutorials/echo_client_server_tcp/async_server_trio.py
          :linenos:
          :caption: server.py
 
@@ -129,9 +135,15 @@ This is the client side:
          :linenos:
          :caption: client.py
 
-   .. group-tab:: Asynchronous
+   .. group-tab:: Asynchronous (asyncio)
 
-      .. literalinclude:: ../_include/examples/tutorials/echo_client_server_tcp/async_client.py
+      .. literalinclude:: ../_include/examples/tutorials/echo_client_server_tcp/async_client_asyncio.py
+         :linenos:
+         :caption: client.py
+
+   .. group-tab:: Asynchronous (trio)
+
+      .. literalinclude:: ../_include/examples/tutorials/echo_client_server_tcp/async_client_trio.py
          :linenos:
          :caption: client.py
 

@@ -13,11 +13,11 @@ def main() -> None:
     handler = EchoRequestHandler()
 
     with StandaloneUDPNetworkServer(host, port, protocol, handler) as server:
-        try:
-            server.serve_forever()
-        except KeyboardInterrupt:
-            pass
+        server.serve_forever()
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except* KeyboardInterrupt:
+        pass

@@ -6,7 +6,7 @@ import logging
 import sys
 from collections.abc import AsyncGenerator
 from contextlib import AsyncExitStack
-from typing import Any
+from typing import Any, Literal
 
 from easynetwork.protocol import DatagramProtocol
 from easynetwork.serializers.abc import AbstractPacketSerializer
@@ -30,11 +30,15 @@ class _BaseRequestHandler(AsyncDatagramRequestHandler[Any, Any]):
         self._eager_tasks: bool = bool(eager_tasks)
 
     async def service_init(self, exit_stack: AsyncExitStack, server: Any) -> None:
-        import asyncio
-
         if self._eager_tasks:
-            loop = asyncio.get_running_loop()
-            loop.set_task_factory(getattr(asyncio, "eager_task_factory"))
+            import asyncio
+
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                pass
+            else:
+                loop.set_task_factory(getattr(asyncio, "eager_task_factory"))
 
 
 class EchoRequestHandlerNoTTL(_BaseRequestHandler):
@@ -59,21 +63,31 @@ class EchoRequestHandlerWithTTL(_BaseRequestHandler):
             await client.send_packet(request)
 
 
+def _get_runner_and_options_from_arg(
+    runner: Literal["asyncio", "uvloop", "trio"]
+) -> tuple[Literal["asyncio", "trio"], dict[str, Any]]:
+    match runner:
+        case "asyncio":
+            print("using asyncio event loop")
+            return ("asyncio", {})
+        case "uvloop":
+            import uvloop
+
+            print("using uvloop")
+            return ("asyncio", {"loop_factory": uvloop.new_event_loop})
+        case "trio":
+            print("using trio")
+            return ("trio", {})
+
+
 def create_udp_server(
     *,
     port: int,
-    use_uvloop: bool,
+    runner: Literal["asyncio", "uvloop", "trio"],
     eager_tasks: bool,
     client_ttl: float,
 ) -> StandaloneUDPNetworkServer[Any, Any]:
-    asyncio_options = {}
-    if use_uvloop:
-        import uvloop
-
-        asyncio_options["loop_factory"] = uvloop.new_event_loop
-        print("using uvloop")
-    else:
-        print("using asyncio event loop")
+    backend, options = _get_runner_and_options_from_arg(runner)
     if eager_tasks:
         print("with eager task start")
     if client_ttl > 0:
@@ -88,7 +102,8 @@ def create_udp_server(
         port,
         DatagramProtocol(NoSerializer()),
         handler,
-        runner_options=asyncio_options,
+        backend=backend,
+        runner_options=options,
     )
 
 
@@ -112,11 +127,6 @@ def main() -> None:
         default=25000,
     )
     parser.add_argument(
-        "--uvloop",
-        dest="use_uvloop",
-        action="store_true",
-    )
-    parser.add_argument(
         "--eager-tasks",
         dest="eager_tasks",
         action="store_true",
@@ -127,6 +137,10 @@ def main() -> None:
         type=float,
         default=0.0,
     )
+    runner_parser = parser.add_mutually_exclusive_group()
+    runner_parser.add_argument("--uvloop", dest="runner", action="store_const", const="uvloop")
+    runner_parser.add_argument("--trio", dest="runner", action="store_const", const="trio")
+    runner_parser.set_defaults(runner="asyncio")
 
     args = parser.parse_args()
 
@@ -135,7 +149,7 @@ def main() -> None:
     print(f"Python version: {sys.version}")
     with create_udp_server(
         port=args.port,
-        use_uvloop=args.use_uvloop,
+        runner=args.runner,
         eager_tasks=args.eager_tasks,
         client_ttl=args.client_ttl,
     ) as server:
@@ -145,5 +159,5 @@ def main() -> None:
 if __name__ == "__main__":
     try:
         main()
-    except KeyboardInterrupt:
+    except* KeyboardInterrupt:
         pass

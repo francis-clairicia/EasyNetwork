@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import functools
+import inspect
 
 import pytest
 
@@ -24,6 +25,22 @@ def _auto_add_feature_marker(item: pytest.Item) -> None:
         item.add_marker(pytest.mark.feature)
 
 
+def __has_marker(item: pytest.Item, name: str) -> bool:
+    return item.get_closest_marker(name) is not None
+
+
+def _ensure_trio_marker_consistency(item: pytest.Function) -> None:
+    if (feature_trio_marker := item.get_closest_marker("feature_trio")) is not None:
+        if item.config.pluginmanager.has_plugin("trio") and not __has_marker(item, "trio"):
+            auto_mark = feature_trio_marker.kwargs.get("async_test_auto_mark", False)
+            if auto_mark and inspect.iscoroutinefunction(item.obj):
+                item.add_marker(pytest.mark.trio)
+    elif __has_marker(item, "trio"):
+        item.add_marker(pytest.mark.feature_trio)
+
+
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     for item in items:
+        if funcitem := item.getparent(pytest.Function):
+            _ensure_trio_marker_consistency(funcitem)
         _auto_add_feature_marker(item)

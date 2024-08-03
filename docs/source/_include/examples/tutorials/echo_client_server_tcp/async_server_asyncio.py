@@ -15,11 +15,11 @@ async def main() -> None:
     handler = EchoRequestHandler()
 
     async with AsyncTCPNetworkServer(host, port, protocol, handler) as server:
-        try:
-            await server.serve_forever()
-        except asyncio.CancelledError:
-            pass
+        await server.serve_forever()
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except* KeyboardInterrupt:
+        pass

@@ -149,6 +149,22 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
         "client": _tcp_echoclient,
     },
     {
+        "name": "tcpecho-easynetwork-trio",
+        "title": "TCP echo server (easynetwork+trio)",
+        "server": (
+            *_python_cmd,
+            "/usr/src/servers/easynetwork_tcp_echoserver.py",
+            f"--port={EXPOSED_PORT}",
+            "--trio",
+        ),
+        "ping": {
+            "server_address": _tcp_server_address,
+            "ping_request": b"ping\n",
+            "socket_type": SOCK_STREAM,
+        },
+        "client": _tcp_echoclient,
+    },
+    {
         "name": "tcpecho-easynetwork-buffered-asyncio",
         "title": "TCP echo server (easynetwork+buffered+asyncio)",
         "server": (
@@ -173,6 +189,23 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             f"--port={EXPOSED_PORT}",
             "--buffered",
             "--uvloop",
+        ),
+        "ping": {
+            "server_address": _tcp_server_address,
+            "ping_request": b"ping\n",
+            "socket_type": SOCK_STREAM,
+        },
+        "client": _tcp_echoclient,
+    },
+    {
+        "name": "tcpecho-easynetwork-buffered-trio",
+        "title": "TCP echo server (easynetwork+buffered+trio)",
+        "server": (
+            *_python_cmd,
+            "/usr/src/servers/easynetwork_tcp_echoserver.py",
+            f"--port={EXPOSED_PORT}",
+            "--buffered",
+            "--trio",
         ),
         "ping": {
             "server_address": _tcp_server_address,
@@ -245,6 +278,37 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
         },
         "client": _tcp_echoclient,
     },
+    {
+        "name": "tcpecho-trio-sockets",
+        "title": "TCP echo server (trio/sockets)",
+        "server": (
+            *_python_cmd,
+            "/usr/src/servers/trio_tcp_echoserver.py",
+            f"--port={EXPOSED_PORT}",
+        ),
+        "ping": {
+            "server_address": _tcp_server_address,
+            "ping_request": b"ping\n",
+            "socket_type": SOCK_STREAM,
+        },
+        "client": _tcp_echoclient,
+    },
+    {
+        "name": "tcpecho-trio-streams",
+        "title": "TCP echo server (trio/streams)",
+        "server": (
+            *_python_cmd,
+            "/usr/src/servers/trio_tcp_echoserver.py",
+            f"--port={EXPOSED_PORT}",
+            "--streams",
+        ),
+        "ping": {
+            "server_address": _tcp_server_address,
+            "ping_request": b"ping\n",
+            "socket_type": SOCK_STREAM,
+        },
+        "client": _tcp_echoclient,
+    },
     ##############################################################################
     ################################ TCP readline ################################
     ##############################################################################
@@ -282,6 +346,23 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
         "client": _tcp_readline_client,
     },
     {
+        "name": "readline-easynetwork-trio",
+        "title": "TCP readline server (easynetwork+trio)",
+        "server": (
+            *_python_cmd,
+            "/usr/src/servers/easynetwork_tcp_echoserver.py",
+            f"--port={EXPOSED_PORT}",
+            "--readline",
+            "--trio",
+        ),
+        "ping": {
+            "server_address": _tcp_server_address,
+            "ping_request": b"ping\n",
+            "socket_type": SOCK_STREAM,
+        },
+        "client": _tcp_readline_client,
+    },
+    {
         "name": "readline-easynetwork-buffered-asyncio",
         "title": "TCP readline server (easynetwork+buffered+asyncio)",
         "server": (
@@ -308,6 +389,24 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             "--readline",
             "--buffered",
             "--uvloop",
+        ),
+        "ping": {
+            "server_address": _tcp_server_address,
+            "ping_request": b"ping\n",
+            "socket_type": SOCK_STREAM,
+        },
+        "client": _tcp_readline_client,
+    },
+    {
+        "name": "readline-easynetwork-buffered-trio",
+        "title": "TCP readline server (easynetwork+buffered+trio)",
+        "server": (
+            *_python_cmd,
+            "/usr/src/servers/easynetwork_tcp_echoserver.py",
+            f"--port={EXPOSED_PORT}",
+            "--readline",
+            "--buffered",
+            "--trio",
         ),
         "ping": {
             "server_address": _tcp_server_address,
@@ -388,6 +487,24 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
         "client": _ssl_over_tcp_echoclient,
     },
     {
+        "name": "sslecho-easynetwork-trio",
+        "title": "TCP+SSL echo server (easynetwork+trio)",
+        "server": (
+            *_python_cmd,
+            "/usr/src/servers/easynetwork_tcp_echoserver.py",
+            f"--port={EXPOSED_PORT}",
+            "--ssl",
+            "--trio",
+        ),
+        "ping": {
+            "server_address": _tcp_server_address,
+            "ping_request": b"ping\n",
+            "socket_type": SOCK_STREAM,
+            "ssl": True,
+        },
+        "client": _ssl_over_tcp_echoclient,
+    },
+    {
         "name": "sslecho-easynetwork-buffered-asyncio",
         "title": "TCP+SSL echo server (easynetwork+buffered+asyncio)",
         "server": (
@@ -415,6 +532,25 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             "--ssl",
             "--buffered",
             "--uvloop",
+        ),
+        "ping": {
+            "server_address": _tcp_server_address,
+            "ping_request": b"ping\n",
+            "socket_type": SOCK_STREAM,
+            "ssl": True,
+        },
+        "client": _ssl_over_tcp_echoclient,
+    },
+    {
+        "name": "sslecho-easynetwork-buffered-trio",
+        "title": "TCP+SSL echo server (easynetwork+buffered+trio)",
+        "server": (
+            *_python_cmd,
+            "/usr/src/servers/easynetwork_tcp_echoserver.py",
+            f"--port={EXPOSED_PORT}",
+            "--ssl",
+            "--buffered",
+            "--trio",
         ),
         "ping": {
             "server_address": _tcp_server_address,
@@ -461,6 +597,24 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
         },
         "client": _ssl_over_tcp_echoclient,
     },
+    {
+        "name": "sslecho-trio-streams",
+        "title": "TCP+SSL echo server (trio/streams)",
+        "server": (
+            *_python_cmd,
+            "/usr/src/servers/trio_tcp_echoserver.py",
+            f"--port={EXPOSED_PORT}",
+            "--ssl",
+            "--streams",
+        ),
+        "ping": {
+            "server_address": _tcp_server_address,
+            "ping_request": b"ping\n",
+            "socket_type": SOCK_STREAM,
+            "ssl": True,
+        },
+        "client": _ssl_over_tcp_echoclient,
+    },
     ##########################################################################
     ################################ UDP echo ################################
     ##########################################################################
@@ -487,6 +641,22 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             "/usr/src/servers/easynetwork_udp_echoserver.py",
             f"--port={EXPOSED_PORT}",
             "--uvloop",
+        ),
+        "ping": {
+            "server_address": _udp_server_address,
+            "ping_request": b"ping",
+            "socket_type": SOCK_DGRAM,
+        },
+        "client": _udp_echoclient,
+    },
+    {
+        "name": "udpecho-easynetwork-trio",
+        "title": "UDP echo server (easynetwork+trio)",
+        "server": (
+            *_python_cmd,
+            "/usr/src/servers/easynetwork_udp_echoserver.py",
+            f"--port={EXPOSED_PORT}",
+            "--trio",
         ),
         "ping": {
             "server_address": _udp_server_address,
@@ -561,6 +731,21 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
         },
         "client": _udp_echoclient,
     },
+    {
+        "name": "udpecho-trio-sockets",
+        "title": "UDP echo server (trio/sockets)",
+        "server": (
+            *_python_cmd,
+            "/usr/src/servers/trio_udp_echoserver.py",
+            f"--port={EXPOSED_PORT}",
+        ),
+        "ping": {
+            "server_address": _udp_server_address,
+            "ping_request": b"ping",
+            "socket_type": SOCK_DGRAM,
+        },
+        "client": _udp_echoclient,
+    },
 )
 
 
@@ -604,7 +789,6 @@ def _start_docker_instance(
             server_cmd,
             name=container_name,
             remove=True,
-            tty=True,
             detach=True,
             ports=ports,
         ),
@@ -829,7 +1013,7 @@ def main() -> None:
 
             print("Warming up server...")
             warmup_cmd = benchmark["client"] + warmup
-            print(" ".join(warmup_cmd))
+            print(shlex.join(warmup_cmd))
             subprocess.check_output(warmup_cmd)
             print()
 

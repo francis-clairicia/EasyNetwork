@@ -16,8 +16,8 @@ from easynetwork.exceptions import (
     IncrementalDeserializeError,
     StreamProtocolParseError,
 )
-from easynetwork.lowlevel.api_async.backend._asyncio._asyncio_utils import create_connection
 from easynetwork.lowlevel.api_async.backend._asyncio.backend import AsyncIOBackend
+from easynetwork.lowlevel.api_async.backend._asyncio.dns_resolver import AsyncIODNSResolver
 from easynetwork.lowlevel.api_async.backend._asyncio.stream.listener import ListenerSocketAdapter
 from easynetwork.lowlevel.socket import SocketAddress, enable_socket_linger
 from easynetwork.protocol import AnyStreamProtocolType
@@ -440,6 +440,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     @pytest_asyncio.fixture
     @staticmethod
     async def client_factory_no_handshake(
+        asyncio_backend: AsyncIOBackend,
         server_address: tuple[str, int],
         use_ssl: bool,
         client_ssl_context: ssl.SSLContext,
@@ -449,7 +450,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
 
             async def factory() -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
                 async with asyncio.timeout(30):
-                    sock = await create_connection(*server_address)
+                    sock = await AsyncIODNSResolver().create_stream_connection(asyncio_backend, *server_address)
                     reader, writer = await asyncio.open_connection(
                         sock=sock,
                         ssl=client_ssl_context if use_ssl else None,
@@ -1136,6 +1137,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     @pytest.mark.parametrize("ssl_handshake_timeout", [pytest.param(1, id="timeout==1sec")], indirect=True)
     async def test____serve_forever____ssl_handshake_timeout_error(
         self,
+        asyncio_backend: AsyncIOBackend,
         server_address: tuple[str, int],
         caplog: pytest.LogCaptureFixture,
         logger_crash_maximum_nb_lines: dict[str, int],
@@ -1145,7 +1147,10 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         caplog.set_level(logging.ERROR, LOGGER.name)
         logger_crash_maximum_nb_lines[LOGGER.name] = 1
         logger_crash_maximum_nb_lines["easynetwork.lowlevel.api_async.transports.tls"] = 1
-        with await create_connection(*server_address) as socket, pytest.raises(OSError):
+        with (
+            await AsyncIODNSResolver().create_stream_connection(asyncio_backend, *server_address) as socket,
+            pytest.raises(OSError),
+        ):
             # The SSL handshake expects the client to send the list of encryption algorithms.
             # But we won't, so the server will close the connection after 1 second
             # and raise a TimeoutError or ConnectionAbortedError.

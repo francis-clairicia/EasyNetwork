@@ -129,18 +129,38 @@ Cancellation And Timeouts
       Since all :exc:`BaseException` subclasses are thrown into the generator, you can apply a timeout to the read stream
       using the :term:`asynchronous framework` (the cancellation exception is retrieved in the generator):
 
-      .. literalinclude:: ../_include/examples/howto/udp_servers/request_handler_explanation.py
-         :pyobject: TimeoutContextRequestHandler.handle
-         :dedent:
-         :linenos:
-         :emphasize-lines: 14,17-18
+      .. tabs::
+
+         .. group-tab:: Using ``asyncio``
+
+            .. literalinclude:: ../_include/examples/howto/udp_servers/request_handler_explanation.py
+               :pyobject: TimeoutContextRequestHandlerAsyncIO.handle
+               :dedent:
+               :linenos:
+               :emphasize-lines: 14,17-18
+
+         .. group-tab:: Using ``trio``
+
+            .. literalinclude:: ../_include/examples/howto/udp_servers/request_handler_explanation.py
+               :pyobject: TimeoutContextRequestHandlerTrio.handle
+               :dedent:
+               :linenos:
+               :emphasize-lines: 14,17-18
+
+         .. group-tab:: Using the ``AsyncBackend`` API
+
+            .. literalinclude:: ../_include/examples/howto/udp_servers/request_handler_explanation.py
+               :pyobject: TimeoutContextRequestHandlerWithClientBackend.handle
+               :dedent:
+               :linenos:
+               :emphasize-lines: 14,17-18
 
       .. warning::
 
          Note that this behavior works because the generator is always executed and closed
          in the same asynchronous task for the current implementation.
 
-         This feature is available so that features like ``anyio.CancelScope`` can be used.
+         This feature is available so that features like :class:`trio.CancelScope` can be used.
          However, it may be removed in a future release.
 
 
@@ -152,12 +172,34 @@ at the beginning of the :meth:`~.AsyncUDPNetworkServer.serve_forever` task to se
 
 This allows you to do something like this:
 
-.. literalinclude:: ../_include/examples/howto/udp_servers/request_handler_explanation.py
-   :pyobject: ServiceInitializationHookRequestHandler
-   :start-after: ServiceInitializationHookRequestHandler
-   :dedent:
-   :linenos:
-   :emphasize-lines: 1
+.. tabs::
+
+   .. group-tab:: Using ``asyncio``
+
+      .. literalinclude:: ../_include/examples/howto/udp_servers/request_handler_explanation.py
+         :pyobject: ServiceInitializationHookRequestHandlerAsyncIO
+         :start-after: ServiceInitializationHookRequestHandlerAsyncIO
+         :dedent:
+         :linenos:
+         :emphasize-lines: 1
+
+   .. group-tab:: Using ``trio``
+
+      .. literalinclude:: ../_include/examples/howto/udp_servers/request_handler_explanation.py
+         :pyobject: ServiceInitializationHookRequestHandlerTrio
+         :start-after: ServiceInitializationHookRequestHandlerTrio
+         :dedent:
+         :linenos:
+         :emphasize-lines: 1
+
+   .. group-tab:: Using the ``AsyncBackend`` API
+
+      .. literalinclude:: ../_include/examples/howto/udp_servers/request_handler_explanation.py
+         :pyobject: ServiceInitializationHookRequestHandlerWithServerBackend
+         :start-after: ServiceInitializationHookRequestHandlerWithServerBackend
+         :dedent:
+         :linenos:
+         :emphasize-lines: 1,8,15
 
 
 Per-client variables (``contextvars`` integration)

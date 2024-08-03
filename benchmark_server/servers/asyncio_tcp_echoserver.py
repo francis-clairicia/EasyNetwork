@@ -39,12 +39,14 @@ async def _echo_client(loop: asyncio.AbstractEventLoop, client: socket.socket, a
     except (OSError, NameError):
         pass
 
+    lock = asyncio.Lock()
     with client:
         while True:
             data = await loop.sock_recv(client, 102400)
             if not data:
                 break
-            await loop.sock_sendall(client, data)
+            async with lock:
+                await loop.sock_sendall(client, data)
     LOGGER.info(f"{addr}: Connection closed")
 
 
@@ -55,14 +57,18 @@ async def echo_client_streams(reader: asyncio.StreamReader, writer: asyncio.Stre
         sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, True)
     except (OSError, NameError):
         pass
+    writer.transport.set_write_buffer_limits(0)
     LOGGER.info(f"Connection from {addr}")
+
+    lock = asyncio.Lock()
     with contextlib.closing(writer):
         while True:
             data = await reader.read(102400)
             if not data:
                 break
-            writer.write(data)
-            await writer.drain()
+            async with lock:
+                writer.write(data)
+                await writer.drain()
     LOGGER.info(f"{addr}: Connection closed")
 
 
@@ -73,14 +79,18 @@ async def readline_client_streams(reader: asyncio.StreamReader, writer: asyncio.
         sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, True)
     except (OSError, NameError):
         pass
+    writer.transport.set_write_buffer_limits(0)
     LOGGER.info(f"Connection from {addr}")
+
+    lock = asyncio.Lock()
     with contextlib.closing(writer):
         while True:
             data = await reader.readline()
             if not data:
                 break
-            writer.write(data)
-            await writer.drain()
+            async with lock:
+                writer.write(data)
+                await writer.drain()
     LOGGER.info(f"{addr}: Connection closed")
 
 

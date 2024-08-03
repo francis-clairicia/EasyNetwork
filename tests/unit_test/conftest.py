@@ -37,12 +37,18 @@ def remove_SO_REUSEPORT_support(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture
 def mock_socket_factory(mocker: MockerFixture) -> Callable[[], MagicMock]:
-    def factory() -> MagicMock:
+    def factory(family: int = -1, type: int = -1, proto: int = -1, fileno: int = 123) -> MagicMock:
+        if family == -1:
+            family = AF_INET
+        if type == -1:
+            type = SOCK_STREAM
+        if proto == -1:
+            proto = 0
         mock_socket = mocker.NonCallableMagicMock(spec=Socket)
-        mock_socket.family = AF_INET
-        mock_socket.type = -1
-        mock_socket.proto = 0
-        mock_socket.fileno.return_value = 123
+        mock_socket.family = family
+        mock_socket.type = type
+        mock_socket.proto = proto
+        mock_socket.fileno.return_value = fileno
 
         def close_side_effect() -> None:
             mock_socket.fileno.return_value = -1
@@ -64,12 +70,9 @@ def original_socket_cls() -> type[Socket]:
 
 
 @pytest.fixture
-def mock_tcp_socket_factory(mock_socket_factory: Callable[[], MagicMock]) -> Callable[[], MagicMock]:
-    def factory() -> MagicMock:
-        mock_socket = mock_socket_factory()
-        mock_socket.type = SOCK_STREAM
-        mock_socket.proto = IPPROTO_TCP
-        return mock_socket
+def mock_tcp_socket_factory(mock_socket_factory: Callable[[int, int, int], MagicMock]) -> Callable[[], MagicMock]:
+    def factory(family: int = -1) -> MagicMock:
+        return mock_socket_factory(family, SOCK_STREAM, IPPROTO_TCP)
 
     return factory
 
@@ -80,12 +83,9 @@ def mock_tcp_socket(mock_tcp_socket_factory: Callable[[], MagicMock]) -> MagicMo
 
 
 @pytest.fixture
-def mock_udp_socket_factory(mock_socket_factory: Callable[[], MagicMock]) -> Callable[[], MagicMock]:
-    def factory() -> MagicMock:
-        mock_socket = mock_socket_factory()
-        mock_socket.type = SOCK_DGRAM
-        mock_socket.proto = IPPROTO_UDP
-        return mock_socket
+def mock_udp_socket_factory(mock_socket_factory: Callable[[int, int, int], MagicMock]) -> Callable[[], MagicMock]:
+    def factory(family: int = -1) -> MagicMock:
+        return mock_socket_factory(family, SOCK_DGRAM, IPPROTO_UDP)
 
     return factory
 
@@ -97,9 +97,11 @@ def mock_udp_socket(mock_udp_socket_factory: Callable[[], MagicMock]) -> MagicMo
 
 @pytest.fixture
 def mock_ssl_socket_factory(mocker: MockerFixture) -> Callable[[], MagicMock]:
-    def factory() -> MagicMock:
+    def factory(family: int = -1) -> MagicMock:
+        if family == -1:
+            family = AF_INET
         mock_socket = mocker.NonCallableMagicMock(spec=SSLSocket)
-        mock_socket.family = AF_INET
+        mock_socket.family = family
         mock_socket.type = SOCK_STREAM
         mock_socket.proto = IPPROTO_TCP
         mock_socket.fileno.return_value = 123

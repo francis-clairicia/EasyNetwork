@@ -7,7 +7,7 @@ import pathlib
 import ssl
 import sys
 from collections.abc import AsyncGenerator, Generator
-from typing import Any
+from typing import Any, Literal
 
 from easynetwork.protocol import BufferedStreamProtocol, StreamProtocol
 from easynetwork.serializers.abc import BufferedIncrementalPacketSerializer
@@ -61,23 +61,33 @@ class EchoRequestHandlerInnerLoop(AsyncStreamRequestHandler[Any, Any]):
             await client.send_packet(request)
 
 
+def _get_runner_and_options_from_arg(
+    runner: Literal["asyncio", "uvloop", "trio"]
+) -> tuple[Literal["asyncio", "trio"], dict[str, Any]]:
+    match runner:
+        case "asyncio":
+            print("using asyncio event loop")
+            return ("asyncio", {})
+        case "uvloop":
+            import uvloop
+
+            print("using uvloop")
+            return ("asyncio", {"loop_factory": uvloop.new_event_loop})
+        case "trio":
+            print("using trio")
+            return ("trio", {})
+
+
 def create_tcp_server(
     *,
     port: int,
     over_ssl: bool,
-    use_uvloop: bool,
+    runner: Literal["asyncio", "uvloop", "trio"],
     buffered: bool,
     readline: bool,
     context_reuse: bool,
 ) -> StandaloneTCPNetworkServer[Any, Any]:
-    asyncio_options = {}
-    if use_uvloop:
-        import uvloop
-
-        asyncio_options["loop_factory"] = uvloop.new_event_loop
-        print("using uvloop")
-    else:
-        print("using asyncio event loop")
+    backend, options = _get_runner_and_options_from_arg(runner)
     ssl_context: ssl.SSLContext | None = None
     if over_ssl:
         ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
@@ -108,7 +118,8 @@ def create_tcp_server(
         protocol,
         EchoRequestHandlerInnerLoop() if context_reuse else EchoRequestHandler(),
         ssl=ssl_context,
-        runner_options=asyncio_options,
+        backend=backend,
+        runner_options=options,
         max_recv_size=65536,  # Default buffer limit of asyncio streams
     )
 
@@ -133,11 +144,6 @@ def main() -> None:
         default=25000,
     )
     parser.add_argument(
-        "--uvloop",
-        dest="use_uvloop",
-        action="store_true",
-    )
-    parser.add_argument(
         "--ssl",
         dest="over_ssl",
         action="store_true",
@@ -158,6 +164,11 @@ def main() -> None:
         action="store_true",
     )
 
+    runner_parser = parser.add_mutually_exclusive_group()
+    runner_parser.add_argument("--uvloop", dest="runner", action="store_const", const="uvloop")
+    runner_parser.add_argument("--trio", dest="runner", action="store_const", const="trio")
+    runner_parser.set_defaults(runner="asyncio")
+
     args = parser.parse_args()
 
     logging.basicConfig(level=getattr(logging, args.log_level), format="[ %(levelname)s ] [ %(name)s ] %(message)s")
@@ -165,7 +176,7 @@ def main() -> None:
     print(f"Python version: {sys.version}")
     with create_tcp_server(
         port=args.port,
-        use_uvloop=args.use_uvloop,
+        runner=args.runner,
         over_ssl=args.over_ssl,
         buffered=args.buffered,
         readline=args.readline,
@@ -177,5 +188,5 @@ def main() -> None:
 if __name__ == "__main__":
     try:
         main()
-    except KeyboardInterrupt:
+    except* KeyboardInterrupt:
         pass

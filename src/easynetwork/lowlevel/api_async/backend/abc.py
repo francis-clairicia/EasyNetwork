@@ -36,7 +36,7 @@ from abc import ABCMeta, abstractmethod
 from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
 from contextlib import AbstractContextManager
 from types import TracebackType
-from typing import Any, Generic, NoReturn, ParamSpec, Protocol, Self, TypeVar, TypeVarTuple, Unpack
+from typing import Any, Generic, Literal, NoReturn, ParamSpec, Protocol, Self, TypeVar, TypeVarTuple, Unpack
 
 from ..transports import abc as _transports
 
@@ -82,7 +82,7 @@ class ILock(Protocol):
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
         /,
-    ) -> bool | None: ...
+    ) -> Literal[False] | None: ...
 
     @abstractmethod
     async def acquire(self) -> Any:
@@ -398,7 +398,7 @@ class CancelScope(metaclass=ABCMeta):
 
             scope.reschedule(scope.when() + 30)
 
-        It is also possible to remove the timeout by deleting the attribute::
+        It is also possible to remove the timeout by "deleting" the attribute::
 
             del scope.deadline
         """
@@ -862,6 +862,56 @@ class AsyncBackend(metaclass=ABCMeta):
         """
         return await self.sleep(max(deadline - self.current_time(), 0))
 
+    async def gather(self, *coroutines: Awaitable[_T_co]) -> list[_T_co]:
+        """
+        Run awaitable objects in the `coroutines` sequence concurrently.
+
+        Parameters:
+            coroutines: any awaitable object.
+
+        Returns:
+            If all awaitables are completed successfully, the result is an aggregate list of returned values.
+            The order of result values corresponds to the order of awaitables in `coroutines`.
+
+        Raises:
+            ExceptionGroup: If one or more awaitable(s) fails.
+        """
+
+        if not coroutines:
+            # Fast path.
+            return []
+
+        from ..._utils import remove_traceback_frames_in_place
+
+        async def _await(coro: Awaitable[_T_co]) -> _T_co:
+            try:
+                return await coro
+            except BaseException as exc:
+                remove_traceback_frames_in_place(exc, 1)
+                raise
+            finally:
+                del coro
+
+        coro_to_task: dict[Awaitable[_T_co], Task[_T_co]] = {}
+
+        children: list[Task[_T_co]] = []
+
+        async with self.create_task_group() as task_group:
+            for coro in coroutines:
+                if coro in coro_to_task:
+                    task = coro_to_task[coro]
+                else:
+                    task = await self.ignore_cancellation(task_group.start(_await, coro))
+                    coro_to_task[coro] = task
+                children.append(task)
+
+            coro_to_task.clear()
+
+        # task_group should raise an ExceptionGroup if one of the coroutine raises an exception
+        # At this point, all the tasks should be done and join() would neither block nor raise.
+        assert all(child.done() for child in children)  # nosec assert_used
+        return [await child.join() for child in children]
+
     @abstractmethod
     def create_task_group(self) -> TaskGroup:
         """
@@ -886,6 +936,38 @@ class AsyncBackend(metaclass=ABCMeta):
             a representation of the current task.
         """
         raise NotImplementedError
+
+    async def getaddrinfo(
+        self,
+        host: bytes | str | None,
+        port: bytes | str | int | None,
+        family: int = 0,
+        type: int = 0,
+        proto: int = 0,
+        flags: int = 0,
+    ) -> Sequence[tuple[int, int, int, str, tuple[str, int] | tuple[str, int, int, int]]]:
+        """
+        Asynchronous version of :func:`socket.getaddrinfo`.
+        """
+        from ..._utils import make_callback
+
+        getaddrinfo = make_callback(_socket.getaddrinfo, host, port, family=family, type=type, proto=proto, flags=flags)
+
+        return await self.run_in_thread(getaddrinfo, abandon_on_cancel=True)
+
+    async def getnameinfo(
+        self,
+        sockaddr: tuple[str, int] | tuple[str, int, int, int],
+        flags: int = 0,
+    ) -> tuple[str, str]:
+        """
+        Asynchronous version of :func:`socket.getnameinfo`.
+        """
+        from ..._utils import make_callback
+
+        getnameinfo = make_callback(_socket.getnameinfo, sockaddr, flags)
+
+        return await self.run_in_thread(getnameinfo, abandon_on_cancel=True)
 
     @abstractmethod
     async def create_tcp_connection(
@@ -988,6 +1070,7 @@ class AsyncBackend(metaclass=ABCMeta):
             remote_host: The host IP/domain name.
             remote_port: Port of connection.
             local_address: If given, is a ``(local_host, local_port)`` tuple used to bind the socket locally.
+            family: The address family
 
         Raises:
             OSError: unrelated OS error occurred.
@@ -1151,6 +1234,6 @@ class _timeout_scope:
         return self.scope.__enter__()
 
     def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None) -> None:
-        cancelled_caught = self.scope.__exit__(exc_type, exc_val, exc_tb)
-        if cancelled_caught:
+        self.scope.__exit__(exc_type, exc_val, exc_tb)
+        if self.scope.cancelled_caught():
             raise TimeoutError("timed out")

@@ -56,6 +56,10 @@ cbor = [
 msgpack = [
     "msgpack>=1.0.7,<2",
 ]
+trio = [
+    "trio>=0.26,<1",
+    "outcome~=1.3",
+]
 
 ############################ pdm configuration ############################
 
@@ -106,6 +110,9 @@ test = [
     # Temporary use VCS to get the modifications added on main (c.f. https://github.com/str0zzapreti/pytest-retry/pull/39)
     "pytest-retry @ git+https://github.com/str0zzapreti/pytest-retry.git@bb465fff6f01f3f90a77229468f7e08a3bdbce20",
 ]
+test-trio = [
+    "pytest-trio~=0.8.0",
+]
 coverage = [
     "coverage~=7.0",
 ]
@@ -126,7 +133,7 @@ benchmark-servers = [
     "plotly~=5.18",
 ]
 benchmark-servers-deps = [
-    "easynetwork[uvloop]",
+    "easynetwork[uvloop, trio]",
     "asyncio-dgram==2.1.2",
 ]
 
@@ -187,8 +194,9 @@ __version_tuple__ = {version_tuple!r}
 profile = "black"
 line_length = 130
 combine_as_imports = true
-sections = ["FUTURE", "STDLIB", "EASYNETWORK", "THIRDPARTY", "FIRSTPARTY", "LOCALFOLDER"]
+sections = ["FUTURE", "STDLIB", "TRIO", "EASYNETWORK", "THIRDPARTY", "FIRSTPARTY", "LOCALFOLDER"]
 known_easynetwork = ["easynetwork"]
+known_trio = ["trio", "outcome"]
 add_imports = ["from __future__ import annotations"]
 extend_skip = [
     "docs/source/conf.py",
@@ -222,7 +230,7 @@ local_partial_types = true
 enable_error_code = ["truthy-bool", "ignore-without-code", "unused-awaitable"]
 
 [[tool.mypy.overrides]]
-module = ["docker.*", "plotly.*", "pytest_benchmark.*"]
+module = ["docker.*", "plotly.*", "pytest_benchmark.*", "pytest_trio.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
