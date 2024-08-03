@@ -76,11 +76,10 @@ class Task(AbstractTask[_T_co]):
                 return False
 
     async def wait(self) -> None:
-        if self.__outcome.peek() is None:
-            await self.__outcome.get()
+        await self.__outcome.get_no_checkpoints()
 
     async def join(self) -> _T_co:
-        outcome = await self.__outcome.get()
+        outcome = await self.__outcome.get_no_checkpoints()
         # Copy object because outcome objects can be unwrapped only once
         outcome = copy.copy(outcome)
         try:
@@ -90,11 +89,11 @@ class Task(AbstractTask[_T_co]):
 
     async def join_or_cancel(self) -> _T_co:
         try:
-            outcome = await self.__outcome.get()
+            outcome = await self.__outcome.get_no_checkpoints()
         except trio.Cancelled:
             self.__scope.cancel()
             with trio.CancelScope(shield=True):
-                outcome = await self.__outcome.get()
+                outcome = await self.__outcome.get_no_checkpoints()
             if self.cancelled():
                 # Re-raise the current exception instead
                 raise
@@ -274,8 +273,7 @@ class _OutcomeCell(Generic[_T_co]):
             raise trio.WouldBlock
         return result
 
-    async def get(self) -> outcome.Outcome[_T_co]:
-        await trio.lowlevel.checkpoint_if_cancelled()
+    async def get_no_checkpoints(self) -> outcome.Outcome[_T_co]:
         try:
             result = self.get_nowait()
         except trio.WouldBlock:
