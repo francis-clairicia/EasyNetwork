@@ -19,12 +19,13 @@ from ...base import BaseTestSocket, MixinTestSocketSendMSG
 if TYPE_CHECKING:
     from unittest.mock import AsyncMock, MagicMock
 
+    from trio import BrokenResourceError as _BrokenResourceError, ClosedResourceError as _ClosedResourceError
+
     from easynetwork.lowlevel.api_async.backend._trio.stream.listener import TrioListenerSocketAdapter
     from easynetwork.lowlevel.api_async.backend._trio.stream.socket import TrioStreamSocketAdapter
 
     from _typeshed import ReadableBuffer
     from pytest_mock import MockerFixture
-    from trio import BrokenResourceError as _BrokenResourceError, ClosedResourceError as _ClosedResourceError
 
 
 class BaseTestTransportStreamSocket(BaseTestSocket):
@@ -605,9 +606,9 @@ class TestTrioListenerSocketAdapter(BaseTestTransportStreamSocket):
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        from easynetwork.lowlevel.api_async.backend._trio.stream.socket import TrioStreamSocketAdapter
-
         import trio
+
+        from easynetwork.lowlevel.api_async.backend._trio.stream.socket import TrioStreamSocketAdapter
 
         accepted_client_transport = mocker.NonCallableMagicMock(spec=TrioStreamSocketAdapter)
         accepted_client_stream = mock_trio_socket_stream_factory()

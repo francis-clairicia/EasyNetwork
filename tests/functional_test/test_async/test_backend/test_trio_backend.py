@@ -14,8 +14,9 @@ import sniffio
 from ....tools import call_later_with_nursery
 
 if TYPE_CHECKING:
-    from pytest_mock import MockerFixture
     from trio import Nursery
+
+    from pytest_mock import MockerFixture
 
 
 @pytest.mark.feature_trio

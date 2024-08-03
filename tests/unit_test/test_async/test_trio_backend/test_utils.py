@@ -10,9 +10,9 @@ import pytest
 @pytest.mark.feature_trio
 def test____convert_trio_resource_errors____ClosedResourceError() -> None:
     # Arrange
-    from easynetwork.lowlevel.api_async.backend._trio._trio_utils import convert_trio_resource_errors
-
     import trio
+
+    from easynetwork.lowlevel.api_async.backend._trio._trio_utils import convert_trio_resource_errors
 
     # Act
     with pytest.raises(OSError) as exc_info:
@@ -31,9 +31,9 @@ def test____convert_trio_resource_errors____ClosedResourceError() -> None:
 @pytest.mark.feature_trio
 def test____convert_trio_resource_errors____BusyResourceError() -> None:
     # Arrange
-    from easynetwork.lowlevel.api_async.backend._trio._trio_utils import convert_trio_resource_errors
-
     import trio
+
+    from easynetwork.lowlevel.api_async.backend._trio._trio_utils import convert_trio_resource_errors
 
     # Act
     with pytest.raises(OSError) as exc_info:
@@ -50,9 +50,9 @@ def test____convert_trio_resource_errors____BusyResourceError() -> None:
 @pytest.mark.parametrize("broken_resource_errno", [errno.ECONNABORTED, errno.EPIPE])
 def test____convert_trio_resource_errors____BrokenResourceError____arbitrary(broken_resource_errno: int) -> None:
     # Arrange
-    from easynetwork.lowlevel.api_async.backend._trio._trio_utils import convert_trio_resource_errors
-
     import trio
+
+    from easynetwork.lowlevel.api_async.backend._trio._trio_utils import convert_trio_resource_errors
 
     # Act
     with pytest.raises(OSError) as exc_info:
@@ -69,9 +69,9 @@ def test____convert_trio_resource_errors____BrokenResourceError____arbitrary(bro
 @pytest.mark.parametrize("broken_resource_errno", [errno.ECONNABORTED, errno.ECONNRESET, errno.EPIPE, errno.ENOTCONN])
 def test____convert_trio_resource_errors____BrokenResourceError____because_of_OSError(broken_resource_errno: int) -> None:
     # Arrange
-    from easynetwork.lowlevel.api_async.backend._trio._trio_utils import convert_trio_resource_errors
-
     import trio
+
+    from easynetwork.lowlevel.api_async.backend._trio._trio_utils import convert_trio_resource_errors
 
     initial_error = error_from_errno(broken_resource_errno)
 

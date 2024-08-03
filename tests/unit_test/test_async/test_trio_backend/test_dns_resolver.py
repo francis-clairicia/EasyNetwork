@@ -9,9 +9,9 @@ import pytest
 from ....fixtures.trio import trio_fixture
 
 if TYPE_CHECKING:
-    from easynetwork.lowlevel.api_async.backend._trio.dns_resolver import TrioDNSResolver
-
     from trio import SocketListener, SocketStream
+
+    from easynetwork.lowlevel.api_async.backend._trio.dns_resolver import TrioDNSResolver
 
 
 @pytest.mark.feature_trio(async_test_auto_mark=True)

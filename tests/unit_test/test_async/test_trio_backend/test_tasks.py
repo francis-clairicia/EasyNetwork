@@ -12,10 +12,11 @@ from ....tools import call_later_with_nursery
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
 
+    from trio import Nursery
+
     from easynetwork.lowlevel.api_async.backend._trio.tasks import Task, _OutcomeCell
 
     from pytest_mock import MockerFixture
-    from trio import Nursery
 
 
 @pytest.mark.feature_trio(async_test_auto_mark=True)

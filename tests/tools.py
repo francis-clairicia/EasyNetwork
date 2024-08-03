@@ -12,6 +12,7 @@ import pytest
 
 if TYPE_CHECKING:
     import trio
+
     from _typeshed import WriteableBuffer
 
 _T_contra = TypeVar("_T_contra", contravariant=True)

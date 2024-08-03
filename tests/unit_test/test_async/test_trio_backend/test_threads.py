@@ -14,9 +14,9 @@ class TestRunSyncSoonWaiter:
 
     async def test____aclose____wait_for_thread_to_call_detach(self, nursery: Nursery) -> None:
         # Arrange
-        from easynetwork.lowlevel.api_async.backend._trio.threads import _PortalRunSyncSoonWaiter
-
         import trio
+
+        from easynetwork.lowlevel.api_async.backend._trio.threads import _PortalRunSyncSoonWaiter
 
         waiter = _PortalRunSyncSoonWaiter()
 
