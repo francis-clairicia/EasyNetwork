@@ -16,8 +16,6 @@ Standalone servers are classes that can create ready-to-run servers with no pred
 (i.e., no :keyword:`async` / :keyword:`await`). They use (and block) a thread to accept requests,
 and their methods are meant to be used by other threads for control (e.g. shutdown).
 
-By default, the runner is ``"asyncio"``, but it can be changed during object creation.
-
 
 Server Object
 =============
@@ -35,6 +33,31 @@ Server Object
       .. literalinclude:: ../../_include/examples/howto/udp_servers/standalone/server.py
          :linenos:
          :emphasize-lines: 10,21-26,46-50
+
+
+Use An Other Runner
+-------------------
+
+By default, the runner is ``"asyncio"``, but it can be changed during object creation.
+
+.. seealso::
+
+   :func:`.new_builtin_backend`
+      The token is passed to this function.
+
+.. tabs::
+
+   .. group-tab:: StandaloneTCPNetworkServer
+
+      .. literalinclude:: ../../_include/examples/howto/tcp_servers/standalone/server_trio.py
+         :linenos:
+         :emphasize-lines: 7,35,37,47
+
+   .. group-tab:: StandaloneUDPNetworkServer
+
+      .. literalinclude:: ../../_include/examples/howto/udp_servers/standalone/server_trio.py
+         :linenos:
+         :emphasize-lines: 7,35,37,47
 
 
 Run Server In Background

@@ -50,10 +50,28 @@ You need the host address (domain name or IP) and the port of connection in orde
 
       You can control the connection timeout by adding a timeout scope using the :term:`asynchronous framework`:
 
-      .. literalinclude:: ../_include/examples/howto/tcp_clients/basics/api_async/connection_example2.py
-         :pyobject: main
-         :lineno-match:
-         :emphasize-lines: 5-13
+      .. tabs::
+
+         .. group-tab:: Using ``asyncio``
+
+            .. literalinclude:: ../_include/examples/howto/tcp_clients/basics/api_async/connection_example2_asyncio.py
+               :pyobject: main
+               :lineno-match:
+               :emphasize-lines: 5-13
+
+         .. group-tab:: Using ``trio``
+
+            .. literalinclude:: ../_include/examples/howto/tcp_clients/basics/api_async/connection_example2_trio.py
+               :pyobject: main
+               :lineno-match:
+               :emphasize-lines: 5-13
+
+         .. group-tab:: Using the ``AsyncBackend`` API
+
+            .. literalinclude:: ../_include/examples/howto/tcp_clients/basics/api_async/connection_example2_backend_api.py
+               :pyobject: main
+               :lineno-match:
+               :emphasize-lines: 5-13
 
       .. note::
 
@@ -152,13 +170,33 @@ You get the next available packet, already parsed. Extraneous data is kept for t
          :dedent:
          :linenos:
 
-      You can control the receive timeout by adding a timeout scope using the asynchronous framework:
+      You can control the receive timeout by adding a timeout scope using the :term:`asynchronous framework`:
 
-      .. literalinclude:: ../_include/examples/howto/tcp_clients/usage/api_async.py
-         :pyobject: recv_packet_example2
-         :start-after: [start]
-         :dedent:
-         :linenos:
+      .. tabs::
+
+         .. group-tab:: Using ``asyncio``
+
+            .. literalinclude:: ../_include/examples/howto/tcp_clients/usage/api_async.py
+               :pyobject: recv_packet_example2_asyncio
+               :start-after: [start]
+               :dedent:
+               :linenos:
+
+         .. group-tab:: Using ``trio``
+
+            .. literalinclude:: ../_include/examples/howto/tcp_clients/usage/api_async.py
+               :pyobject: recv_packet_example2_trio
+               :start-after: [start]
+               :dedent:
+               :linenos:
+
+         .. group-tab:: Using the ``AsyncBackend`` API
+
+            .. literalinclude:: ../_include/examples/howto/tcp_clients/usage/api_async.py
+               :pyobject: recv_packet_example2_backend_api
+               :start-after: [start]
+               :dedent:
+               :linenos:
 
 
 .. tip::
@@ -178,12 +216,34 @@ You get the next available packet, already parsed. Extraneous data is kept for t
 
       .. group-tab:: Asynchronous
 
-         .. literalinclude:: ../_include/examples/howto/tcp_clients/usage/api_async.py
-            :pyobject: recv_packet_example3
-            :start-after: [start]
-            :dedent:
-            :linenos:
-            :emphasize-lines: 4-5
+         .. tabs::
+
+            .. group-tab:: Using ``asyncio``
+
+               .. literalinclude:: ../_include/examples/howto/tcp_clients/usage/api_async.py
+                  :pyobject: recv_packet_example3_asyncio
+                  :start-after: [start]
+                  :dedent:
+                  :linenos:
+                  :emphasize-lines: 4-5
+
+            .. group-tab:: Using ``trio``
+
+               .. literalinclude:: ../_include/examples/howto/tcp_clients/usage/api_async.py
+                  :pyobject: recv_packet_example3_trio
+                  :start-after: [start]
+                  :dedent:
+                  :linenos:
+                  :emphasize-lines: 4-5
+
+            .. group-tab:: Using the ``AsyncBackend`` API
+
+               .. literalinclude:: ../_include/examples/howto/tcp_clients/usage/api_async.py
+                  :pyobject: recv_packet_example3_backend_api
+                  :start-after: [start]
+                  :dedent:
+                  :linenos:
+                  :emphasize-lines: 4-5
 
 
 Receiving Multiple Packets At Once

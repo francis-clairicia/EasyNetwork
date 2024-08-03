@@ -1,23 +1,25 @@
 from __future__ import annotations
 
-from easynetwork.servers import StandaloneTCPNetworkServer
+import trio
+
+from easynetwork.servers import AsyncTCPNetworkServer
 
 from echo_request_handler import EchoRequestHandler
 from json_protocol import JSONProtocol
 
 
-def main() -> None:
+async def main() -> None:
     host = None
     port = 9000
     protocol = JSONProtocol()
     handler = EchoRequestHandler()
 
-    with StandaloneTCPNetworkServer(host, port, protocol, handler) as server:
-        server.serve_forever()
+    async with AsyncTCPNetworkServer(host, port, protocol, handler) as server:
+        await server.serve_forever()
 
 
 if __name__ == "__main__":
     try:
-        main()
+        trio.run(main)
     except* KeyboardInterrupt:
         pass

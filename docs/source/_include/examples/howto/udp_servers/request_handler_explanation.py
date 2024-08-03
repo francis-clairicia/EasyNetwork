@@ -8,6 +8,8 @@ import traceback
 from collections.abc import AsyncGenerator
 from typing import ClassVar
 
+import trio
+
 from easynetwork.exceptions import DatagramProtocolParseError
 from easynetwork.lowlevel.socket import SocketAddress
 from easynetwork.servers import AsyncUDPNetworkServer
@@ -115,7 +117,7 @@ class MultipleYieldInRequestHandler(AsyncDatagramRequestHandler[Request, Respons
         return True
 
 
-class TimeoutContextRequestHandler(AsyncDatagramRequestHandler[Request, Response]):
+class TimeoutContextRequestHandlerAsyncIO(AsyncDatagramRequestHandler[Request, Response]):
     async def handle(
         self,
         client: AsyncDatagramClient[Response],
@@ -130,6 +132,52 @@ class TimeoutContextRequestHandler(AsyncDatagramRequestHandler[Request, Response
 
         try:
             async with asyncio.timeout(30):
+                # The client has 30 seconds to send the 2nd request to the server.
+                another_request: Request = yield
+        except TimeoutError:
+            await client.send_packet(TimedOut())
+        else:
+            await client.send_packet(Response())
+
+
+class TimeoutContextRequestHandlerTrio(AsyncDatagramRequestHandler[Request, Response]):
+    async def handle(
+        self,
+        client: AsyncDatagramClient[Response],
+    ) -> AsyncGenerator[None, Request]:
+        # It is *never* useful to have a timeout for the 1st datagram
+        # because the datagram is already in the queue.
+        request: Request = yield
+
+        ...
+
+        await client.send_packet(Response())
+
+        try:
+            with trio.fail_after(30):
+                # The client has 30 seconds to send the 2nd request to the server.
+                another_request: Request = yield
+        except trio.TooSlowError:
+            await client.send_packet(TimedOut())
+        else:
+            await client.send_packet(Response())
+
+
+class TimeoutContextRequestHandlerWithClientBackend(AsyncDatagramRequestHandler[Request, Response]):
+    async def handle(
+        self,
+        client: AsyncDatagramClient[Response],
+    ) -> AsyncGenerator[None, Request]:
+        # It is *never* useful to have a timeout for the 1st datagram
+        # because the datagram is already in the queue.
+        request: Request = yield
+
+        ...
+
+        await client.send_packet(Response())
+
+        try:
+            with client.backend().timeout(30):
                 # The client has 30 seconds to send the 2nd request to the server.
                 another_request: Request = yield
         except TimeoutError:
@@ -161,7 +209,7 @@ class TimeoutYieldedRequestHandler(AsyncDatagramRequestHandler[Request, Response
             await client.send_packet(Response())
 
 
-class ServiceInitializationHookRequestHandler(AsyncDatagramRequestHandler[Request, Response]):
+class ServiceInitializationHookRequestHandlerAsyncIO(AsyncDatagramRequestHandler[Request, Response]):
     async def service_init(
         self,
         exit_stack: contextlib.AsyncExitStack,
@@ -176,6 +224,53 @@ class ServiceInitializationHookRequestHandler(AsyncDatagramRequestHandler[Reques
     async def _service_actions(self) -> None:
         while True:
             await asyncio.sleep(1)
+
+            # Do some stuff each second in background
+            ...
+
+    def _service_quit(self) -> None:
+        print("Service stopped")
+
+
+class ServiceInitializationHookRequestHandlerTrio(AsyncDatagramRequestHandler[Request, Response]):
+    async def service_init(
+        self,
+        exit_stack: contextlib.AsyncExitStack,
+        server: AsyncUDPNetworkServer[Request, Response],
+    ) -> None:
+        exit_stack.callback(self._service_quit)
+
+        self.background_tasks = await exit_stack.enter_async_context(trio.open_nursery())
+
+        self.background_tasks.start_soon(self._service_actions)
+
+    async def _service_actions(self) -> None:
+        while True:
+            await trio.sleep(1)
+
+            # Do some stuff each second in background
+            ...
+
+    def _service_quit(self) -> None:
+        print("Service stopped")
+
+
+class ServiceInitializationHookRequestHandlerWithServerBackend(AsyncDatagramRequestHandler[Request, Response]):
+    async def service_init(
+        self,
+        exit_stack: contextlib.AsyncExitStack,
+        server: AsyncUDPNetworkServer[Request, Response],
+    ) -> None:
+        exit_stack.callback(self._service_quit)
+
+        self.backend = server.backend()
+        self.background_tasks = await exit_stack.enter_async_context(self.backend.create_task_group())
+
+        self.background_tasks.start_soon(self._service_actions)
+
+    async def _service_actions(self) -> None:
+        while True:
+            await self.backend.sleep(1)
 
             # Do some stuff each second in background
             ...

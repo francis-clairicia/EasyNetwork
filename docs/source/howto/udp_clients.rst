@@ -146,11 +146,31 @@ You get the next available packet, already parsed.
 
       You can control the receive timeout by adding a timeout scope using the :term:`asynchronous framework` :
 
-      .. literalinclude:: ../_include/examples/howto/udp_clients/usage/api_async.py
-         :pyobject: recv_packet_example2
-         :start-after: [start]
-         :dedent:
-         :linenos:
+      .. tabs::
+
+         .. group-tab:: Using ``asyncio``
+
+            .. literalinclude:: ../_include/examples/howto/udp_clients/usage/api_async.py
+               :pyobject: recv_packet_example2_asyncio
+               :start-after: [start]
+               :dedent:
+               :linenos:
+
+         .. group-tab:: Using ``trio``
+
+            .. literalinclude:: ../_include/examples/howto/udp_clients/usage/api_async.py
+               :pyobject: recv_packet_example2_trio
+               :start-after: [start]
+               :dedent:
+               :linenos:
+
+         .. group-tab:: Using the ``AsyncBackend`` API
+
+            .. literalinclude:: ../_include/examples/howto/udp_clients/usage/api_async.py
+               :pyobject: recv_packet_example2_backend_api
+               :start-after: [start]
+               :dedent:
+               :linenos:
 
 
 .. tip::
@@ -170,12 +190,34 @@ You get the next available packet, already parsed.
 
       .. group-tab:: Asynchronous
 
-         .. literalinclude:: ../_include/examples/howto/udp_clients/usage/api_async.py
-            :pyobject: recv_packet_example3
-            :start-after: [start]
-            :dedent:
-            :linenos:
-            :emphasize-lines: 4-5
+         .. tabs::
+
+            .. group-tab:: Using ``asyncio``
+
+               .. literalinclude:: ../_include/examples/howto/udp_clients/usage/api_async.py
+                  :pyobject: recv_packet_example3_asyncio
+                  :start-after: [start]
+                  :dedent:
+                  :linenos:
+                  :emphasize-lines: 4-5
+
+            .. group-tab:: Using ``trio``
+
+               .. literalinclude:: ../_include/examples/howto/udp_clients/usage/api_async.py
+                  :pyobject: recv_packet_example3_trio
+                  :start-after: [start]
+                  :dedent:
+                  :linenos:
+                  :emphasize-lines: 4-5
+
+            .. group-tab:: Using the ``AsyncBackend`` API
+
+               .. literalinclude:: ../_include/examples/howto/udp_clients/usage/api_async.py
+                  :pyobject: recv_packet_example3_backend_api
+                  :start-after: [start]
+                  :dedent:
+                  :linenos:
+                  :emphasize-lines: 4-5
 
 
 Receiving Multiple Packets At Once

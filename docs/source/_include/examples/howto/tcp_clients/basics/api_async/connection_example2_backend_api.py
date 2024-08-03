@@ -12,8 +12,8 @@ async def main() -> None:
     address = ("localhost", 9000)
 
     try:
-        async with asyncio.timeout(30):
-            client = AsyncTCPNetworkClient(address, protocol)
+        client = AsyncTCPNetworkClient(address, protocol)
+        with client.backend().timeout(30):
             await client.wait_connected()
     except TimeoutError:
         print(f"Could not connect to {address} after 30 seconds")

@@ -8,6 +8,8 @@ import traceback
 from collections.abc import AsyncGenerator
 from typing import ClassVar
 
+import trio
+
 from easynetwork.exceptions import StreamProtocolParseError
 from easynetwork.lowlevel.socket import SocketAddress
 from easynetwork.servers import AsyncTCPNetworkServer
@@ -171,13 +173,43 @@ class ClientLoopInRequestHandler(AsyncStreamRequestHandler[Request, Response]):
                 await client.send_packet(Response())
 
 
-class TimeoutContextRequestHandler(AsyncStreamRequestHandler[Request, Response]):
+class TimeoutContextRequestHandlerAsyncIO(AsyncStreamRequestHandler[Request, Response]):
     async def handle(
         self,
         client: AsyncStreamClient[Response],
     ) -> AsyncGenerator[None, Request]:
         try:
             async with asyncio.timeout(30):
+                # The client has 30 seconds to send the request to the server.
+                request: Request = yield
+        except TimeoutError:
+            await client.send_packet(TimedOut())
+        else:
+            await client.send_packet(Response())
+
+
+class TimeoutContextRequestHandlerTrio(AsyncStreamRequestHandler[Request, Response]):
+    async def handle(
+        self,
+        client: AsyncStreamClient[Response],
+    ) -> AsyncGenerator[None, Request]:
+        try:
+            with trio.fail_after(30):
+                # The client has 30 seconds to send the request to the server.
+                request: Request = yield
+        except trio.TooSlowError:
+            await client.send_packet(TimedOut())
+        else:
+            await client.send_packet(Response())
+
+
+class TimeoutContextRequestHandlerWithClientBackend(AsyncStreamRequestHandler[Request, Response]):
+    async def handle(
+        self,
+        client: AsyncStreamClient[Response],
+    ) -> AsyncGenerator[None, Request]:
+        try:
+            with client.backend().timeout(30):
                 # The client has 30 seconds to send the request to the server.
                 request: Request = yield
         except TimeoutError:
@@ -252,7 +284,7 @@ class ClientConnectionAsyncGenRequestHandler(AsyncStreamRequestHandler[Request, 
         await client.send_packet(Response())
 
 
-class ServiceInitializationHookRequestHandler(AsyncStreamRequestHandler[Request, Response]):
+class ServiceInitializationHookRequestHandlerAsyncIO(AsyncStreamRequestHandler[Request, Response]):
     async def service_init(
         self,
         exit_stack: contextlib.AsyncExitStack,
@@ -267,6 +299,53 @@ class ServiceInitializationHookRequestHandler(AsyncStreamRequestHandler[Request,
     async def _service_actions(self) -> None:
         while True:
             await asyncio.sleep(1)
+
+            # Do some stuff each second in background
+            ...
+
+    def _service_quit(self) -> None:
+        print("Service stopped")
+
+
+class ServiceInitializationHookRequestHandlerTrio(AsyncStreamRequestHandler[Request, Response]):
+    async def service_init(
+        self,
+        exit_stack: contextlib.AsyncExitStack,
+        server: AsyncTCPNetworkServer[Request, Response],
+    ) -> None:
+        exit_stack.callback(self._service_quit)
+
+        self.background_tasks = await exit_stack.enter_async_context(trio.open_nursery())
+
+        self.background_tasks.start_soon(self._service_actions)
+
+    async def _service_actions(self) -> None:
+        while True:
+            await trio.sleep(1)
+
+            # Do some stuff each second in background
+            ...
+
+    def _service_quit(self) -> None:
+        print("Service stopped")
+
+
+class ServiceInitializationHookRequestHandlerWithServerBackend(AsyncStreamRequestHandler[Request, Response]):
+    async def service_init(
+        self,
+        exit_stack: contextlib.AsyncExitStack,
+        server: AsyncTCPNetworkServer[Request, Response],
+    ) -> None:
+        exit_stack.callback(self._service_quit)
+
+        self.backend = server.backend()
+        self.background_tasks = await exit_stack.enter_async_context(self.backend.create_task_group())
+
+        self.background_tasks.start_soon(self._service_actions)
+
+    async def _service_actions(self) -> None:
+        while True:
+            await self.backend.sleep(1)
 
             # Do some stuff each second in background
             ...

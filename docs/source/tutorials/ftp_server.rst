@@ -194,9 +194,15 @@ Start The Server
          :linenos:
          :caption: server.py
 
-   .. group-tab:: Asynchronous
+   .. group-tab:: Asynchronous (asyncio)
 
-      .. literalinclude:: ../_include/examples/tutorials/ftp_server/async_server.py
+      .. literalinclude:: ../_include/examples/tutorials/ftp_server/async_server_asyncio.py
+         :linenos:
+         :caption: server.py
+
+   .. group-tab:: Asynchronous (trio)
+
+      .. literalinclude:: ../_include/examples/tutorials/ftp_server/async_server_trio.py
          :linenos:
          :caption: server.py
 

@@ -4,6 +4,8 @@ import asyncio
 import socket
 from typing import Any
 
+import trio
+
 from easynetwork.clients import AsyncUDPNetworkClient
 from easynetwork.exceptions import DatagramProtocolParseError
 
@@ -23,7 +25,7 @@ async def recv_packet_example1(client: AsyncUDPNetworkClient[Any, Any]) -> None:
     print(f"Received packet: {packet!r}")
 
 
-async def recv_packet_example2(client: AsyncUDPNetworkClient[Any, Any]) -> None:
+async def recv_packet_example2_asyncio(client: AsyncUDPNetworkClient[Any, Any]) -> None:
     # [start]
     try:
         async with asyncio.timeout(30):
@@ -34,10 +36,58 @@ async def recv_packet_example2(client: AsyncUDPNetworkClient[Any, Any]) -> None:
         print(f"Received packet: {packet!r}")
 
 
-async def recv_packet_example3(client: AsyncUDPNetworkClient[Any, Any]) -> None:
+async def recv_packet_example2_trio(client: AsyncUDPNetworkClient[Any, Any]) -> None:
+    # [start]
+    try:
+        with trio.fail_after(30):
+            packet = await client.recv_packet()
+    except trio.TooSlowError:
+        print("Timed out")
+    else:
+        print(f"Received packet: {packet!r}")
+
+
+async def recv_packet_example2_backend_api(client: AsyncUDPNetworkClient[Any, Any]) -> None:
+    # [start]
+    try:
+        with client.backend().timeout(30):
+            packet = await client.recv_packet()
+    except TimeoutError:
+        print("Timed out")
+    else:
+        print(f"Received packet: {packet!r}")
+
+
+async def recv_packet_example3_asyncio(client: AsyncUDPNetworkClient[Any, Any]) -> None:
     # [start]
     try:
         async with asyncio.timeout(30):
+            packet = await client.recv_packet()
+    except DatagramProtocolParseError:
+        print("Received something, but was not valid")
+    except TimeoutError:
+        print("Timed out")
+    else:
+        print(f"Received packet: {packet!r}")
+
+
+async def recv_packet_example3_trio(client: AsyncUDPNetworkClient[Any, Any]) -> None:
+    # [start]
+    try:
+        with trio.fail_after(30):
+            packet = await client.recv_packet()
+    except DatagramProtocolParseError:
+        print("Received something, but was not valid")
+    except trio.TooSlowError:
+        print("Timed out")
+    else:
+        print(f"Received packet: {packet!r}")
+
+
+async def recv_packet_example3_backend_api(client: AsyncUDPNetworkClient[Any, Any]) -> None:
+    # [start]
+    try:
+        with client.backend().timeout(30):
             packet = await client.recv_packet()
     except DatagramProtocolParseError:
         print("Received something, but was not valid")

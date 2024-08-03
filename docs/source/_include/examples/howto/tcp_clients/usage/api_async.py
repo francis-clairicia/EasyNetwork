@@ -4,6 +4,8 @@ import asyncio
 import socket
 from typing import Any
 
+import trio
+
 from easynetwork.clients import AsyncTCPNetworkClient
 from easynetwork.exceptions import StreamProtocolParseError
 from easynetwork.protocol import StreamProtocol
@@ -25,7 +27,7 @@ async def recv_packet_example1(client: AsyncTCPNetworkClient[Any, Any]) -> None:
     print(f"Received packet: {packet!r}")
 
 
-async def recv_packet_example2(client: AsyncTCPNetworkClient[Any, Any]) -> None:
+async def recv_packet_example2_asyncio(client: AsyncTCPNetworkClient[Any, Any]) -> None:
     # [start]
     try:
         async with asyncio.timeout(30):
@@ -36,10 +38,58 @@ async def recv_packet_example2(client: AsyncTCPNetworkClient[Any, Any]) -> None:
         print(f"Received packet: {packet!r}")
 
 
-async def recv_packet_example3(client: AsyncTCPNetworkClient[Any, Any]) -> None:
+async def recv_packet_example2_trio(client: AsyncTCPNetworkClient[Any, Any]) -> None:
+    # [start]
+    try:
+        with trio.fail_after(30):
+            packet = await client.recv_packet()
+    except trio.TooSlowError:
+        print("Timed out")
+    else:
+        print(f"Received packet: {packet!r}")
+
+
+async def recv_packet_example2_backend_api(client: AsyncTCPNetworkClient[Any, Any]) -> None:
+    # [start]
+    try:
+        with client.backend().timeout(30):
+            packet = await client.recv_packet()
+    except TimeoutError:
+        print("Timed out")
+    else:
+        print(f"Received packet: {packet!r}")
+
+
+async def recv_packet_example3_asyncio(client: AsyncTCPNetworkClient[Any, Any]) -> None:
     # [start]
     try:
         async with asyncio.timeout(30):
+            packet = await client.recv_packet()
+    except StreamProtocolParseError:
+        print("Received something, but was not valid")
+    except TimeoutError:
+        print("Timed out")
+    else:
+        print(f"Received packet: {packet!r}")
+
+
+async def recv_packet_example3_trio(client: AsyncTCPNetworkClient[Any, Any]) -> None:
+    # [start]
+    try:
+        with trio.fail_after(30):
+            packet = await client.recv_packet()
+    except StreamProtocolParseError:
+        print("Received something, but was not valid")
+    except trio.TooSlowError:
+        print("Timed out")
+    else:
+        print(f"Received packet: {packet!r}")
+
+
+async def recv_packet_example3_backend_api(client: AsyncTCPNetworkClient[Any, Any]) -> None:
+    # [start]
+    try:
+        with client.backend().timeout(30):
             packet = await client.recv_packet()
     except StreamProtocolParseError:
         print("Received something, but was not valid")

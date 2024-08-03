@@ -25,8 +25,9 @@ class AsyncFTPServer(AsyncTCPNetworkServer[FTPRequest, FTPReply]):
 
 
 if __name__ == "__main__":
-    import asyncio
     import logging
+
+    import trio
 
     async def main() -> None:
         logging.basicConfig(
@@ -34,9 +35,9 @@ if __name__ == "__main__":
             format="[ %(levelname)s ] [ %(name)s ] %(message)s",
         )
         async with AsyncFTPServer() as server:
-            try:
-                await server.serve_forever()
-            except asyncio.CancelledError:
-                pass
+            await server.serve_forever()
 
-    asyncio.run(main())
+    try:
+        trio.run(main)
+    except* KeyboardInterrupt:
+        pass
