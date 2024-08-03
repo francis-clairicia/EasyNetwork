@@ -172,7 +172,7 @@ class StapledIncrementalPacketSerializer(  # type: ignore[misc]
         @property
         def received_packet_serializer(self) -> AbstractIncrementalPacketSerializer[Any, _T_ReceivedDTOPacket]: ...
 
-    def incremental_serialize(self, packet: _T_SentDTOPacket) -> Generator[bytes, None, None]:
+    def incremental_serialize(self, packet: _T_SentDTOPacket) -> Generator[bytes]:
         """
         Calls ``self.sent_packet_serializer.incremental_serialize(packet)``.
 

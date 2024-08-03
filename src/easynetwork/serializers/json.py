@@ -164,7 +164,7 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[Any, Any]):
         return self.__encoder.encode(packet).encode(self.__encoding, self.__unicode_errors)
 
     @final
-    def incremental_serialize(self, packet: Any) -> Generator[bytes, None, None]:
+    def incremental_serialize(self, packet: Any) -> Generator[bytes]:
         r"""
         Returns the JSON representation of the Python object `packet`.
 

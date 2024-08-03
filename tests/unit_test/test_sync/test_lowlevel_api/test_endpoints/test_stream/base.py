@@ -129,7 +129,7 @@ class BaseEndpointSendTests(BaseEndpointTests):
         mock_stream_transport.send_all_from_iterable.side_effect = lambda it, timeout: chunks.extend(it)
         expected_error = Exception("Error")
 
-        def side_effect(packet: Any) -> Generator[bytes, None, None]:
+        def side_effect(packet: Any) -> Generator[bytes]:
             raise expected_error
             yield  # type: ignore[unreachable]
 

@@ -91,7 +91,7 @@ class AutoSeparatedPacketSerializer(BufferedIncrementalPacketSerializer[_T_SentD
         raise NotImplementedError
 
     @final
-    def incremental_serialize(self, packet: _T_SentDTOPacket, /) -> Generator[bytes, None, None]:
+    def incremental_serialize(self, packet: _T_SentDTOPacket, /) -> Generator[bytes]:
         """
         Yields the data returned by :meth:`serialize` and appends `separator`.
 
@@ -246,7 +246,7 @@ class FixedSizePacketSerializer(BufferedIncrementalPacketSerializer[_T_SentDTOPa
         raise NotImplementedError
 
     @final
-    def incremental_serialize(self, packet: _T_SentDTOPacket, /) -> Generator[bytes, None, None]:
+    def incremental_serialize(self, packet: _T_SentDTOPacket, /) -> Generator[bytes]:
         """
         Yields the data returned by :meth:`serialize`.
 
@@ -462,7 +462,7 @@ class FileBasedPacketSerializer(BufferedIncrementalPacketSerializer[_T_SentDTOPa
         return packet
 
     @final
-    def incremental_serialize(self, packet: _T_SentDTOPacket, /) -> Generator[bytes, None, None]:
+    def incremental_serialize(self, packet: _T_SentDTOPacket, /) -> Generator[bytes]:
         """
         Calls :meth:`dump_to_file` and yields the result.
 

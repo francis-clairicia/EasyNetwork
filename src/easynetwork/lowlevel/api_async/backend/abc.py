@@ -724,7 +724,7 @@ class AsyncBackend(metaclass=ABCMeta):
         """
         raise NotImplementedError
 
-    def timeout(self, delay: float) -> AbstractContextManager[CancelScope]:
+    def timeout(self, delay: float) -> AbstractContextManager[CancelScope, None]:
         """
         Returns a :term:`context manager` that can be used to limit the amount of time spent waiting on something.
 
@@ -741,7 +741,7 @@ class AsyncBackend(metaclass=ABCMeta):
         """
         return _timeout_scope(self.move_on_after(delay))
 
-    def timeout_at(self, deadline: float) -> AbstractContextManager[CancelScope]:
+    def timeout_at(self, deadline: float) -> AbstractContextManager[CancelScope, None]:
         """
         Returns a :term:`context manager` that can be used to limit the amount of time spent waiting on something.
 

@@ -111,7 +111,7 @@ async def test____anext_without_asyncgen_hook____skips_firstiter_hook(
     firstiter_stub.return_value = None
     sys.set_asyncgen_hooks(firstiter=firstiter_stub)
 
-    async def async_generator_function() -> AsyncGenerator[int, None]:
+    async def async_generator_function() -> AsyncGenerator[int]:
         yield 42
 
     async_generator = async_generator_function()
@@ -131,7 +131,7 @@ async def test____anext_without_asyncgen_hook____remove_frame_on_error() -> None
     # Arrange
     exc = ValueError("abc")
 
-    async def async_generator_function() -> AsyncGenerator[int, None]:
+    async def async_generator_function() -> AsyncGenerator[int]:
         if False:
             yield 42  # type: ignore[unreachable]
         raise exc

@@ -133,7 +133,7 @@ class AsyncExecutor(Generic[_T_Executor]):
         backend = self.__backend
         return await _result_or_cancel(executor.submit(func, *args, **kwargs), backend)
 
-    def map(self, func: Callable[..., _T], *iterables: Iterable[Any]) -> AsyncGenerator[_T, None]:
+    def map(self, func: Callable[..., _T], *iterables: Iterable[Any]) -> AsyncGenerator[_T]:
         """
         Returns an asynchronous iterator equivalent to ``map(fn, iter)``.
 
@@ -160,7 +160,7 @@ class AsyncExecutor(Generic[_T_Executor]):
         backend = self.__backend
         fs = deque(executor.submit(self._setup_func(func), *args) for args in zip(*iterables))
 
-        async def result_iterator() -> AsyncGenerator[_T, None]:
+        async def result_iterator() -> AsyncGenerator[_T]:
             try:
                 while fs:
                     yield await _result_or_cancel(fs.popleft(), backend)

@@ -36,7 +36,7 @@ class MyJSONSerializer(AbstractIncrementalPacketSerializer[SentPacket, ReceivedP
         except (UnicodeError, json.JSONDecodeError) as exc:
             raise DeserializeError("JSON decode error") from exc
 
-    def incremental_serialize(self, packet: SentPacket) -> Generator[bytes, None, None]:
+    def incremental_serialize(self, packet: SentPacket) -> Generator[bytes]:
         yield self._dump(packet) + b"\r\n"
 
     def incremental_deserialize(self) -> Generator[None, bytes, tuple[ReceivedPacket, bytes]]:

@@ -23,7 +23,7 @@ class StringSerializer(BufferedIncrementalPacketSerializer[str, str, bytearray])
             raise TypeError("is not a string")
         return packet.encode(encoding=self.encoding)
 
-    def incremental_serialize(self, packet: str) -> Generator[bytes, None, None]:
+    def incremental_serialize(self, packet: str) -> Generator[bytes]:
         if not isinstance(packet, str):
             raise TypeError("is not a string")
         if "\n" in packet:
@@ -99,6 +99,6 @@ class BadSerializeStringSerializer(StringSerializer):
     def serialize(self, packet: str) -> bytes:
         raise SystemError("CRASH")
 
-    def incremental_serialize(self, packet: str) -> Generator[bytes, None, None]:
+    def incremental_serialize(self, packet: str) -> Generator[bytes]:
         raise SystemError("CRASH")
         yield b"chunk"  # type: ignore[unreachable]

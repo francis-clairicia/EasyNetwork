@@ -43,7 +43,7 @@ async def test____build_lowlevel_datagram_server_handler____skip_initialization(
     # Arrange
 
     @contextlib.asynccontextmanager
-    async def initializer(client: Any) -> AsyncGenerator[None, None]:
+    async def initializer(client: Any) -> AsyncGenerator[None]:
         yield
 
     ctx = mocker.sentinel.ctx
@@ -60,7 +60,7 @@ async def test____build_lowlevel_stream_server_handler____skip_initialization(mo
     # Arrange
 
     @contextlib.asynccontextmanager
-    async def initializer(client: Any) -> AsyncGenerator[None, None]:
+    async def initializer(client: Any) -> AsyncGenerator[None]:
         yield
 
     ctx = mocker.sentinel.ctx

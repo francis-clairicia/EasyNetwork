@@ -44,7 +44,7 @@ class StreamDataProducer(Generic[_T_SentPacket]):
         _check_any_protocol(protocol)
         self.__protocol: AnyStreamProtocolType[_T_SentPacket, Any] = protocol
 
-    def generate(self, packet: _T_SentPacket) -> Generator[bytes, None, None]:
+    def generate(self, packet: _T_SentPacket) -> Generator[bytes]:
         try:
             yield from self.__protocol.generate_chunks(packet)
         except Exception as exc:
