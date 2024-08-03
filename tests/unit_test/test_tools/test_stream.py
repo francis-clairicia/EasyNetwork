@@ -53,7 +53,7 @@ class TestStreamDataProducer:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        def side_effect(_: Any) -> Generator[bytes, None, None]:
+        def side_effect(_: Any) -> Generator[bytes]:
             yield b"chunk 1"
             yield b"chunk 2"
 
@@ -78,7 +78,7 @@ class TestStreamDataProducer:
         # Arrange
         expected_error = Exception("Error")
 
-        def side_effect(_: Any) -> Generator[bytes, None, None]:
+        def side_effect(_: Any) -> Generator[bytes]:
             if before_yielding:
                 raise expected_error
             yield b"chunk"

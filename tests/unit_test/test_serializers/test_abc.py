@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 
 @final
 class _IncrementalPacketSerializerForTest(AbstractIncrementalPacketSerializer[Any, Any]):
-    def incremental_serialize(self, packet: Any) -> Generator[bytes, None, None]:
+    def incremental_serialize(self, packet: Any) -> Generator[bytes]:
         raise NotImplementedError
 
     def incremental_deserialize(self) -> Generator[None, bytes, tuple[Any, bytes]]:
@@ -50,7 +50,7 @@ class TestAbstractIncrementalPacketSerializer:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        def side_effect(_: Any) -> Generator[bytes, None, None]:
+        def side_effect(_: Any) -> Generator[bytes]:
             yield b"a"
             yield b"b"
             yield b"c"

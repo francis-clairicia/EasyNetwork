@@ -159,7 +159,7 @@ class AbstractCompressorSerializer(BufferedIncrementalPacketSerializer[_T_SentDT
         return compressor.compress(self.__serializer.serialize(packet)) + compressor.flush()
 
     @final
-    def incremental_serialize(self, packet: _T_SentDTOPacket) -> Generator[bytes, None, None]:
+    def incremental_serialize(self, packet: _T_SentDTOPacket) -> Generator[bytes]:
         """
         Serializes `packet` and yields the compressed data parts.
 

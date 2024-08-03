@@ -125,7 +125,7 @@ class StringLineSerializer(BufferedIncrementalPacketSerializer[str, str, bytearr
         return packet.encode(self.__encoding, self.__unicode_errors)
 
     @final
-    def incremental_serialize(self, packet: str) -> Generator[bytes, None, None]:
+    def incremental_serialize(self, packet: str) -> Generator[bytes]:
         """
         Encodes the given string to bytes and appends `separator`.
 

@@ -80,7 +80,7 @@ class AbstractIncrementalPacketSerializer(AbstractPacketSerializer[_T_SentDTOPac
     __slots__ = ()
 
     @abstractmethod
-    def incremental_serialize(self, packet: _T_SentDTOPacket, /) -> Generator[bytes, None, None]:
+    def incremental_serialize(self, packet: _T_SentDTOPacket, /) -> Generator[bytes]:
         """
         Returns the byte representation of the Python object `packet`.
 

@@ -21,7 +21,7 @@ ROOT_DIR = pathlib.Path(__file__).parent
 class NoSerializer(BufferedIncrementalPacketSerializer[bytes, bytes, memoryview]):
     __slots__ = ()
 
-    def incremental_serialize(self, packet: bytes) -> Generator[bytes, None, None]:
+    def incremental_serialize(self, packet: bytes) -> Generator[bytes]:
         yield packet
 
     def incremental_deserialize(self) -> Generator[None, bytes, tuple[bytes, bytes]]:

@@ -110,7 +110,7 @@ class BaseTestWithStreamProtocol:
         mock_buffered_stream_protocol: MagicMock,
         mocker: MockerFixture,
     ) -> MagicMock:
-        def generate_chunks_side_effect(packet: Any) -> Generator[bytes, None, None]:
+        def generate_chunks_side_effect(packet: Any) -> Generator[bytes]:
             yield str(packet).removeprefix("sentinel.").encode("ascii") + b"\n"
 
         def build_packet_from_buffer_side_effect(buffer: memoryview) -> Generator[None, int, tuple[Any, bytes]]:
@@ -142,7 +142,7 @@ class BaseTestWithStreamProtocol:
         mock_buffered_stream_protocol: MagicMock,
         mocker: MockerFixture,
     ) -> MagicMock:
-        def generate_chunks_side_effect(packet: Any) -> Generator[bytes, None, None]:
+        def generate_chunks_side_effect(packet: Any) -> Generator[bytes]:
             yield str(packet).removeprefix("sentinel.").encode("ascii") + b"\n"
 
         def build_packet_from_chunks_side_effect() -> Generator[None, bytes, tuple[Any, bytes]]:

@@ -165,7 +165,7 @@ class BufferedStreamProtocol(Generic[_T_SentPacket, _T_ReceivedPacket, _T_Buffer
         """
         return self.__serializer.create_deserializer_buffer(sizehint)
 
-    def generate_chunks(self, packet: _T_SentPacket) -> Generator[bytes, None, None]:
+    def generate_chunks(self, packet: _T_SentPacket) -> Generator[bytes]:
         """
         Serializes a Python object to a raw :term:`packet` part by part.
 
@@ -256,7 +256,7 @@ class StreamProtocol(Generic[_T_SentPacket, _T_ReceivedPacket]):
         self.__serializer: AbstractIncrementalPacketSerializer[Any, Any] = serializer
         self.__converter: AbstractPacketConverterComposite[_T_SentPacket, _T_ReceivedPacket, Any, Any] | None = converter
 
-    def generate_chunks(self, packet: _T_SentPacket) -> Generator[bytes, None, None]:
+    def generate_chunks(self, packet: _T_SentPacket) -> Generator[bytes]:
         """
         Serializes a Python object to a raw :term:`packet` part by part.
 

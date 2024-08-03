@@ -192,7 +192,7 @@ class _BaseTestAnyStreamProtocol:
     sentinel: Any
 
     @pytest.fixture(autouse=True)
-    def _bind_mocker_sentinel(self, mocker: MockerFixture) -> Generator[None, None, None]:
+    def _bind_mocker_sentinel(self, mocker: MockerFixture) -> Generator[None]:
         self.sentinel = mocker.sentinel
         yield
         del self.sentinel
@@ -212,7 +212,7 @@ class _BaseTestAnyStreamProtocol:
             case _:
                 raise AssertionError("Invalid param")
 
-    def generate_chunk_side_effect(self, packet: Any) -> Generator[bytes, None, None]:
+    def generate_chunk_side_effect(self, packet: Any) -> Generator[bytes]:
         yield self.sentinel.chunk_a
         yield self.sentinel.chunk_b
         yield self.sentinel.chunk_c
