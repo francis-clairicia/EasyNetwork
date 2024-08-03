@@ -82,7 +82,8 @@ class EchoRequestHandler(AsyncStreamRequestHandler[RequestType, ResponseType]):
         self,
         client: AsyncStreamClient[ResponseType],
     ) -> AsyncGenerator[None, RequestType]:
-        data: Any = yield  # A JSON request has been sent by this client
+        # A JSON request has been sent by this client
+        data: Any = yield
 
         self.logger.info(f"{client!r} sent {data!r}")
 
@@ -107,14 +108,14 @@ async def main() -> None:
     )
 
     async with AsyncTCPNetworkServer(host, port, protocol, handler) as server:
-        try:
-            await server.serve_forever()
-        except asyncio.CancelledError:
-            pass
+        await server.serve_forever()
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except* KeyboardInterrupt:
+        pass
 ```
 
 ### TCP Echo client with JSON data
@@ -145,8 +146,7 @@ if __name__ == "__main__":
     main()
 ```
 
-<details markdown="1">
-<summary>Asynchronous version ( with <code>async def</code> )</summary>
+#### Asynchronous version ( with `async def` )
 
 ```py
 import asyncio
@@ -158,7 +158,7 @@ from easynetwork.clients import AsyncTCPNetworkClient
 async def main() -> None:
     async with AsyncTCPNetworkClient(("localhost", 9000), JSONProtocol()) as client:
         await client.send_packet({"data": {"my_body": ["as json"]}})
-        response = await client.recv_packet()  # response should be the sent dictionary
+        response = await client.recv_packet()
         print(response)  # prints {'data': {'my_body': ['as json']}}
 
 
@@ -171,6 +171,6 @@ if __name__ == "__main__":
 ## License
 This project is licensed under the terms of the [Apache Software License 2.0](https://github.com/francis-clairicia/EasyNetwork/blob/main/LICENSE).
 
-### `easynetwork.lowlevel.typed_attr`
+### AnyIO's typed attributes
 
-AnyIO's typed attributes incorporated in `easynetwork.lowlevel.typed_attr` from [anyio 4.2](https://github.com/agronholm/anyio/tree/4.2.0), which is distributed under the [MIT license](https://github.com/agronholm/anyio/blob/4.2.0/LICENSE).
+AnyIO's typed attributes is incorporated in `easynetwork.lowlevel.typed_attr` from [anyio 4.2](https://github.com/agronholm/anyio/tree/4.2.0), which is distributed under the [MIT license](https://github.com/agronholm/anyio/blob/4.2.0/LICENSE).
