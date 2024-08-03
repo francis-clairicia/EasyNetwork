@@ -398,7 +398,7 @@ class CancelScope(metaclass=ABCMeta):
 
             scope.reschedule(scope.when() + 30)
 
-        It is also possible to remove the timeout by deleting the attribute::
+        It is also possible to remove the timeout by "deleting" the attribute::
 
             del scope.deadline
         """

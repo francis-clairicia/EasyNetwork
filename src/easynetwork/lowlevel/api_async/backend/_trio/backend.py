@@ -53,6 +53,9 @@ class TrioBackend(AbstractAsyncBackend):
         self.__trio = trio
         self.__dns_resolver = TrioDNSResolver()
 
+    def __repr__(self) -> str:
+        return f"<{type(self).__qualname__} object at {id(self):#x}>"
+
     def bootstrap(
         self,
         coro_func: Callable[[*_T_PosArgs], Coroutine[Any, Any, _T]],

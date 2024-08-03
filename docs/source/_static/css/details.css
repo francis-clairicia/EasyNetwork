@@ -1,3 +1,11 @@
 details {
     margin-bottom: 1rem;
 }
+
+details > summary {
+    cursor: pointer;
+}
+
+details[open] > summary {
+    margin-bottom: 1rem;
+}

@@ -118,6 +118,7 @@ intersphinx_mapping = {
     "cbor2": ("https://cbor2.readthedocs.io/en/stable", None),
     "msgpack": ("https://msgpack-python.readthedocs.io/en/stable", None),
     "trio": ("https://trio.readthedocs.io/en/stable", None),
+    "anyio": ("https://anyio.readthedocs.io/en/stable/", None),
 }
 
 
