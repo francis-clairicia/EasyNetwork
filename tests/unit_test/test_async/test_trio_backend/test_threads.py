@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from trio import Nursery
 
 
-@pytest.mark.feature_trio
+@pytest.mark.feature_trio(async_test_auto_mark=True)
 class TestRunSyncSoonWaiter:
 
     async def test____aclose____wait_for_thread_to_call_detach(self, nursery: Nursery) -> None:

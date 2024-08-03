@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
 
-@pytest.mark.feature_trio
+@pytest.mark.feature_trio(async_test_auto_mark=True)
 class TestTrioDatagramSocketAdapter(BaseTestSocket):
     @pytest.fixture
     @classmethod
@@ -149,7 +149,7 @@ class TestTrioDatagramSocketAdapter(BaseTestSocket):
         mock_trio_udp_socket.fileno.assert_called_once()
 
 
-@pytest.mark.feature_trio
+@pytest.mark.feature_trio(async_test_auto_mark=True)
 class TestTrioDatagramListenerSocketAdapter(BaseTestSocket):
     @pytest.fixture
     @classmethod

@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 _TRIO_BACKEND_MODULE: Final[str] = "easynetwork.lowlevel.api_async.backend._trio"
 
 
-@pytest.mark.feature_trio
+@pytest.mark.feature_trio(async_test_auto_mark=True)
 class TestTrioBackend:
     @pytest.fixture
     @staticmethod

@@ -49,7 +49,7 @@ class BaseTestTransportStreamSocket(BaseTestSocket):
         return exc
 
 
-@pytest.mark.feature_trio
+@pytest.mark.feature_trio(async_test_auto_mark=True)
 class TestTrioStreamSocketAdapter(BaseTestTransportStreamSocket, MixinTestSocketSendMSG):
     @pytest.fixture
     @classmethod
@@ -493,7 +493,7 @@ class TestTrioStreamSocketAdapter(BaseTestTransportStreamSocket, MixinTestSocket
         mock_trio_tcp_socket.fileno.assert_called_once()
 
 
-@pytest.mark.feature_trio
+@pytest.mark.feature_trio(async_test_auto_mark=True)
 class TestTrioListenerSocketAdapter(BaseTestTransportStreamSocket):
     @pytest.fixture
     @classmethod

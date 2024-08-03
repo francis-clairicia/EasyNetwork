@@ -29,14 +29,11 @@ def __has_marker(item: pytest.Item, name: str) -> bool:
     return item.get_closest_marker(name) is not None
 
 
-def __has_feature_marker(item: pytest.Item, name: str) -> bool:
-    return __has_marker(item, f"feature_{name}")
-
-
 def _ensure_trio_marker_consistency(item: pytest.Function) -> None:
-    if __has_feature_marker(item, "trio"):
+    if (feature_trio_marker := item.get_closest_marker("feature_trio")) is not None:
         if item.config.pluginmanager.has_plugin("trio") and not __has_marker(item, "trio"):
-            if inspect.iscoroutinefunction(item.obj):
+            auto_mark = feature_trio_marker.kwargs.get("async_test_auto_mark", False)
+            if auto_mark and inspect.iscoroutinefunction(item.obj):
                 item.add_marker(pytest.mark.trio)
     elif __has_marker(item, "trio"):
         item.add_marker(pytest.mark.feature_trio)

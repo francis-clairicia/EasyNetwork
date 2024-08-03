@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from trio import SocketListener, SocketStream
 
 
-@pytest.mark.feature_trio
+@pytest.mark.feature_trio(async_test_auto_mark=True)
 class TestTrioDNSResolver:
     @trio_fixture
     @staticmethod
