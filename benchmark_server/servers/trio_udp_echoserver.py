@@ -21,17 +21,15 @@ async def echo_server(address: tuple[str, int]) -> NoReturn:
     await sock.bind(address)
     LOGGER.info(f"Server listening at {address}")
 
-    lock = trio.Lock()
     with sock:
         async with trio.open_nursery() as nursery:
             while True:
                 datagram, addr = await sock.recvfrom(65536)
-                nursery.start_soon(_echo_client, sock, datagram, addr, lock)
+                nursery.start_soon(_echo_client, sock, datagram, addr)
 
 
-async def _echo_client(sock: trio.socket.SocketType, datagram: bytes, addr: Any, lock: trio.Lock) -> None:
-    async with lock:
-        await sock.sendto(datagram, addr)
+async def _echo_client(sock: trio.socket.SocketType, datagram: bytes, addr: Any) -> None:
+    await sock.sendto(datagram, addr)
 
 
 def main() -> None:
