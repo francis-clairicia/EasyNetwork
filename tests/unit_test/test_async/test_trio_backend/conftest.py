@@ -52,7 +52,7 @@ def mock_trio_socket_factory(mocker: MockerFixture) -> Callable[[], MagicMock]:
 
         mock_socket.close.side_effect = close_side_effect
         mock_socket.detach.side_effect = detached_side_effect
-        for async_method in ("recv", "recv_into", "recvfrom", "recvfrom_into", "send", "sendmsg"):
+        for async_method in ("recv", "recv_into", "recvfrom", "recvfrom_into", "send", "sendto", "sendmsg"):
             if hasattr(mock_socket, async_method):
                 setattr(
                     mock_socket,

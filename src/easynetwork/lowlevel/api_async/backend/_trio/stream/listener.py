@@ -53,7 +53,8 @@ class TrioListenerSocketAdapter(AsyncListener[TrioStreamSocketAdapter]):
     def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
         try:
             listener = self.__listener
-        except AttributeError:
+        except AttributeError:  # pragma: no cover
+            # Technically possible but not with the common usage because this constructor does not raise.
             listener = None
         if listener is not None and listener.socket.fileno() >= 0:
             _warn(f"unclosed listener {self!r}", ResourceWarning, source=self)

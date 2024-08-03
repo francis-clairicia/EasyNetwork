@@ -909,6 +909,7 @@ class AsyncBackend(metaclass=ABCMeta):
 
         # task_group should raise an ExceptionGroup if one of the coroutine raises an exception
         # At this point, all the tasks should be done and join() would neither block nor raise.
+        assert all(child.done() for child in children)  # nosec assert_used
         return [await child.join() for child in children]
 
     @abstractmethod

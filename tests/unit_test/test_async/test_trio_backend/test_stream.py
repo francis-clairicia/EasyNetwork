@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import contextlib
 import errno
 import os
-from collections.abc import AsyncIterator, Callable, Iterable, Iterator
-from typing import TYPE_CHECKING
+from collections.abc import AsyncIterator, Callable, Coroutine, Iterable, Iterator
+from typing import TYPE_CHECKING, Any
 
 from easynetwork.lowlevel.api_async.backend._trio.backend import TrioBackend
+from easynetwork.lowlevel.api_async.backend.abc import TaskGroup
 from easynetwork.lowlevel.constants import CLOSED_SOCKET_ERRNOS
 from easynetwork.lowlevel.socket import SocketAttribute, SocketProxy
 
@@ -15,8 +17,9 @@ from ....fixtures.trio import trio_fixture
 from ...base import BaseTestSocket, MixinTestSocketSendMSG
 
 if TYPE_CHECKING:
-    from unittest.mock import MagicMock
+    from unittest.mock import AsyncMock, MagicMock
 
+    from easynetwork.lowlevel.api_async.backend._trio.stream.listener import TrioListenerSocketAdapter
     from easynetwork.lowlevel.api_async.backend._trio.stream.socket import TrioStreamSocketAdapter
 
     from _typeshed import ReadableBuffer
@@ -479,11 +482,206 @@ class TestTrioStreamSocketAdapter(BaseTestTransportStreamSocket, MixinTestSocket
         # Arrange
 
         # Act & Assert
-        assert isinstance(transport.extra(SocketAttribute.socket), SocketProxy)
+        trsock = transport.extra(SocketAttribute.socket)
+        assert isinstance(trsock, SocketProxy)
         assert transport.extra(SocketAttribute.family) == mock_trio_tcp_socket.family
         assert transport.extra(SocketAttribute.sockname) == ("127.0.0.1", 11111)
         assert transport.extra(SocketAttribute.peername) == ("127.0.0.1", 12345)
 
         mock_trio_tcp_socket.reset_mock()
-        transport.extra(SocketAttribute.socket).fileno()
+        trsock.fileno()
         mock_trio_tcp_socket.fileno.assert_called_once()
+
+
+@pytest.mark.feature_trio
+class TestTrioListenerSocketAdapter(BaseTestTransportStreamSocket):
+    @pytest.fixture
+    @classmethod
+    def mock_trio_tcp_listener_socket(
+        cls,
+        mock_trio_tcp_socket_factory: Callable[[], MagicMock],
+    ) -> MagicMock:
+        mock_socket = mock_trio_tcp_socket_factory()
+        cls.set_local_address_to_socket_mock(mock_socket, mock_socket.family, ("127.0.0.1", 11111))
+        cls.configure_socket_mock_to_raise_ENOTCONN(mock_socket)
+        return mock_socket
+
+    @pytest.fixture
+    @staticmethod
+    def mock_trio_socket_listener(
+        mock_trio_tcp_listener_socket: MagicMock,
+        mock_trio_socket_listener_factory: Callable[[MagicMock], MagicMock],
+    ) -> MagicMock:
+        mock_trio_socket_listener = mock_trio_socket_listener_factory(mock_trio_tcp_listener_socket)
+        assert mock_trio_socket_listener.socket is mock_trio_tcp_listener_socket
+        return mock_trio_socket_listener
+
+    @pytest.fixture
+    @staticmethod
+    def handler(mocker: MockerFixture) -> AsyncMock:
+        handler = mocker.async_stub("handler")
+        handler.return_value = None
+        return handler
+
+    @trio_fixture
+    @staticmethod
+    async def listener(
+        trio_backend: TrioBackend,
+        mock_trio_socket_listener: MagicMock,
+    ) -> AsyncIterator[TrioListenerSocketAdapter]:
+        from easynetwork.lowlevel.api_async.backend._trio.stream.listener import TrioListenerSocketAdapter
+
+        listener = TrioListenerSocketAdapter(trio_backend, mock_trio_socket_listener)
+        async with listener:
+            yield listener
+
+    @staticmethod
+    def _make_accept_side_effect(
+        side_effect: Any,
+        mocker: MockerFixture,
+        sleep_time: float = 0,
+    ) -> Callable[[], Coroutine[Any, Any, MagicMock]]:
+        import trio
+
+        accept_cb = mocker.AsyncMock(side_effect=side_effect)
+
+        async def accept_side_effect() -> MagicMock:
+            await trio.sleep(sleep_time)
+            return await accept_cb()
+
+        return accept_side_effect
+
+    @staticmethod
+    async def _get_cancelled_exc() -> BaseException:
+        import outcome
+        import trio
+
+        with trio.move_on_after(0):
+            result = await outcome.acapture(trio.sleep_forever)
+
+        assert isinstance(result, outcome.Error)
+        return result.error.with_traceback(None)
+
+    async def test____dunder_del____ResourceWarning(
+        self,
+        trio_backend: TrioBackend,
+        mock_trio_socket_listener: MagicMock,
+    ) -> None:
+        # Arrange
+        from easynetwork.lowlevel.api_async.backend._trio.stream.listener import TrioListenerSocketAdapter
+
+        listener = TrioListenerSocketAdapter(trio_backend, mock_trio_socket_listener)
+
+        # Act & Assert
+        with pytest.warns(ResourceWarning, match=r"^unclosed listener .+$"):
+            del listener
+
+        mock_trio_socket_listener.socket.close.assert_called()
+
+    async def test____aclose____close_socket(
+        self,
+        listener: TrioListenerSocketAdapter,
+        mock_trio_socket_listener: MagicMock,
+    ) -> None:
+        # Arrange
+        assert not listener.is_closing()
+
+        # Act
+        await listener.aclose()
+
+        # Assert
+        assert listener.is_closing()
+        mock_trio_socket_listener.aclose.assert_awaited_once_with()
+
+    @pytest.mark.parametrize("external_group", [True, False], ids=lambda p: f"external_group=={p}")
+    async def test____serve____default(
+        self,
+        trio_backend: TrioBackend,
+        listener: TrioListenerSocketAdapter,
+        external_group: bool,
+        handler: AsyncMock,
+        mock_trio_socket_listener: MagicMock,
+        mock_trio_socket_stream_factory: Callable[[], MagicMock],
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        from easynetwork.lowlevel.api_async.backend._trio.stream.socket import TrioStreamSocketAdapter
+
+        import trio
+
+        accepted_client_transport = mocker.NonCallableMagicMock(spec=TrioStreamSocketAdapter)
+        accepted_client_stream = mock_trio_socket_stream_factory()
+        mock_trio_socket_listener.accept.side_effect = self._make_accept_side_effect(
+            [accepted_client_stream, (await self._get_cancelled_exc())],
+            mocker,
+            sleep_time=0.1,
+        )
+        mock_TrioStreamSocketAdapter: MagicMock = mocker.patch(
+            "easynetwork.lowlevel.api_async.backend._trio.stream.listener.TrioStreamSocketAdapter",
+            side_effect=[accepted_client_transport],
+        )
+
+        # Act
+        task_group: TaskGroup | None
+        async with trio_backend.create_task_group() if external_group else contextlib.nullcontext() as task_group:  # type: ignore[attr-defined]
+            with pytest.raises(trio.Cancelled):
+                await listener.serve(handler, task_group)
+
+        # Assert
+        mock_TrioStreamSocketAdapter.assert_called_once_with(trio_backend, accepted_client_stream)
+        handler.assert_awaited_once_with(accepted_client_transport)
+
+    @pytest.mark.parametrize("closed_socket_errno", sorted(CLOSED_SOCKET_ERRNOS), ids=errno.errorcode.__getitem__)
+    async def test____serve____convert_trio_ClosedResourceError(
+        self,
+        closed_socket_errno: int,
+        trio_backend: TrioBackend,
+        listener: TrioListenerSocketAdapter,
+        handler: AsyncMock,
+        mock_trio_socket_listener: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_trio_socket_listener.accept.side_effect = self._make_accept_side_effect(
+            self._make_closed_resource_error(closed_socket_errno),
+            mocker,
+            sleep_time=0.1,
+        )
+
+        # Act
+        async with trio_backend.create_task_group() as task_group:
+            with pytest.raises(OSError) as exc_info:
+                await listener.serve(handler, task_group)
+
+        # Assert
+        assert exc_info.value.errno == errno.EBADF
+        handler.assert_not_awaited()
+
+    async def test____get_backend____returns_linked_instance(
+        self,
+        trio_backend: TrioBackend,
+        listener: TrioListenerSocketAdapter,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        assert listener.backend() is trio_backend
+
+    async def test____extra_attributes____returns_socket_info(
+        self,
+        listener: TrioListenerSocketAdapter,
+        mock_trio_tcp_listener_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        trsock = listener.extra(SocketAttribute.socket)
+        assert isinstance(trsock, SocketProxy)
+        assert listener.extra(SocketAttribute.family) == mock_trio_tcp_listener_socket.family
+        assert listener.extra(SocketAttribute.sockname) == ("127.0.0.1", 11111)
+        assert listener.extra(SocketAttribute.peername, mocker.sentinel.no_value) is mocker.sentinel.no_value
+
+        mock_trio_tcp_listener_socket.reset_mock()
+        trsock.fileno()
+        mock_trio_tcp_listener_socket.fileno.assert_called_once()
