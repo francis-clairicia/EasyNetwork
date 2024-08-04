@@ -361,12 +361,13 @@ class FileBasedPacketSerializer(BufferedIncrementalPacketSerializer[_T_SentDTOPa
     Base class for APIs requiring a :std:term:`file object` for serialization/deserialization.
     """
 
-    __slots__ = ("__expected_errors", "__debug")
+    __slots__ = ("__expected_errors", "__limit", "__debug")
 
     def __init__(
         self,
         expected_load_error: type[Exception] | tuple[type[Exception], ...],
         *,
+        limit: int = DEFAULT_SERIALIZER_LIMIT,
         debug: bool = False,
         **kwargs: Any,
     ) -> None:
@@ -374,6 +375,7 @@ class FileBasedPacketSerializer(BufferedIncrementalPacketSerializer[_T_SentDTOPa
         Parameters:
             expected_load_error: Errors that can be raised by :meth:`load_from_file` implementation,
                                  which must be considered as deserialization errors.
+            limit: Maximum buffer size.
             debug: If :data:`True`, add information to :exc:`.DeserializeError` via the ``error_info`` attribute.
             kwargs: Extra options given to ``super().__init__()``.
         """
@@ -381,6 +383,11 @@ class FileBasedPacketSerializer(BufferedIncrementalPacketSerializer[_T_SentDTOPa
         if not isinstance(expected_load_error, tuple):
             expected_load_error = (expected_load_error,)
         assert all(issubclass(e, Exception) for e in expected_load_error)  # nosec assert_used
+
+        if limit <= 0:
+            raise ValueError("limit must be a positive integer")
+
+        self.__limit: int = limit
         self.__expected_errors: tuple[type[Exception], ...] = expected_load_error
         self.__debug: bool = bool(debug)
 
@@ -412,24 +419,26 @@ class FileBasedPacketSerializer(BufferedIncrementalPacketSerializer[_T_SentDTOPa
         """
         raise NotImplementedError
 
-    @final
     def serialize(self, packet: _T_SentDTOPacket, /) -> bytes:
         """
-        Calls :meth:`dump_to_file` and returns the result.
+        Returns the byte representation of the Python object `packet`.
+
+        By default, this method uses :meth:`dump_to_file`, but it can be overriden for speicific usage.
 
         See :meth:`.AbstractPacketSerializer.serialize` documentation for details.
 
         Raises:
-            Exception: Any error raised by :meth:`dump_to_file`.
+            Exception: Any error raised by :meth:`dump_to_bytes`.
         """
         with BytesIO() as buffer:
             self.dump_to_file(packet, buffer)
             return buffer.getvalue()
 
-    @final
     def deserialize(self, data: bytes, /) -> _T_ReceivedDTOPacket:
         """
-        Calls :meth:`load_from_file` and returns the result.
+        Creates a Python object representing the raw :term:`packet` from `data`.
+
+        By default, this method uses :meth:`load_from_file`, but it can be overriden for speicific usage.
 
         See :meth:`.AbstractPacketSerializer.deserialize` documentation for details.
 
@@ -499,6 +508,7 @@ class FileBasedPacketSerializer(BufferedIncrementalPacketSerializer[_T_SentDTOPa
         """
         See :meth:`.BufferedIncrementalPacketSerializer.create_deserializer_buffer` documentation for details.
         """
+        sizehint = min(sizehint, self.__limit)
         return memoryview(bytearray(sizehint))
 
     @final
@@ -528,10 +538,11 @@ class FileBasedPacketSerializer(BufferedIncrementalPacketSerializer[_T_SentDTOPa
                 if not initial:
                     buffer.write((yield))
                     buffer.seek(0)
+                self.__check_file_buffer_limit(buffer)
                 try:
                     packet: _T_ReceivedDTOPacket = self.load_from_file(buffer)
                 except EOFError:
-                    continue
+                    pass
                 except self.__expected_errors as exc:
                     msg = f"Deserialize error: {exc}"
                     if self.debug:
@@ -546,6 +557,11 @@ class FileBasedPacketSerializer(BufferedIncrementalPacketSerializer[_T_SentDTOPa
                 finally:
                     initial = False
 
+    def __check_file_buffer_limit(self, file: BytesIO) -> None:
+        with file.getbuffer() as buffer_view:
+            if buffer_view.nbytes > self.__limit:
+                raise LimitOverrunError("chunk exceeded buffer limit", buffer_view, consumed=buffer_view.nbytes)
+
     @property
     @final
     def debug(self) -> bool:
@@ -553,6 +569,14 @@ class FileBasedPacketSerializer(BufferedIncrementalPacketSerializer[_T_SentDTOPa
         The debug mode flag. Read-only attribute.
         """
         return self.__debug
+
+    @property
+    @final
+    def buffer_limit(self) -> int:
+        """
+        Maximum buffer size. Read-only attribute.
+        """
+        return self.__limit
 
 
 def _wrap_generic_incremental_deserialize(

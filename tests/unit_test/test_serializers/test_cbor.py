@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, final
 
+from easynetwork.lowlevel.constants import DEFAULT_SERIALIZER_LIMIT
 from easynetwork.serializers.cbor import CBORDecoderConfig, CBOREncoderConfig, CBORSerializer
 
 import pytest
@@ -88,7 +89,17 @@ class TestCBORSerializer(BaseSerializerConfigInstanceCheck):
             str_errors=mocker.sentinel.str_errors,
         )
 
-    @pytest.mark.parametrize("method", ["serialize", "incremental_serialize", "deserialize", "incremental_deserialize"])
+    @pytest.mark.parametrize(
+        "method",
+        [
+            "serialize",
+            "incremental_serialize",
+            "deserialize",
+            "incremental_deserialize",
+            "create_deserializer_buffer",
+            "buffered_incremental_deserialize",
+        ],
+    )
     def test____base_class____implements_default_methods(self, method: str) -> None:
         # Arrange
         from easynetwork.serializers.base_stream import FileBasedPacketSerializer
@@ -96,14 +107,30 @@ class TestCBORSerializer(BaseSerializerConfigInstanceCheck):
         # Act & Assert
         assert getattr(CBORSerializer, method) is getattr(FileBasedPacketSerializer, method)
 
-    def test____properties____right_values(self, debug_mode: bool) -> None:
+    @pytest.mark.parametrize("limit", [147258369, None], ids=lambda p: f"limit=={p}")
+    def test____properties____right_values(self, debug_mode: bool, limit: int | None) -> None:
         # Arrange
 
         # Act
-        serializer = CBORSerializer(debug=debug_mode)
+        if limit is None:
+            serializer = CBORSerializer(debug=debug_mode)
+        else:
+            serializer = CBORSerializer(debug=debug_mode, limit=limit)
 
         # Assert
         assert serializer.debug is debug_mode
+        if limit is None:
+            assert serializer.buffer_limit == DEFAULT_SERIALIZER_LIMIT
+        else:
+            assert serializer.buffer_limit == limit
+
+    @pytest.mark.parametrize("limit", [0, -42], ids=lambda p: f"limit=={p}")
+    def test____dunder_init____invalid_limit(self, limit: int) -> None:
+        # Arrange
+
+        # Act & Assert
+        with pytest.raises(ValueError, match=r"^limit must be a positive integer$"):
+            CBORSerializer(limit=limit)
 
     def test____dump_to_file____with_config(
         self,

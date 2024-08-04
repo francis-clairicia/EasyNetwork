@@ -23,11 +23,14 @@ TOO_BIG_JSON_SERIALIZED = json.dumps(TOO_BIG_JSON, ensure_ascii=False).encode("u
 class TestJSONSerializer(BaseTestIncrementalSerializer, BaseTestSerializerExtraData):
     #### Serializers
 
-    ENCODER_CONFIG = JSONEncoderConfig(ensure_ascii=False)
-
     BUFFER_LIMIT = 14 * 1024  # 14KiB
 
     assert len(TOO_BIG_JSON_SERIALIZED) > BUFFER_LIMIT
+
+    @pytest.fixture(scope="class")
+    @staticmethod
+    def encoder_config() -> JSONEncoderConfig:
+        return JSONEncoderConfig(ensure_ascii=False)
 
     @pytest.fixture(scope="class", params=[False, True], ids=lambda p: f"use_lines=={p}")
     @staticmethod
@@ -36,8 +39,8 @@ class TestJSONSerializer(BaseTestIncrementalSerializer, BaseTestSerializerExtraD
 
     @pytest.fixture(scope="class")
     @classmethod
-    def serializer_for_serialization(cls, use_lines: bool) -> JSONSerializer:
-        return JSONSerializer(encoder_config=cls.ENCODER_CONFIG, use_lines=use_lines, limit=cls.BUFFER_LIMIT)
+    def serializer_for_serialization(cls, encoder_config: JSONEncoderConfig, use_lines: bool) -> JSONSerializer:
+        return JSONSerializer(encoder_config=encoder_config, use_lines=use_lines, limit=cls.BUFFER_LIMIT)
 
     @pytest.fixture(scope="class")
     @classmethod
@@ -55,8 +58,8 @@ class TestJSONSerializer(BaseTestIncrementalSerializer, BaseTestSerializerExtraD
 
     @pytest.fixture(scope="class")
     @classmethod
-    def expected_complete_data(cls, packet_to_serialize: Any) -> bytes:
-        return json.dumps(packet_to_serialize, **dataclasses.asdict(cls.ENCODER_CONFIG), separators=(",", ":")).encode("utf-8")
+    def expected_complete_data(cls, packet_to_serialize: Any, encoder_config: JSONEncoderConfig) -> bytes:
+        return json.dumps(packet_to_serialize, **dataclasses.asdict(encoder_config), separators=(",", ":")).encode("utf-8")
 
     #### Incremental Serialize
 

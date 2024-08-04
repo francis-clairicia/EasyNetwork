@@ -56,7 +56,15 @@ class TestAbstractStructSerializer(BaseTestStructBasedSerializer):
     def mock_serializer_from_tuple(mocker: MockerFixture) -> MagicMock:
         return mocker.patch.object(_StructSerializerForTest, "from_tuple")
 
-    @pytest.mark.parametrize("method", ["incremental_serialize", "incremental_deserialize"])
+    @pytest.mark.parametrize(
+        "method",
+        [
+            "incremental_serialize",
+            "incremental_deserialize",
+            "create_deserializer_buffer",
+            "buffered_incremental_deserialize",
+        ],
+    )
     def test____base_class____implements_default_methods(self, method: str) -> None:
         # Arrange
         from easynetwork.serializers.base_stream import FixedSizePacketSerializer
@@ -157,7 +165,17 @@ class TestAbstractStructSerializer(BaseTestStructBasedSerializer):
 
 
 class TestNamedTupleStructSerializer(BaseTestStructBasedSerializer):
-    @pytest.mark.parametrize("method", ["serialize", "incremental_serialize", "deserialize", "incremental_deserialize"])
+    @pytest.mark.parametrize(
+        "method",
+        [
+            "serialize",
+            "incremental_serialize",
+            "deserialize",
+            "incremental_deserialize",
+            "create_deserializer_buffer",
+            "buffered_incremental_deserialize",
+        ],
+    )
     def test____base_class____implements_default_methods(self, method: str) -> None:
         # Arrange
 
@@ -471,7 +489,17 @@ class TestNamedTupleStructSerializer(BaseTestStructBasedSerializer):
 
 
 class TestStructSerializer(BaseTestStructBasedSerializer):
-    @pytest.mark.parametrize("method", ["serialize", "incremental_serialize", "deserialize", "incremental_deserialize"])
+    @pytest.mark.parametrize(
+        "method",
+        [
+            "serialize",
+            "incremental_serialize",
+            "deserialize",
+            "incremental_deserialize",
+            "create_deserializer_buffer",
+            "buffered_incremental_deserialize",
+        ],
+    )
     def test____base_class____implements_default_methods(self, method: str) -> None:
         # Arrange
 

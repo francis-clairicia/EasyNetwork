@@ -54,7 +54,7 @@ cbor = [
     "cbor2>=5.5,<6",
 ]
 msgpack = [
-    "msgpack>=1.0.7,<2",
+    "msgpack>=1.0.8,<2",
 ]
 trio = [
     "trio>=0.26,<1",

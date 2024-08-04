@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, assert_type
+from typing import TYPE_CHECKING, Any
 
 from easynetwork.serializers.cbor import CBORSerializer
 
@@ -57,9 +57,8 @@ def bench_CBORSerializer_incremental_deserialize(
 
         def deserialize() -> Any:
             consumer = serializer.buffered_incremental_deserialize(buffer)
-            assert_type(next(consumer), None)
-            with buffer.cast("B") as view:
-                view[:nbytes] = cbor_data
+            next(consumer)
+            buffer[:nbytes] = cbor_data
             try:
                 consumer.send(nbytes)
             except StopIteration as exc:
