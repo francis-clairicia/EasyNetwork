@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from io import BytesIO
 from typing import TYPE_CHECKING, Any, final
 
 from easynetwork.exceptions import DeserializeError
+from easynetwork.lowlevel.constants import DEFAULT_SERIALIZER_LIMIT
 from easynetwork.serializers.msgpack import MessagePackerConfig, MessagePackSerializer, MessageUnpackerConfig
 
 import pytest
@@ -40,6 +42,30 @@ class TestMessagePackSerializer(BaseSerializerConfigInstanceCheck):
     def mock_unpackb(mocker: MockerFixture) -> MagicMock:
         return mocker.patch("msgpack.unpackb", autospec=True)
 
+    @pytest.fixture
+    @staticmethod
+    def mock_packer(mocker: MockerFixture) -> MagicMock:
+        from msgpack import Packer
+
+        return mocker.NonCallableMagicMock(spec=Packer)
+
+    @pytest.fixture(autouse=True)
+    @staticmethod
+    def mock_packer_cls(mock_packer: MagicMock, mocker: MockerFixture) -> MagicMock:
+        return mocker.patch("msgpack.Packer", return_value=mock_packer)
+
+    @pytest.fixture
+    @staticmethod
+    def mock_unpacker(mocker: MockerFixture) -> MagicMock:
+        from msgpack import Unpacker
+
+        return mocker.NonCallableMagicMock(spec=Unpacker, **{"tell.return_value": 0})
+
+    @pytest.fixture(autouse=True)
+    @staticmethod
+    def mock_unpacker_cls(mock_unpacker: MagicMock, mocker: MockerFixture) -> MagicMock:
+        return mocker.patch("msgpack.Unpacker", return_value=mock_unpacker)
+
     @pytest.fixture(params=[True, False], ids=lambda boolean: f"default_packer_config=={boolean}")
     @staticmethod
     def packer_config(request: Any, mocker: MockerFixture) -> MessagePackerConfig | None:
@@ -72,19 +98,44 @@ class TestMessagePackSerializer(BaseSerializerConfigInstanceCheck):
             ext_hook=mocker.sentinel.ext_hook,
         )
 
-    def test____properties____right_values(self, debug_mode: bool) -> None:
+    @pytest.mark.parametrize(
+        "method",
+        [
+            "incremental_serialize",
+            "incremental_deserialize",
+            "create_deserializer_buffer",
+            "buffered_incremental_deserialize",
+        ],
+    )
+    def test____base_class____implements_default_methods(self, method: str) -> None:
+        # Arrange
+        from easynetwork.serializers.base_stream import FileBasedPacketSerializer
+
+        # Act & Assert
+        assert getattr(MessagePackSerializer, method) is getattr(FileBasedPacketSerializer, method)
+
+    @pytest.mark.parametrize("limit", [147258369, None], ids=lambda p: f"limit=={p}")
+    def test____properties____right_values(self, debug_mode: bool, limit: int | None) -> None:
         # Arrange
 
         # Act
-        serializer = MessagePackSerializer(debug=debug_mode)
+        if limit is None:
+            serializer = MessagePackSerializer(debug=debug_mode)
+        else:
+            serializer = MessagePackSerializer(debug=debug_mode, limit=limit)
 
         # Assert
         assert serializer.debug is debug_mode
+        if limit is None:
+            assert serializer.buffer_limit == DEFAULT_SERIALIZER_LIMIT
+        else:
+            assert serializer.buffer_limit == limit
 
     def test____serialize____with_config(
         self,
         packer_config: MessagePackerConfig | None,
         mock_packb: MagicMock,
+        mock_packer_cls: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -106,11 +157,13 @@ class TestMessagePackSerializer(BaseSerializerConfigInstanceCheck):
             unicode_errors=mocker.sentinel.unicode_errors if packer_config is not None else "strict",
             autoreset=True,
         )
+        mock_packer_cls.assert_not_called()
 
     def test____deserialize____with_config(
         self,
         unpacker_config: MessageUnpackerConfig | None,
         mock_unpackb: MagicMock,
+        mock_unpacker_cls: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -135,6 +188,7 @@ class TestMessagePackSerializer(BaseSerializerConfigInstanceCheck):
             object_pairs_hook=mocker.sentinel.object_pairs_hook if unpacker_config is not None else None,
             ext_hook=mocker.sentinel.ext_hook if unpacker_config is not None else msgpack.ExtType,
         )
+        mock_unpacker_cls.assert_not_called()
 
     def test____deserialize____missing_data(
         self,
@@ -143,17 +197,15 @@ class TestMessagePackSerializer(BaseSerializerConfigInstanceCheck):
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        import msgpack
-
         serializer: MessagePackSerializer = MessagePackSerializer(debug=debug_mode)
-        mock_unpackb.side_effect = msgpack.OutOfData
+        mock_unpackb.side_effect = ValueError("Unpack failed: incomplete input")
 
         # Act & Assert
         with pytest.raises(DeserializeError, match=r"^Missing data to create packet$") as exc_info:
             serializer.deserialize(mocker.sentinel.data)
 
         # Assert
-        assert isinstance(exc_info.value.__cause__, msgpack.OutOfData)
+        assert isinstance(exc_info.value.__cause__, ValueError)
         if debug_mode:
             assert exc_info.value.error_info == {"data": mocker.sentinel.data}
         else:
@@ -203,6 +255,129 @@ class TestMessagePackSerializer(BaseSerializerConfigInstanceCheck):
         else:
             assert exc_info.value.error_info is None
 
+    def test____dump_to_file____with_config(
+        self,
+        packer_config: MessagePackerConfig | None,
+        mock_packb: MagicMock,
+        mock_packer_cls: MagicMock,
+        mock_packer: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        serializer: MessagePackSerializer = MessagePackSerializer(packer_config=packer_config)
+        mock_packer.pack.side_effect = [b"msgpack-data"]
+        mock_packb.side_effect = AssertionError
+
+        # Act
+        file = BytesIO()
+        serializer.dump_to_file(mocker.sentinel.packet, file)
+
+        # Assert
+        assert file.getvalue() == b"msgpack-data"
+        mock_packer_cls.assert_called_once_with(
+            default=mocker.sentinel.default if packer_config is not None else None,
+            use_single_float=mocker.sentinel.use_single_float if packer_config is not None else False,
+            use_bin_type=mocker.sentinel.use_bin_type if packer_config is not None else True,
+            datetime=mocker.sentinel.datetime if packer_config is not None else False,
+            strict_types=mocker.sentinel.strict_types if packer_config is not None else False,
+            unicode_errors=mocker.sentinel.unicode_errors if packer_config is not None else "strict",
+            autoreset=True,
+        )
+        mock_packer.pack.assert_called_once_with(mocker.sentinel.packet)
+        mock_packb.assert_not_called()
+
+    @pytest.mark.parametrize("limit", [147258369, DEFAULT_SERIALIZER_LIMIT], ids=lambda p: f"limit=={p}")
+    def test____load_from_file____with_config(
+        self,
+        limit: int,
+        unpacker_config: MessageUnpackerConfig | None,
+        mock_unpackb: MagicMock,
+        mock_unpacker_cls: MagicMock,
+        mock_unpacker: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        import msgpack
+
+        serializer: MessagePackSerializer = MessagePackSerializer(unpacker_config=unpacker_config, limit=limit)
+        mock_unpackb.side_effect = AssertionError
+
+        def unpack_side_effect() -> Any:
+            file.read()
+            mock_unpacker.tell.return_value = file.tell()
+            return mocker.sentinel.packet
+
+        mock_unpacker.unpack.side_effect = unpack_side_effect
+
+        # Act
+        file = BytesIO(b"msgpack-data")
+        packet = serializer.load_from_file(file)
+
+        # Assert
+        assert packet is mocker.sentinel.packet
+        assert file.read() == b""
+        mock_unpacker_cls.assert_called_once_with(
+            file,
+            raw=mocker.sentinel.raw if unpacker_config is not None else False,
+            use_list=mocker.sentinel.use_list if unpacker_config is not None else True,
+            timestamp=mocker.sentinel.timestamp if unpacker_config is not None else 0,
+            strict_map_key=mocker.sentinel.strict_map_key if unpacker_config is not None else True,
+            unicode_errors=mocker.sentinel.unicode_errors if unpacker_config is not None else "strict",
+            object_hook=mocker.sentinel.object_hook if unpacker_config is not None else None,
+            object_pairs_hook=mocker.sentinel.object_pairs_hook if unpacker_config is not None else None,
+            ext_hook=mocker.sentinel.ext_hook if unpacker_config is not None else msgpack.ExtType,
+            max_buffer_size=limit,
+        )
+        mock_unpacker.unpack.assert_called_once_with()
+        mock_unpackb.assert_not_called()
+
+    def test____load_from_file____missing_data(
+        self,
+        debug_mode: bool,
+        mock_unpacker: MagicMock,
+    ) -> None:
+        # Arrange
+        import msgpack
+
+        serializer: MessagePackSerializer = MessagePackSerializer(debug=debug_mode)
+
+        def unpack_side_effect() -> Any:
+            file.read()
+            mock_unpacker.tell.return_value = 0
+            raise msgpack.OutOfData
+
+        mock_unpacker.unpack.side_effect = unpack_side_effect
+
+        # Act & Assert
+        file = BytesIO(b"msgpack-data")
+        with pytest.raises(EOFError):
+            serializer.load_from_file(file)
+        assert file.read() == b""
+
+    def test____load_from_file____extra_data(
+        self,
+        debug_mode: bool,
+        mock_unpacker: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        serializer: MessagePackSerializer = MessagePackSerializer(debug=debug_mode)
+
+        def unpack_side_effect() -> Any:
+            file.read()
+            mock_unpacker.tell.return_value = len(b"msgpack-data")
+            return mocker.sentinel.packet
+
+        mock_unpacker.unpack.side_effect = unpack_side_effect
+
+        # Act
+        file = BytesIO(b"".join([b"msgpack-data", b"remaining_data"]))
+        packet = serializer.load_from_file(file)
+
+        # Assert
+        assert packet is mocker.sentinel.packet
+        assert file.read() == b"remaining_data"
+
 
 class TestMessagePackSerializerDependencies:
     def test____dunder_init____msgpack_missing(
@@ -221,26 +396,6 @@ class TestMessagePackSerializerDependencies:
 
         # Assert
         mock_import.assert_any_call("msgpack", mocker.ANY, mocker.ANY, None, 0)
-        assert exc_info.value.args[0] == "message-pack dependencies are missing. Consider adding 'msgpack' extra"
-        assert exc_info.value.__notes__ == ['example: pip install "easynetwork[msgpack]"']
-        assert isinstance(exc_info.value.__cause__, ModuleNotFoundError)
-
-    def test____MessageUnpackerConfig____msgpack_missing(
-        self,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        mock_import: MagicMock = mock_import_module_not_found({"msgpack"}, mocker)
-
-        # Act
-        with pytest.raises(ModuleNotFoundError) as exc_info:
-            try:
-                _ = MessageUnpackerConfig()
-            finally:
-                mocker.stop(mock_import)
-
-        # Assert
-        mock_import.assert_any_call("msgpack", mocker.ANY, mocker.ANY, ("ExtType",), 0)
         assert exc_info.value.args[0] == "message-pack dependencies are missing. Consider adding 'msgpack' extra"
         assert exc_info.value.__notes__ == ['example: pip install "easynetwork[msgpack]"']
         assert isinstance(exc_info.value.__cause__, ModuleNotFoundError)

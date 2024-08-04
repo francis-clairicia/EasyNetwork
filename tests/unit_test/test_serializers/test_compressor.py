@@ -457,7 +457,17 @@ class TestAbstractCompressorSerializer:
 
 
 class BaseTestCompressorSerializerImplementation:
-    @pytest.mark.parametrize("method", ["serialize", "incremental_serialize", "deserialize", "incremental_deserialize"])
+    @pytest.mark.parametrize(
+        "method",
+        [
+            "serialize",
+            "incremental_serialize",
+            "deserialize",
+            "incremental_deserialize",
+            "create_deserializer_buffer",
+            "buffered_incremental_deserialize",
+        ],
+    )
     def test____base_class____implements_default_methods(
         self,
         serializer_cls: type[AbstractCompressorSerializer[Any, Any]],

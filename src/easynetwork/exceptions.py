@@ -115,7 +115,7 @@ class LimitOverrunError(IncrementalDeserializeError):
                 while remaining_data.nbytes and remaining_data[:seplen] != separator[: remaining_data.nbytes]:
                     remaining_data = remaining_data[1:]
 
-        super().__init__(message, remaining_data, error_info=None)
+        super().__init__(message, bytes(remaining_data), error_info=None)
 
         self.consumed: int = consumed
         """Total number of to be consumed bytes."""

@@ -18,12 +18,15 @@ from .samples.json import SAMPLES
 class TestCBORSerializer(BaseTestBufferedIncrementalSerializer, BaseTestSerializerExtraData):
     #### Serializers
 
-    ENCODER_CONFIG = CBOREncoderConfig()
+    @pytest.fixture(scope="class")
+    @staticmethod
+    def encoder_config() -> CBOREncoderConfig:
+        return CBOREncoderConfig()
 
     @pytest.fixture(scope="class")
-    @classmethod
-    def serializer_for_serialization(cls) -> CBORSerializer:
-        return CBORSerializer(encoder_config=cls.ENCODER_CONFIG)
+    @staticmethod
+    def serializer_for_serialization(encoder_config: CBOREncoderConfig) -> CBORSerializer:
+        return CBORSerializer(encoder_config=encoder_config)
 
     @pytest.fixture(scope="class")
     @staticmethod
@@ -41,10 +44,10 @@ class TestCBORSerializer(BaseTestBufferedIncrementalSerializer, BaseTestSerializ
 
     @pytest.fixture(scope="class")
     @classmethod
-    def expected_complete_data(cls, packet_to_serialize: Any) -> bytes:
+    def expected_complete_data(cls, packet_to_serialize: Any, encoder_config: CBOREncoderConfig) -> bytes:
         import cbor2
 
-        return cbor2.dumps(packet_to_serialize, **dataclasses.asdict(cls.ENCODER_CONFIG))
+        return cbor2.dumps(packet_to_serialize, **dataclasses.asdict(encoder_config))
 
     #### Incremental Serialize
 

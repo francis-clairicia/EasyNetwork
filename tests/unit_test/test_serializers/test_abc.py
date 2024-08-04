@@ -916,10 +916,19 @@ class TestFileBasedPacketSerializer:
         # Arrange
 
         # Act
-        serializer = _FileBasedPacketSerializerForTest(expected_load_error=(), debug=debug_mode)
+        serializer = _FileBasedPacketSerializerForTest(expected_load_error=(), debug=debug_mode, limit=123456789)
 
         # Assert
         assert serializer.debug is debug_mode
+        assert serializer.buffer_limit == 123456789
+
+    @pytest.mark.parametrize("limit", [0, -42], ids=lambda p: f"limit=={p}")
+    def test____dunder_init____invalid_limit(self, limit: int) -> None:
+        # Arrange
+
+        # Act & Assert
+        with pytest.raises(ValueError, match=r"^limit must be a positive integer$"):
+            _ = _FileBasedPacketSerializerForTest(expected_load_error=(), limit=limit)
 
     def test____serialize____dump_to_file(
         self,
@@ -1080,6 +1089,27 @@ class TestFileBasedPacketSerializer:
         # Assert
         mock_dump_to_file_func.assert_called_once_with(mocker.sentinel.packet, mocker.ANY)
         assert data == []
+
+    @pytest.mark.parametrize(
+        ["sizehint", "limit"],
+        [
+            pytest.param(1024, 65536, id="lower_than_limit"),
+            pytest.param(65536, 65536, id="equal_to_limit"),
+            pytest.param(65536, 1024, id="greater_than_limit"),
+        ],
+    )
+    def test____create_deserializer____sizehint_limit(self, sizehint: int, limit: int) -> None:
+        # Arrange
+        serializer = _FileBasedPacketSerializerForTest(expected_load_error=(), limit=limit)
+
+        # Act
+        buffer = serializer.create_deserializer_buffer(sizehint)
+
+        # Assert
+        if sizehint <= limit:
+            assert len(buffer) == sizehint
+        else:
+            assert len(buffer) == limit
 
     def test____incremental_deserialize____load_from_file____read_all(
         self,
@@ -1254,3 +1284,55 @@ class TestFileBasedPacketSerializer:
             assert exception.error_info == {"data": b"data"}
         else:
             assert exception.error_info is None
+
+    @pytest.mark.parametrize("at_first_chunk", [False, True], ids=lambda p: f"at_first_chunk=={p}")
+    def test____incremental_deserialize____load_from_file____buffer_limit_overrun(
+        self,
+        at_first_chunk: bool,
+        incremental_deserialize_mode: Literal["data", "buffer"],
+        mock_load_from_file_func: MagicMock,
+    ) -> None:
+        # Arrange
+        def side_effect(file: IO[bytes]) -> Any:
+            file.read()
+            raise EOFError
+
+        serializer = _FileBasedPacketSerializerForTest(expected_load_error=(), limit=3)
+        mock_load_from_file_func.side_effect = side_effect
+
+        # Act
+        match incremental_deserialize_mode:
+            case "data":
+                data_consumer = serializer.incremental_deserialize()
+                next(data_consumer)
+                if at_first_chunk:
+                    with pytest.raises(LimitOverrunError) as exc_info:
+                        data_consumer.send(b"data")
+                else:
+                    data_consumer.send(b"d")
+                    data_consumer.send(b"a")
+                    data_consumer.send(b"t")
+                    with pytest.raises(LimitOverrunError) as exc_info:
+                        data_consumer.send(b"a")
+            case "buffer":
+                buffer = serializer.create_deserializer_buffer(1024)
+                buffered_consumer = serializer.buffered_incremental_deserialize(buffer)
+                next(buffered_consumer)
+                if at_first_chunk:
+                    buffered_consumer.send(write_in_buffer(buffer, b"dat"))  # <- The buffer size is set to 3 (because of "limit")
+                    with pytest.raises(LimitOverrunError) as exc_info:
+                        buffered_consumer.send(write_in_buffer(buffer, b"a"))
+                else:
+                    buffered_consumer.send(write_in_buffer(buffer, b"d"))
+                    buffered_consumer.send(write_in_buffer(buffer, b"a"))
+                    buffered_consumer.send(write_in_buffer(buffer, b"t"))
+                    with pytest.raises(LimitOverrunError) as exc_info:
+                        buffered_consumer.send(write_in_buffer(buffer, b"a"))
+            case _:
+                pytest.fail("Invalid fixture argument")
+
+        exception = exc_info.value
+
+        # Assert
+        assert bytes(exception.remaining_data) == b""
+        assert exception.consumed == 4

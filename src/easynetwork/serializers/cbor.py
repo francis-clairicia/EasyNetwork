@@ -36,6 +36,7 @@ from functools import partial
 from typing import IO, TYPE_CHECKING, Any, final
 
 from ..lowlevel import _utils
+from ..lowlevel.constants import DEFAULT_SERIALIZER_LIMIT
 from .base_stream import FileBasedPacketSerializer
 
 if TYPE_CHECKING:
@@ -86,12 +87,14 @@ class CBORSerializer(FileBasedPacketSerializer[Any, Any]):
         encoder_config: CBOREncoderConfig | None = None,
         decoder_config: CBORDecoderConfig | None = None,
         *,
+        limit: int = DEFAULT_SERIALIZER_LIMIT,
         debug: bool = False,
     ) -> None:
         """
         Parameters:
             encoder_config: Parameter object to configure the :class:`~cbor.encoder.CBOREncoder`.
             decoder_config: Parameter object to configure the :class:`~cbor.decoder.CBORDecoder`.
+            limit: Maximum buffer size. Used in incremental serialization context.
             debug: If :data:`True`, add information to :exc:`.DeserializeError` via the ``error_info`` attribute.
         """
         try:
@@ -99,7 +102,7 @@ class CBORSerializer(FileBasedPacketSerializer[Any, Any]):
         except ModuleNotFoundError as exc:
             raise _utils.missing_extra_deps("cbor") from exc
 
-        super().__init__(expected_load_error=(cbor2.CBORDecodeError, UnicodeError), debug=debug)
+        super().__init__(expected_load_error=(cbor2.CBORDecodeError, UnicodeError), limit=limit, debug=debug)
         self.__encoder_cls: Callable[[IO[bytes]], cbor2.CBOREncoder]
         self.__decoder_cls: Callable[[IO[bytes]], cbor2.CBORDecoder]
 

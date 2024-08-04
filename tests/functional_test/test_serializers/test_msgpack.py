@@ -9,13 +9,13 @@ from easynetwork.serializers.msgpack import MessagePackerConfig, MessagePackSeri
 
 import pytest
 
-from .base import BaseTestSerializerExtraData
+from .base import BaseTestBufferedIncrementalSerializer, BaseTestSerializerExtraData
 from .samples.json import SAMPLES
 
 
 @final
 @pytest.mark.feature_msgpack
-class TestMessagePackSerializer(BaseTestSerializerExtraData):
+class TestMessagePackSerializer(BaseTestBufferedIncrementalSerializer, BaseTestSerializerExtraData):
     #### Serializers
 
     @pytest.fixture(scope="class")
@@ -49,6 +49,13 @@ class TestMessagePackSerializer(BaseTestSerializerExtraData):
 
         return msgpack.packb(packet_to_serialize, **dataclasses.asdict(packer_config), autoreset=True)
 
+    #### Incremental Serialize
+
+    @pytest.fixture(scope="class")
+    @staticmethod
+    def expected_joined_data(expected_complete_data: bytes) -> bytes:
+        return expected_complete_data
+
     #### One-shot Deserialize
 
     @pytest.fixture(scope="class")
@@ -58,9 +65,21 @@ class TestMessagePackSerializer(BaseTestSerializerExtraData):
 
         return msgpack.packb(packet_to_serialize)
 
+    #### Incremental Deserialize
+
+    @pytest.fixture(scope="class")
+    @staticmethod
+    def complete_data_for_incremental_deserialize(complete_data: bytes) -> bytes:
+        return complete_data
+
     #### Invalid data
 
     @pytest.fixture(scope="class")
     @staticmethod
     def invalid_complete_data(complete_data: bytes) -> bytes:
-        return complete_data[:-1]  # Missing data error
+        return complete_data[:-1]  # Extra data error
+
+    @pytest.fixture(scope="class")
+    @staticmethod
+    def invalid_partial_data_extra_data() -> tuple[bytes, bytes]:
+        return (b"remaining_data", b"")

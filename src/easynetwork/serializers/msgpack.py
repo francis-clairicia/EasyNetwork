@@ -31,21 +31,14 @@ __all__ = [
 ]
 
 from collections.abc import Callable
-from dataclasses import asdict as dataclass_asdict, dataclass, field
+from dataclasses import asdict as dataclass_asdict, dataclass
 from functools import partial
-from typing import Any, final
+from typing import IO, Any, final
 
 from ..exceptions import DeserializeError
 from ..lowlevel import _utils
-from .abc import AbstractPacketSerializer
-
-
-def _get_default_ext_hook() -> Callable[[int, bytes], Any]:
-    try:
-        from msgpack import ExtType
-    except ModuleNotFoundError as exc:
-        raise _utils.missing_extra_deps("msgpack", feature_name="message-pack") from exc
-    return ExtType
+from ..lowlevel.constants import DEFAULT_SERIALIZER_LIMIT
+from .base_stream import FileBasedPacketSerializer
 
 
 @dataclass(kw_only=True)
@@ -79,29 +72,38 @@ class MessageUnpackerConfig:
     unicode_errors: str = "strict"
     object_hook: Callable[[dict[Any, Any]], Any] | None = None
     object_pairs_hook: Callable[[list[tuple[Any, Any]]], Any] | None = None
-    ext_hook: Callable[[int, bytes], Any] = field(default_factory=_get_default_ext_hook)
+    ext_hook: Callable[[int, bytes], Any] | None = None
 
 
-class MessagePackSerializer(AbstractPacketSerializer[Any, Any]):
+class MessagePackSerializer(FileBasedPacketSerializer[Any, Any]):
     """
-    A :term:`one-shot serializer` built on top of the :mod:`msgpack` module.
+    A :term:`serializer` built on top of the :mod:`msgpack` module.
 
     Needs ``msgpack`` extra dependencies.
     """
 
-    __slots__ = ("__packb", "__unpackb", "__unpack_out_of_data_cls", "__unpack_extra_data_cls", "__debug")
+    __slots__ = (
+        "__packb",
+        "__unpackb",
+        "__incremental_packer",
+        "__incremental_unpacker",
+        "__unpack_out_of_data_cls",
+        "__unpack_extra_data_cls",
+    )
 
     def __init__(
         self,
         packer_config: MessagePackerConfig | None = None,
         unpacker_config: MessageUnpackerConfig | None = None,
         *,
+        limit: int = DEFAULT_SERIALIZER_LIMIT,
         debug: bool = False,
     ) -> None:
         """
         Parameters:
             packer_config: Parameter object to configure the :class:`~msgpack.Packer`.
             unpacker_config: Parameter object to configure the :class:`~msgpack.Unpacker`.
+            limit: Maximum buffer size. Used in incremental serialization context.
             debug: If :data:`True`, add information to :exc:`.DeserializeError` via the ``error_info`` attribute.
         """
         try:
@@ -109,9 +111,16 @@ class MessagePackSerializer(AbstractPacketSerializer[Any, Any]):
         except ModuleNotFoundError as exc:
             raise _utils.missing_extra_deps("msgpack", feature_name="message-pack") from exc
 
-        super().__init__()
+        super().__init__(
+            expected_load_error=Exception,  # The documentation says to catch all exceptions :)
+            limit=limit,
+            debug=debug,
+        )
+        limit = self.buffer_limit
         self.__packb: Callable[[Any], bytes]
         self.__unpackb: Callable[[bytes], Any]
+        self.__incremental_packer: Callable[[], msgpack.Packer]
+        self.__incremental_unpacker: Callable[[IO[bytes]], msgpack.Unpacker]
 
         if packer_config is None:
             packer_config = MessagePackerConfig()
@@ -125,12 +134,20 @@ class MessagePackSerializer(AbstractPacketSerializer[Any, Any]):
                 f"Invalid unpacker config: expected {MessageUnpackerConfig.__name__}, got {type(unpacker_config).__name__}"
             )
 
-        self.__packb = partial(msgpack.packb, **dataclass_asdict(packer_config), autoreset=True)
-        self.__unpackb = partial(msgpack.unpackb, **dataclass_asdict(unpacker_config))
+        packer_options = dataclass_asdict(packer_config)
+        unpacker_options = dataclass_asdict(unpacker_config)
+
+        del packer_config, unpacker_config
+
+        if unpacker_options.get("ext_hook") is None:
+            unpacker_options["ext_hook"] = msgpack.ExtType
+
+        self.__packb = partial(msgpack.packb, **packer_options, autoreset=True)
+        self.__unpackb = partial(msgpack.unpackb, **unpacker_options)
+        self.__incremental_packer = partial(msgpack.Packer, **packer_options, autoreset=True)
+        self.__incremental_unpacker = partial(msgpack.Unpacker, **unpacker_options, max_buffer_size=limit)
         self.__unpack_out_of_data_cls = msgpack.OutOfData
         self.__unpack_extra_data_cls = msgpack.ExtraData
-
-        self.__debug: bool = bool(debug)
 
     @final
     def serialize(self, packet: Any) -> bytes:
@@ -172,11 +189,6 @@ class MessagePackSerializer(AbstractPacketSerializer[Any, Any]):
         """
         try:
             return self.__unpackb(data)
-        except self.__unpack_out_of_data_cls as exc:
-            msg = "Missing data to create packet"
-            if self.debug:
-                raise DeserializeError(msg, error_info={"data": data}) from exc
-            raise DeserializeError(msg) from exc
         except self.__unpack_extra_data_cls as exc:
             msg = "Extra data caught"
             if self.debug:
@@ -184,16 +196,54 @@ class MessagePackSerializer(AbstractPacketSerializer[Any, Any]):
             raise DeserializeError(msg) from exc
         except Exception as exc:  # The documentation says to catch all exceptions :)
             msg = str(exc) or "Invalid token"
+            if isinstance(exc, ValueError) and "incomplete input" in msg:  # <- And here is our "OutOfData" :)
+                msg = "Missing data to create packet"
             if self.debug:
                 raise DeserializeError(msg, error_info={"data": data}) from exc
             raise DeserializeError(msg) from exc
         finally:
             del data
 
-    @property
     @final
-    def debug(self) -> bool:
+    def dump_to_file(self, packet: Any, file: IO[bytes]) -> None:
         """
-        The debug mode flag. Read-only attribute.
+        Write the MessagePack representation of `packet` to `file`.
+
+        Roughly equivalent to::
+
+            def dump_to_file(self, packet, file):
+                msgpack.pack(packet, file)
+
+        Parameters:
+            packet: The Python object to serialize.
+            file: The :std:term:`binary file` to write to.
         """
-        return self.__debug
+        file.write(self.__incremental_packer().pack(packet))
+
+    @final
+    def load_from_file(self, file: IO[bytes]) -> Any:
+        """
+        Read from `file` to deserialize the raw MessagePack :term:`packet`.
+
+        Roughly equivalent to::
+
+            def load_from_file(self, file):
+                return msgpack.unpack(file)
+
+        Parameters:
+            file: The :std:term:`binary file` to read from.
+
+        Returns:
+            the deserialized Python object.
+        """
+        current_position = file.tell()
+        unpacker = self.__incremental_unpacker(file)
+        try:
+            packet = unpacker.unpack()
+        except self.__unpack_out_of_data_cls:
+            raise EOFError from None
+        else:
+            file.seek(current_position + unpacker.tell())
+        finally:
+            del unpacker
+        return packet

@@ -12,6 +12,8 @@ Configuration
 
 .. autoclass:: JSONEncoderConfig
    :members:
+   :undoc-members:
 
 .. autoclass:: JSONDecoderConfig
    :members:
+   :undoc-members:
