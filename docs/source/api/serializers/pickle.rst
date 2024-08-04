@@ -16,6 +16,8 @@ Configuration
 
 .. autoclass:: PicklerConfig
    :members:
+   :undoc-members:
 
 .. autoclass:: UnpicklerConfig
    :members:
+   :undoc-members:

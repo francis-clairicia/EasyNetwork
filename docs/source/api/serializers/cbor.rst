@@ -12,6 +12,8 @@ Configuration
 
 .. autoclass:: CBOREncoderConfig
    :members:
+   :undoc-members:
 
 .. autoclass:: CBORDecoderConfig
    :members:
+   :undoc-members:

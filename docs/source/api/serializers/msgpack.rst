@@ -12,6 +12,8 @@ Configuration
 
 .. autoclass:: MessagePackerConfig
    :members:
+   :undoc-members:
 
 .. autoclass:: MessageUnpackerConfig
    :members:
+   :undoc-members:
