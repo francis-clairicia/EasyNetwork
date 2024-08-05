@@ -18,7 +18,7 @@ def line_str(request: pytest.FixtureRequest) -> str:
     return ("x" * (size - 1)) + "\n"
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def line_bytes(line_str: str) -> bytes:
     return bytes(line_str, "utf-8")
 
