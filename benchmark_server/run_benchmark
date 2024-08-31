@@ -680,7 +680,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
         },
         "client": _udp_echoclient,
     },
-    # TODO: At the time this benchmark was written, uvloop (0.19) does not implement sock_sendto() and sock_recvfrom()
+    # TODO: At the time this benchmark was written, uvloop (0.20) does not implement sock_sendto() and sock_recvfrom()
     # See https://github.com/MagicStack/uvloop/issues/561
     # {
     #     "name": "udpecho-uvloop-sockets",
