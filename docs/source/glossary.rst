@@ -15,9 +15,9 @@ Glossary
 
       * :external+python:doc:`asyncio <library/asyncio>`
 
-      * `trio <https://trio.readthedocs.io/en/stable/>`_
+      * :external+trio:doc:`trio <index>`
 
-      * `anyio <https://anyio.readthedocs.io/en/stable/>`_
+      * :external+anyio:doc:`anyio <index>`
 
       * etc.
 
