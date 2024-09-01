@@ -248,12 +248,23 @@ class AsyncTCPNetworkServer(
         server: _stream_server.AsyncStreamServer[_T_Request, _T_Response],
         task_group: TaskGroup,
     ) -> NoReturn:
+        def disconnect_error_filter(exc: Exception) -> bool:
+            match exc:
+                case ConnectionError():
+                    return True
+                case _:
+                    return _utils.is_ssl_eof_error(exc)
+
         handler = build_lowlevel_stream_server_handler(
             self.__client_initializer,
             self.__request_handler,
             logger=self.logger,
         )
-        await server.serve(handler, task_group)
+        await server.serve(
+            handler,
+            task_group,
+            disconnect_error_filter=disconnect_error_filter,
+        )
 
     @contextlib.asynccontextmanager
     async def __client_initializer(
