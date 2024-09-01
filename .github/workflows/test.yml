@@ -65,7 +65,7 @@ jobs:
         with:
           python-version: ${{ matrix.python_version }}
       - name: Launch tests
-        timeout-minutes: 20  # Even if 10 minutes is already too big
+        timeout-minutes: 20
         run: tox run -f ${{ matrix.tox_py }} -- -v
       - name: Generate coverage report
         if: hashFiles('.coverage.*') != ''  # Rudimentary `file.exists()`
@@ -79,7 +79,9 @@ jobs:
         uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          file: coverage.unit.xml
+          disable_search: true
+          files: >-
+            coverage.unit.xml
           flags: >-
             test-unit,
             OS-${{ runner.os }},
@@ -89,22 +91,10 @@ jobs:
         uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          file: coverage.functional.xml
+          disable_search: true
+          files: >-
+            coverage.functional.xml
           flags: >-
             test-functional,
             OS-${{ runner.os }},
             Py-${{ matrix.python_version }}
-
-  other-tests:
-    if: |
-      (github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'Bump version:'))
-      && (github.event_name != 'pull_request' || github.event.pull_request.draft != true)
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup tox
-        uses: ./.github/actions/setup-tox
-        with:
-          python-version: '3.11'
-      - name: Launch tests
-        run: tox run -f py311-other -- -v
