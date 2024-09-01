@@ -20,6 +20,7 @@ __all__ = ["AsyncStreamServer", "ConnectedStreamClient"]
 
 import contextlib
 import dataclasses
+import functools
 import warnings
 from collections.abc import AsyncGenerator, Callable, Mapping
 from typing import Any, Generic, NoReturn, assert_never
@@ -170,6 +171,8 @@ class AsyncStreamServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T_R
         self,
         client_connected_cb: Callable[[ConnectedStreamClient[_T_Response]], AsyncGenerator[float | None, _T_Request]],
         task_group: TaskGroup | None = None,
+        *,
+        disconnect_error_filter: Callable[[Exception], bool] | None = None,
     ) -> NoReturn:
         """
         Accept incoming connections as they come in and start tasks to handle them.
@@ -177,14 +180,16 @@ class AsyncStreamServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T_R
         Parameters:
             client_connected_cb: a callable that will be used to handle each accepted connection.
             task_group: the task group that will be used to start tasks for handling each accepted connection.
+            disconnect_error_filter: a callable that returns :data:`True` if the exception is the result of a pipe disconnect.
         """
         with self.__serve_guard:
-            handler = _utils.prepend_argument(client_connected_cb, self.__client_coroutine)
+            handler = functools.partial(self.__client_coroutine, client_connected_cb, disconnect_error_filter)
             await self.__listener.serve(handler, task_group)
 
     async def __client_coroutine(
         self,
         client_connected_cb: Callable[[ConnectedStreamClient[_T_Response]], AsyncGenerator[float | None, _T_Request]],
+        disconnect_error_filter: Callable[[Exception], bool] | None,
         transport: _transports.AsyncStreamTransport,
     ) -> None:
         if not isinstance(transport, _transports.AsyncStreamTransport):
@@ -205,6 +210,7 @@ class AsyncStreamServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T_R
                     request_receiver = _BufferedRequestReceiver(
                         transport=transport,
                         consumer=consumer,
+                        disconnect_error_filter=disconnect_error_filter,
                     )
                 case StreamProtocol():
                     consumer = _stream.StreamDataConsumer(self.__protocol)
@@ -212,6 +218,7 @@ class AsyncStreamServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T_R
                         transport=transport,
                         consumer=consumer,
                         max_recv_size=self.__max_recv_size,
+                        disconnect_error_filter=disconnect_error_filter,
                     )
                 case _:  # pragma: no cover
                     assert_never(self.__protocol)
@@ -257,6 +264,7 @@ class _RequestReceiver(Generic[_T_Request]):
     transport: _transports.AsyncStreamReadTransport
     consumer: _stream.StreamDataConsumer[_T_Request]
     max_recv_size: int
+    disconnect_error_filter: Callable[[Exception], bool] | None
     __null_timeout_ctx: contextlib.nullcontext[None] = dataclasses.field(init=False, default_factory=contextlib.nullcontext)
     __backend: AsyncBackend = dataclasses.field(init=False)
 
@@ -280,18 +288,25 @@ class _RequestReceiver(Generic[_T_Request]):
                         return SendAction(request)
                     finally:
                         data = None
-                    data = await self.transport.recv(self.max_recv_size)
+                    try:
+                        data = await self.transport.recv(self.max_recv_size)
+                    except Exception as exc:
+                        if self.disconnect_error_filter is not None and self.disconnect_error_filter(exc):
+                            break
+                        raise
                     if not data:
                         break
         except BaseException as exc:
             return ThrowAction(exc)
-        raise StopAsyncIteration
+        else:
+            raise StopAsyncIteration
 
 
 @dataclasses.dataclass(kw_only=True, eq=False, slots=True)
 class _BufferedRequestReceiver(Generic[_T_Request]):
     transport: _transports.AsyncStreamReadTransport
     consumer: _stream.BufferedStreamDataConsumer[_T_Request]
+    disconnect_error_filter: Callable[[Exception], bool] | None
     __null_timeout_ctx: contextlib.nullcontext[None] = dataclasses.field(init=False, default_factory=contextlib.nullcontext)
     __backend: AsyncBackend = dataclasses.field(init=False)
 
@@ -312,9 +327,15 @@ class _BufferedRequestReceiver(Generic[_T_Request]):
                         if nbytes is None:
                             await self.__backend.cancel_shielded_coro_yield()
                         return SendAction(request)
-                    nbytes = await self.transport.recv_into(consumer.get_write_buffer())
+                    try:
+                        nbytes = await self.transport.recv_into(consumer.get_write_buffer())
+                    except Exception as exc:
+                        if self.disconnect_error_filter is not None and self.disconnect_error_filter(exc):
+                            break
+                        raise
                     if not nbytes:
                         break
         except BaseException as exc:
             return ThrowAction(exc)
-        raise StopAsyncIteration
+        else:
+            raise StopAsyncIteration

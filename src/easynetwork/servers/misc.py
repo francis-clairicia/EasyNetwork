@@ -89,11 +89,7 @@ def build_lowlevel_stream_server_handler(
                     while True:
                         try:
                             action = SendAction((yield timeout))
-                        except ConnectionError:
-                            return
                         except BaseException as exc:
-                            if _utils.is_ssl_eof_error(exc):
-                                return
                             action = ThrowAction(_utils.remove_traceback_frames_in_place(exc, 1))
                         try:
                             timeout = await action.asend(_on_connection_hook)
@@ -135,11 +131,7 @@ def build_lowlevel_stream_server_handler(
                     while True:
                         try:
                             action = SendAction((yield timeout))
-                        except ConnectionError:
-                            return
                         except BaseException as exc:
-                            if _utils.is_ssl_eof_error(exc):
-                                return
                             action = ThrowAction(_utils.remove_traceback_frames_in_place(exc, 1))
                         try:
                             timeout = await action.asend(request_handler_generator)

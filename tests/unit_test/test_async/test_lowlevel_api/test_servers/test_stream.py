@@ -303,6 +303,91 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
                 await server.serve(client_connected_cb, tg)
         client_connected_cb.assert_not_called()
 
+    @pytest.mark.parametrize("give_filter", [False, True], ids=lambda p: f"give_filter=={p}")
+    async def test____serve____disconnect_error_filter____mask_connection_error_on_receive(
+        self,
+        give_filter: bool,
+        server: AsyncStreamServer[Any, Any],
+        mock_stream_transport: MagicMock,
+        mock_listener: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        async def serve_side_effect(handler: Callable[[Any], Awaitable[None]], task_group: Any) -> NoReturn:
+            await handler(mock_stream_transport)
+            raise asyncio.CancelledError("serve_side_effect")
+
+        mock_listener.serve.side_effect = serve_side_effect
+        mock_stream_transport.recv.side_effect = ConnectionResetError
+        mock_stream_transport.recv_into.side_effect = ConnectionResetError
+
+        exception_caught = mocker.stub()
+
+        @stub_decorator(mocker)
+        async def client_connected_cb(_: Any) -> AsyncGenerator[None, Any]:
+            try:
+                yield
+            except ConnectionResetError:
+                exception_caught(False)
+            except GeneratorExit:
+                exception_caught(True)
+                raise
+            else:
+                exception_caught(None)
+
+        # Act & Assert
+        async with TaskGroup() as tg:
+            with pytest.raises(asyncio.CancelledError, match=r"^serve_side_effect$"):
+                if give_filter:
+                    await server.serve(
+                        client_connected_cb,
+                        tg,
+                        disconnect_error_filter=lambda exc: isinstance(exc, ConnectionError),
+                    )
+                else:
+                    await server.serve(client_connected_cb, tg)
+
+        exception_caught.assert_called_once_with(True if give_filter else False)
+
+    async def test____serve____disconnect_error_filter____reraise_non_filtered_errors(
+        self,
+        server: AsyncStreamServer[Any, Any],
+        mock_stream_transport: MagicMock,
+        mock_listener: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        async def serve_side_effect(handler: Callable[[Any], Awaitable[None]], task_group: Any) -> NoReturn:
+            await handler(mock_stream_transport)
+            raise asyncio.CancelledError("serve_side_effect")
+
+        mock_listener.serve.side_effect = serve_side_effect
+        mock_stream_transport.recv.side_effect = OSError
+        mock_stream_transport.recv_into.side_effect = OSError
+
+        exception_caught = mocker.stub()
+
+        @stub_decorator(mocker)
+        async def client_connected_cb(_: Any) -> AsyncGenerator[None, Any]:
+            try:
+                yield
+            except OSError:
+                exception_caught(False)
+            except GeneratorExit:
+                exception_caught(True)
+                raise
+
+        # Act & Assert
+        async with TaskGroup() as tg:
+            with pytest.raises(asyncio.CancelledError, match=r"^serve_side_effect$"):
+                await server.serve(
+                    client_connected_cb,
+                    tg,
+                    disconnect_error_filter=lambda exc: isinstance(exc, ConnectionError),
+                )
+
+        exception_caught.assert_called_once_with(False)
+
     async def test____get_backend____returns_inner_listener_backend(
         self,
         server: AsyncStreamServer[Any, Any],
