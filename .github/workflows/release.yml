@@ -9,8 +9,6 @@ jobs:
   build:
     name: Build sdist/wheel
     uses: ./.github/workflows/build.yml
-    with:
-      artifact-name: easynetwork-dist
 
   release:
     needs: build
