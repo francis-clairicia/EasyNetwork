@@ -49,20 +49,13 @@ jobs:
       matrix:
         os: [ubuntu-22.04, windows-2022, macos-12]
         python_version: ['3.11', '3.12']
-        test_type: [unit, functional]
         include:
           - python_version: '3.11'
             tox_py: py311
           - python_version: '3.12'
             tox_py: py312
-          - test_type: unit
-            codecov_flags: >-
-              test-unit
-          - test_type: functional
-            codecov_flags: >-
-              test-functional
 
-    name: ${{ matrix.test_type }} tests (${{ matrix.os }}, ${{ matrix.python_version }})
+    name: Tests (${{ matrix.os }}, ${{ matrix.python_version }})
     steps:
       - uses: actions/checkout@v4
         with:
@@ -73,19 +66,32 @@ jobs:
           python-version: ${{ matrix.python_version }}
       - name: Launch tests
         timeout-minutes: 20  # Even if 10 minutes is already too big
-        run: tox run -f ${{ matrix.tox_py }}-${{ matrix.test_type }} -- -v
+        run: tox run -f ${{ matrix.tox_py }} -- -v
       - name: Generate coverage report
         if: hashFiles('.coverage.*') != ''  # Rudimentary `file.exists()`
-        run: |
-          tox run -e coverage
-          tox exec -e coverage -- coverage xml
-      - name: Upload coverage to codecov
-        if: hashFiles('coverage.xml') != ''  # Rudimentary `file.exists()`
+        continue-on-error: true
+        run: tox run -f coverage
+      # Currently, it is not possible to send several files with per-file tags.
+      # This is why the step is copy-paste twice.
+      # Issue: https://github.com/codecov/codecov-action/issues/1522
+      - name: Upload (unit tests) coverage to codecov
+        if: hashFiles('coverage.unit.xml') != ''  # Rudimentary `file.exists()`
         uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          flags: >-  # Mark which lines are covered by which envs
-            ${{ matrix.codecov_flags }},
+          file: coverage.unit.xml
+          flags: >-
+            test-unit,
+            OS-${{ runner.os }},
+            Py-${{ matrix.python_version }}
+      - name: Upload (functional tests) coverage to codecov
+        if: hashFiles('coverage.functional.xml') != ''  # Rudimentary `file.exists()`
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          file: coverage.functional.xml
+          flags: >-
+            test-functional,
             OS-${{ runner.os }},
             Py-${{ matrix.python_version }}
 
