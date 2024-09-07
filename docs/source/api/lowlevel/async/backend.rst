@@ -67,6 +67,8 @@ All asynchronous objects relying on an :class:`AsyncBackend` object have a ``bac
 
 * Data transport adapters ( :meth:`.AsyncBaseTransport.backend` ).
 
+* Concurrent Executors ( :meth:`.AsyncExecutor.backend` ).
+
 Obtain An Object By Yourself
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 

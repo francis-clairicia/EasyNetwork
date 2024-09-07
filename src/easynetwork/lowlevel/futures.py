@@ -202,6 +202,13 @@ class AsyncExecutor(Generic[_T_Executor]):
         shutdown_callback = functools.partial(self.__executor.shutdown, wait=True, cancel_futures=cancel_futures)
         await self.__backend.run_in_thread(shutdown_callback)
 
+    def backend(self) -> AsyncBackend:
+        """
+        Returns:
+            The backend implementation linked to this object.
+        """
+        return self.__backend
+
     def _setup_func(self, func: Callable[_P, _T]) -> Callable[_P, _T]:
         if self.__handle_contexts:
             ctx = contextvars.copy_context()

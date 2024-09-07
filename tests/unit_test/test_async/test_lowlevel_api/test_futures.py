@@ -262,6 +262,16 @@ class TestAsyncExecutor:
             partial_eq(mock_stdlib_executor.shutdown, wait=True, cancel_futures=cancel_futures)
         )
 
+    async def test____get_backend____returns_inner_backend(
+        self,
+        executor: AsyncExecutor[concurrent.futures.Executor],
+        mock_backend: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        assert executor.backend() is mock_backend
+
     async def test____context_manager____shutdown_executor_at_end(
         self,
         executor: AsyncExecutor[concurrent.futures.Executor],
