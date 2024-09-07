@@ -121,7 +121,7 @@ class ThreadsPortal(AbstractThreadsPortal):
             waiter = self.__register_waiter(self.__call_soon_waiters, loop)
             _ = self.__task_group.create_task(coroutine(waiter), name=TaskUtils.compute_task_name_from_func(coro_func))
 
-        self.run_sync_soon(schedule_task)
+        self.run_sync_soon(schedule_task).result()
         return future
 
     def run_sync_soon(self, func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> concurrent.futures.Future[_T]:

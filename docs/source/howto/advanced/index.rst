@@ -10,3 +10,4 @@ Advanced Guide
    serializer_combinations
    serializer_composition
    standalone_servers
+   multithreaded_servers
