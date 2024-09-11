@@ -186,14 +186,11 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
                         client = client_cache[address]
                     except KeyError:
                         client_cache[address] = client = _ClientToken(DatagramClientContext(address, self), _ClientData(backend))
-                        notify = False
-                    else:
-                        notify = True
 
-                    await client.data.push_datagram(datagram, notify=notify)
+                    await client.data.push_datagram(datagram)
+                    del datagram
 
                     if client.data.state is None:
-                        del datagram
                         client.data.mark_pending()
                         await self.__client_coroutine(datagram_received_cb, client, task_group, default_context)
 
@@ -217,7 +214,7 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
                 client_data=client.data,
             )
         finally:
-            self.__on_task_done(
+            self.__on_client_coroutine_task_done(
                 datagram_received_cb=datagram_received_cb,
                 client=client,
                 task_group=task_group,
@@ -231,8 +228,8 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
         client_data: _ClientData,
     ) -> None:
         timeout: float | None
-        datagram: bytes = client_data.pop_datagram_no_wait()
         try:
+            datagram: bytes = client_data.pop_datagram_no_wait()
             # Ignore sent timeout here, we already have the datagram.
             await anext_without_asyncgen_hook(request_handler_generator)
         except StopAsyncIteration:
@@ -249,9 +246,10 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
 
             del datagram
             null_timeout_ctx = contextlib.nullcontext()
+            backend = client_data.backend
             while True:
                 try:
-                    with null_timeout_ctx if timeout is None else client_data.backend.timeout(timeout):
+                    with null_timeout_ctx if timeout is None else backend.timeout(timeout):
                         datagram = await client_data.pop_datagram()
                     action = self.__parse_datagram(datagram, self.__protocol)
                 except BaseException as exc:
@@ -267,7 +265,7 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
         finally:
             await request_handler_generator.aclose()
 
-    def __on_task_done(
+    def __on_client_coroutine_task_done(
         self,
         datagram_received_cb: Callable[
             [DatagramClientContext[_T_Response, _T_Address]], AsyncGenerator[float | None, _T_Request]
@@ -372,11 +370,14 @@ class _ClientData:
     def queue_is_empty(self) -> bool:
         return not self._datagram_queue
 
-    async def push_datagram(self, datagram: bytes, *, notify: bool) -> None:
-        self._datagram_queue.append(datagram)
-        if notify:
-            async with (queue_condition := self._queue_condition):
-                queue_condition.notify()
+    async def push_datagram(self, datagram: bytes) -> None:
+        if self.__state is None:
+            # Do not need to acquire anything
+            self._datagram_queue.append(datagram)
+            return
+        async with (queue_condition := self._queue_condition):
+            self._datagram_queue.append(datagram)
+            queue_condition.notify()
 
     def pop_datagram_no_wait(self) -> bytes:
         return self._datagram_queue.popleft()

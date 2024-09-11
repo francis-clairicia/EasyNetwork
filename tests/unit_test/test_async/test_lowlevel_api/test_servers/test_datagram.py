@@ -286,14 +286,18 @@ class TestClientData:
         client_data._queue_condition = queue_condition
 
         # Act
-        await client_data.push_datagram(b"datagram_1", notify=notify)
-        await client_data.push_datagram(b"datagram_2", notify=notify)
-        await client_data.push_datagram(b"datagram_3", notify=notify)
+        await client_data.push_datagram(b"datagram_1")
+        if notify:
+            client_data.mark_pending()
+        await client_data.push_datagram(b"datagram_2")
+        if notify:
+            client_data.mark_running()
+        await client_data.push_datagram(b"datagram_3")
 
         # Assert
         assert list(client_data._datagram_queue) == [b"datagram_1", b"datagram_2", b"datagram_3"]
         if notify:
-            assert queue_condition.notify.call_count == 3
+            assert queue_condition.notify.call_count == 2
         else:
             queue_condition.notify.assert_not_called()
 
@@ -336,12 +340,14 @@ class TestClientData:
         client_data: _ClientData,
     ) -> None:
         # Arrange
+        client_data.mark_pending()
+        client_data.mark_running()
         pop_datagram_task = asyncio.create_task(client_data.pop_datagram())
         await asyncio.sleep(0.01)
         assert not pop_datagram_task.done()
 
         # Act
-        await client_data.push_datagram(b"datagram_1", notify=True)
+        await client_data.push_datagram(b"datagram_1")
 
         # Assert
         assert (await pop_datagram_task) == b"datagram_1"
