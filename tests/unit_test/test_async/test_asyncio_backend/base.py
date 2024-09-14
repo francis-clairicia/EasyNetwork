@@ -79,11 +79,14 @@ class BaseTestAsyncSocket:
 
     @staticmethod
     @contextlib.contextmanager
-    def _set_sock_method_in_blocking_state(mock_socket_method: MagicMock) -> Iterator[None]:
+    def _set_sock_method_in_blocking_state(
+        mock_socket_method: MagicMock,
+        exception: type[Exception] | Exception = BlockingIOError,
+    ) -> Iterator[None]:
         default_side_effect = mock_socket_method.side_effect
         default_return_value = mock_socket_method.return_value
         try:
-            mock_socket_method.side_effect = BlockingIOError
+            mock_socket_method.side_effect = exception
             yield
         finally:
             mock_socket_method.configure_mock(side_effect=default_side_effect, return_value=default_return_value)

@@ -171,7 +171,13 @@ class ListenerSocketAdapter(AsyncListener[_T_Stream]):
                         constants.ACCEPT_CAPACITY_ERROR_SLEEP_TIME,
                         exc_info=exc,
                     )
-                    await asyncio.sleep(constants.ACCEPT_CAPACITY_ERROR_SLEEP_TIME)
+                    try:
+                        with self.__backend.open_cancel_scope() as self.__accept_scope:
+                            await asyncio.sleep(constants.ACCEPT_CAPACITY_ERROR_SLEEP_TIME)
+                        if self.__accept_scope.cancelled_caught():
+                            raise _utils.error_from_errno(_errno.EBADF) from None
+                    finally:
+                        self.__accept_scope = None
                 else:
                     raise
 

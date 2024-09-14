@@ -312,10 +312,13 @@ class CancelScope(AbstractCancelScope):
             return
 
         should_retry: bool = False
-
-        if not self.__task_must_cancel(self.__host_task) and self.__host_task not in self.__delayed_task_cancel_dict:
+        if self.__host_task in self.__delayed_task_cancel_dict:
+            delayed_task_cancel: _DelayedCancel = self.__delayed_task_cancel_dict[self.__host_task]
+            if delayed_task_cancel.message == self.__cancellation_id():
+                should_retry = True
+        else:
             should_retry = True
-            if self.__host_task is not asyncio.current_task():
+            if not self.__task_must_cancel(self.__host_task) and self.__host_task is not asyncio.current_task():
                 self.__host_task.cancel(msg=self.__cancellation_id())
                 self.__host_task_cancel_calls += 1
 
