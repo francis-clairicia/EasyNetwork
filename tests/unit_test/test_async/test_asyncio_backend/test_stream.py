@@ -472,6 +472,29 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket, BaseTestAsyncSock
         assert exc_info.value.errno == EBADF
         mock_tcp_listener_socket.accept.assert_not_called()
 
+    @pytest.mark.parametrize("errno_value", sorted(ACCEPT_CAPACITY_ERRNOS), ids=errno_errorcode.__getitem__)
+    async def test____accept____closed_socket____during_capacity_error_sleep_time(
+        self,
+        errno_value: int,
+        listener: ListenerSocketAdapter[Any],
+        mock_tcp_listener_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        with self._set_sock_method_in_blocking_state(
+            mock_tcp_listener_socket.accept,
+            exception=OSError(errno_value, os.strerror(errno_value)),
+        ):
+            busy_method_task = await self._busy_socket_task(listener.raw_accept(), mock_tcp_listener_socket.accept)
+
+        # Act
+        await listener.aclose()
+        with pytest.raises(OSError) as exc_info:
+            await busy_method_task
+
+        # Assert
+        assert exc_info.value.errno == EBADF
+        mock_tcp_listener_socket.accept.assert_not_called()
+
     @pytest.mark.parametrize("cancellation_requests", [1, 3])
     async def test____accept____external_cancellation_during_attempt(
         self,
