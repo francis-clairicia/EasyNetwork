@@ -27,7 +27,7 @@ def _make_skipif_platform(platform: str, reason: str, *, skip_only_on_ci: bool) 
     if skip_only_on_ci:
         # CI=true is always set for Github Actions
         # c.f. https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/store-information-in-variables#default-environment-variables
-        condition = condition and os.environ.get("CI") == "true"
+        condition = condition and "CI" in os.environ
     return pytest.mark.skipif(condition, reason=reason)
 
 
