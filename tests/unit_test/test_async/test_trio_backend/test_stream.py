@@ -2,18 +2,20 @@ from __future__ import annotations
 
 import contextlib
 import errno
+import logging
 import os
 from collections.abc import AsyncIterator, Callable, Coroutine, Iterable, Iterator
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.lowlevel.api_async.backend._trio.backend import TrioBackend
 from easynetwork.lowlevel.api_async.backend.abc import TaskGroup
-from easynetwork.lowlevel.constants import CLOSED_SOCKET_ERRNOS
+from easynetwork.lowlevel.constants import ACCEPT_CAPACITY_ERRNOS, CLOSED_SOCKET_ERRNOS
 from easynetwork.lowlevel.socket import SocketAttribute, SocketProxy
 
 import pytest
 
 from ....fixtures.trio import trio_fixture
+from ....tools import PlatformMarkers
 from ...base import BaseTestSocket, MixinTestSocketSendMSG
 
 if TYPE_CHECKING:
@@ -657,6 +659,61 @@ class TestTrioListenerSocketAdapter(BaseTestTransportStreamSocket):
         # Assert
         assert exc_info.value.errno == errno.EBADF
         handler.assert_not_awaited()
+
+    @PlatformMarkers.skipif_platform_win32_because("test failures are all too frequent on CI", skip_only_on_ci=True)
+    @pytest.mark.parametrize("errno_value", sorted(ACCEPT_CAPACITY_ERRNOS), ids=errno.errorcode.__getitem__)
+    @pytest.mark.flaky(retries=3, delay=0.1)
+    async def test____accept____accept_capacity_error(
+        self,
+        errno_value: int,
+        listener: TrioListenerSocketAdapter,
+        mock_trio_socket_listener: MagicMock,
+        handler: AsyncMock,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        # Arrange
+        import trio
+
+        caplog.set_level(logging.ERROR)
+        mock_trio_socket_listener.accept.side_effect = OSError(errno_value, os.strerror(errno_value))
+
+        # Act
+        # It retries every 100 ms, so in 975 ms it will retry at 0, 100, ..., 900
+        # = 10 times total
+        with trio.CancelScope(deadline=trio.current_time() + 0.975):
+            await listener.serve(handler)
+
+        # Assert
+        assert len(caplog.records) == 10
+        for record in caplog.records:
+            assert "retrying" in record.message
+            assert (
+                record.exc_info is not None
+                and isinstance(record.exc_info[1], OSError)
+                and record.exc_info[1].errno == errno_value
+            )
+
+    async def test____accept____reraise_other_OSErrors(
+        self,
+        listener: TrioListenerSocketAdapter,
+        trio_backend: TrioBackend,
+        mock_trio_socket_listener: MagicMock,
+        handler: AsyncMock,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        # Arrange
+        caplog.set_level(logging.ERROR)
+        exc = OSError()
+        mock_trio_socket_listener.accept.side_effect = exc
+
+        # Act
+        async with trio_backend.create_task_group() as task_group:
+            with pytest.raises(OSError) as exc_info:
+                await listener.serve(handler, task_group)
+
+        # Assert
+        assert len(caplog.records) == 0
+        assert exc_info.value is exc
 
     async def test____get_backend____returns_linked_instance(
         self,
