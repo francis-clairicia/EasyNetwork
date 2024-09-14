@@ -357,7 +357,7 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket, BaseTestAsyncSock
                     exc,
                 )
 
-    @PlatformMarkers.skipif_platform_win32
+    @PlatformMarkers.skipif_platform_win32_because("test failures are all too frequent on CI", skip_only_on_ci=True)
     @pytest.mark.parametrize("errno_value", sorted(ACCEPT_CAPACITY_ERRNOS), ids=errno_errorcode.__getitem__)
     @pytest.mark.flaky(retries=3, delay=0.1)
     async def test____accept____accept_capacity_error(

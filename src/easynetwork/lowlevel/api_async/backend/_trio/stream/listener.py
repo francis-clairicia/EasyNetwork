@@ -20,13 +20,16 @@ from __future__ import annotations
 __all__ = ["TrioListenerSocketAdapter"]
 
 import contextlib
+import errno as _errno
+import logging
+import os
 import warnings
 from collections.abc import Callable, Coroutine, Mapping
 from typing import Any, NoReturn, final
 
 import trio
 
-from ..... import _utils, socket as socket_tools
+from ..... import _utils, constants, socket as socket_tools
 from ....transports.abc import AsyncListener
 from ...abc import AsyncBackend, TaskGroup
 from .._trio_utils import convert_trio_resource_errors
@@ -83,8 +86,23 @@ class TrioListenerSocketAdapter(AsyncListener[TrioStreamSocketAdapter]):
                 # Always drop socket reference on loop begin
                 client_socket: trio.SocketStream | None = None
 
-                client_socket = await self.__listener.accept()
-                task_group.start_soon(handler, TrioStreamSocketAdapter(self.__backend, client_socket))
+                try:
+                    client_socket = await self.__listener.accept()
+                except OSError as exc:
+                    if exc.errno in constants.ACCEPT_CAPACITY_ERRNOS:
+                        logger = logging.getLogger(__name__)
+                        logger.error(
+                            "accept returned %s (%s); retrying in %s seconds",
+                            _errno.errorcode[exc.errno],
+                            os.strerror(exc.errno),
+                            constants.ACCEPT_CAPACITY_ERROR_SLEEP_TIME,
+                            exc_info=exc,
+                        )
+                        await trio.sleep(constants.ACCEPT_CAPACITY_ERROR_SLEEP_TIME)
+                    else:
+                        raise
+                else:
+                    task_group.start_soon(handler, TrioStreamSocketAdapter(self.__backend, client_socket))
 
         raise AssertionError("Expected code to be unreachable.")
 

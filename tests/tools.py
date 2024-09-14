@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import importlib
+import os
 import sys
 import time
 from collections.abc import Callable, Generator, Iterator
@@ -21,23 +22,28 @@ _V_co = TypeVar("_V_co", covariant=True)
 _T_Args = TypeVarTuple("_T_Args")
 
 
-def _make_skipif_platform(platform: str, reason: str) -> pytest.MarkDecorator:
-    return pytest.mark.skipif(sys.platform.startswith(platform), reason=reason)
+def _make_skipif_platform(platform: str, reason: str, *, skip_only_on_ci: bool) -> pytest.MarkDecorator:
+    condition: bool = sys.platform.startswith(platform)
+    if skip_only_on_ci:
+        # CI=true is always set for Github Actions
+        # c.f. https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/store-information-in-variables#default-environment-variables
+        condition = condition and os.environ.get("CI") == "true"
+    return pytest.mark.skipif(condition, reason=reason)
 
 
 @final
 class PlatformMarkers:
     @staticmethod
-    def skipif_platform_win32_because(reason: str) -> pytest.MarkDecorator:
-        return _make_skipif_platform("win32", reason)
+    def skipif_platform_win32_because(reason: str, *, skip_only_on_ci: bool = False) -> pytest.MarkDecorator:
+        return _make_skipif_platform("win32", reason, skip_only_on_ci=skip_only_on_ci)
 
     @staticmethod
-    def skipif_platform_macOS_because(reason: str) -> pytest.MarkDecorator:
-        return _make_skipif_platform("darwin", reason)
+    def skipif_platform_macOS_because(reason: str, *, skip_only_on_ci: bool = False) -> pytest.MarkDecorator:
+        return _make_skipif_platform("darwin", reason, skip_only_on_ci=skip_only_on_ci)
 
     @staticmethod
-    def skipif_platform_linux_because(reason: str) -> pytest.MarkDecorator:
-        return _make_skipif_platform("linux", reason)
+    def skipif_platform_linux_because(reason: str, *, skip_only_on_ci: bool = False) -> pytest.MarkDecorator:
+        return _make_skipif_platform("linux", reason, skip_only_on_ci=skip_only_on_ci)
 
     skipif_platform_win32 = skipif_platform_win32_because("cannot run on Windows")
     skipif_platform_macOS = skipif_platform_macOS_because("cannot run on MacOS")
