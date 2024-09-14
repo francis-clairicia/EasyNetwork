@@ -25,9 +25,10 @@ _T_Args = TypeVarTuple("_T_Args")
 def _make_skipif_platform(platform: str, reason: str, *, skip_only_on_ci: bool) -> pytest.MarkDecorator:
     condition: bool = sys.platform.startswith(platform)
     if skip_only_on_ci:
+        # skip if 'CI' is set to a non-empty value
         # CI=true is always set for Github Actions
         # c.f. https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/store-information-in-variables#default-environment-variables
-        condition = condition and "CI" in os.environ
+        condition = condition and bool(os.environ.get("CI", ""))
     return pytest.mark.skipif(condition, reason=reason)
 
 
