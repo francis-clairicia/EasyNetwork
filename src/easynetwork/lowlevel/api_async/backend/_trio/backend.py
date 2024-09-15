@@ -246,9 +246,7 @@ class TrioBackend(AbstractAsyncBackend):
             reuse_port=reuse_port,
         )
 
-        listeners = [
-            TrioDatagramListenerSocketAdapter(self, sock) for sock in map(self.__trio.socket.from_stdlib_socket, sockets)
-        ]
+        listeners = [TrioDatagramListenerSocketAdapter(self, sock) for sock in sockets]
         return listeners
 
     def create_lock(self) -> ILock:
