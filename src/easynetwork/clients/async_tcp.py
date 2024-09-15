@@ -260,7 +260,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         self.__socket_connector_lock: ILock = backend.create_lock()
 
         self.__receive_lock: ILock = backend.create_lock()
-        self.__send_lock: ILock = backend.create_lock()
+        self.__send_lock: ILock = backend.create_fair_lock()
 
         self.__expected_recv_size: int = max_recv_size
 

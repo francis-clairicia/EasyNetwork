@@ -384,7 +384,7 @@ class _ConnectedClientAPI(AsyncStreamClient[_T_Response]):
     ) -> None:
         self.__client: _stream_server.ConnectedStreamClient[_T_Response] = client
         self.__closing: bool = False
-        self.__send_lock = client.backend().create_lock()
+        self.__send_lock = client.backend().create_fair_lock()
         self.__proxy: SocketProxy = SocketProxy(client.extra(INETSocketAttribute.socket))
         self.__address: SocketAddress = address
         self.__extra_attributes_cache: Mapping[Any, Callable[[], Any]] | None = None
