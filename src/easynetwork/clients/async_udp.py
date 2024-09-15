@@ -147,7 +147,7 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         )
         self.__socket_connector_lock: ILock = backend.create_lock()
         self.__receive_lock: ILock = backend.create_lock()
-        self.__send_lock: ILock = backend.create_lock()
+        self.__send_lock: ILock = backend.create_fair_lock()
 
     @staticmethod
     async def __create_socket(

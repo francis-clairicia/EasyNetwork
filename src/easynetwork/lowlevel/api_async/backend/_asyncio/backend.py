@@ -273,6 +273,10 @@ class AsyncIOBackend(AbstractAsyncBackend):
     def create_lock(self) -> ILock:
         return self.__asyncio.Lock()
 
+    def create_fair_lock(self) -> ILock:
+        # For now, asyncio.Lock is already a fair (and fast) lock.
+        return self.__asyncio.Lock()
+
     def create_event(self) -> IEvent:
         return self.__asyncio.Event()
 

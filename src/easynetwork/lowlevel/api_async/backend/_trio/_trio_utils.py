@@ -75,3 +75,49 @@ class convert_trio_resource_errors(contextlib.AbstractContextManager[None]):
                 error.__cause__ = exc_value
                 error.__suppress_context__ = True
                 return error.with_traceback(None)
+
+
+class FastFIFOLock:
+
+    def __init__(self) -> None:
+        self._locked: bool = False
+        self._lot: trio.lowlevel.ParkingLot = trio.lowlevel.ParkingLot()
+
+    def __repr__(self) -> str:
+        res = super().__repr__()
+        extra = "locked" if self._locked else "unlocked"
+        if self._lot:
+            extra = f"{extra}, waiters:{len(self._lot)}"
+        return f"<{res[1:-1]} [{extra}]>"
+
+    async def __aenter__(self) -> None:
+        await self.acquire()
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: types.TracebackType | None,
+        /,
+    ) -> None:
+        self.release()
+
+    async def acquire(self) -> None:
+        if self._locked or self._lot:
+            await self._lot.park()
+            if not self._locked:
+                raise AssertionError("should be acquired")
+        else:
+            self._locked = True
+
+    def release(self) -> None:
+        if self._locked:
+            if self._lot:
+                self._lot.unpark(count=1)
+            else:
+                self._locked = False
+        else:
+            raise RuntimeError("Lock not acquired")
+
+    def locked(self) -> bool:
+        return self._locked

@@ -29,7 +29,7 @@ import trio
 
 from ..... import _utils, socket as socket_tools
 from ....transports.abc import AsyncDatagramListener
-from ...abc import AsyncBackend, TaskGroup
+from ...abc import AsyncBackend, ILock, TaskGroup
 
 
 @final
@@ -39,6 +39,7 @@ class TrioDatagramListenerSocketAdapter(AsyncDatagramListener[tuple[Any, ...]]):
         "__listener",
         "__trsock",
         "__serve_guard",
+        "__send_lock",
     )
 
     from .....constants import MAX_DATAGRAM_BUFSIZE
@@ -53,6 +54,7 @@ class TrioDatagramListenerSocketAdapter(AsyncDatagramListener[tuple[Any, ...]]):
         self.__listener: trio.socket.SocketType = sock
         self.__trsock: socket_tools.SocketProxy = socket_tools.SocketProxy(sock)
         self.__serve_guard: _utils.ResourceGuard = _utils.ResourceGuard(f"{self.__class__.__name__}.serve() awaited twice.")
+        self.__send_lock: ILock = backend.create_fair_lock()
 
     def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
         try:
@@ -93,7 +95,8 @@ class TrioDatagramListenerSocketAdapter(AsyncDatagramListener[tuple[Any, ...]]):
         raise AssertionError("Expected code to be unreachable.")
 
     async def send_to(self, data: bytes | bytearray | memoryview, address: tuple[Any, ...]) -> None:
-        await self.__listener.sendto(data, address)
+        async with self.__send_lock:
+            await self.__listener.sendto(data, address)
 
     def backend(self) -> AsyncBackend:
         return self.__backend

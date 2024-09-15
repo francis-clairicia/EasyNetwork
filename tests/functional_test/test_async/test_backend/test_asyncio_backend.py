@@ -32,7 +32,6 @@ class ExceptionCaughtDict(TypedDict, total=False):
     transport: asyncio.BaseTransport
 
 
-@pytest.mark.flaky(retries=3, delay=0)
 class TestAsyncioBackendBootstrap:
     @pytest.fixture(scope="class")
     @staticmethod

@@ -76,7 +76,7 @@ class TestNetworkTCP(BaseTestNetworkServer):
         port = server.get_addresses()[0].port
         return ("localhost", port)
 
-    def test____blocking_client____echo(
+    def test____tcp_blocking_client____echo(
         self,
         server_address: tuple[str, int],
         stream_protocol: AnyStreamProtocolType[str, str],
@@ -92,10 +92,14 @@ class TestNetworkTCP(BaseTestNetworkServer):
             # Several write
             for i in range(3):
                 client.send_packet(f"Hello world {i}")
+            responses: list[str] = []
+            expected: list[str] = []
             for i in range(3):
-                assert client.recv_packet(timeout=1) == f"Hello world {i}"
+                responses.append(client.recv_packet(timeout=1))
+                expected.append(f"Hello world {i}")
+            assert responses == expected
 
-    async def test____asynchronous_client____echo(
+    async def test____tcp_asynchronous_client____echo(
         self,
         async_client_backend: BuiltinAsyncBackendLiteral,
         server_address: tuple[str, int],
@@ -113,9 +117,13 @@ class TestNetworkTCP(BaseTestNetworkServer):
             # Several write
             for i in range(3):
                 await client.send_packet(f"Hello world {i}")
+            responses: list[str] = []
+            expected: list[str] = []
             for i in range(3):
                 with client.backend().timeout(1):
-                    assert (await client.recv_packet()) == f"Hello world {i}"
+                    responses.append(await client.recv_packet())
+                expected.append(f"Hello world {i}")
+            assert responses == expected
 
 
 class TestNetworkUDP(BaseTestNetworkServer):
@@ -133,7 +141,7 @@ class TestNetworkUDP(BaseTestNetworkServer):
         port = server.get_addresses()[0].port
         return ("127.0.0.1", port)
 
-    def test____blocking_client____echo(
+    def test____udp_blocking_client____echo(
         self,
         server_address: tuple[str, int],
         datagram_protocol: DatagramProtocol[str, str],
@@ -149,10 +157,14 @@ class TestNetworkUDP(BaseTestNetworkServer):
             # Several write
             for i in range(3):
                 client.send_packet(f"Hello world {i}")
+            responses: list[str] = []
+            expected: list[str] = []
             for i in range(3):
-                assert client.recv_packet(timeout=1) == f"Hello world {i}"
+                responses.append(client.recv_packet(timeout=1))
+                expected.append(f"Hello world {i}")
+            assert responses == expected
 
-    async def test____asynchronous_client____echo(
+    async def test____udp_asynchronous_client____echo(
         self,
         async_client_backend: BuiltinAsyncBackendLiteral,
         server_address: tuple[str, int],
@@ -170,6 +182,10 @@ class TestNetworkUDP(BaseTestNetworkServer):
             # Several write
             for i in range(3):
                 await client.send_packet(f"Hello world {i}")
+            responses: list[str] = []
+            expected: list[str] = []
             for i in range(3):
                 with client.backend().timeout(1):
-                    assert (await client.recv_packet()) == f"Hello world {i}"
+                    responses.append(await client.recv_packet())
+                expected.append(f"Hello world {i}")
+            assert responses == expected

@@ -4,6 +4,7 @@ import asyncio
 from collections.abc import Awaitable
 from typing import TYPE_CHECKING, Any, final, no_type_check
 
+from easynetwork.lowlevel.api_async.backend._common.fair_lock import FairLock
 from easynetwork.lowlevel.api_async.backend.abc import TaskInfo
 
 import pytest
@@ -175,3 +176,16 @@ class TestAsyncBackend:
             ),
             abandon_on_cancel=True,
         )
+
+    async def test____create_fair_lock____returns_default_impl(
+        self,
+        backend: MockBackend,
+    ) -> None:
+        # Arrange
+
+        # Act
+        lock = backend.create_fair_lock()
+
+        # Assert
+        assert isinstance(lock, FairLock)
+        assert lock._backend is backend
