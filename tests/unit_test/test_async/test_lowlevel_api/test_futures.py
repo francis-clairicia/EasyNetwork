@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import contextvars
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from easynetwork.lowlevel.futures import AsyncExecutor
 
@@ -47,7 +47,13 @@ class TestAsyncExecutor:
     @pytest.fixture(autouse=True)
     @staticmethod
     def mock_unwrap_future(mocker: MockerFixture) -> MagicMock:
-        return mocker.patch(f"{AsyncExecutor.__module__}.unwrap_future", autospec=True)
+        def default_side_effect(future: concurrent.futures.Future[Any], backend: MagicMock) -> Any:
+            try:
+                return future.result(timeout=0)
+            finally:
+                del future
+
+        return mocker.patch(f"{AsyncExecutor.__module__}.unwrap_future", autospec=True, side_effect=default_side_effect)
 
     async def test____dunder_init____invalid_executor(
         self,
@@ -99,10 +105,9 @@ class TestAsyncExecutor:
         func = mocker.stub()
         mock_future = mocker.NonCallableMagicMock(
             spec=concurrent.futures.Future,
-            **{"cancel.return_value": False},
+            **{"result.return_value": mocker.sentinel.result, "cancel.return_value": False},
         )
         mock_stdlib_executor.submit.return_value = mock_future
-        mock_unwrap_future.return_value = mocker.sentinel.result
 
         # Act
         result = await executor.run(
@@ -153,17 +158,15 @@ class TestAsyncExecutor:
         mock_futures: list[MagicMock] = [
             mocker.NonCallableMagicMock(
                 spec=concurrent.futures.Future,
-                **{"result.return_value": i, "cancel.return_value": False},
+                **{"result.return_value": getattr(mocker.sentinel, f"result_{i+1}"), "cancel.return_value": False},
             )
             for i in range(3)
         ]
         mock_contextvars_copy_context.side_effect = mock_contexts
         func = mocker.stub()
         mock_stdlib_executor.submit.side_effect = mock_futures
-        if future_exception is None:
-            mock_unwrap_future.side_effect = [mocker.sentinel.result_1, mocker.sentinel.result_2, mocker.sentinel.result_3]
-        else:
-            mock_unwrap_future.side_effect = future_exception()
+        if future_exception is not None:
+            mock_futures[0].result.side_effect = future_exception()
         func_args = (mocker.sentinel.arg1, mocker.sentinel.arg2, mocker.sentinel.args3)
 
         # Act
@@ -173,7 +176,7 @@ class TestAsyncExecutor:
             results = []
             with pytest.raises(Exception) as exc_info:
                 results = [result async for result in executor.map(func, func_args)]
-            assert exc_info.value is mock_unwrap_future.side_effect
+            assert exc_info.value is mock_futures[0].result.side_effect
 
         # Assert
         if executor_handle_contexts:
