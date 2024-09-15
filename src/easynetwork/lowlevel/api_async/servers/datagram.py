@@ -371,12 +371,11 @@ class _ClientData:
         return not self._datagram_queue
 
     async def push_datagram(self, datagram: bytes) -> None:
+        self._datagram_queue.append(datagram)
         if self.__state is None:
-            # Do not need to acquire anything
-            self._datagram_queue.append(datagram)
+            # Do not need to notify anyone.
             return
         async with (queue_condition := self._queue_condition):
-            self._datagram_queue.append(datagram)
             queue_condition.notify()
 
     def pop_datagram_no_wait(self) -> bytes:
