@@ -425,8 +425,10 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket, BaseTestAsyncSock
         self,
         listener: ListenerSocketAdapter[Any],
         mock_tcp_listener_socket: MagicMock,
+        mock_tcp_socket_factory: Callable[[], MagicMock],
     ) -> None:
         # Arrange
+        mock_tcp_listener_socket.accept.return_value = (mock_tcp_socket_factory(), ("127.0.0.1", 12345))
         with self._set_sock_method_in_blocking_state(mock_tcp_listener_socket.accept):
             _ = await self._busy_socket_task(listener.raw_accept(), mock_tcp_listener_socket.accept)
 

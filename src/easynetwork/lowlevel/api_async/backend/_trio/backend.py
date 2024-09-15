@@ -254,6 +254,11 @@ class TrioBackend(AbstractAsyncBackend):
     def create_lock(self) -> ILock:
         return self.__trio.Lock()
 
+    def create_fair_lock(self) -> ILock:
+        from ._trio_utils import FastFIFOLock
+
+        return FastFIFOLock()
+
     def create_event(self) -> IEvent:
         return self.__trio.Event()
 

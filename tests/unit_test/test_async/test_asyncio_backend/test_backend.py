@@ -755,8 +755,10 @@ class TestAsyncIOBackend:
         ]
         assert listener_sockets == [mocker.sentinel.listener_socket_ipv6, mocker.sentinel.listener_socket_ipv4]
 
+    @pytest.mark.parametrize("fair_lock", [False, True], ids=lambda p: f"fair_lock=={p}")
     async def test____create_lock____use_asyncio_Lock_class(
         self,
+        fair_lock: bool,
         backend: AsyncIOBackend,
         mocker: MockerFixture,
     ) -> None:
@@ -764,7 +766,10 @@ class TestAsyncIOBackend:
         mock_Lock = mocker.patch("asyncio.Lock", return_value=mocker.sentinel.lock)
 
         # Act
-        lock = backend.create_lock()
+        if fair_lock:
+            lock = backend.create_fair_lock()
+        else:
+            lock = backend.create_lock()
 
         # Assert
         mock_Lock.assert_called_once_with()

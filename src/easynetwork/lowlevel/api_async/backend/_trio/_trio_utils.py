@@ -83,6 +83,13 @@ class FastFIFOLock:
         self._locked: bool = False
         self._lot: trio.lowlevel.ParkingLot = trio.lowlevel.ParkingLot()
 
+    def __repr__(self) -> str:
+        res = super().__repr__()
+        extra = "locked" if self._locked else "unlocked"
+        if self._lot:
+            extra = f"{extra}, waiters:{len(self._lot)}"
+        return f"<{res[1:-1]} [{extra}]>"
+
     async def __aenter__(self) -> None:
         await self.acquire()
 
@@ -96,11 +103,12 @@ class FastFIFOLock:
         self.release()
 
     async def acquire(self) -> None:
-        if not self._locked and not self._lot:
-            self._locked = True
-        else:
+        if self._locked or self._lot:
             await self._lot.park()
-            assert self._locked  # nosec assert_used
+            if not self._locked:
+                raise AssertionError("should be acquired")
+        else:
+            self._locked = True
 
     def release(self) -> None:
         if self._locked:

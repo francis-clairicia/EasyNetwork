@@ -626,6 +626,19 @@ class TestTrioBackend:
         mock_Lock.assert_called_once_with()
         assert lock is mocker.sentinel.lock
 
+    async def test____create_fair_lock____returns_custom_lock(
+        self,
+        backend: TrioBackend,
+    ) -> None:
+        # Arrange
+        from easynetwork.lowlevel.api_async.backend._trio._trio_utils import FastFIFOLock
+
+        # Act
+        lock = backend.create_fair_lock()
+
+        # Assert
+        assert isinstance(lock, FastFIFOLock)
+
     async def test____create_event____use_trio_Event_class(
         self,
         backend: TrioBackend,
