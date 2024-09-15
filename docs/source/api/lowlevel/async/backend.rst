@@ -215,6 +215,8 @@ Locks
 
 .. automethod:: AsyncBackend.create_lock
 
+.. automethod:: AsyncBackend.create_fair_lock
+
 .. autoprotocol:: ILock
 
 Events

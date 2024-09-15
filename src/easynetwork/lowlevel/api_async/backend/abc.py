@@ -1147,7 +1147,9 @@ class AsyncBackend(metaclass=ABCMeta):
     def create_fair_lock(self) -> ILock:
         """
         Creates a Lock object for inter-task synchronization where tasks are guaranteed to acquire the lock in strict
-        first-come-first-served order. This means that it always goes to the task which has been waiting longest.
+        first-come-first-served order.
+
+        This means that it always goes to the task which has been waiting longest.
 
         Returns:
             A new fair Lock.
