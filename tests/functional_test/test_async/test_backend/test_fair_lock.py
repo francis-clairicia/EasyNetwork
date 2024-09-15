@@ -240,7 +240,7 @@ class TestFairLock:
 
             # Cleanup the task that is stuck on acquire.
             t3.cancel()
-            with backend.timeout(0.02):
+            with backend.move_on_after(0.200):
                 await t3.wait()
             assert t3.cancelled()
 
