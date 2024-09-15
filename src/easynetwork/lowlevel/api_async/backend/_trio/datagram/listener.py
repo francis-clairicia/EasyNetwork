@@ -22,7 +22,7 @@ __all__ = ["TrioDatagramListenerSocketAdapter"]
 import contextlib
 import socket as _socket
 import warnings
-from collections.abc import Callable, Coroutine, Mapping
+from collections.abc import Awaitable, Callable, Coroutine, Mapping
 from typing import Any, NoReturn, final
 
 import trio
@@ -30,6 +30,7 @@ import trio
 from ..... import _utils, socket as socket_tools
 from ....transports.abc import AsyncDatagramListener
 from ...abc import AsyncBackend, ILock, TaskGroup
+from .._trio_utils import FastFIFOLock, retry_socket_method as _retry_socket_method
 
 
 @final
@@ -40,21 +41,30 @@ class TrioDatagramListenerSocketAdapter(AsyncDatagramListener[tuple[Any, ...]]):
         "__trsock",
         "__serve_guard",
         "__send_lock",
+        "__wait_readable",
+        "__wait_writable",
     )
 
     from .....constants import MAX_DATAGRAM_BUFSIZE
 
-    def __init__(self, backend: AsyncBackend, sock: trio.socket.SocketType) -> None:
+    def __init__(self, backend: AsyncBackend, sock: _socket.socket) -> None:
         super().__init__()
 
         if sock.type != _socket.SOCK_DGRAM:
             raise ValueError("A 'SOCK_DGRAM' socket is expected")
 
+        sock.setblocking(False)
+
+        from trio.lowlevel import wait_readable, wait_writable
+
         self.__backend: AsyncBackend = backend
-        self.__listener: trio.socket.SocketType = sock
+        self.__listener: _socket.socket = sock
         self.__trsock: socket_tools.SocketProxy = socket_tools.SocketProxy(sock)
         self.__serve_guard: _utils.ResourceGuard = _utils.ResourceGuard(f"{self.__class__.__name__}.serve() awaited twice.")
-        self.__send_lock: ILock = backend.create_fair_lock()
+        self.__send_lock: ILock = FastFIFOLock()
+
+        self.__wait_readable: Callable[[_socket.socket], Awaitable[None]] = wait_readable
+        self.__wait_writable: Callable[[_socket.socket], Awaitable[None]] = wait_writable
 
     def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
         try:
@@ -66,7 +76,10 @@ class TrioDatagramListenerSocketAdapter(AsyncDatagramListener[tuple[Any, ...]]):
             listener.close()
 
     async def aclose(self) -> None:
-        self.__listener.close()
+        listener = self.__listener
+        if listener.fileno() >= 0:
+            trio.lowlevel.notify_closing(listener)
+            listener.close()
         await trio.lowlevel.checkpoint()
 
     def is_closing(self) -> bool:
@@ -82,21 +95,33 @@ class TrioDatagramListenerSocketAdapter(AsyncDatagramListener[tuple[Any, ...]]):
             if task_group is None:
                 task_group = await stack.enter_async_context(self.__backend.create_task_group())
 
-            buffer: memoryview = stack.enter_context(memoryview(bytearray(self.MAX_DATAGRAM_BUFSIZE)))
-
+            MAX_DATAGRAM_BUFSIZE = self.MAX_DATAGRAM_BUFSIZE
             listener = self.__listener
-            while True:
-                nbytes, client_address = await listener.recvfrom_into(buffer)
+            wait_readable = self.__wait_readable
 
-                task_group.start_soon(handler, bytes(buffer[:nbytes]), client_address)
+            while True:
+                datagram, client_address = await _retry_socket_method(
+                    wait_readable,
+                    listener,
+                    lambda: listener.recvfrom(MAX_DATAGRAM_BUFSIZE),
+                    always_yield=True,
+                )
+
+                task_group.start_soon(handler, datagram, client_address)
                 # Always drop references on loop end
-                del client_address
+                del datagram, client_address
 
         raise AssertionError("Expected code to be unreachable.")
 
     async def send_to(self, data: bytes | bytearray | memoryview, address: tuple[Any, ...]) -> None:
         async with self.__send_lock:
-            await self.__listener.sendto(data, address)
+            await _retry_socket_method(
+                self.__wait_writable,
+                (listener := self.__listener),
+                lambda: listener.sendto(data, address),
+                always_yield=False,
+                checkpoint_if_cancelled=False,  # <- Already checked by send_lock
+            )
 
     def backend(self) -> AsyncBackend:
         return self.__backend

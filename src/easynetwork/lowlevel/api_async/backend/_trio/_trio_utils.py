@@ -21,11 +21,21 @@ __all__ = ["convert_trio_resource_errors"]
 
 import contextlib
 import errno as _errno
+import socket as _socket
 import types
+from collections.abc import Awaitable, Callable
+from typing import TypeVar
 
 import trio
+from trio.lowlevel import (
+    cancel_shielded_checkpoint as _trio_cancel_shielded_checkpoint,
+    checkpoint_if_cancelled as _trio_checkpoint_if_cancelled,
+)
 
 from .... import _utils
+
+_T_Socket = TypeVar("_T_Socket", bound=_socket.socket)
+_T_Return = TypeVar("_T_Return")
 
 
 class convert_trio_resource_errors(contextlib.AbstractContextManager[None]):
@@ -103,6 +113,7 @@ class FastFIFOLock:
         self.release()
 
     async def acquire(self) -> None:
+        await _trio_checkpoint_if_cancelled()
         if self._locked or self._lot:
             await self._lot.park()
             if not self._locked:
@@ -121,3 +132,29 @@ class FastFIFOLock:
 
     def locked(self) -> bool:
         return self._locked
+
+
+async def retry_socket_method(
+    waiter: Callable[[_T_Socket], Awaitable[None]],
+    sock: _T_Socket,
+    callback: Callable[[], _T_Return],
+    /,
+    *,
+    always_yield: bool,
+    checkpoint_if_cancelled: bool = True,
+    exceptions_to_catch: type[Exception] | tuple[type[Exception], ...] = BlockingIOError,
+) -> _T_Return:
+    if checkpoint_if_cancelled:
+        await _trio_checkpoint_if_cancelled()
+    while True:
+        try:
+            result = callback()
+        except exceptions_to_catch:
+            pass
+        else:
+            if always_yield:
+                await _trio_cancel_shielded_checkpoint()
+            return result
+
+        await waiter(sock)
+        always_yield = False  # <- Already done the line just above

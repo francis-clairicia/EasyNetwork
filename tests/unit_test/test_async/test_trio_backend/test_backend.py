@@ -521,8 +521,8 @@ class TestTrioBackend:
             reuse_address=False,
             reuse_port=mocker.sentinel.reuse_port,
         )
-        mock_trio_socket_from_stdlib.assert_called_once_with(mock_udp_socket)
-        mock_DatagramListenerSocketAdapter.assert_called_once_with(backend, mock_trio_udp_socket)
+        mock_trio_socket_from_stdlib.assert_not_called()
+        mock_DatagramListenerSocketAdapter.assert_called_once_with(backend, mock_udp_socket)
         assert listener_sockets == [mocker.sentinel.listener_socket]
 
     @pytest.mark.parametrize("remote_host", [None, "", ["::", "0.0.0.0"]], ids=repr)
@@ -603,11 +603,9 @@ class TestTrioBackend:
             reuse_address=False,
             reuse_port=mocker.sentinel.reuse_port,
         )
-        assert mock_trio_socket_from_stdlib.call_args_list == [
-            mocker.call(sock) for sock in [mock_udp_socket_ipv6, mock_udp_socket_ipv4]
-        ]
+        mock_trio_socket_from_stdlib.assert_not_called()
         assert mock_DatagramListenerSocketAdapter.call_args_list == [
-            mocker.call(backend, trio_sock) for trio_sock in [mock_trio_udp_socket_ipv6, mock_trio_udp_socket_ipv4]
+            mocker.call(backend, trio_sock) for trio_sock in [mock_udp_socket_ipv6, mock_udp_socket_ipv4]
         ]
         assert listener_sockets == [mocker.sentinel.listener_socket_ipv6, mocker.sentinel.listener_socket_ipv4]
 
