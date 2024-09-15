@@ -286,13 +286,16 @@ class TestClientData:
         client_data._queue_condition = queue_condition
 
         # Act
-        await client_data.push_datagram(b"datagram_1")
+        n = await client_data.push_datagram(b"datagram_1")
+        assert n == 1
         if notify:
             client_data.mark_pending()
-        await client_data.push_datagram(b"datagram_2")
+        n = await client_data.push_datagram(b"datagram_2")
+        assert n == 2
         if notify:
             client_data.mark_running()
-        await client_data.push_datagram(b"datagram_3")
+        n = await client_data.push_datagram(b"datagram_3")
+        assert n == 3
 
         # Assert
         assert list(client_data._datagram_queue) == [b"datagram_1", b"datagram_2", b"datagram_3"]
