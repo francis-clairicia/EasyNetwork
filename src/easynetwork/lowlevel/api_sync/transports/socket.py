@@ -27,7 +27,7 @@ import itertools
 import selectors
 import socket
 import warnings
-from collections import ChainMap, deque
+from collections import deque
 from collections.abc import Callable, Iterable, Mapping
 from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar
 
@@ -318,13 +318,11 @@ class SSLStreamTransport(base_selector.SelectorStreamTransport):
     @_utils.inherit_doc(base_selector.SelectorStreamTransport)
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         socket = self.__socket
-        return ChainMap(
-            socket_tools._get_socket_extra(socket),
-            socket_tools._get_tls_extra(socket),
-            {
-                socket_tools.TLSAttribute.standard_compatible: lambda: self.__standard_compatible,
-            },
-        )
+        return {
+            **socket_tools._get_socket_extra(socket),
+            **socket_tools._get_tls_extra(socket),
+            socket_tools.TLSAttribute.standard_compatible: lambda: self.__standard_compatible,
+        }
 
 
 class SocketDatagramTransport(base_selector.SelectorDatagramTransport):

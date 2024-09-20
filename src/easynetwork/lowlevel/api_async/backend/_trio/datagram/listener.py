@@ -30,7 +30,7 @@ import trio
 from ..... import _utils, socket as socket_tools
 from ....transports.abc import AsyncDatagramListener
 from ...abc import AsyncBackend, ILock, TaskGroup
-from .._trio_utils import FastFIFOLock, retry_socket_method as _retry_socket_method
+from .._trio_utils import FastFIFOLock, close_socket_and_notify, retry_socket_method as _retry_socket_method
 
 
 @final
@@ -76,10 +76,13 @@ class TrioDatagramListenerSocketAdapter(AsyncDatagramListener[tuple[Any, ...]]):
             listener.close()
 
     async def aclose(self) -> None:
-        listener = self.__listener
-        if listener.fileno() >= 0:
-            trio.lowlevel.notify_closing(listener)
-            listener.close()
+        try:
+            async with self.__send_lock:
+                # Only waits for the lock
+                # If we have been cancelled, forcefully closes the socket.
+                pass
+        finally:
+            close_socket_and_notify(self.__listener)
         await trio.lowlevel.checkpoint()
 
     def is_closing(self) -> bool:

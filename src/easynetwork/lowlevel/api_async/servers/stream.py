@@ -50,13 +50,11 @@ class ConnectedStreamClient(_transports.AsyncBaseTransport, Generic[_T_Response]
         *,
         _transport: _transports.AsyncStreamWriteTransport,
         _producer: _stream.StreamDataProducer[_T_Response],
-        _exit_stack: contextlib.AsyncExitStack,
     ) -> None:
         super().__init__()
 
         self.__transport: _transports.AsyncStreamWriteTransport = _transport
         self.__producer: _stream.StreamDataProducer[_T_Response] = _producer
-        self.__exit_stack: contextlib.AsyncExitStack = _exit_stack
         self.__send_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently sending data on this endpoint")
 
     def is_closing(self) -> bool:
@@ -74,7 +72,6 @@ class ConnectedStreamClient(_transports.AsyncBaseTransport, Generic[_T_Response]
         """
         with self.__send_guard:
             await self.__transport.aclose()
-            await self.__exit_stack.aclose()
 
     async def send_packet(self, packet: _T_Response) -> None:
         """
@@ -223,14 +220,12 @@ class AsyncStreamServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T_R
                 case _:  # pragma: no cover
                     assert_never(self.__protocol)
 
-            client_exit_stack = await task_exit_stack.enter_async_context(contextlib.AsyncExitStack())
-            client_exit_stack.callback(consumer.clear)
+            task_exit_stack.callback(consumer.clear)
 
             request_handler_generator = client_connected_cb(
                 ConnectedStreamClient(
                     _transport=transport,
                     _producer=producer,
-                    _exit_stack=client_exit_stack,
                 )
             )
 
@@ -242,7 +237,7 @@ class AsyncStreamServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T_R
             else:
                 try:
                     action: AsyncGenAction[_T_Request] | None
-                    while True:
+                    while not transport.is_closing():
                         action = await request_receiver.next(timeout)
                         try:
                             timeout = await action.asend(request_handler_generator)

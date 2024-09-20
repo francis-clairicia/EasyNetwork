@@ -47,6 +47,7 @@ def mock_backend(fake_cancellation_cls: type[BaseException], mocker: MockerFixtu
 
     mock_backend.get_cancelled_exc_class.return_value = fake_cancellation_cls
     mock_backend.create_lock.side_effect = AsyncDummyLock
+    mock_backend.create_fair_lock.side_effect = AsyncDummyLock
     mock_backend.create_event.side_effect = asyncio.Event
     mock_backend.create_task_group.side_effect = TaskGroup
     mock_backend.open_cancel_scope.side_effect = CancelScope

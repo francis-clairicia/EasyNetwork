@@ -134,6 +134,12 @@ class FastFIFOLock:
         return self._locked
 
 
+def close_socket_and_notify(sock: _socket.socket) -> None:
+    if sock.fileno() >= 0:
+        trio.lowlevel.notify_closing(sock)
+        sock.close()
+
+
 async def retry_socket_method(
     waiter: Callable[[_T_Socket], Awaitable[None]],
     sock: _T_Socket,

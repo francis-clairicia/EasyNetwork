@@ -547,45 +547,6 @@ class TestTCPNetworkClient(BaseTestClient, BaseTestWithStreamProtocol, MixinTest
                     server_hostname=server_hostname,
                 )
 
-    @pytest.mark.parametrize("max_recv_size", [None, 1, 2**64], ids=lambda p: f"max_recv_size=={p}")
-    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
-    def test____dunder_init____max_size____valid_value(
-        self,
-        request: pytest.FixtureRequest,
-        max_recv_size: int | None,
-        use_socket: bool,
-        remote_address: tuple[str, int],
-        mock_tcp_socket: MagicMock,
-        mock_stream_protocol: MagicMock,
-        ssl_context: MagicMock | None,
-        server_hostname: Any | None,
-    ) -> None:
-        # Arrange
-        expected_size: int = max_recv_size if max_recv_size is not None else DEFAULT_STREAM_BUFSIZE
-
-        # Act
-        client: TCPNetworkClient[Any, Any]
-        if use_socket:
-            client = TCPNetworkClient(
-                mock_tcp_socket,
-                protocol=mock_stream_protocol,
-                max_recv_size=max_recv_size,
-                ssl=ssl_context,
-                server_hostname=server_hostname,
-            )
-        else:
-            client = TCPNetworkClient(
-                remote_address,
-                protocol=mock_stream_protocol,
-                max_recv_size=max_recv_size,
-                ssl=ssl_context,
-                server_hostname=server_hostname,
-            )
-        request.addfinalizer(client.close)
-
-        # Assert
-        assert client.max_recv_size == expected_size
-
     @pytest.mark.parametrize("max_recv_size", [0, -1, 10.4], ids=lambda p: f"max_recv_size=={p}")
     @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
     def test____dunder_init____max_recv_size____invalid_value(

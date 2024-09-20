@@ -453,9 +453,3 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
     def socket(self) -> SocketProxy:
         """A view to the underlying socket instance. Read-only attribute."""
         return self.__socket_proxy
-
-    @property
-    @final
-    def max_recv_size(self) -> int:
-        """Read buffer size. Read-only attribute."""
-        return self.__endpoint.max_recv_size

@@ -228,7 +228,7 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
 
     async def aclose(self) -> None:
         """
-        Close the client. Does not require task synchronization.
+        Closes the client. Does not require task synchronization.
 
         Once that happens, all future operations on the client object will raise a :exc:`.ClientClosedError`.
         The remote end will receive no more data (after queued data is flushed).

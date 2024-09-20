@@ -19,6 +19,7 @@ from easynetwork.exceptions import (
 from easynetwork.lowlevel.api_async.backend._asyncio.backend import AsyncIOBackend
 from easynetwork.lowlevel.api_async.backend._asyncio.dns_resolver import AsyncIODNSResolver
 from easynetwork.lowlevel.api_async.backend._asyncio.stream.listener import ListenerSocketAdapter
+from easynetwork.lowlevel.api_async.transports.utils import aclose_forcefully
 from easynetwork.lowlevel.socket import SocketAddress, enable_socket_linger
 from easynetwork.protocol import AnyStreamProtocolType
 from easynetwork.servers.async_tcp import AsyncTCPNetworkServer
@@ -114,8 +115,12 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
                 raise RandomError("Sorry man!")
             case "__error_excgrp__":
                 raise ExceptionGroup("RandomError", [RandomError("Sorry man!")])
-            case "__close__":
-                await client.aclose()
+            case "__close__" | "__close_forcefully__":
+                if request == "__close_forcefully__":
+                    await aclose_forcefully(client)
+                else:
+                    await client.aclose()
+                assert client.is_closing()
                 with pytest.raises(ClientClosedError):
                     await client.send_packet("something never sent")
             case "__closed_client_error__":
@@ -125,8 +130,8 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
                 await client.aclose()
                 try:
                     await client.send_packet("something never sent")
-                except BaseException as exc:
-                    raise BaseExceptionGroup("ClosedClientError", [exc]) from None
+                except Exception as exc:
+                    raise ExceptionGroup("ClosedClientError", [exc]) from None
             case "__connection_error__":
                 await client.aclose()  # Close before for graceful close
                 raise ConnectionResetError("Because why not?")
@@ -941,13 +946,18 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         assert caplog.records[0].levelno == logging.WARNING
         assert caplog.records[0].message == "ConnectionError raised in request_handler.on_disconnection()"
 
+    @pytest.mark.parametrize("forcefully_closed", [False, True], ids=lambda p: f"forcefully_closed=={p}")
     async def test____serve_forever____explicitly_closed_by_request_handler(
         self,
+        forcefully_closed: bool,
         client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
     ) -> None:
         reader, writer = await client_factory()
 
-        writer.write(b"__close__\n")
+        if forcefully_closed:
+            writer.write(b"__close_forcefully__\n")
+        else:
+            writer.write(b"__close__\n")
 
         assert await reader.read() == b""
 
