@@ -353,45 +353,6 @@ class TestAsyncTCPNetworkClient(BaseTestClient, BaseTestWithStreamProtocol):
                     invalid_backend,
                 )
 
-    @pytest.mark.parametrize("max_recv_size", [None, 1, 2**64], ids=lambda p: f"max_recv_size=={p}")
-    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
-    @pytest.mark.parametrize("endpoint_connected", [False, True], ids=lambda p: f"endpoint_connected=={p}")
-    async def test____dunder_init____max_recv_size____valid_value(
-        self,
-        async_finalizer: AsyncFinalizer,
-        request: pytest.FixtureRequest,
-        endpoint_connected: bool,
-        max_recv_size: int | None,
-        use_socket: bool,
-        mock_stream_protocol: MagicMock,
-        mock_backend: MagicMock,
-    ) -> None:
-        # Arrange
-        expected_size: int = max_recv_size if max_recv_size is not None else DEFAULT_STREAM_BUFSIZE
-
-        # Act
-        client: AsyncTCPNetworkClient[Any, Any]
-        if use_socket:
-            client = AsyncTCPNetworkClient(
-                request.getfixturevalue("mock_tcp_socket"),
-                mock_stream_protocol,
-                mock_backend,
-                max_recv_size=max_recv_size,
-            )
-        else:
-            client = AsyncTCPNetworkClient(
-                request.getfixturevalue("remote_address"),
-                mock_stream_protocol,
-                mock_backend,
-                max_recv_size=max_recv_size,
-            )
-        async_finalizer.add_finalizer(client.aclose)
-        if endpoint_connected:
-            await client.wait_connected()
-
-        # Assert
-        assert client.max_recv_size == expected_size
-
     @pytest.mark.parametrize("max_recv_size", [0, -1, 10.4], ids=lambda p: f"max_recv_size=={p}")
     @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
     async def test____dunder_init____max_recv_size____invalid_value(

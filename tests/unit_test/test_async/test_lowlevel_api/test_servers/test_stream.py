@@ -42,20 +42,13 @@ class TestConnectedStreamClient(BaseTestWithStreamProtocol):
 
     @pytest.fixture
     @staticmethod
-    def client_exit_stack() -> contextlib.AsyncExitStack:
-        return contextlib.AsyncExitStack()
-
-    @pytest.fixture
-    @staticmethod
     def client(
         mock_stream_transport: MagicMock,
         mock_stream_protocol: MagicMock,
-        client_exit_stack: contextlib.AsyncExitStack,
     ) -> ConnectedStreamClient[Any]:
         return ConnectedStreamClient(
             _transport=mock_stream_transport,
             _producer=StreamDataProducer(mock_stream_protocol),
-            _exit_stack=client_exit_stack,
         )
 
     @pytest.mark.parametrize("transport_closed", [False, True])
@@ -80,20 +73,15 @@ class TestConnectedStreamClient(BaseTestWithStreamProtocol):
         self,
         client: ConnectedStreamClient[Any],
         mock_stream_transport: MagicMock,
-        client_exit_stack: contextlib.AsyncExitStack,
-        mocker: MockerFixture,
     ) -> None:
         # Arrange
         mock_stream_transport.aclose.assert_not_called()
-        close_stub = mocker.async_stub()
-        client_exit_stack.push_async_callback(close_stub)
 
         # Act
         await client.aclose()
 
         # Assert
         mock_stream_transport.aclose.assert_awaited_once_with()
-        close_stub.assert_awaited_once_with()
 
     async def test____extra_attributes____default(
         self,

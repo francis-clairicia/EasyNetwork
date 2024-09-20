@@ -120,11 +120,6 @@ class StreamReceiverEndpoint(_transports.BaseTransport, Generic[_T_ReceivedPacke
         return receiver.receive(timeout)
 
     @property
-    def max_recv_size(self) -> int:
-        """Read buffer size. Read-only attribute."""
-        return self.__receiver.max_recv_size
-
-    @property
     @_utils.inherit_doc(_transports.BaseTransport)
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         return self.__transport.extra_attributes
@@ -349,11 +344,6 @@ class StreamEndpoint(_transports.BaseTransport, Generic[_T_SentPacket, _T_Receiv
         return receiver.receive(timeout)
 
     @property
-    def max_recv_size(self) -> int:
-        """Read buffer size. Read-only attribute."""
-        return self.__receiver.max_recv_size
-
-    @property
     @_utils.inherit_doc(_transports.BaseTransport)
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         return self.__transport.extra_attributes
@@ -414,12 +404,6 @@ class _BufferedReceiverImpl(Generic[_T_ReceivedPacket]):
     transport: _transports.StreamReadTransport
     consumer: _stream.BufferedStreamDataConsumer[_T_ReceivedPacket]
     _eof_reached: bool = dataclasses.field(init=False, default=False)
-
-    @property
-    def max_recv_size(self) -> int:
-        # Ensure buffer is allocated
-        self.consumer.get_write_buffer()
-        return self.consumer.buffer_size
 
     def clear(self) -> None:
         self.consumer.clear()

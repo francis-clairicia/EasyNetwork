@@ -413,7 +413,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
 
     async def aclose(self) -> None:
         """
-        Close the client. Does not require task synchronization.
+        Closes the client. Does not require task synchronization.
 
         Once that happens, all future operations on the client object will raise a :exc:`.ClientClosedError`.
         The remote end will receive no more data (after queued data is flushed).
@@ -459,7 +459,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
 
     async def send_eof(self) -> None:
         """
-        Close the write end of the stream after the buffered write data is flushed. Does not require task synchronization.
+        Closes the write end of the stream after the buffered write data is flushed. Does not require task synchronization.
 
         Can be safely called multiple times.
 
@@ -598,12 +598,3 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         if self.__socket_proxy is None:
             raise AttributeError("Socket not connected")
         return self.__socket_proxy
-
-    @property
-    @final
-    def max_recv_size(self) -> int:
-        """Read buffer size. Read-only attribute."""
-        endpoint = self.__endpoint
-        if endpoint is None:
-            return self.__expected_recv_size
-        return endpoint.max_recv_size

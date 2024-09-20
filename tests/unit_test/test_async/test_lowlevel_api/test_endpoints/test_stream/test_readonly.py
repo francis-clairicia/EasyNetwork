@@ -18,8 +18,6 @@ if TYPE_CHECKING:
 
     from pytest_mock import MockerFixture
 
-    from ......pytest_plugins.async_finalizer import AsyncFinalizer
-
 
 class TestAsyncStreamReceiverEndpoint(BaseAsyncEndpointReceiveTests):
     @pytest.fixture
@@ -67,25 +65,6 @@ class TestAsyncStreamReceiverEndpoint(BaseAsyncEndpointReceiveTests):
         # Act & Assert
         with pytest.raises(TypeError, match=r"^Expected a StreamProtocol or a BufferedStreamProtocol object, got .*$"):
             _ = AsyncStreamReceiverEndpoint(mock_stream_transport, mock_invalid_protocol, max_recv_size)
-
-    @pytest.mark.parametrize("max_recv_size", [1, 2**16], ids=lambda p: f"max_recv_size=={p}")
-    async def test____dunder_init____max_recv_size____valid_value(
-        self,
-        async_finalizer: AsyncFinalizer,
-        mock_stream_transport: MagicMock,
-        mock_stream_protocol: MagicMock,
-        max_recv_size: int,
-    ) -> None:
-        # Arrange
-
-        # Act
-        endpoint: AsyncStreamReceiverEndpoint[Any] = AsyncStreamReceiverEndpoint(
-            mock_stream_transport, mock_stream_protocol, max_recv_size
-        )
-        async_finalizer.add_finalizer(endpoint.aclose)
-
-        # Assert
-        assert endpoint.max_recv_size == max_recv_size
 
     @pytest.mark.parametrize("max_recv_size", [0, -1, 10.4], ids=lambda p: f"max_recv_size=={p}")
     async def test____dunder_init____max_recv_size____invalid_value(

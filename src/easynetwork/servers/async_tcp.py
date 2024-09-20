@@ -32,6 +32,7 @@ from ..lowlevel.api_async.backend.abc import AsyncBackend, TaskGroup
 from ..lowlevel.api_async.backend.utils import BuiltinAsyncBackendLiteral
 from ..lowlevel.api_async.servers import stream as _stream_server
 from ..lowlevel.api_async.transports.abc import AsyncListener, AsyncStreamTransport
+from ..lowlevel.api_async.transports.utils import aclose_forcefully
 from ..lowlevel.socket import (
     INETSocketAttribute,
     ISocket,
@@ -305,7 +306,7 @@ class AsyncTCPNetworkServer(
 
             logger.log(self.__client_connection_log_level, "Accepted new connection (address = %s)", client_address)
             client_exit_stack.callback(logger.log, self.__client_connection_log_level, "%s disconnected", client_address)
-            client_exit_stack.push_async_callback(client._force_close)
+            client_exit_stack.push_async_callback(client._on_disconnect)
 
             try:
                 yield client
@@ -400,15 +401,20 @@ class _ConnectedClientAPI(AsyncStreamClient[_T_Response]):
     def is_closing(self) -> bool:
         return self.__closing
 
-    async def _force_close(self) -> None:
+    async def _on_disconnect(self) -> None:
         self.__closing = True
-        async with self.__send_lock:  # If self.aclose() took the lock, wait for it to finish
+        async with self.__send_lock:  # If self.send_packet() took the lock, wait for it to finish
             pass
 
     async def aclose(self) -> None:
-        async with self.__send_lock:
+        try:
+            async with self.__send_lock:
+                self.__closing = True
+                await self.__client.aclose()
+        except self.backend().get_cancelled_exc_class():
             self.__closing = True
-            await self.__client.aclose()
+            await aclose_forcefully(self.__client)
+            raise
 
     async def send_packet(self, packet: _T_Response, /) -> None:
         async with self.__send_lock:

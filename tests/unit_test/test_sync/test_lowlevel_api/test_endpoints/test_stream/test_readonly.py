@@ -64,23 +64,6 @@ class TestStreamReceiverEndpoint(BaseEndpointReceiveTests):
         with pytest.raises(TypeError, match=r"^Expected a StreamProtocol or a BufferedStreamProtocol object, got .*$"):
             _ = StreamReceiverEndpoint(mock_stream_transport, mock_invalid_protocol, max_recv_size)
 
-    @pytest.mark.parametrize("max_recv_size", [1, 2**16], ids=lambda p: f"max_recv_size=={p}")
-    def test____dunder_init____max_recv_size____valid_value(
-        self,
-        request: pytest.FixtureRequest,
-        mock_stream_transport: MagicMock,
-        mock_stream_protocol: MagicMock,
-        max_recv_size: int,
-    ) -> None:
-        # Arrange
-
-        # Act
-        endpoint: StreamReceiverEndpoint[Any] = StreamReceiverEndpoint(mock_stream_transport, mock_stream_protocol, max_recv_size)
-        request.addfinalizer(endpoint.close)
-
-        # Assert
-        assert endpoint.max_recv_size == max_recv_size
-
     @pytest.mark.parametrize("max_recv_size", [0, -1, 10.4], ids=lambda p: f"max_recv_size=={p}")
     def test____dunder_init____max_recv_size____invalid_value(
         self,

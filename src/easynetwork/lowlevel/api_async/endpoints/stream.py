@@ -118,11 +118,6 @@ class AsyncStreamReceiverEndpoint(_transports.AsyncBaseTransport, Generic[_T_Rec
         return self.__transport.backend()
 
     @property
-    def max_recv_size(self) -> int:
-        """Read buffer size. Read-only attribute."""
-        return self.__receiver.max_recv_size
-
-    @property
     @_utils.inherit_doc(_transports.AsyncBaseTransport)
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         return self.__transport.extra_attributes
@@ -337,11 +332,6 @@ class AsyncStreamEndpoint(_transports.AsyncBaseTransport, Generic[_T_SentPacket,
         return self.__transport.backend()
 
     @property
-    def max_recv_size(self) -> int:
-        """Read buffer size. Read-only attribute."""
-        return self.__receiver.max_recv_size
-
-    @property
     @_utils.inherit_doc(_transports.AsyncBaseTransport)
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         return self.__transport.extra_attributes
@@ -396,12 +386,6 @@ class _BufferedReceiverImpl(Generic[_T_ReceivedPacket]):
     transport: _transports.AsyncStreamReadTransport
     consumer: _stream.BufferedStreamDataConsumer[_T_ReceivedPacket]
     _eof_reached: bool = dataclasses.field(init=False, default=False)
-
-    @property
-    def max_recv_size(self) -> int:
-        # Ensure buffer is allocated
-        self.consumer.get_write_buffer()
-        return self.consumer.buffer_size
 
     def clear(self) -> None:
         self.consumer.clear()

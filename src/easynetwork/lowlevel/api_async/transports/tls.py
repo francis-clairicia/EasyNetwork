@@ -41,7 +41,7 @@ else:
 
 from ....exceptions import UnsupportedOperation
 from ... import _utils, constants, socket as socket_tools
-from ..backend.abc import AsyncBackend, IEvent, TaskGroup
+from ..backend.abc import AsyncBackend, IEvent, ILock, TaskGroup
 from .abc import AsyncListener, AsyncStreamReadTransport, AsyncStreamTransport
 from .utils import aclose_forcefully
 
@@ -68,12 +68,17 @@ class AsyncTLSStreamTransport(AsyncStreamTransport):
     _write_bio: MemoryBIO
     _data_deque: deque[memoryview] = dataclasses.field(init=False, default_factory=deque)
     __incoming_reader: _IncomingDataReader = dataclasses.field(init=False)
+    __transport_send_lock: ILock = dataclasses.field(init=False)
+    __transport_recv_lock: ILock = dataclasses.field(init=False)
     __closing: bool = dataclasses.field(init=False, default=False)
     __closed: IEvent = dataclasses.field(init=False)
 
     def __post_init__(self) -> None:
+        backend = self._transport.backend()
         self.__incoming_reader = _IncomingDataReader(transport=self._transport)
-        self.__closed = self._transport.backend().create_event()
+        self.__transport_send_lock = backend.create_fair_lock()
+        self.__transport_recv_lock = backend.create_fair_lock()
+        self.__closed = backend.create_event()
 
     @classmethod
     async def wrap(
@@ -275,24 +280,28 @@ class AsyncTLSStreamTransport(AsyncStreamTransport):
             except _ssl_module.SSLWantReadError:
                 try:
                     # Flush any pending writes first
-                    if self._write_bio.pending:
-                        await self._transport.send_all(self._write_bio.read())
+                    async with self.__transport_send_lock:
+                        if self._write_bio.pending:
+                            await self._transport.send_all(self._write_bio.read())
 
-                    await self.__incoming_reader.readinto(self._read_bio)
+                    async with self.__transport_recv_lock:
+                        await self.__incoming_reader.readinto(self._read_bio)
                 except OSError:
                     self._read_bio.write_eof()
                     self._write_bio.write_eof()
                     raise
             except _ssl_module.SSLWantWriteError:
-                await self._transport.send_all(self._write_bio.read())
+                async with self.__transport_send_lock:
+                    await self._transport.send_all(self._write_bio.read())
             except _ssl_module.SSLError:
                 self._read_bio.write_eof()
                 self._write_bio.write_eof()
                 raise
             else:
                 # Flush any pending writes first
-                if self._write_bio.pending:
-                    await self._transport.send_all(self._write_bio.read())
+                async with self.__transport_send_lock:
+                    if self._write_bio.pending:
+                        await self._transport.send_all(self._write_bio.read())
 
                 return result
 

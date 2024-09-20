@@ -18,12 +18,26 @@ from __future__ import annotations
 
 __all__ = ["aclose_forcefully"]
 
-from .abc import AsyncBaseTransport
+from abc import abstractmethod
+from collections.abc import Awaitable
+from typing import TYPE_CHECKING, Protocol
+
+if TYPE_CHECKING:
+    from ..backend.abc import AsyncBackend
 
 
-async def aclose_forcefully(transport: AsyncBaseTransport) -> None:
+class _TransportLike(Protocol):
+
+    @abstractmethod
+    def aclose(self) -> Awaitable[None]: ...
+
+    @abstractmethod
+    def backend(self) -> AsyncBackend: ...
+
+
+async def aclose_forcefully(transport: _TransportLike) -> None:
     """
-    Close an async resource or async generator immediately, without blocking to do any graceful cleanup.
+    Close an async transport immediately, without blocking to do any graceful cleanup.
 
     Parameters:
         transport: the transport to close.
