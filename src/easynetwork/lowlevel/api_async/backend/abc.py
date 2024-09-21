@@ -1151,6 +1151,8 @@ class AsyncBackend(metaclass=ABCMeta):
 
         This means that it always goes to the task which has been waiting longest.
 
+        .. versionadded:: 1.1
+
         Returns:
             A new fair Lock.
         """

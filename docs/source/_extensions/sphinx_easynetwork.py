@@ -5,7 +5,8 @@ v0.1.0: Replace private classes in shown inheritance.
 v0.1.1: Fix base is not replaced if the class is generic.
 v0.2.0: Log when an object does not have a docstring.
 v0.2.1: Add base class to replace.
-v0.3.0 (current): Add a "See Also" section at the end of one-shot serializers docstrings.
+v0.3.0: Add a "See Also" section at the end of one-shot serializers docstrings.
+v0.3.1 (current): Do not log "Undocumented protocol".
 """
 
 from __future__ import annotations
@@ -54,7 +55,7 @@ def _is_magic_method(name: str) -> bool:
 
 
 def autodoc_process_docstring(app: Sphinx, what: str, name: str, obj: Any, options: dict[str, Any], lines: list[str]) -> None:
-    if not lines and name.startswith("easynetwork.") and not _is_magic_method(name) and what not in {"typevar"}:
+    if not lines and name.startswith("easynetwork.") and not _is_magic_method(name) and what not in {"typevar", "protocol"}:
         logger.warning(f"Undocumented {what}: {name}")
 
     match what:
@@ -71,7 +72,7 @@ def setup(app: Sphinx) -> dict[str, Any]:
     app.connect("autodoc-process-docstring", autodoc_process_docstring)
 
     return {
-        "version": "0.3.0",
+        "version": "0.3.1",
         "parallel_read_safe": True,
         "parallel_write_safe": True,
     }

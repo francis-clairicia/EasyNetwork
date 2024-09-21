@@ -28,3 +28,5 @@ Miscellaneous
 
 .. automodule:: easynetwork.lowlevel.api_async.transports.utils
    :members:
+
+.. autoprotocol:: _TransportLike
