@@ -22,6 +22,9 @@ from abc import abstractmethod
 from collections.abc import Awaitable
 from typing import TYPE_CHECKING, Protocol
 
+from ... import _utils
+from .abc import AsyncBaseTransport
+
 if TYPE_CHECKING:
     from ..backend.abc import AsyncBackend
 
@@ -29,15 +32,20 @@ if TYPE_CHECKING:
 class _TransportLike(Protocol):
 
     @abstractmethod
+    @_utils.inherit_doc(AsyncBaseTransport)
     def aclose(self) -> Awaitable[None]: ...
 
     @abstractmethod
+    @_utils.inherit_doc(AsyncBaseTransport)
     def backend(self) -> AsyncBackend: ...
 
 
 async def aclose_forcefully(transport: _TransportLike) -> None:
     """
     Close an async transport immediately, without blocking to do any graceful cleanup.
+
+    .. versionchanged:: 1.1
+        `transport` can now be any closeable object with a ``backend()`` method.
 
     Parameters:
         transport: the transport to close.
