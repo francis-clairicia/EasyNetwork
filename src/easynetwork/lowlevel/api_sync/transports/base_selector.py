@@ -15,6 +15,11 @@
 """:mod:`selectors` transports module.
 
 Here are abstract base classes which use :mod:`selectors` module to perform I/O polling.
+
+See Also:
+
+    :external+python:doc:`library/selectors`
+        High-level interface for I/O polling
 """
 
 from __future__ import annotations

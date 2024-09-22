@@ -16,16 +16,13 @@ Abstract Base Classes
    :members:
    :special-members: __enter__, __exit__
 
+
 ``selectors``-based transports
 ==============================
 
-.. seealso::
-
-   :external+python:doc:`library/selectors`
-      High-level interface for I/O polling
-
 .. automodule:: easynetwork.lowlevel.api_sync.transports.base_selector
    :members:
+
 
 Socket Transport Implementations
 ================================
