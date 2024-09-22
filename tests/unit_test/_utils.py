@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import contextlib
 import functools
 import inspect
 import threading
-from collections.abc import Awaitable, Callable, Coroutine, Sequence
+from collections.abc import Awaitable, Callable, Coroutine, Iterator, Sequence
 from socket import AF_INET, AF_INET6, IPPROTO_TCP, IPPROTO_UDP, SOCK_DGRAM, SOCK_STREAM
 from types import TracebackType
 from typing import TYPE_CHECKING, Any
@@ -260,3 +261,21 @@ def async_stub_decorator(
         return stub
 
     return decorator
+
+
+@contextlib.contextmanager
+def restore_mock_side_effect(mock: MagicMock) -> Iterator[None]:
+    default_side_effect = mock.side_effect
+    default_return_value = mock.side_effect
+    try:
+        yield
+    finally:
+        mock.side_effect = default_side_effect
+        mock.return_value = default_return_value
+
+
+@contextlib.contextmanager
+def temporary_mock_side_effect(mock: MagicMock, side_effect: Any) -> Iterator[None]:
+    with restore_mock_side_effect(mock):
+        mock.side_effect = side_effect
+        yield

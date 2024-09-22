@@ -17,11 +17,30 @@ Abstract Base Classes
    :special-members: __enter__, __exit__
 
 
-``selectors``-based transports
+``selectors``-based Transports
 ==============================
 
 .. automodule:: easynetwork.lowlevel.api_sync.transports.base_selector
    :members:
+
+
+Composite Data Transports
+=========================
+
+.. automodule:: easynetwork.lowlevel.api_sync.transports.composite
+   :members:
+
+.. autotypevar:: _T_SendStreamTransport
+   :no-index:
+
+.. autotypevar:: _T_ReceiveStreamTransport
+   :no-index:
+
+.. autotypevar:: _T_SendDatagramTransport
+   :no-index:
+
+.. autotypevar:: _T_ReceiveDatagramTransport
+   :no-index:
 
 
 Socket Transport Implementations

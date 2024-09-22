@@ -24,6 +24,25 @@ SSL/TLS Support
    :members:
 
 
+Composite Data Transports
+=========================
+
+.. automodule:: easynetwork.lowlevel.api_async.transports.composite
+   :members:
+
+.. autotypevar:: _T_SendStreamTransport
+   :no-index:
+
+.. autotypevar:: _T_ReceiveStreamTransport
+   :no-index:
+
+.. autotypevar:: _T_SendDatagramTransport
+   :no-index:
+
+.. autotypevar:: _T_ReceiveDatagramTransport
+   :no-index:
+
+
 Miscellaneous
 =============
 
