@@ -27,6 +27,7 @@ Datagram Servers
    :members:
 
 .. autotypevar:: easynetwork.lowlevel.api_async.servers.datagram::_T_Address
+   :no-index:
 
 .. autoclass:: DatagramClientContext()
    :no-index:

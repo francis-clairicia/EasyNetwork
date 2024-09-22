@@ -19,4 +19,5 @@ def make_transport_mock(*, mocker: MockerFixture, spec: Any) -> MagicMock:
         mock_transport.is_closed.return_value = True
 
     mock_transport.close.side_effect = close_side_effect
+    mock_transport.extra_attributes = {}
     return mock_transport

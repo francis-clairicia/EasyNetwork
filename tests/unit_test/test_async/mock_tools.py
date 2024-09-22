@@ -22,4 +22,5 @@ def make_transport_mock(*, mocker: MockerFixture, spec: Any, backend: AsyncBacke
 
     mock_transport.aclose.side_effect = close_side_effect
     mock_transport.backend.return_value = backend
+    mock_transport.extra_attributes = {}
     return mock_transport
