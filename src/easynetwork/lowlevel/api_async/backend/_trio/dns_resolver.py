@@ -21,8 +21,9 @@ __all__ = ["TrioDNSResolver"]
 
 import socket as _socket
 
-import trio.socket
+import trio
 
+from .... import _utils
 from .._common.dns_resolver import BaseAsyncDNSResolver
 
 
@@ -30,21 +31,14 @@ class TrioDNSResolver(BaseAsyncDNSResolver):
     __slots__ = ()
 
     async def connect_socket(self, socket: _socket.socket, address: tuple[str, int] | tuple[str, int, int, int]) -> None:
-        # TL;DR: Why not directly use trio.socket.socket() function?
-        # When giving a fileno, it tries to guess the real family, type and proto of the file descriptor
-        # by calling getsockopt(). This extra operation is useless here.
-        async_socket = trio.socket.from_stdlib_socket(
-            _socket.socket(socket.family, socket.type, socket.proto, fileno=socket.fileno())
-        )
+        await trio.lowlevel.checkpoint_if_cancelled()
         try:
-            await async_socket.connect(address)
-        except BaseException:
-            # If connect() raises an exception, let trio close the socket.
-            # NOTE: connect() already closes the socket if trio.Cancelled is raised.
-            socket.detach()
-            raise
+            socket.connect(address)
+        except BlockingIOError:
+            pass
         else:
-            # The operation has succeeded, remove the ownership to the temporary socket.
-            async_socket.detach()
-        finally:
-            async_socket.close()
+            await trio.lowlevel.cancel_shielded_checkpoint()
+            return
+
+        await trio.lowlevel.wait_writable(socket)
+        _utils.check_real_socket_state(socket, error_msg=f"Could not connect to {address!r}: {{strerror}}")

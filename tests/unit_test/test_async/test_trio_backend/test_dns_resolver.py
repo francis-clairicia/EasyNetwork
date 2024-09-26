@@ -1,40 +1,30 @@
 from __future__ import annotations
 
+import errno
 import socket
-from collections.abc import AsyncIterator
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from ....fixtures.trio import trio_fixture
-
 if TYPE_CHECKING:
-    from trio import SocketListener, SocketStream
+    from unittest.mock import AsyncMock, MagicMock
 
     from easynetwork.lowlevel.api_async.backend._trio.dns_resolver import TrioDNSResolver
+
+    from pytest_mock import MockerFixture
 
 
 @pytest.mark.feature_trio(async_test_auto_mark=True)
 class TestTrioDNSResolver:
-    @trio_fixture
+    @pytest.fixture(autouse=True)
     @staticmethod
-    async def listener() -> AsyncIterator[SocketListener]:
+    def mock_trio_lowlevel_wait_writable(mocker: MockerFixture) -> AsyncMock:
         import trio
 
-        async with (await trio.open_tcp_listeners(0, host="127.0.0.1"))[0] as listener:
-            yield listener
+        async def wait_writable(sock: Any) -> None:
+            await trio.lowlevel.checkpoint()
 
-    @pytest.fixture
-    @staticmethod
-    def listener_address(listener: SocketListener) -> tuple[str, int]:
-        return listener.socket.getsockname()
-
-    @pytest.fixture
-    @staticmethod
-    def client_sock(listener: SocketListener) -> socket.socket:
-        sock = socket.socket(family=listener.socket.family, type=listener.socket.type)
-        sock.setblocking(False)
-        return sock
+        return mocker.patch("trio.lowlevel.wait_writable", autospec=True, side_effect=wait_writable)
 
     @pytest.fixture
     @staticmethod
@@ -43,61 +33,65 @@ class TestTrioDNSResolver:
 
         return TrioDNSResolver()
 
-    async def test____connect_socket____works(
+    async def test____connect_socket____works____non_blocking(
         self,
         dns_resolver: TrioDNSResolver,
-        listener: SocketListener,
-        listener_address: tuple[str, int],
-        client_sock: socket.socket,
+        mock_tcp_socket: MagicMock,
+        mock_trio_lowlevel_wait_writable: AsyncMock,
+        mocker: MockerFixture,
     ) -> None:
         # Arrange
-        import trio
+        mock_tcp_socket.getsockopt.return_value = 0
+        mock_tcp_socket.connect.return_value = None
 
         # Act
-        server_stream: SocketStream | None = None
-        async with trio.open_nursery() as nursery:
-            nursery.cancel_scope.deadline = trio.current_time() + 1
-            nursery.start_soon(dns_resolver.connect_socket, client_sock, listener_address)
-
-            await trio.sleep(0.5)
-            server_stream = await listener.accept()
+        await dns_resolver.connect_socket(mock_tcp_socket, ("127.0.0.1", 12345))
 
         # Assert
-        assert server_stream is not None
-        assert client_sock.fileno() > 0
+        assert mock_tcp_socket.mock_calls == [mocker.call.connect(("127.0.0.1", 12345))]
+        mock_trio_lowlevel_wait_writable.assert_not_awaited()
 
-        async with server_stream, trio.SocketStream(trio.socket.from_stdlib_socket(client_sock)) as client_stream:
-            await client_stream.send_all(b"data")
-            assert (await server_stream.receive_some()) == b"data"
-
-    async def test____connect_socket____close_on_cancel(
+    async def test____connect_socket____works____blocking(
         self,
         dns_resolver: TrioDNSResolver,
-        listener_address: tuple[str, int],
-        client_sock: socket.socket,
+        mock_tcp_socket: MagicMock,
+        mock_trio_lowlevel_wait_writable: AsyncMock,
+        mocker: MockerFixture,
     ) -> None:
         # Arrange
-        import trio
+        mock_tcp_socket.getsockopt.side_effect = [0]
+        mock_tcp_socket.connect.side_effect = [BlockingIOError]
 
         # Act
-        with trio.move_on_after(0) as scope:
-            await dns_resolver.connect_socket(client_sock, listener_address)
+        await dns_resolver.connect_socket(mock_tcp_socket, ("127.0.0.1", 12345))
 
         # Assert
-        assert scope.cancelled_caught
-        assert client_sock.fileno() < 0
+        assert mock_tcp_socket.mock_calls == [
+            mocker.call.connect(("127.0.0.1", 12345)),
+            mocker.call.fileno(),
+            mocker.call.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR),
+        ]
+        mock_trio_lowlevel_wait_writable.assert_awaited_once_with(mock_tcp_socket)
 
-    async def test____connect_socket____close_on_error(
+    async def test____connect_socket____works____blocking____connection_error(
         self,
         dns_resolver: TrioDNSResolver,
-        client_sock: socket.socket,
+        mock_tcp_socket: MagicMock,
+        mock_trio_lowlevel_wait_writable: AsyncMock,
+        mocker: MockerFixture,
     ) -> None:
         # Arrange
-        listener_address = ("unknown_address", 12345)
+        mock_tcp_socket.getsockopt.side_effect = [errno.ECONNREFUSED, 0]
+        mock_tcp_socket.connect.side_effect = [BlockingIOError]
 
         # Act
-        with pytest.raises(OSError):
-            await dns_resolver.connect_socket(client_sock, listener_address)
+        with pytest.raises(ConnectionRefusedError, match=r"^\[Errno \d+\] Could not connect to .+: .*$"):
+            await dns_resolver.connect_socket(mock_tcp_socket, ("127.0.0.1", 12345))
 
         # Assert
-        assert client_sock.fileno() < 0
+        assert mock_tcp_socket.mock_calls == [
+            mocker.call.connect(("127.0.0.1", 12345)),
+            mocker.call.fileno(),
+            mocker.call.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR),
+        ]
+        mock_trio_lowlevel_wait_writable.assert_awaited_once_with(mock_tcp_socket)

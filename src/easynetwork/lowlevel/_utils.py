@@ -166,7 +166,7 @@ def check_socket_family(family: int) -> None:
         raise ValueError("Only these families are supported: AF_INET, AF_INET6")
 
 
-def check_real_socket_state(socket: ISocket) -> None:
+def check_real_socket_state(socket: ISocket, error_msg: str = "{strerror}") -> None:
     """Verify socket saved error and raise OSError if there is one
 
     There are some functions such as socket.send() which do not immediately fail and save the errno
@@ -180,7 +180,7 @@ def check_real_socket_state(socket: ISocket) -> None:
     errno = socket.getsockopt(_socket.SOL_SOCKET, _socket.SO_ERROR)
     if errno != 0:
         # The SO_ERROR is automatically reset to zero after getting the value
-        raise error_from_errno(errno)
+        raise error_from_errno(errno, error_msg)
 
 
 class _SupportsSocketSendMSG(Protocol):
