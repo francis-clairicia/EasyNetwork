@@ -338,6 +338,26 @@ def test____check_real_socket_state____socket_with_error(mock_tcp_socket: MagicM
     mock_error_from_errno.assert_called_once_with(errno)
 
 
+def test____check_real_socket_state____socket_with_error____custom_message(
+    mock_tcp_socket: MagicMock,
+    mocker: MockerFixture,
+) -> None:
+    # Arrange
+    errno = 123456
+    exception = OSError(errno, "errno message")
+    mock_tcp_socket.getsockopt.return_value = errno
+    mock_error_from_errno = mocker.patch(f"{error_from_errno.__module__}.{error_from_errno.__qualname__}", return_value=exception)
+
+    # Act
+    with pytest.raises(OSError) as exc_info:
+        check_real_socket_state(mock_tcp_socket, error_msg="unrelated error: {strerror}")
+
+    # Assert
+    assert exc_info.value is exception
+    mock_tcp_socket.getsockopt.assert_called_once_with(SOL_SOCKET, SO_ERROR)
+    mock_error_from_errno.assert_called_once_with(errno, "unrelated error: {strerror}")
+
+
 def test____check_real_socket_state____closed_socket(mock_tcp_socket: MagicMock, mocker: MockerFixture) -> None:
     # Arrange
     mock_tcp_socket.fileno.return_value = -1
