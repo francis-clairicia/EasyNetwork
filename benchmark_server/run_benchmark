@@ -817,10 +817,8 @@ def _start_docker_instance(
 
         while (elapsed_time := time.monotonic() - start) < timeout:
             sock = socket.socket(family, socket_type)
-            sock.settimeout(min(0.1, timeout - elapsed_time))
+            sock.settimeout(min(0.5, timeout - elapsed_time))
             try:
-                if socket_type == SOCK_DGRAM and family == socket.AF_INET:
-                    sock.bind(("127.0.0.1", 0))
                 sock.connect(server_address)
                 if socket_type == SOCK_DGRAM:
                     if ping_over_ssl:
@@ -1015,6 +1013,8 @@ def main() -> None:
             warmup_cmd = benchmark["client"] + warmup
             print(shlex.join(warmup_cmd))
             subprocess.check_output(warmup_cmd)
+            print("-> Warm up done.")
+            time.sleep(1)
             print()
 
             benchmark_data: _BenchmarkData = {
@@ -1059,6 +1059,9 @@ def main() -> None:
                 del latency_distribution
 
                 benchmark_data["variation"].append(data)
+
+                # Pause time between benchmarks run
+                time.sleep(1)
 
         # Pause time between server creation
         time.sleep(1)
