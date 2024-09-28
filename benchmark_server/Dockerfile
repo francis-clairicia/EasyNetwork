@@ -2,6 +2,9 @@ ARG PYTHON_VERSION=3.12
 
 FROM python:$PYTHON_VERSION
 
+# This means 'do not warn about it' :)
+ENV PIP_ROOT_USER_ACTION=ignore
+
 RUN pip install --no-cache-dir -U pip
 
 RUN mkdir -p /usr/src
