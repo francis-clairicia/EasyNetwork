@@ -7,21 +7,24 @@
 from __future__ import annotations
 
 import argparse
+import functools
 import os
 import shutil
+import subprocess
+import sys
+from itertools import chain
 from pathlib import Path
 from typing import Any, Literal
 
 import build as pyproject_build
 import docker
-import docker.models
 
 ROOT_DIR = Path(__file__).parent
 
-SUPPORTED_PYTHON_VERSIONS = [
-    "3.11",
-    "3.12",
-]
+SUPPORTED_PYTHON_VERSIONS = {
+    "3.11": "3.11.10",
+    "3.12": "3.12.6",
+}
 
 
 def _build_sdist_for_docker_image() -> Path:
@@ -45,16 +48,42 @@ def _build_sdist_for_docker_image() -> Path:
 def _build_docker_image(client: docker.DockerClient, sdist_path: Path, tag: str, python_version: str) -> None:
     sdist_path = sdist_path.relative_to(ROOT_DIR)
     print("Building docker image...")
-    client.images.build(
-        path=os.fspath(ROOT_DIR),
-        tag=tag,
-        buildargs={
-            "PYTHON_VERSION": python_version,
-            "EASYNETWORK_SDIST": os.fspath(sdist_path),
-        },
-        rm=True,
-        quiet=False,
-    )
+    # NOTE: Do not use docker-py API to build the, because BuildKit is not supported
+    # c.f. https://github.com/docker/docker-py/issues/2230
+    docker_build_command_line = [
+        "docker",
+        "build",
+        "--rm=true",
+        "--force-rm",
+        "--progress=plain",
+        f"--tag={tag}",
+    ]
+    buildargs = {
+        "PYTHON_VERSION": SUPPORTED_PYTHON_VERSIONS[python_version],
+        "EASYNETWORK_SDIST": os.fspath(sdist_path),
+    }
+    docker_build_command_line += chain.from_iterable(["--build-arg", f"{key}={value}"] for key, value in buildargs.items())
+    docker_build_command_line += [os.fspath(ROOT_DIR)]
+
+    with subprocess.Popen(
+        docker_build_command_line,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    ) as process:
+        try:
+            assert process.stdout is not None
+            for c in iter(functools.partial(process.stdout.read, 1), ""):
+                sys.stdout.write(c)
+            sys.stdout.flush()
+            retcode = process.wait()
+        except BaseException:  # Including KeyboardInterrupt, communicate handled that.
+            process.kill()
+            # We don't call process.wait() as .__exit__ does that for us.
+            raise
+        if retcode != 0:
+            sys.exit(retcode)
+
     client.images.prune(filters={"dangling": True})
     print(f"-> Sucessfully built docker image {tag!r}")
 
@@ -70,14 +99,14 @@ def main() -> None:
     parser.add_argument(
         "-p",
         "--python-version",
-        default=SUPPORTED_PYTHON_VERSIONS[-1],
+        default=list(SUPPORTED_PYTHON_VERSIONS)[-1],
         choices=list(SUPPORTED_PYTHON_VERSIONS),
         help="The CPython version to use for the servers (in major.minor format)",
     )
     args = parser.parse_args()
 
     python_version: str = args.python_version
-    print(f"Selected Python version: {python_version}")
+    print(f"Selected Python version: {python_version} (Docker image tag: python:{SUPPORTED_PYTHON_VERSIONS[python_version]})")
 
     client = docker.from_env()
     _build_docker_image(client, _build_sdist_for_docker_image(), args.tag, python_version)

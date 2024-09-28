@@ -759,6 +759,10 @@ def _stop_container(container: Container, timeout: int) -> None:
         container.stop(timeout=timeout)
 
 
+def _get_python_version_used_in_docker_image(client: docker.DockerClient, image_tag: str) -> str:
+    return client.containers.run(image_tag, (*_python_cmd, "-V"), stdout=True, remove=True).decode("utf8").strip()
+
+
 def _start_docker_instance(
     *,
     client: docker.DockerClient,
@@ -974,9 +978,18 @@ def main() -> None:
         json_output_file = json_output_file.absolute()
         json_output_file.parent.mkdir(parents=True, exist_ok=True)
 
+    print("Metadata")
+    print("========")
+
+    used_python_version: str = _get_python_version_used_in_docker_image(client, image_tag)
+
+    print(f"Docker image tag: {image_tag}")
+    print(f"Python version used in docker instance: {used_python_version}")
+    print()
+
     variations: list[_BenchmarkVariationDef] = [
         {
-            "title": f"{round(msgsize / 1024, 1)}KiB messages, concurrency {concurrency}",
+            "title": f"{round(msgsize / 1024, 1)}KiB messages, concurrency {concurrency}, duration {duration}s",
             "payload_size": msgsize,
             "args": (f"--msize={msgsize}",),
         }
@@ -1080,6 +1093,7 @@ def main() -> None:
             json_output_file = _add_date_to_filepath(json_output_file, now)
         benchmark_json_report = {
             "date": now.strftime("%Y-%m-%dT%H:%M:%S%z"),
+            "python_version": used_python_version,
             "duration": duration,
             "concurrency_level": concurrency,
             "payload_size_levels": payload_size_levels,
@@ -1147,7 +1161,7 @@ def main() -> None:
             _build_latency_boxes_figure(),
         ]
 
-        benchmark_title = f"Server Performance Benchmark Report ({now.strftime('%c')})"
+        benchmark_title = f"Server Performance Benchmark Report on {used_python_version} ({now.strftime('%c')})"
         with open(html_output_file, "w") as f:
             print("<!DOCTYPE html>", file=f)
             print("<html>", file=f)
