@@ -9,7 +9,7 @@ import ssl
 import threading
 from collections import deque
 from collections.abc import Callable
-from errno import EINVAL, ENOTCONN, errorcode as errno_errorcode
+from errno import ENOTCONN, errorcode as errno_errorcode
 from socket import SO_ERROR, SOL_SOCKET
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -24,7 +24,6 @@ from easynetwork.lowlevel._utils import (
     check_socket_family,
     check_socket_is_connected,
     check_socket_no_ssl,
-    ensure_datagram_socket_bound,
     error_from_errno,
     exception_with_notes,
     get_callable_name,
@@ -629,73 +628,6 @@ def test____check_socket_is_connected____default(
     mock_is_socket_connected.assert_called_once_with(mock_tcp_socket)
     if exc_info is not None:
         assert exc_info.value.errno == ENOTCONN
-
-
-def test____ensure_datagram_socket_bound____socket_not_bound____null_port(
-    mock_udp_socket: MagicMock,
-) -> None:
-    # Arrange
-    mock_udp_socket.getsockname.return_value = ("0.0.0.0", 0)
-
-    # Act
-    ensure_datagram_socket_bound(mock_udp_socket)
-
-    # Assert
-    mock_udp_socket.bind.assert_called_once_with(("localhost", 0))
-
-
-def test____ensure_datagram_socket_bound____socket_not_bound____EINVAL_error_when_calling_getsockname(
-    mock_udp_socket: MagicMock,
-) -> None:
-    # Arrange
-    mock_udp_socket.getsockname.side_effect = OSError(EINVAL, os.strerror(EINVAL))
-
-    # Act
-    ensure_datagram_socket_bound(mock_udp_socket)
-
-    # Assert
-    mock_udp_socket.bind.assert_called_once_with(("localhost", 0))
-
-
-def test____ensure_datagram_socket_bound____already_bound(
-    mock_udp_socket: MagicMock,
-) -> None:
-    # Arrange
-    mock_udp_socket.getsockname.return_value = ("0.0.0.0", 5000)
-
-    # Act
-    ensure_datagram_socket_bound(mock_udp_socket)
-
-    # Assert
-    mock_udp_socket.bind.assert_not_called()
-
-
-def test____ensure_datagram_socket_bound____OSError(
-    mock_udp_socket: MagicMock,
-) -> None:
-    # Arrange
-    mock_udp_socket.getsockname.side_effect = OSError("Error")
-
-    # Act
-    with pytest.raises(OSError):
-        ensure_datagram_socket_bound(mock_udp_socket)
-
-    # Assert
-    mock_udp_socket.bind.assert_not_called()
-
-
-def test____ensure_datagram_socket_bound____invalid_socket_type(
-    mock_tcp_socket: MagicMock,
-) -> None:
-    # Arrange
-
-    # Act
-    with pytest.raises(ValueError, match=r"^A 'SOCK_DGRAM' socket is expected$"):
-        ensure_datagram_socket_bound(mock_tcp_socket)
-
-    # Assert
-    mock_tcp_socket.getsockname.assert_not_called()
-    mock_tcp_socket.bind.assert_not_called()
 
 
 def test____set_reuseport____setsockopt(

@@ -547,7 +547,8 @@ async def test____create_connection____first_failed(
     assert socket is mock_socket_ipv4
 
     if fail_on != "socket":
-        mock_socket_ipv6.setblocking.assert_called_once_with(False)
+        if fail_on != "bind":
+            mock_socket_ipv6.setblocking.assert_called_once_with(False)
         if local_address is None:
             mock_socket_ipv6.bind.assert_not_called()
         else:
@@ -635,8 +636,9 @@ async def test____create_connection____all_failed(
         ]
 
     if fail_on != "socket":
-        mock_socket_ipv4.setblocking.assert_called_once_with(False)
-        mock_socket_ipv6.setblocking.assert_called_once_with(False)
+        if fail_on != "bind":
+            mock_socket_ipv4.setblocking.assert_called_once_with(False)
+            mock_socket_ipv6.setblocking.assert_called_once_with(False)
         if local_address is None:
             mock_socket_ipv4.bind.assert_not_called()
             mock_socket_ipv6.bind.assert_not_called()

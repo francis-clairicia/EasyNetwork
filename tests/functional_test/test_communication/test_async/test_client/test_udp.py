@@ -60,42 +60,20 @@ class TestAsyncUDPNetworkClient:
     async def server(datagram_endpoint_factory: Callable[[], Awaitable[DatagramEndpoint]]) -> DatagramEndpoint:
         return await datagram_endpoint_factory()
 
-    @pytest.fixture
-    @staticmethod
-    def remote_address(server: DatagramEndpoint) -> tuple[str, int]:
-        return server.get_extra_info("sockname")[:2]
-
-    @pytest.fixture(params=[False, True], ids=lambda boolean: f"use_external_socket=={boolean}")
-    @staticmethod
-    def use_external_socket(request: pytest.FixtureRequest, udp_socket_factory: Callable[[], Socket]) -> Socket | None:
-        use_external_socket: bool = getattr(request, "param")
-        if use_external_socket:
-            return udp_socket_factory()
-        return None
-
     @pytest_asyncio.fixture
     @staticmethod
     async def client(
-        remote_address: tuple[str, int],
-        use_external_socket: Socket | None,
-        datagram_protocol: DatagramProtocol[str, str],
-    ) -> AsyncIterator[AsyncUDPNetworkClient[str, str]]:
-        if use_external_socket is not None:
-            use_external_socket.connect(remote_address)
-            client = AsyncUDPNetworkClient(use_external_socket, datagram_protocol, "asyncio")
-        else:
-            client = AsyncUDPNetworkClient(remote_address, datagram_protocol, "asyncio")
-        async with client:
-            assert client.is_connected()
-            yield client
-
-    async def test____dunder_init____remote_address____not_set(
-        self,
+        server: DatagramEndpoint,
         udp_socket_factory: Callable[[], Socket],
         datagram_protocol: DatagramProtocol[str, str],
-    ) -> None:
-        with pytest.raises(OSError):
-            _ = AsyncUDPNetworkClient(udp_socket_factory(), datagram_protocol, "asyncio")
+    ) -> AsyncIterator[AsyncUDPNetworkClient[str, str]]:
+        remote_address: tuple[str, int] = server.get_extra_info("sockname")[:2]
+        socket = udp_socket_factory()
+        socket.connect(remote_address)
+
+        async with AsyncUDPNetworkClient(socket, datagram_protocol, "asyncio") as client:
+            assert client.is_connected()
+            yield client
 
     async def test____aclose____idempotent(self, client: AsyncUDPNetworkClient[str, str]) -> None:
         assert not client.is_closing()
@@ -256,16 +234,16 @@ class TestAsyncUDPNetworkClientConnection:
     class EchoProtocol(asyncio.DatagramProtocol):
         transport: asyncio.DatagramTransport | None = None
 
-        def __init__(self, connection_lost_future: asyncio.Future[None]) -> None:
+        def __init__(self) -> None:
             super().__init__()
-            self.connection_lost_future: asyncio.Future[None] = connection_lost_future
+            self.connection_lost_event = asyncio.Event()
 
         def connection_made(self, transport: asyncio.DatagramTransport) -> None:  # type: ignore[override]
             self.transport = transport
 
         def connection_lost(self, exc: Exception | None) -> None:
             self.transport = None
-            self.connection_lost_future.set_result(None)
+            self.connection_lost_event.set()
 
         def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
             if self.transport is not None:
@@ -281,21 +259,56 @@ class TestAsyncUDPNetworkClientConnection:
         event_loop = asyncio.get_running_loop()
 
         transport, protocol = await event_loop.create_datagram_endpoint(
-            lambda: cls.EchoProtocol(event_loop.create_future()),
+            cls.EchoProtocol,
             local_addr=(localhost_ip, 0),
             family=socket_family,
         )
         try:
-            await asyncio.sleep(0.01)
-            yield transport
+            with contextlib.closing(transport):
+                await asyncio.sleep(0.01)
+                yield transport
         finally:
-            transport.close()
-            await protocol.connection_lost_future
+            await protocol.connection_lost_event.wait()
 
     @pytest.fixture
     @staticmethod
     def remote_address(server: asyncio.DatagramTransport) -> tuple[str, int]:
         return server.get_extra_info("sockname")[:2]
+
+    async def test____dunder_init____connect_to_server(
+        self,
+        remote_address: tuple[str, int],
+        datagram_protocol: DatagramProtocol[str, str],
+    ) -> None:
+        async with AsyncUDPNetworkClient(remote_address, datagram_protocol, "asyncio") as client:
+            assert client.is_connected()
+            assert client.get_local_address().host in {"127.0.0.1", "::1"}
+            assert client.get_local_address().port > 0
+
+            await client.send_packet("Test")
+            assert await client.recv_packet() == "Test"
+
+    async def test____dunder_init____with_local_address(
+        self,
+        localhost_ip: str,
+        remote_address: tuple[str, int],
+        datagram_protocol: DatagramProtocol[str, str],
+    ) -> None:
+        async with AsyncUDPNetworkClient(remote_address, datagram_protocol, "asyncio", local_address=(localhost_ip, 0)) as client:
+            assert client.is_connected()
+            assert client.get_local_address().host == localhost_ip
+            assert client.get_local_address().port > 0
+
+            await client.send_packet("Test")
+            assert await client.recv_packet() == "Test"
+
+    async def test____dunder_init____remote_address____not_set(
+        self,
+        udp_socket_factory: Callable[[], Socket],
+        datagram_protocol: DatagramProtocol[str, str],
+    ) -> None:
+        with pytest.raises(OSError):
+            _ = AsyncUDPNetworkClient(udp_socket_factory(), datagram_protocol, "asyncio")
 
     async def test____wait_connected____idempotent(
         self,

@@ -301,13 +301,19 @@ class TestTCPNetworkClientConnection:
 
     def test____dunder_init____connect_to_server(
         self,
+        remote_address: tuple[str, int],
+        stream_protocol: AnyStreamProtocolType[str, str],
+    ) -> None:
+        with TCPNetworkClient(remote_address, stream_protocol) as client:
+            client.send_packet("Test")
+            assert client.recv_packet() == "Test"
+
+    def test____dunder_init____with_local_address(
+        self,
         localhost_ip: str,
         remote_address: tuple[str, int],
         stream_protocol: AnyStreamProtocolType[str, str],
     ) -> None:
-        # Arrange
-
-        # Act & Assert
         with TCPNetworkClient(remote_address, stream_protocol, local_address=(localhost_ip, 0)) as client:
             client.send_packet("Test")
             assert client.recv_packet() == "Test"

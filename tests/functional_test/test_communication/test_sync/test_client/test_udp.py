@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import socketserver
 from collections.abc import Callable, Iterator
 from socket import AF_INET, socket as Socket
 from typing import Any
@@ -15,8 +16,7 @@ from .....tools import PlatformMarkers
 
 
 @pytest.fixture
-def udp_socket_factory(request: pytest.FixtureRequest, localhost_ip: str) -> Callable[[], Socket]:
-    udp_socket_factory: Callable[[], Socket] = request.getfixturevalue("udp_socket_factory")
+def udp_socket_factory(udp_socket_factory: Callable[[], Socket], localhost_ip: str) -> Callable[[], Socket]:
 
     def bound_udp_socket_factory() -> Socket:
         sock = udp_socket_factory()
@@ -37,11 +37,14 @@ class TestUDPNetworkClient:
     @staticmethod
     def client(
         server: Socket,
-        localhost_ip: str,
+        udp_socket_factory: Callable[[], Socket],
         datagram_protocol: DatagramProtocol[str, str],
     ) -> Iterator[UDPNetworkClient[str, str]]:
         address: tuple[str, int] = server.getsockname()[:2]
-        with UDPNetworkClient(address, datagram_protocol, local_address=(localhost_ip, 0)) as client:
+        socket = udp_socket_factory()
+        socket.connect(address)
+
+        with UDPNetworkClient(socket, datagram_protocol) as client:
             yield client
 
     def test____close____idempotent(self, client: UDPNetworkClient[str, str]) -> None:
@@ -150,3 +153,71 @@ class TestUDPNetworkClient:
         else:
             assert isinstance(address, IPv6SocketAddress)
         assert address == client.socket.getpeername()
+
+
+class UDPServer(socketserver.UDPServer):
+    class RequestHandler(socketserver.DatagramRequestHandler):
+        def handle(self) -> None:
+            data: bytes = self.rfile.read()
+            self.wfile.write(data)
+
+    allow_reuse_address = True
+
+    def __init__(
+        self,
+        server_address: tuple[str, int],
+        socket_family: int,
+    ) -> None:
+        self.address_family = socket_family
+        super().__init__(server_address, self.RequestHandler)
+
+
+class TestUDPNetworkClientConnection:
+    @pytest.fixture(autouse=True)
+    @classmethod
+    def server(cls, localhost_ip: str, socket_family: int) -> Iterator[socketserver.UDPServer]:
+        from threading import Thread
+
+        with UDPServer((localhost_ip, 0), socket_family) as server:
+            server_thread = Thread(target=server.serve_forever, daemon=True)
+            server_thread.start()
+            yield server
+            server.shutdown()
+
+    @pytest.fixture
+    @staticmethod
+    def remote_address(server: socketserver.UDPServer) -> tuple[str, int]:
+        return server.server_address[:2]  # type: ignore[return-value]
+
+    def test____dunder_init____connect_to_server(
+        self,
+        remote_address: tuple[str, int],
+        datagram_protocol: DatagramProtocol[str, str],
+    ) -> None:
+        with UDPNetworkClient(remote_address, datagram_protocol) as client:
+            assert client.get_local_address().host in {"127.0.0.1", "::1"}
+            assert client.get_local_address().port > 0
+
+            client.send_packet("Test")
+            assert client.recv_packet() == "Test"
+
+    def test____dunder_init____with_local_address(
+        self,
+        localhost_ip: str,
+        remote_address: tuple[str, int],
+        datagram_protocol: DatagramProtocol[str, str],
+    ) -> None:
+        with UDPNetworkClient(remote_address, datagram_protocol, local_address=(localhost_ip, 0)) as client:
+            assert client.get_local_address().host == localhost_ip
+            assert client.get_local_address().port > 0
+
+            client.send_packet("Test")
+            assert client.recv_packet() == "Test"
+
+    def test____dunder_init____remote_address____not_set(
+        self,
+        udp_socket_factory: Callable[[], Socket],
+        datagram_protocol: DatagramProtocol[str, str],
+    ) -> None:
+        with pytest.raises(OSError):
+            _ = UDPNetworkClient(udp_socket_factory(), datagram_protocol)

@@ -22,7 +22,6 @@ __all__ = [
     "check_real_socket_state",
     "check_socket_family",
     "check_socket_no_ssl",
-    "ensure_datagram_socket_bound",
     "error_from_errno",
     "exception_with_notes",
     "get_callable_name",
@@ -264,21 +263,6 @@ def is_socket_connected(sock: ISocket) -> bool:
 def check_socket_is_connected(sock: ISocket) -> None:
     if not is_socket_connected(sock):
         raise error_from_errno(_errno.ENOTCONN)
-
-
-def ensure_datagram_socket_bound(sock: _socket.socket) -> None:
-    check_socket_family(sock.family)
-    if sock.type != _socket.SOCK_DGRAM:
-        raise ValueError("A 'SOCK_DGRAM' socket is expected")
-    try:
-        is_bound: bool = sock.getsockname()[1] > 0
-    except OSError as exc:
-        if exc.errno != _errno.EINVAL:
-            raise
-        is_bound = False
-
-    if not is_bound:
-        sock.bind(("localhost", 0))
 
 
 def set_reuseport(sock: SupportsSocketOptions) -> None:
