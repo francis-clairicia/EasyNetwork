@@ -168,8 +168,6 @@ class BaseAsyncDNSResolver(metaclass=ABCMeta):
                 errors.clear()
                 raise
             try:
-                socket.setblocking(False)
-
                 if local_addrinfo is not None:
                     bind_errors: list[OSError] = []
                     try:
@@ -191,8 +189,8 @@ class BaseAsyncDNSResolver(metaclass=ABCMeta):
                             raise OSError(f"no matching local address with {family=} found")
                     finally:
                         bind_errors.clear()
-                        del bind_errors
 
+                socket.setblocking(False)
                 await self.connect_socket(socket, remote_sockaddr)
                 errors.clear()
                 return socket

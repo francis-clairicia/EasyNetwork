@@ -290,13 +290,12 @@ class TestAsyncTCPNetworkClientConnection:
     @staticmethod
     async def server(localhost_ip: str, socket_family: int) -> AsyncIterator[asyncio.Server]:
         async def client_connected_cb(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-            try:
+            with contextlib.closing(writer):
                 data: bytes = await reader.readline()
                 writer.write(data)
                 await writer.drain()
-            finally:
-                writer.close()
-                await writer.wait_closed()
+
+            await writer.wait_closed()
 
         async with await asyncio.start_server(
             client_connected_cb,
@@ -334,6 +333,10 @@ class TestAsyncTCPNetworkClientConnection:
             "asyncio",
             local_address=(localhost_ip, 0),
         ) as client:
+            assert client.is_connected()
+            assert client.get_local_address().host == localhost_ip
+            assert client.get_local_address().port > 0
+
             await client.send_packet("Test")
             assert await client.recv_packet() == "Test"
 

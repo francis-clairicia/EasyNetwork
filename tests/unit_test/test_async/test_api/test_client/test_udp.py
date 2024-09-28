@@ -246,7 +246,7 @@ class TestAsyncUDPNetworkClient(BaseTestClient, BaseTestWithDatagramProtocol):
         # Assert
         mock_backend.create_udp_endpoint.assert_awaited_once_with(
             *remote_address,
-            local_address=("localhost", 0),
+            local_address=None,
         )
 
     async def test____dunder_init____use_given_socket(
@@ -273,7 +273,6 @@ class TestAsyncUDPNetworkClient(BaseTestClient, BaseTestWithDatagramProtocol):
         mock_backend.wrap_connected_datagram_socket.assert_awaited_once_with(mock_udp_socket)
         assert mock_udp_socket.mock_calls == [
             mocker.call.getpeername(),
-            mocker.call.getsockname(),
             mocker.call.fileno(),
             mocker.call.getsockname(),
         ]
@@ -294,27 +293,6 @@ class TestAsyncUDPNetworkClient(BaseTestClient, BaseTestWithDatagramProtocol):
 
         # Assert
         assert exc_info.value.errno == errno.ENOTCONN
-
-    async def test____dunder_init____use_given_socket____force_local_address(
-        self,
-        async_finalizer: AsyncFinalizer,
-        mock_udp_socket: MagicMock,
-        mock_datagram_protocol: MagicMock,
-        mock_backend: MagicMock,
-    ) -> None:
-        # Arrange
-        mock_udp_socket.getsockname.return_value = ("0.0.0.0", 0)
-
-        # Act
-        client: AsyncUDPNetworkClient[Any, Any] = AsyncUDPNetworkClient(
-            mock_udp_socket,
-            mock_datagram_protocol,
-            mock_backend,
-        )
-        async_finalizer.add_finalizer(client.aclose)
-
-        # Assert
-        mock_udp_socket.bind.assert_called_once_with(("localhost", 0))
 
     @pytest.mark.parametrize("socket_family", list(UNSUPPORTED_FAMILIES), indirect=True)
     async def test____dunder_init____use_given_socket____invalid_socket_family(

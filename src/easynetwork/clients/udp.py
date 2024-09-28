@@ -104,7 +104,7 @@ class UDPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
         socket: _socket.socket
         match __arg:
             case _socket.socket() as socket if not kwargs:
-                _utils.ensure_datagram_socket_bound(socket)
+                pass
             case (str(host), int(port)):
                 if (family := kwargs.get("family", _socket.AF_UNSPEC)) != _socket.AF_UNSPEC:
                     _utils.check_socket_family(family)
@@ -116,11 +116,16 @@ class UDPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
             _utils.check_socket_family(socket.family)
             _utils.check_socket_is_connected(socket)
 
+            local_address: tuple[Any, ...] = socket.getsockname()
+
             transport = SocketDatagramTransport(
                 socket,
                 retry_interval=retry_interval,
                 max_datagram_size=constants.MAX_DATAGRAM_BUFSIZE,
             )
+            local_address = new_socket_address(local_address, socket.family)
+            if local_address.port == 0:
+                raise AssertionError(f"{socket} is not bound to a local address")
         except BaseException:
             socket.close()
             raise
@@ -300,33 +305,16 @@ class UDPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
 
 
 def _create_udp_socket(
+    remote_address: tuple[str, int],
     *,
     local_address: tuple[str, int] | None = None,
-    remote_address: tuple[str, int] | None = None,
     family: int = _socket.AF_UNSPEC,
     reuse_port: bool = False,
 ) -> _socket.socket:
-    local_host: str | None
-    local_port: int
-    if local_address is None:
-        local_host = "localhost"
-        local_port = 0
-        local_address = (local_host, local_port)
-    else:
-        local_host, local_port = local_address
-
-    flags: int = 0
-    if not remote_address:
-        flags |= _socket.AI_PASSIVE
 
     errors: list[OSError] = []
 
-    for family, _, proto, _, sockaddr in _socket.getaddrinfo(
-        *(remote_address or local_address),
-        family=family,
-        type=_socket.SOCK_DGRAM,
-        flags=flags,
-    ):
+    for family, _, proto, _, remote_sockaddr in _socket.getaddrinfo(*remote_address, family=family, type=_socket.SOCK_DGRAM):
         try:
             socket = _socket.socket(family, _socket.SOCK_DGRAM, proto)
         except OSError as exc:
@@ -339,22 +327,10 @@ def _create_udp_socket(
             if reuse_port:
                 _utils.set_reuseport(socket)
 
-            if remote_address is None:
-                local_sockaddr = sockaddr
-                remote_sockaddr = None
-            else:
-                local_sockaddr = local_address
-                remote_sockaddr = sockaddr
+            if local_address is not None:
+                socket.bind(local_address)
 
-            del sockaddr
-
-            try:
-                socket.bind(local_sockaddr)
-            except OSError as exc:
-                msg = f"error while attempting to bind to address {local_sockaddr!r}: {exc.strerror.lower()}"
-                raise OSError(exc.errno, msg).with_traceback(exc.__traceback__) from None
-            if remote_sockaddr:
-                socket.connect(remote_sockaddr)
+            socket.connect(remote_sockaddr)
 
             errors.clear()
             return socket
@@ -372,8 +348,6 @@ def _create_udp_socket(
             raise ExceptionGroup("Could not create the UDP socket", errors)
         finally:
             errors.clear()
-    elif remote_address is not None:
+    else:
         remote_host = remote_address[0]
         raise OSError(f"getaddrinfo({remote_host!r}) returned empty list")
-    else:
-        raise OSError(f"getaddrinfo({local_host!r}) returned empty list")
