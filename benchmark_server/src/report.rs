@@ -106,7 +106,7 @@ impl TryFrom<TestReport> for Report {
         let nb_messages = report.number_of_messages();
         let message_size = report.message_size();
         let mut latency_stats = Data::new(report.latency_stats());
-        if duration == Duration::ZERO {
+        if duration == Duration::ZERO || latency_stats.is_empty() {
             return Err("No Data".to_owned());
         }
 
@@ -119,15 +119,15 @@ impl TryFrom<TestReport> for Report {
         let latency_median = latency_stats.median();
         let latency_third_quartile = latency_stats.upper_quartile();
 
-        let latency_mean = latency_stats.mean().ok_or("No Data")?;
-        let latency_stdev = latency_stats.std_dev().ok_or("No Data")?;
+        let latency_mean = latency_stats.mean().expect("mean should be available");
+        let latency_stdev = latency_stats.std_dev().expect("std dev should be available");
 
         let latency_iqr = latency_third_quartile - latency_first_quartile;
         let latency_lowerfence = latency_first_quartile - 1.5 * latency_iqr;
         let latency_upperfence = latency_third_quartile + 1.5 * latency_iqr;
 
-        let latency_nb_low_outliers = latency_stats.iter().filter(|v| **v < latency_lowerfence).count();
-        let latency_nb_high_outliers = latency_stats.iter().filter(|v| **v > latency_upperfence).count();
+        let latency_nb_low_outliers = latency_stats.iter().filter(|&&v| v < latency_lowerfence).count();
+        let latency_nb_high_outliers = latency_stats.iter().filter(|&&v| v > latency_upperfence).count();
         let latency_percent_low_outliers = 100.0 * latency_nb_low_outliers as f64 / latency_stats.len() as f64;
         let latency_percent_high_outliers = 100.0 * latency_nb_high_outliers as f64 / latency_stats.len() as f64;
 
@@ -205,6 +205,6 @@ impl fmt::Display for DistributionDisplay<'_> {
             .map(|(percent, time)| format!("{percent}% under {time:.3}ms"))
             .collect();
 
-        write!(f, "{}", distributions.join("; "))
+        f.write_str(&distributions.join("; "))
     }
 }
