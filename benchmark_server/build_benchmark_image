@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import argparse
-import functools
 import os
 import shutil
 import subprocess
@@ -71,18 +70,13 @@ def _build_docker_image(client: docker.DockerClient, sdist_path: Path, tag: str,
         stderr=subprocess.STDOUT,
         text=True,
     ) as process:
-        try:
-            assert process.stdout is not None
-            for c in iter(functools.partial(process.stdout.read, 1), ""):
-                sys.stdout.write(c)
-            sys.stdout.flush()
-            retcode = process.wait()
-        except BaseException:  # Including KeyboardInterrupt, communicate handled that.
-            process.kill()
-            # We don't call process.wait() as .__exit__ does that for us.
-            raise
-        if retcode != 0:
-            sys.exit(retcode)
+        assert process.stdout is not None
+        while c := process.stdout.read(1):
+            sys.stdout.write(c)
+        sys.stdout.flush()
+
+    if (retcode := process.returncode) != 0:
+        sys.exit(retcode)
 
     client.images.prune(filters={"dangling": True})
     print(f"-> Sucessfully built docker image {tag!r}")
