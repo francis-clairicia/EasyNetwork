@@ -8,10 +8,11 @@ from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, 
 from typing import Any
 
 from easynetwork.exceptions import BaseProtocolParseError, ClientClosedError, DatagramProtocolParseError, DeserializeError
+from easynetwork.lowlevel._utils import remove_traceback_frames_in_place
 from easynetwork.lowlevel.api_async.backend._asyncio.backend import AsyncIOBackend
 from easynetwork.lowlevel.api_async.backend._asyncio.datagram.endpoint import DatagramEndpoint, create_datagram_endpoint
 from easynetwork.lowlevel.api_async.backend._asyncio.datagram.listener import DatagramListenerSocketAdapter
-from easynetwork.lowlevel.socket import SocketAddress
+from easynetwork.lowlevel.socket import SocketAddress, SocketProxy
 from easynetwork.protocol import DatagramProtocol
 from easynetwork.servers.async_udp import AsyncUDPNetworkServer
 from easynetwork.servers.handlers import AsyncDatagramClient, AsyncDatagramRequestHandler, INETClientAttribute
@@ -49,16 +50,27 @@ class MyAsyncUDPRequestHandler(AsyncDatagramRequestHandler[str, str]):
     request_received: collections.defaultdict[tuple[Any, ...], list[str]]
     bad_request_received: collections.defaultdict[tuple[Any, ...], list[BaseProtocolParseError]]
     created_clients: set[AsyncDatagramClient[str]]
+    created_clients_map: dict[tuple[Any, ...], AsyncDatagramClient[str]]
     server: AsyncUDPNetworkServer[str, str]
 
     async def service_init(self, exit_stack: contextlib.AsyncExitStack, server: AsyncUDPNetworkServer[str, str]) -> None:
         await super().service_init(exit_stack, server)
         self.server = server
         assert isinstance(self.server, AsyncUDPNetworkServer)
+
         self.request_count = collections.Counter()
+        exit_stack.callback(self.request_count.clear)
+
         self.request_received = collections.defaultdict(list)
+        exit_stack.callback(self.request_received.clear)
+
         self.bad_request_received = collections.defaultdict(list)
+        exit_stack.callback(self.bad_request_received.clear)
+
         self.created_clients = set()
+        self.created_clients_map = dict()
+        exit_stack.callback(self.created_clients_map.clear)
+        exit_stack.callback(self.created_clients.clear)
 
         exit_stack.push_async_callback(self.service_quit)
 
@@ -69,21 +81,17 @@ class MyAsyncUDPRequestHandler(AsyncDatagramRequestHandler[str, str]):
             with pytest.raises(ClientClosedError):
                 await client.send_packet("something")
 
-        del (
-            self.request_count,
-            self.request_received,
-            self.bad_request_received,
-            self.created_clients,
-        )
-
     async def handle(self, client: AsyncDatagramClient[str]) -> AsyncGenerator[None, str]:
         self.created_clients.add(client)
+        self.created_clients_map[client_address(client)] = client
         while True:
             async with self.handle_bad_requests(client):
                 request = yield
                 break
         self.request_count[client_address(client)] += 1
         match request:
+            case "__ping__":
+                await client.send_packet("pong")
             case "__error__":
                 raise RandomError("Sorry man!")
             case "__error_excgrp__":
@@ -120,6 +128,7 @@ class MyAsyncUDPRequestHandler(AsyncDatagramRequestHandler[str, str]):
         try:
             yield
         except DatagramProtocolParseError as exc:
+            remove_traceback_frames_in_place(exc, 1)
             self.bad_request_received[client_address(client)].append(exc)
             await client.send_packet("wrong encoding man.")
 
@@ -196,6 +205,7 @@ class RequestRefusedHandler(AsyncDatagramRequestHandler[str, str]):
 
     async def service_init(self, exit_stack: contextlib.AsyncExitStack, server: Any) -> None:
         self.request_count: collections.Counter[AsyncDatagramClient[str]] = collections.Counter()
+        exit_stack.callback(self.request_count.clear)
 
     async def handle(self, client: AsyncDatagramClient[str]) -> AsyncGenerator[None, str]:
         if self.request_count[client] >= self.refuse_after and not self.bypass_refusal:
@@ -340,6 +350,13 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
 
             yield factory
 
+    @staticmethod
+    async def __ping_server(endpoint: DatagramEndpoint) -> None:
+        await endpoint.sendto(b"__ping__", None)
+        async with asyncio.timeout(1):
+            pong, _ = await endpoint.recvfrom()
+            assert pong == b"pong"
+
     async def test____serve_forever____empty_listener_list(
         self,
         request_handler: MyAsyncUDPRequestHandler,
@@ -376,6 +393,26 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
             assert (await endpoint.recvfrom())[0] == b"HELLO, WORLD."
 
         assert request_handler.request_received[client_address] == ["hello, world."]
+
+    async def test____serve_forever____client_extra_attributes(
+        self,
+        client_factory: Callable[[], Awaitable[DatagramEndpoint]],
+        request_handler: MyAsyncUDPRequestHandler,
+    ) -> None:
+        all_endpoints: list[DatagramEndpoint] = [await client_factory() for _ in range(3)]
+
+        for endpoint in all_endpoints:
+            await self.__ping_server(endpoint)
+
+        assert len(request_handler.created_clients_map) == 3
+
+        for endpoint in all_endpoints:
+            client_address: tuple[Any, ...] = endpoint.get_extra_info("sockname")
+            connected_client: AsyncDatagramClient[str] = request_handler.created_clients_map[client_address]
+
+            assert isinstance(connected_client.extra(INETClientAttribute.socket), SocketProxy)
+            assert connected_client.extra(INETClientAttribute.remote_address) == client_address
+            assert connected_client.extra(INETClientAttribute.local_address) == endpoint.get_extra_info("peername")
 
     async def test____serve_forever____client_equality(
         self,

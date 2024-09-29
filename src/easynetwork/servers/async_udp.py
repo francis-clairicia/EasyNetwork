@@ -174,7 +174,6 @@ class _ClientAPI(AsyncDatagramClient[_T_Response]):
         "__context",
         "__service_available",
         "__h",
-        "__extra_attributes_cache",
     )
 
     def __init__(
@@ -185,7 +184,6 @@ class _ClientAPI(AsyncDatagramClient[_T_Response]):
         super().__init__()
         self.__context: _datagram_server.DatagramClientContext[_T_Response, tuple[Any, ...]] = context
         self.__h: int | None = None
-        self.__extra_attributes_cache: Mapping[Any, Callable[[], Any]] | None = None
         self.__service_available: _utils.Flag = service_available
 
     def __repr__(self) -> str:
@@ -221,24 +219,26 @@ class _ClientAPI(AsyncDatagramClient[_T_Response]):
     def backend(self) -> AsyncBackend:
         return self.__context.backend()
 
+    def __get_server_socket(self) -> SocketProxy:
+        server = self.__context.server
+        return SocketProxy(server.extra(INETSocketAttribute.socket))
+
+    def __get_server_address(self) -> SocketAddress:
+        server = self.__context.server
+        return new_socket_address(server.extra(INETSocketAttribute.sockname), server.extra(INETSocketAttribute.family))
+
+    def __get_remote_address(self) -> SocketAddress:
+        server = self.__context.server
+        address = self.__context.address
+        return new_socket_address(address, server.extra(INETSocketAttribute.family))
+
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
-        if (extra_attributes_cache := self.__extra_attributes_cache) is not None:
-            return extra_attributes_cache
-        server = self.__context.server
-        self.__extra_attributes_cache = extra_attributes_cache = {
-            **server.extra_attributes,
-            INETClientAttribute.socket: lambda: SocketProxy(server.extra(INETSocketAttribute.socket)),
-            INETClientAttribute.local_address: lambda: new_socket_address(
-                server.extra(INETSocketAttribute.sockname),
-                server.extra(INETSocketAttribute.family),
-            ),
-            INETClientAttribute.remote_address: lambda: new_socket_address(
-                self.__context.address,
-                server.extra(INETSocketAttribute.family),
-            ),
+        return {
+            INETClientAttribute.socket: self.__get_server_socket,
+            INETClientAttribute.local_address: self.__get_server_address,
+            INETClientAttribute.remote_address: self.__get_remote_address,
         }
-        return extra_attributes_cache
 
 
 @final
