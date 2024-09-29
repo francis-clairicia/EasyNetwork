@@ -1107,6 +1107,7 @@ def main() -> None:
 
     if html_output_file:
         import plotly.graph_objects as go
+        from plotly.offline import get_plotlyjs
 
         if report_file_with_date:
             html_output_file = _add_date_to_filepath(html_output_file, now)
@@ -1168,12 +1169,13 @@ def main() -> None:
             print("<head>", file=f)
             print('<meta charset="utf-8" />', file=f)
             print(f"<title>{benchmark_title}</title>", file=f)
+            print(f'<script type="text/javascript">{get_plotlyjs()}</script>', file=f)
             print("</head>", file=f)
             print("<body>", file=f)
 
-            for i, fig in enumerate(figures):
+            for fig in figures:
                 fig.update_layout(title=f"{benchmark_title}. Duration: {duration}s; Concurrency level: {concurrency}")
-                fig.write_html(f, full_html=False, include_plotlyjs=(i == 0), default_width="95vw", default_height="95vh")
+                fig.write_html(f, full_html=False, include_plotlyjs=False, default_width="95vw", default_height="95vh")
 
             print("</body>", file=f)
             print("</html>", file=f)
