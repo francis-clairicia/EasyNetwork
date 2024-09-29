@@ -22,7 +22,8 @@ import contextlib
 import logging
 import weakref
 from collections.abc import AsyncIterator, Callable, Coroutine, Iterator, Mapping, Sequence
-from typing import TYPE_CHECKING, Any, Generic, NoReturn, final
+from types import MappingProxyType
+from typing import TYPE_CHECKING, Any, Generic, NoReturn, TypeVar, final
 
 from .._typevars import _T_Request, _T_Response
 from ..exceptions import ClientClosedError
@@ -366,6 +367,9 @@ class AsyncTCPNetworkServer(
         )
 
 
+_T_Value = TypeVar("_T_Value")
+
+
 @final
 @runtime_final_class
 class _ConnectedClientAPI(AsyncStreamClient[_T_Response]):
@@ -388,7 +392,17 @@ class _ConnectedClientAPI(AsyncStreamClient[_T_Response]):
         self.__send_lock = client.backend().create_fair_lock()
         self.__proxy: SocketProxy = SocketProxy(client.extra(INETSocketAttribute.socket))
         self.__address: SocketAddress = address
-        self.__extra_attributes_cache: Mapping[Any, Callable[[], Any]] | None = None
+
+        local_address = new_socket_address(client.extra(INETSocketAttribute.sockname), client.extra(INETSocketAttribute.family))
+
+        self.__extra_attributes_cache: Mapping[Any, Callable[[], Any]] = MappingProxyType(
+            {
+                **client.extra_attributes,
+                INETClientAttribute.socket: _utils.make_callback(self.__simple_attribute_return, self.__proxy),
+                INETClientAttribute.local_address: _utils.make_callback(self.__simple_attribute_return, local_address),
+                INETClientAttribute.remote_address: _utils.make_callback(self.__simple_attribute_return, self.__address),
+            }
+        )
 
         with contextlib.suppress(OSError):
             set_tcp_nodelay(self.__proxy, True)
@@ -425,18 +439,10 @@ class _ConnectedClientAPI(AsyncStreamClient[_T_Response]):
     def backend(self) -> AsyncBackend:
         return self.__client.backend()
 
+    @staticmethod
+    def __simple_attribute_return(value: _T_Value) -> _T_Value:
+        return value
+
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
-        if (extra_attributes_cache := self.__extra_attributes_cache) is not None:
-            return extra_attributes_cache
-        client = self.__client
-        self.__extra_attributes_cache = extra_attributes_cache = {
-            **client.extra_attributes,
-            INETClientAttribute.socket: lambda: self.__proxy,
-            INETClientAttribute.local_address: lambda: new_socket_address(
-                client.extra(INETSocketAttribute.sockname),
-                client.extra(INETSocketAttribute.family),
-            ),
-            INETClientAttribute.remote_address: lambda: self.__address,
-        }
-        return extra_attributes_cache
+        return self.__extra_attributes_cache
