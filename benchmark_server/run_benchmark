@@ -856,7 +856,10 @@ def _start_docker_instance(
             finally:
                 sock.close()
 
-        logs: bytes | str = container.logs()
+        try:
+            logs: bytes | str = container.logs()
+        except docker.errors.NotFound:
+            logs = ""
         if not isinstance(logs, str):
             logs = str(logs, "utf-8", "ignore")
         sys.exit("Could not start server\n" + logs)
