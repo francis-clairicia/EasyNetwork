@@ -54,7 +54,7 @@ cbor = [
     "cbor2>=5.5,<6",
 ]
 msgpack = [
-    "msgpack>=1.0.8,<2",
+    "msgpack>=1.1.0,<2",
 ]
 trio = [
     "trio>=0.26,<1",
@@ -72,7 +72,7 @@ build = [
     "build>=1.0.3,<2",
 ]
 pre-commit = [
-    "pre-commit>=3.7.0,<4",
+    "pre-commit>=4.0,<5",
 ]
 uvloop = [
     "uvloop<0.21,>=0.19.0; os_name=='posix'",
@@ -89,7 +89,7 @@ mypy = [
     "mypy~=1.11",
 ]
 types-msgpack = [
-    "msgpack-types>=0.2.0",
+    "msgpack-types>=0.5.0",
 ]
 flake8 = [
     "flake8>=7.0,<8",
