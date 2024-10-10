@@ -83,7 +83,7 @@ class MyAsyncUDPRequestHandler(AsyncDatagramRequestHandler[str, str]):
 
     async def handle(self, client: AsyncDatagramClient[str]) -> AsyncGenerator[None, str]:
         self.created_clients.add(client)
-        self.created_clients_map[client_address(client)] = client
+        self.created_clients_map.setdefault(client_address(client), client)
         while True:
             async with self.handle_bad_requests(client):
                 request = yield
@@ -103,9 +103,23 @@ class MyAsyncUDPRequestHandler(AsyncDatagramRequestHandler[str, str]):
             case "__closed_client_error_excgrp__":
                 raise ExceptionGroup("ClientClosedError", [ClientClosedError()])
             case "__eq__":
-                assert client in list(self.created_clients)
-                assert object() not in list(self.created_clients)
-                await client.send_packet("True")
+                try:
+                    assert client in list(self.created_clients), "client not in list(self.created_clients)"
+                    assert object() not in list(self.created_clients), "object() in list(self.created_clients)"
+                except AssertionError as exc:
+                    await client.send_packet(f"False: {exc}")
+                    LOGGER.error("AssertionError", exc_info=exc)
+                else:
+                    await client.send_packet("True")
+            case "__cache__":
+                stored_client_object = self.created_clients_map[client_address(client)]
+                try:
+                    assert client is stored_client_object, "client is not stored_client_object"
+                except AssertionError as exc:
+                    await client.send_packet(f"False: {exc}")
+                    LOGGER.error("AssertionError", exc_info=exc)
+                else:
+                    await client.send_packet("True")
             case "__wait__":
                 while True:
                     async with self.handle_bad_requests(client):
@@ -422,6 +436,18 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
             endpoint = await client_factory()
 
             await endpoint.sendto(b"__eq__", None)
+            assert (await endpoint.recvfrom())[0] == b"True"
+
+    async def test____serve_forever____client_cache(
+        self,
+        client_factory: Callable[[], Awaitable[DatagramEndpoint]],
+    ) -> None:
+        for _ in range(3):
+            endpoint = await client_factory()
+
+            await self.__ping_server(endpoint)
+
+            await endpoint.sendto(b"__cache__", None)
             assert (await endpoint.recvfrom())[0] == b"True"
 
     async def test____serve_forever____save_request_handler_context(

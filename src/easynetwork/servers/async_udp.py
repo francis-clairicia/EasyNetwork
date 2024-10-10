@@ -23,7 +23,7 @@ import logging
 import types
 import weakref
 from collections.abc import Callable, Coroutine, Mapping, Sequence
-from typing import Any, Generic, NoReturn, final
+from typing import Any, Generic, NoReturn, TypeAlias, final
 
 from .._typevars import _T_Request, _T_Response
 from ..exceptions import ClientClosedError
@@ -135,14 +135,19 @@ class AsyncUDPNetworkServer(
         server: _datagram_server.AsyncDatagramServer[_T_Request, _T_Response, tuple[Any, ...]],
         task_group: TaskGroup,
     ) -> NoReturn:
-        handler = build_lowlevel_datagram_server_handler(self.__client_initializer, self.__request_handler)
+        handler = build_lowlevel_datagram_server_handler(
+            self.__client_initializer,
+            self.__request_handler,
+            weakref.WeakValueDictionary(),
+        )
         await server.serve(handler, task_group)
 
     def __client_initializer(
         self,
         lowlevel_client: _datagram_server.DatagramClientContext[_T_Response, tuple[Any, ...]],
-    ) -> _ClientContext:
-        return _ClientContext(lowlevel_client, self.__service_available, self.logger)
+        client_cache: _ClientCacheDictType[_T_Response],
+    ) -> _ClientContext[_T_Response]:
+        return _ClientContext(lowlevel_client, client_cache, self.__service_available, self.logger)
 
     @_utils.inherit_doc(_base.BaseAsyncNetworkServerImpl)
     def get_addresses(self) -> Sequence[SocketAddress]:
@@ -241,27 +246,41 @@ class _ClientAPI(AsyncDatagramClient[_T_Response]):
         }
 
 
+_ClientCacheDictType: TypeAlias = weakref.WeakValueDictionary[
+    _datagram_server.DatagramClientContext[_T_Response, tuple[Any, ...]],
+    _ClientAPI[_T_Response],
+]
+
+
 @final
 @runtime_final_class
-class _ClientContext:
+class _ClientContext(Generic[_T_Response]):
     __slots__ = (
         "__lowlevel_client",
+        "__client_cache",
         "__service_available",
         "__logger",
     )
 
     def __init__(
         self,
-        lowlevel_client: _datagram_server.DatagramClientContext[Any, tuple[Any, ...]],
+        lowlevel_client: _datagram_server.DatagramClientContext[_T_Response, tuple[Any, ...]],
+        client_cache: _ClientCacheDictType[_T_Response],
         service_available: _utils.Flag,
         logger: logging.Logger,
     ) -> None:
-        self.__lowlevel_client: _datagram_server.DatagramClientContext[Any, tuple[Any, ...]] = lowlevel_client
+        self.__lowlevel_client: _datagram_server.DatagramClientContext[_T_Response, tuple[Any, ...]] = lowlevel_client
+        self.__client_cache: _ClientCacheDictType[_T_Response] = client_cache
         self.__service_available: _utils.Flag = service_available
         self.__logger: logging.Logger = logger
 
     async def __aenter__(self) -> AsyncDatagramClient[_T_Response]:
-        return _ClientAPI(self.__lowlevel_client, self.__service_available)
+        lowlevel_client = self.__lowlevel_client
+        try:
+            client = self.__client_cache[lowlevel_client]
+        except KeyError:
+            self.__client_cache[lowlevel_client] = client = _ClientAPI(lowlevel_client, self.__service_available)
+        return client
 
     async def __aexit__(
         self,

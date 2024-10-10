@@ -172,8 +172,11 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
         with self.__serve_guard:
             listener = self.__listener
             backend = listener.backend()
-            client_cache: weakref.WeakValueDictionary[_T_Address, _ClientToken[_T_Response, _T_Address]]
-            client_cache = weakref.WeakValueDictionary()
+
+            client_data_cache: weakref.WeakValueDictionary[_T_Address, _ClientData] = weakref.WeakValueDictionary()
+            client_ctx_cache: weakref.WeakValueDictionary[_T_Address, DatagramClientContext[_T_Response, _T_Address]]
+            client_ctx_cache = weakref.WeakValueDictionary()
+
             default_context = contextvars.copy_context()
 
             async with contextlib.AsyncExitStack() as stack:
@@ -183,16 +186,21 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
                 # The responsibility for ordering datagram reception is shifted to the listener.
                 async def handler(datagram: bytes, address: _T_Address, /) -> None:
                     try:
-                        client = client_cache[address]
+                        client_data = client_data_cache[address]
                     except KeyError:
-                        client_cache[address] = client = _ClientToken(DatagramClientContext(address, self), _ClientData(backend))
+                        client_data_cache[address] = client_data = _ClientData(backend)
 
-                    nb_datagrams_in_queue = await client.data.push_datagram(datagram)
+                    nb_datagrams_in_queue = await client_data.push_datagram(datagram)
                     del datagram
 
-                    if client.data.state is None and nb_datagrams_in_queue > 0:
-                        client.data.mark_pending()
-                        await self.__client_coroutine(datagram_received_cb, client, task_group, default_context)
+                    if client_data.state is None and nb_datagrams_in_queue > 0:
+                        try:
+                            client_ctx = client_ctx_cache[address]
+                        except KeyError:
+                            client_ctx_cache[address] = client_ctx = DatagramClientContext(address, self)
+
+                        client_data.mark_pending()
+                        await self.__client_coroutine(datagram_received_cb, client_ctx, client_data, task_group, default_context)
 
                 await listener.serve(handler, task_group)
 
@@ -203,20 +211,22 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
         datagram_received_cb: Callable[
             [DatagramClientContext[_T_Response, _T_Address]], AsyncGenerator[float | None, _T_Request]
         ],
-        client: _ClientToken[_T_Response, _T_Address],
+        client_ctx: DatagramClientContext[_T_Response, _T_Address],
+        client_data: _ClientData,
         task_group: TaskGroup,
         default_context: contextvars.Context,
     ) -> None:
-        client.data.mark_running()
+        client_data.mark_running()
         try:
             await self.__client_coroutine_inner_loop(
-                request_handler_generator=datagram_received_cb(client.ctx),
-                client_data=client.data,
+                request_handler_generator=datagram_received_cb(client_ctx),
+                client_data=client_data,
             )
         finally:
             self.__on_client_coroutine_task_done(
                 datagram_received_cb=datagram_received_cb,
-                client=client,
+                client_ctx=client_ctx,
+                client_data=client_data,
                 task_group=task_group,
                 default_context=default_context,
             )
@@ -270,15 +280,16 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
         datagram_received_cb: Callable[
             [DatagramClientContext[_T_Response, _T_Address]], AsyncGenerator[float | None, _T_Request]
         ],
-        client: _ClientToken[_T_Response, _T_Address],
+        client_ctx: DatagramClientContext[_T_Response, _T_Address],
+        client_data: _ClientData,
         task_group: TaskGroup,
         default_context: contextvars.Context,
     ) -> None:
-        client.data.mark_done()
-        if client.data.queue_is_empty():
+        client_data.mark_done()
+        if client_data.queue_is_empty():
             return
 
-        client.data.mark_pending()
+        client_data.mark_pending()
 
         # Why copy the context before calling run()?
         # Short answer: asyncio.eager_task_factory :)
@@ -294,7 +305,8 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
             task_group.start_soon,
             self.__client_coroutine,
             datagram_received_cb,
-            client,
+            client_ctx,
+            client_data,
             task_group,
             default_context,
         )
@@ -328,29 +340,13 @@ class _ClientState(enum.Enum):
     TASK_RUNNING = enum.auto()
 
 
-# Python 3.12.3 regression for weakref slots on generics
-# See https://github.com/python/cpython/issues/118033
-# @dataclasses.dataclass(slots=True, weakref_slot=True)
-
-
-@dataclasses.dataclass()
-class _ClientToken(Generic[_T_Response, _T_Address]):
-    __slots__ = (
-        "ctx",
-        "data",
-        "__weakref__",
-    )
-
-    ctx: DatagramClientContext[_T_Response, _T_Address]
-    data: _ClientData
-
-
 class _ClientData:
     __slots__ = (
         "__backend",
         "__state",
         "_queue_condition",
         "_datagram_queue",
+        "__weakref__",
     )
 
     def __init__(self, backend: AsyncBackend) -> None:
