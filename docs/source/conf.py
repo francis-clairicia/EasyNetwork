@@ -181,4 +181,4 @@ def setup(app) -> None:
     import warnings
     from sphinx import RemovedInNextVersionWarning
 
-    warnings.filterwarnings("ignore", category=RemovedInNextVersionWarning, module="sphinx_toolbox.more_autodoc.autoprotocol")
+    warnings.filterwarnings("ignore", category=RemovedInNextVersionWarning, module="sphinx_tabs.tabs")
