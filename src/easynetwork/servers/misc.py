@@ -51,6 +51,9 @@ def build_lowlevel_stream_server_handler(
     Creates an :term:`asynchronous generator` function, usable by :meth:`.AsyncStreamServer.serve`, from
     an :class:`.AsyncStreamRequestHandler`.
 
+    .. versionchanged:: 1.1
+        Added variadic arguments for `initializer`.
+
     Parameters:
         initializer: a callback returning an :term:`asynchronous context manager` to create the final client interface and
                      set up the request handler generator.
@@ -165,6 +168,9 @@ def build_lowlevel_datagram_server_handler(
     """
     Creates an :term:`asynchronous generator` function, usable by :meth:`.AsyncDatagramServer.serve`, from
     an :class:`.AsyncDatagramRequestHandler`.
+
+    .. versionchanged:: 1.1
+        Added variadic arguments for `initializer`.
 
     Parameters:
         initializer: a callback returning an :term:`asynchronous context manager` to create the final client interface and
