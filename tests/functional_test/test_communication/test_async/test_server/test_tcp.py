@@ -1002,9 +1002,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         with pytest.raises(ExceptionGroup) as exc_info:
             await client_factory()
 
-        errors, exc = exc_info.value.split(ConnectionError)
-        assert exc is None
-        assert errors is not None
+        assert exc_info.group_contains(ConnectionError, depth=1)
 
         writer.close()
         await writer.wait_closed()

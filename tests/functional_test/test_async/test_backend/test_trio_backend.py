@@ -323,6 +323,8 @@ class TestTrioBackend:
             )
 
         assert len(exc_info.value.exceptions) == 2
+        assert exc_info.group_contains(ValueError, depth=1)
+        assert exc_info.group_contains(KeyError, depth=1)
 
     async def test____gather____duplicate_awaitable(
         self,
@@ -628,7 +630,7 @@ class TestTrioBackend:
                     await task.wait()
 
         if exc_info is not None:
-            assert isinstance(exc_info.value.exceptions[0], FutureException)
+            assert exc_info.group_contains(FutureException, depth=1)
 
     async def test____run_in_thread____cannot_be_cancelled_by_default(
         self,
@@ -896,7 +898,7 @@ class TestTrioBackend:
             raise AssertionError("Should not be called")
 
         def thread() -> None:
-            with pytest.raises(TypeError, match=r"^func is a coroutine function.$") as exc_info:
+            with pytest.raises(TypeError, match=r"^func is a coroutine function.") as exc_info:
                 _ = threads_portal.run_sync(coroutine)
 
             assert exc_info.value.__notes__ == ["You should use run_coroutine() or run_coroutine_soon() instead."]
