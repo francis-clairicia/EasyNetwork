@@ -25,6 +25,9 @@ changelog:
     - title: Dependencies
       labels:
         - dependencies
+      exclude:
+        labels:
+          - integration
     - title: Other Changes
       labels:
         - '*'
