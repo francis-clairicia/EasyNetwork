@@ -372,12 +372,7 @@ async def test____resolve_listener_addresses____error_getaddrinfo_returns_empty_
         )
 
     # Assert
-    os_errors, exc = exc_info.value.split(OSError)
-    assert exc is None
-    assert os_errors is not None
-    assert len(os_errors.exceptions) == 1
-    assert str(os_errors.exceptions[0]) == "getaddrinfo('localhost') returned empty list"
-    del os_errors
+    assert exc_info.group_contains(OSError, match=r"^getaddrinfo\('localhost'\) returned empty list$")
 
     dns_resolver.mock_async_getaddrinfo.assert_awaited_once_with(
         local_host,

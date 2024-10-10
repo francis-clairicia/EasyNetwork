@@ -99,11 +99,11 @@ bandit = [
     "bandit>=1.7.5,<2",
 ]
 test = [
-    "pytest~=7.4,>=7.4.2",
+    "pytest~=8.3",
     "pytest-xdist~=3.3",
     "pytest-mock~=3.10",
     "pytest-cov~=5.0",
-    "pytest-asyncio~=0.23.5",
+    "pytest-asyncio~=0.24.0",
     "trove-classifiers>=2023.11.9",
     "trustme~=1.0",
     # "pytest-retry~=1.6",
@@ -124,7 +124,7 @@ doc = [
     "enum-tools[sphinx]>=0.12.0,<1",
 ]
 micro-benchmark = [
-    "pytest~=7.4",
+    "pytest~=8.3",
     "pytest-benchmark[histogram]~=4.0",
 ]
 benchmark-servers = [
@@ -235,6 +235,7 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "strict"  # Avoid some unwanted behaviour
+asyncio_default_fixture_loop_scope = "function"
 addopts = "--dist=worksteal --strict-markers -p 'no:anyio' -p 'no:benchmark'"  # hatch CLI dependencies installs anyio
 doctest_optionflags = "ELLIPSIS"
 minversion = "7.1.2"
