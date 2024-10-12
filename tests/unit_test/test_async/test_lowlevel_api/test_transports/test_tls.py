@@ -1066,6 +1066,20 @@ class TestAsyncTLSListener:
     def shutdown_timeout(request: pytest.FixtureRequest) -> float | None:
         return getattr(request, "param", None)
 
+    @pytest.fixture
+    @staticmethod
+    def hanshake_error_handler(request: pytest.FixtureRequest, mocker: MockerFixture) -> MagicMock | None:
+        param: str = getattr(request, "param", "default")
+        match param:
+            case "default":
+                return None
+            case "custom":
+                stub = mocker.stub("handshake_error_handler")
+                stub.return_value = None
+                return stub
+            case _:
+                pytest.fail(f"Invalid param {param!r}")
+
     @pytest_asyncio.fixture
     @staticmethod
     async def tls_listener(
@@ -1074,6 +1088,7 @@ class TestAsyncTLSListener:
         standard_compatible: bool,
         handshake_timeout: float | None,
         shutdown_timeout: float | None,
+        hanshake_error_handler: MagicMock | None,
     ) -> AsyncIterator[AsyncTLSListener]:
         listener = AsyncTLSListener(
             mock_wrapped_listener,
@@ -1081,6 +1096,7 @@ class TestAsyncTLSListener:
             handshake_timeout=handshake_timeout,
             shutdown_timeout=shutdown_timeout,
             standard_compatible=standard_compatible,
+            handshake_error_handler=hanshake_error_handler,
         )
         async with listener:
             yield listener
@@ -1207,9 +1223,14 @@ class TestAsyncTLSListener:
             ssl.SSLError(),
             Exception(),
             asyncio.CancelledError(),
-            BaseException(),
         ],
         ids=repr,
+    )
+    @pytest.mark.parametrize(
+        "hanshake_error_handler",
+        ["default", "custom"],
+        indirect=True,
+        ids=lambda p: f"hanshake_error_handler=={p}",
     )
     async def test____serve____handshake_error(
         self,
@@ -1217,6 +1238,7 @@ class TestAsyncTLSListener:
         tls_listener: AsyncTLSListener,
         mock_wrapped_client_transport: MagicMock,
         mock_tls_wrap_transport: AsyncMock,
+        hanshake_error_handler: MagicMock | None,
         caplog: pytest.LogCaptureFixture,
         mocker: MockerFixture,
     ) -> None:
@@ -1231,10 +1253,7 @@ class TestAsyncTLSListener:
             await tls_listener.serve(lambda stream: handler(stream))
 
         # Assert
-        if type(exc) is BaseException:
-            assert exc_info.value is exc
-        else:
-            assert isinstance(exc_info.value, asyncio.CancelledError)
+        assert isinstance(exc_info.value, asyncio.CancelledError)
         mock_tls_wrap_transport.assert_awaited_once()
         handler.assert_not_awaited()
         mock_wrapped_client_transport.aclose.assert_awaited_once_with()
@@ -1242,8 +1261,49 @@ class TestAsyncTLSListener:
         match exc:
             case asyncio.CancelledError():
                 assert len(caplog.records) == 0
+                if hanshake_error_handler is not None:
+                    hanshake_error_handler.assert_not_called()
+            case _ if hanshake_error_handler is not None:
+                assert len(caplog.records) == 0
+                hanshake_error_handler.assert_called_once_with(exc)
             case _:
                 assert len(caplog.records) == 1
-                assert caplog.records[0].levelno == logging.ERROR
+                assert caplog.records[0].levelno == logging.WARNING
                 assert caplog.records[0].message == "Error in client task (during TLS handshake)"
                 assert caplog.records[0].exc_info == (type(exc), exc, mocker.ANY)
+
+    @pytest.mark.parametrize(
+        "hanshake_error_handler",
+        ["custom"],
+        indirect=True,
+        ids=lambda p: f"hanshake_error_handler=={p}",
+    )
+    async def test____serve____handshake_error____error_handler_crashed_too(
+        self,
+        tls_listener: AsyncTLSListener,
+        mock_wrapped_client_transport: MagicMock,
+        mock_tls_wrap_transport: AsyncMock,
+        hanshake_error_handler: MagicMock,
+        caplog: pytest.LogCaptureFixture,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        exc = OSError("error")
+        error_handler_exc = RuntimeError("unexpected")
+        caplog.set_level(logging.INFO)
+        handler = mocker.async_stub()
+        handler.return_value = None
+        mock_tls_wrap_transport.side_effect = exc
+        hanshake_error_handler.side_effect = error_handler_exc
+
+        # Act
+        with pytest.raises(asyncio.CancelledError):
+            await tls_listener.serve(handler)
+
+        # Assert
+        mock_wrapped_client_transport.aclose.assert_awaited_once_with()
+        assert len(caplog.records) == 1
+        assert caplog.records[0].levelno == logging.WARNING
+        assert caplog.records[0].message == "Error in client task (during TLS handshake)"
+        assert caplog.records[0].exc_info == (RuntimeError, error_handler_exc, mocker.ANY)
+        assert error_handler_exc.__context__ is exc
