@@ -615,7 +615,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     # skip Windows for this test, the ECONNRESET will happen on socket.send() or socket.recv()
     @PlatformMarkers.skipif_platform_win32_because("socket.getpeername() works by some magic on Windows")
     @pytest.mark.parametrize("socket_family", ["AF_INET"], indirect=True)
-    @pytest.mark.parametrize("use_ssl", ["NO_SSL"], indirect=True)
     async def test____serve_forever____accept_client____client_sent_RST_packet_right_after_accept(
         self,
         server_address: tuple[str, int],
@@ -1171,29 +1170,23 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         asyncio_backend: AsyncIOBackend,
         server_address: tuple[str, int],
         caplog: pytest.LogCaptureFixture,
-        logger_crash_maximum_nb_lines: dict[str, int],
     ) -> None:
         event_loop = asyncio.get_running_loop()
 
-        caplog.set_level(logging.ERROR, LOGGER.name)
-        logger_crash_maximum_nb_lines[LOGGER.name] = 1
-        logger_crash_maximum_nb_lines["easynetwork.lowlevel.api_async.transports.tls"] = 1
+        caplog.set_level(logging.WARNING, LOGGER.name)
         with (
             await AsyncIODNSResolver().create_stream_connection(asyncio_backend, *server_address) as socket,
             pytest.raises(OSError),
         ):
             # The SSL handshake expects the client to send the list of encryption algorithms.
             # But we won't, so the server will close the connection after 1 second
-            # and raise a TimeoutError or ConnectionAbortedError.
+            # and raise a TimeoutError.
             assert await event_loop.sock_recv(socket, 256 * 1024) == b""
             # If sock_recv() did not raise, manually trigger the error
             raise ConnectionAbortedError
 
         await asyncio.sleep(0.1)
-        assert len(caplog.records) == 1
-        assert caplog.records[0].message == "Error in client task (during TLS handshake)"
-        assert caplog.records[0].exc_info is not None
-        assert type(caplog.records[0].exc_info[1]) is TimeoutError
+        assert len(caplog.records) == 0
 
     @pytest.mark.parametrize("use_ssl", ["USE_SSL"], indirect=True)
     @pytest.mark.parametrize("ssl_handshake_timeout", [pytest.param(1, id="timeout==1sec")], indirect=True)

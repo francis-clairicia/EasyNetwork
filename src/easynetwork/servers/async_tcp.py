@@ -178,6 +178,7 @@ class AsyncTCPNetworkServer(
                 ssl_shutdown_timeout=ssl_shutdown_timeout,
                 ssl_standard_compatible=ssl_standard_compatible,
                 reuse_port=reuse_port,
+                logger=self.logger,
             )
         else:
             self.__listeners_factory = _utils.make_callback(
@@ -197,8 +198,9 @@ class AsyncTCPNetworkServer(
         else:
             self.__client_connection_log_level = logging.DEBUG
 
-    @staticmethod
+    @classmethod
     async def __create_ssl_over_tcp_listeners(
+        cls,
         backend: AsyncBackend,
         host: str | Sequence[str] | None,
         port: int,
@@ -209,7 +211,10 @@ class AsyncTCPNetworkServer(
         ssl_shutdown_timeout: float | None,
         ssl_standard_compatible: bool,
         reuse_port: bool,
+        logger: logging.Logger,
     ) -> Sequence[AsyncListener[AsyncStreamTransport]]:
+        from functools import partial
+
         from ..lowlevel.api_async.transports.tls import AsyncTLSListener
 
         listeners = await backend.create_tcp_listeners(
@@ -225,6 +230,7 @@ class AsyncTCPNetworkServer(
                 handshake_timeout=ssl_handshake_timeout,
                 shutdown_timeout=ssl_shutdown_timeout,
                 standard_compatible=ssl_standard_compatible,
+                handshake_error_handler=partial(cls.__client_tls_handshake_error_handler, logger),
             )
             for listener in listeners
         ]
@@ -278,10 +284,7 @@ class AsyncTCPNetworkServer(
 
             client_address = lowlevel_client.extra(INETSocketAttribute.peername, None)
             if client_address is None:
-                # The remote host closed the connection before starting the task.
-                # See this test for details:
-                # test____serve_forever____accept_client____client_sent_RST_packet_right_after_accept
-                self.logger.warning("A client connection was interrupted just after listener.accept()")
+                self.__client_closed_before_starting_task(self.logger)
                 yield None
                 return
 
@@ -343,6 +346,28 @@ class AsyncTCPNetworkServer(
             self.logger.error("-" * 40)
             self.logger.error("Exception occurred during processing of request from %s", client_address, exc_info=exc)
             self.logger.error("-" * 40)
+
+    @classmethod
+    def __client_tls_handshake_error_handler(cls, logger: logging.Logger, exc: Exception) -> None:
+        match exc:
+            case TimeoutError():
+                # handshake_timeout hit
+                pass
+            case OSError() if (
+                isinstance(exc, ConnectionError)
+                or _utils.is_ssl_eof_error(exc)
+                or exc.errno in constants.NOT_CONNECTED_SOCKET_ERRNOS
+            ):
+                cls.__client_closed_before_starting_task(logger)
+            case _:  # pragma: no cover
+                logger.warning("Error in client task (during TLS handshake)", exc_info=exc)
+
+    @staticmethod
+    def __client_closed_before_starting_task(logger: logging.Logger) -> None:
+        # The remote host closed the connection before starting the task.
+        # See this test for details:
+        # test____serve_forever____accept_client____client_sent_RST_packet_right_after_accept
+        logger.warning("A client connection was interrupted just after listener.accept()")
 
     @_utils.inherit_doc(_base.BaseAsyncNetworkServerImpl)
     def get_addresses(self) -> Sequence[SocketAddress]:

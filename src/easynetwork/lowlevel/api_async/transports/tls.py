@@ -326,6 +326,7 @@ class AsyncTLSListener(AsyncListener[AsyncTLSStreamTransport]):
         "__standard_compatible",
         "__handshake_timeout",
         "__shutdown_timeout",
+        "__handshake_error_handler",
     )
 
     def __init__(
@@ -336,13 +337,31 @@ class AsyncTLSListener(AsyncListener[AsyncTLSStreamTransport]):
         handshake_timeout: float | None = None,
         shutdown_timeout: float | None = None,
         standard_compatible: bool = True,
+        handshake_error_handler: Callable[[Exception], None] | None = None,
     ) -> None:
+        """
+        .. versionchanged:: 1.1
+            Added `handshake_error_handler` parameter.
+
+        Parameters:
+            listener: The listener to wrap.
+            ssl_context: a :class:`ssl.SSLContext` object to use to create the client transport.
+            handshake_timeout: The time in seconds to wait for the TLS handshake to complete before aborting the connection.
+                               ``60.0`` seconds if :data:`None` (default).
+            shutdown_timeout: The time in seconds to wait for the SSL shutdown to complete before aborting the connection.
+                              ``30.0`` seconds if :data:`None` (default).
+            standard_compatible: If :data:`False`, skip the closing handshake when closing the connection,
+                                 and don't raise an exception if the peer does the same.
+            handshake_error_handler: a callback to be used on handshake failure. By default, emits a warning log.
+        """
         super().__init__()
+
         self.__listener: AsyncListener[AsyncStreamTransport] = listener
         self.__ssl_context: SSLContext = ssl_context
         self.__handshake_timeout: float | None = handshake_timeout
         self.__shutdown_timeout: float | None = shutdown_timeout
         self.__standard_compatible: bool = standard_compatible
+        self.__handshake_error_handler: Callable[[Exception], None] | None = handshake_error_handler
 
     def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
         try:
@@ -369,9 +388,8 @@ class AsyncTLSListener(AsyncListener[AsyncTLSStreamTransport]):
         task_group: TaskGroup | None = None,
     ) -> NoReturn:
         listener = self.__listener
-        logger = logging.getLogger(__name__)
 
-        @functools.wraps(handler)
+        @functools.wraps(handler, assigned=[])
         async def tls_handler_wrapper(stream: AsyncStreamTransport, /) -> None:
             try:
                 stream = await AsyncTLSStreamTransport.wrap(
@@ -385,18 +403,25 @@ class AsyncTLSListener(AsyncListener[AsyncTLSStreamTransport]):
             except stream.backend().get_cancelled_exc_class():
                 await aclose_forcefully(stream)
                 raise
-            except BaseException as exc:
+            except Exception as exc:
                 await aclose_forcefully(stream)
-
-                logger.error("Error in client task (during TLS handshake)", exc_info=exc)
-
-                # Only reraise base exceptions
-                if not isinstance(exc, Exception):
-                    raise
+                handshake_error_handler = self.__handshake_error_handler
+                if handshake_error_handler is None:
+                    self.__default_handshake_error_handler(exc)
+                else:
+                    try:
+                        handshake_error_handler(exc)
+                    except Exception as error_handler_exc:
+                        self.__default_handshake_error_handler(error_handler_exc)
             else:
                 await handler(stream)
 
         await listener.serve(tls_handler_wrapper, task_group)
+
+    @staticmethod
+    def __default_handshake_error_handler(exc: Exception) -> None:
+        logger = logging.getLogger(__name__)
+        logger.warning("Error in client task (during TLS handshake)", exc_info=exc)
 
     @_utils.inherit_doc(AsyncListener)
     def backend(self) -> AsyncBackend:
