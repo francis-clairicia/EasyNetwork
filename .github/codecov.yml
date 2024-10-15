@@ -1,7 +1,7 @@
 comment:
   require_changes: false  # Always show messages if codecov is triggered
   layout: "flags"  # Only show coverage by flags
-  after_n_builds: 12  # nb_tested_python_version(==2) * (nb_functional_test_runs(==3) + nb_unit_test_runs(==3))
+  after_n_builds: 18  # nb_tested_python_version(==3) * (nb_functional_test_runs(==3) + nb_unit_test_runs(==3))
 coverage:
   status:
     project:

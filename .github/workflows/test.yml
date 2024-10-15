@@ -48,12 +48,14 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-22.04, windows-2022, macos-12]
-        python_version: ['3.11', '3.12']
+        python_version: ['3.11', '3.12', '3.13']
         include:
           - python_version: '3.11'
             tox_py: py311
           - python_version: '3.12'
             tox_py: py312
+          - python_version: '3.13'
+            tox_py: py313
 
     name: Tests (${{ matrix.os }}, ${{ matrix.python_version }})
     steps:

@@ -867,7 +867,7 @@ async def test____create_stream_connection____happy_eyeballs_delay____winner_clo
     mocker: MockerFixture,
 ) -> None:
     # Arrange
-    expected_failure_exception = BaseException("error")
+    expected_failure_exception = Exception("error")
     remote_host, remote_port = "localhost", 12345
     dns_resolver.mock_async_getaddrinfo.side_effect = [addrinfo_list_factory(remote_port, families=[AF_INET6, AF_INET])]
 
@@ -880,8 +880,10 @@ async def test____create_stream_connection____happy_eyeballs_delay____winner_clo
     dns_resolver.mock_sock_connect.side_effect = connect_side_effect
 
     # Act
-    with pytest.raises(BaseExceptionGroup) as exc_info:
+    with pytest.raises(ExceptionGroup) as exc_info:
         await dns_resolver.create_stream_connection(asyncio_backend, remote_host, remote_port, happy_eyeballs_delay=0.25)
+    while TaskUtils.current_asyncio_task().uncancel():
+        continue
 
     # Assert
     assert mock_socket_cls.call_args_list == [
