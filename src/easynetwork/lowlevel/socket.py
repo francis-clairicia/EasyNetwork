@@ -26,6 +26,9 @@ __all__ = [
     "SocketProxy",
     "SupportsSocketOptions",
     "TLSAttribute",
+    "UNIXSocketAttribute",
+    "UnixCredentials",
+    "UnixSocketAddress",
     "_get_socket_extra",
     "_get_tls_extra",
     "disable_socket_linger",
@@ -41,7 +44,9 @@ __all__ = [
 import contextlib
 import functools
 import os
+import pathlib
 import socket as _socket
+import sys
 import threading
 from abc import abstractmethod
 from collections.abc import Callable
@@ -53,6 +58,7 @@ from typing import (
     NamedTuple,
     ParamSpec,
     Protocol,
+    Self,
     TypeAlias,
     TypeVar,
     final,
@@ -102,6 +108,37 @@ class INETSocketAttribute(SocketAttribute):
 
     peername: tuple[str, int] | tuple[str, int, int, int]
     """the remote address to which the socket is connected, result of :meth:`socket.socket.getpeername`."""
+
+
+class UNIXSocketAttribute(SocketAttribute):
+    """
+    Typed attributes which can be used on an endpoint or a transport.
+
+    .. versionadded:: 1.1
+    """
+
+    __slots__ = ()
+
+    if sys.platform != "win32":
+
+        family: Literal[_socket.AddressFamily.AF_UNIX]
+        """the socket's family, as returned by :attr:`socket.socket.family`."""
+
+        if sys.platform == "linux":
+            # Abstract Unix socket addresses are returned as bytes.
+
+            sockname: str | bytes
+            """the socket's own address, result of :meth:`socket.socket.getsockname`."""
+
+            peername: str | bytes
+            """the remote address to which the socket is connected, result of :meth:`socket.socket.getpeername`."""
+
+        else:
+            sockname: str
+            """the socket's own address, result of :meth:`socket.socket.getsockname`."""
+
+            peername: str
+            """the remote address to which the socket is connected, result of :meth:`socket.socket.getpeername`."""
 
 
 class TLSAttribute(typed_attr.TypedAttributeSet):
@@ -219,6 +256,243 @@ def new_socket_address(addr: tuple[Any, ...], family: int) -> SocketAddress:
             return IPv6SocketAddress(*addr)
         case _:
             raise ValueError(f"Unsupported address family {family!r}")
+
+
+@final
+@runtime_final_class
+class UnixSocketAddress:
+    """
+    An address associated with a Unix socket.
+
+    .. versionadded:: 1.1
+    """
+
+    __slots__ = ("__addr",)
+
+    def __init__(self) -> None:
+        """
+        Constructs an unnamed socket address::
+
+            >>> addr = UnixSocketAddress()
+            >>> addr
+            UnixSocketAddress(<unnamed>)
+            >>> addr.is_unnamed()
+            True
+        """
+        self.__addr: str | bytes | None = None
+
+    @classmethod
+    def from_pathname(cls, path: str | os.PathLike[str]) -> Self:
+        """
+        Constructs a :class:`UnixSocketAddress` with the provided path.
+
+        Examples:
+
+            >>> addr = UnixSocketAddress.from_pathname("/path/to/socket")
+            >>> addr
+            UnixSocketAddress('/path/to/socket' <pathname>)
+            >>> addr.as_pathname()
+            PosixPath('/path/to/socket')
+
+            Creating a :class:`UnixSocketAddress` with a NULL byte results in an error.
+
+            >>> addr = UnixSocketAddress.from_pathname("/path/with/\\0/bytes")
+            Traceback (most recent call last):
+            ...
+            ValueError: paths must not contain interior null bytes
+
+            Creating a :class:`UnixSocketAddress` with an empty string results in an unnamed socket address.
+
+            >>> addr = UnixSocketAddress.from_pathname("")
+            >>> addr
+            UnixSocketAddress(<unnamed>)
+            >>> addr.is_unnamed()
+            True
+        """
+        path = os.fspath(path)
+        if not isinstance(path, str):
+            raise TypeError(f"Expected a str object or an os.PathLike object, got {path!r}")
+        return cls.__from_pathname_unchecked(path)
+
+    @classmethod
+    def __from_pathname_unchecked(cls, path: str) -> Self:
+        if "\0" in path:
+            raise ValueError("paths must not contain interior null bytes")
+        self = cls()
+        self.__addr = path or None
+        return self
+
+    @classmethod
+    def from_abstract_name(cls, name: str | bytes) -> Self:
+        """
+        Creates a Unix socket address in the abstract namespace.
+
+        The abstract namespace is a Linux-specific extension that allows Unix sockets to be bound
+        without creating an entry in the filesystem. Abstract sockets are unaffected by filesystem layout or permissions,
+        and no cleanup is necessary when the socket is closed.
+
+        An abstract socket address name may contain any bytes, including zero.
+
+        Examples:
+
+            >>> addr = UnixSocketAddress.from_abstract_name("hidden")
+            >>> addr
+            UnixSocketAddress(b'hidden' <abstract>)
+            >>> addr.as_abstract_name()
+            b'hidden'
+        """
+        if not isinstance(name, (str, bytes)):
+            raise TypeError(f"Expected a str object or a bytes object, got {name!r}")
+        name = os.fsencode(name)
+        return cls.__from_abstract_name_unchecked(b"\0" + name)
+
+    @classmethod
+    def __from_abstract_name_unchecked(cls, name: bytes) -> Self:
+        assert name[0] == 0, "Should start with a NUL byte."  # nosec assert_used
+        self = cls()
+        self.__addr = name
+        return self
+
+    @classmethod
+    def from_raw(cls, addr: Any) -> Self:
+        """
+        Constructs a :class:`UnixSocketAddress` from the raw `addr` supplied by the :class:`~socket.socket`.
+
+        * the result of :meth:`socket.socket.getsockname` or :meth:`socket.socket.getpeername`;
+
+        * the address retrieved by :meth:`socket.socket.recvfrom`;
+
+        * etc.
+        """
+        match addr:
+            case str():
+                if addr and addr[0] == "\0":
+                    return cls.__from_abstract_name_unchecked(os.fsencode(addr))
+                else:
+                    return cls.__from_pathname_unchecked(addr)
+            case bytes():
+                if addr and addr[0] == 0:
+                    return cls.__from_abstract_name_unchecked(addr)
+                else:
+                    return cls.__from_pathname_unchecked(os.fsdecode(addr))
+            case _:
+                raise TypeError(f"Cannot convert {addr!r} to a {cls.__name__}")
+
+    def __repr__(self) -> str:
+        match self.__addr:
+            case str(addr):
+                return f"{self.__class__.__name__}({addr!r} <pathname>)"
+            case bytes(addr):
+                return f"{self.__class__.__name__}({addr[1:]!r} <abstract>)"
+            case _:
+                return f"{self.__class__.__name__}(<unnamed>)"
+
+    def __str__(self) -> str:
+        match self.__addr:
+            case str(addr):
+                return f"{addr} (pathname)"
+            case bytes(addr):
+                return f"{addr[1:]!r} (abstract)"
+            case _:
+                return "(unnamed)"
+
+    def __hash__(self) -> int:
+        return hash(self.__addr)
+
+    def __eq__(self, other: object) -> bool:
+        match other:
+            case UnixSocketAddress():
+                return self.__addr == other.__addr
+            case _:
+                return NotImplemented
+
+    def is_unnamed(self) -> bool:
+        """
+        Returns :data:`True` if the address is ``unnamed``.
+
+        Examples:
+
+            A named address:
+
+            >>> import socket                                         # doctest: +SKIP
+            >>> s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) # doctest: +SKIP
+            >>> s.bind("/tmp/sock")                                   # doctest: +SKIP
+            >>> addr = UnixSocketAddress.from_raw(s.getsockname())    # doctest: +SKIP
+            >>> addr.is_unnamed()                                     # doctest: +SKIP
+            False
+
+            An unnamed address:
+
+            >>> import socket
+            >>> s = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+            >>> addr = UnixSocketAddress.from_raw(s.getsockname())
+            >>> addr.is_unnamed()
+            True
+        """
+        return self.__addr is None
+
+    def as_pathname(self) -> pathlib.Path | None:
+        """
+        Returns the contents of this address if it is a ``pathname`` address.
+
+        Examples:
+
+            With a pathname:
+
+            >>> import socket                                         # doctest: +SKIP
+            >>> s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) # doctest: +SKIP
+            >>> s.bind("/tmp/sock")                                   # doctest: +SKIP
+            >>> addr = UnixSocketAddress.from_raw(s.getsockname())    # doctest: +SKIP
+            >>> addr.as_pathname()                                    # doctest: +SKIP
+            PosixPath('/tmp/sock')
+
+            Without a pathname:
+
+            >>> import socket
+            >>> s = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+            >>> addr = UnixSocketAddress.from_raw(s.getsockname())
+            >>> print(addr.as_pathname())
+            None
+        """
+        match self.__addr:
+            case str(addr):
+                return pathlib.Path(addr)
+            case _:
+                return None
+
+    def as_abstract_name(self) -> bytes | None:
+        """
+        Returns the contents of this address if it is in the abstract namespace.
+
+        Examples:
+
+            >>> import socket
+            >>> s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            >>> s.bind(b"\\0hidden")
+            >>> addr = UnixSocketAddress.from_raw(s.getsockname())
+            >>> addr.as_abstract_name()
+            b'hidden'
+        """
+        match self.__addr:
+            case bytes(addr):
+                return addr[1:]
+            case _:
+                return None
+
+    def as_raw(self) -> str | bytes:
+        """
+        Returns the raw representation of this address.
+
+        Examples:
+
+            >>> UnixSocketAddress.from_pathname("/tmp/sock").as_raw()
+            '/tmp/sock'
+            >>> UnixSocketAddress.from_abstract_name(b"hidden").as_raw()
+            b'\\x00hidden'
+            >>> UnixSocketAddress().as_raw() # Unnamed
+            ''
+        """
+        return self.__addr or ""
 
 
 @runtime_checkable
@@ -375,7 +649,7 @@ class SocketProxy:
 
     def __repr__(self) -> str:
         fd: int = self.fileno()
-        s = f"<{type(self).__name__} fd={fd}, " f"family={self.family!s}, type={self.type!s}, " f"proto={self.proto}"
+        s = f"<{self.__class__.__name__} fd={fd}, family={self.family!s}, type={self.type!s}, proto={self.proto}"
 
         if fd != -1:
             try:
@@ -509,6 +783,23 @@ def set_tcp_keepalive(sock: SupportsSocketOptions, state: bool) -> None:
     state = bool(state)
     with contextlib.suppress(AttributeError):
         sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_KEEPALIVE, state)
+
+
+class UnixCredentials(NamedTuple):
+    """
+    The Unix credentials tuple of the connected process.
+
+    .. versionadded:: 1.1
+    """
+
+    pid: int | None
+    """Process ID of the peer process."""
+
+    uid: int
+    """Effective user ID of the peer process."""
+
+    gid: int
+    """Effective Group ID of the peer process."""
 
 
 if os.name == "nt":  # Windows
@@ -662,7 +953,7 @@ def _address_or_lookup_error(fileno: Callable[[], int], getsockaddr: Callable[[]
         if fileno() < 0:
             from errno import EBADF
 
-            from ._utils import error_from_errno
+            from ._errno import error_from_errno
 
             raise error_from_errno(EBADF)
         return getsockaddr()

@@ -6,15 +6,15 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from ._utils import get_all_socket_families
+from ..fixtures.socket import AF_UNIX_or_None, socket_family_or_skip
 
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
 
     from pytest_mock import MockerFixture
 
-SUPPORTED_FAMILIES: tuple[str, ...] = tuple(sorted(("AF_INET", "AF_INET6")))
-UNSUPPORTED_FAMILIES: tuple[str, ...] = tuple(sorted(get_all_socket_families().difference(SUPPORTED_FAMILIES)))
+INET_FAMILIES: tuple[str, ...] = ("AF_INET", "AF_INET6")
+UNIX_FAMILIES: tuple[str, ...] = ("AF_UNIX",)
 
 
 class BaseTestSocket:
@@ -59,11 +59,18 @@ class BaseTestSocket:
         cls,
         mock_socket: MagicMock,
         socket_family: int,
-        address: tuple[str, int] | None,
+        address: tuple[str, int] | str | bytes | None,
     ) -> None:
-        if address is None:
+        full_address: tuple[str, int] | tuple[str, int, int, int] | str | bytes
+        if socket_family == AF_UNIX_or_None():
+            assert address is None or isinstance(address, (str, bytes))
+            if not address:
+                address = ""
+            full_address = address
+        elif address is None:
             full_address = cls.get_resolved_local_addr(socket_family)
         else:
+            assert isinstance(address, tuple)
             full_address = cls.get_resolved_addr_format(address, socket_family)
 
         mock_socket.getsockname.side_effect = None
@@ -74,10 +81,15 @@ class BaseTestSocket:
         cls,
         mock_socket: MagicMock,
         socket_family: int,
-        address: tuple[str, int],
+        address: tuple[str, int] | str | bytes,
     ) -> None:
         mock_socket.getpeername.side_effect = None
-        mock_socket.getpeername.return_value = cls.get_resolved_addr_format(address, socket_family)
+        if socket_family == AF_UNIX_or_None():
+            assert isinstance(address, (str, bytes))
+            mock_socket.getpeername.return_value = address
+        else:
+            assert isinstance(address, tuple)
+            mock_socket.getpeername.return_value = cls.get_resolved_addr_format(address, socket_family)
 
     @classmethod
     def configure_socket_mock_to_raise_ENOTCONN(cls, mock_socket: MagicMock) -> OSError:
@@ -89,6 +101,41 @@ class BaseTestSocket:
         mock_socket.getpeername.side_effect = enotconn_exception
         mock_socket.getpeername.return_value = None
         return enotconn_exception
+
+
+class BaseTestSocketTransport(BaseTestSocket):
+    @pytest.fixture(params=["AF_INET", "AF_UNIX"])
+    @staticmethod
+    def socket_family_name(request: pytest.FixtureRequest) -> str:
+        assert request.param in ("AF_INET", "AF_UNIX")
+        return request.param
+
+    @pytest.fixture
+    @staticmethod
+    def socket_family(socket_family_name: str) -> int:
+        return socket_family_or_skip(socket_family_name)
+
+    @pytest.fixture
+    @staticmethod
+    def local_address(socket_family_name: str) -> tuple[str, int] | bytes:
+        match socket_family_name:
+            case "AF_INET":
+                return ("local_address", 11111)
+            case "AF_UNIX":
+                return b"local_address"
+            case _:
+                pytest.fail(f"Invalid param: {socket_family_name!r}")
+
+    @pytest.fixture
+    @staticmethod
+    def remote_address(socket_family_name: str) -> tuple[str, int] | bytes:
+        match socket_family_name:
+            case "AF_INET":
+                return ("remote_address", 12345)
+            case "AF_UNIX":
+                return b"remote_address"
+            case _:
+                pytest.fail(f"Invalid param: {socket_family_name!r}")
 
 
 class MixinTestSocketSendMSG:

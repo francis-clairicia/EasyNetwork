@@ -60,7 +60,7 @@ Instead of using the scheduler's global thread pool, you can (and should) have y
    :start-after: RunInSomeThreadRequestHandlerWithExecutor
    :dedent:
    :linenos:
-   :emphasize-lines: 7,18
+   :emphasize-lines: 6-9,17
 
 .. seealso:: The :class:`.AsyncExecutor` class.
 

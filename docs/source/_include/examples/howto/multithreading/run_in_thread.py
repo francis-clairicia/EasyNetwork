@@ -79,7 +79,6 @@ class RunInSomeThreadRequestHandlerWithExecutor(AsyncStreamRequestHandler[Reques
 
         # 4 worker threads for the demo
         self.executor = AsyncExecutor(ThreadPoolExecutor(max_workers=4), server.backend())
-
         # Shut down executor at server stop
         await exit_stack.enter_async_context(self.executor)
 

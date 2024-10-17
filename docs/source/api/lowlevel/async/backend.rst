@@ -33,6 +33,8 @@ to manage different implementations and keep EasyNetwork unaware of the library 
 
       * :func:`anyio.connect_tcp`, :func:`anyio.connect_unix` and :func:`anyio.create_udp_socket` not taking an already connected socket;
 
+      * Missing implementation of UNIX datagram sockets;
+
       * Managed tasks like :class:`asyncio.Task`;
 
       * and the list goes on...
@@ -193,9 +195,13 @@ Opening Network Connections
 
 .. automethod:: AsyncBackend.create_tcp_connection
 
+.. automethod:: AsyncBackend.create_unix_stream_connection
+
 .. automethod:: AsyncBackend.wrap_stream_socket
 
 .. automethod:: AsyncBackend.create_udp_endpoint
+
+.. automethod:: AsyncBackend.create_unix_datagram_endpoint
 
 .. automethod:: AsyncBackend.wrap_connected_datagram_socket
 
@@ -204,7 +210,11 @@ Creating Network Servers
 
 .. automethod:: AsyncBackend.create_tcp_listeners
 
+.. automethod:: AsyncBackend.create_unix_stream_listener
+
 .. automethod:: AsyncBackend.create_udp_listeners
+
+.. automethod:: AsyncBackend.create_unix_datagram_listener
 
 
 Synchronization Primitives

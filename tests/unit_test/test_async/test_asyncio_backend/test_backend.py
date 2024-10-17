@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+import errno
+import os
 from collections.abc import Callable, Coroutine, Sequence
 from socket import AF_INET, AF_INET6, AF_UNSPEC, IPPROTO_TCP, IPPROTO_UDP, SOCK_DGRAM, SOCK_STREAM
 from typing import TYPE_CHECKING, Any, Final
@@ -15,6 +17,7 @@ from easynetwork.lowlevel.api_async.backend.abc import ILock
 
 import pytest
 
+from ....fixtures.socket import AF_UNIX_or_skip
 from ....tools import temporary_task_factory
 from ..._utils import partial_eq
 
@@ -77,16 +80,6 @@ class TestAsyncIOBackend:
     @staticmethod
     def backend() -> AsyncIOBackend:
         return AsyncIOBackend()
-
-    @pytest.fixture(params=[("local_address", 12345), None], ids=lambda addr: f"local_address=={addr}")
-    @staticmethod
-    def local_address(request: Any) -> tuple[str, int] | None:
-        return request.param
-
-    @pytest.fixture(params=[("remote_address", 5000)], ids=lambda addr: f"remote_address=={addr}")
-    @staticmethod
-    def remote_address(request: Any) -> tuple[str, int] | None:
-        return request.param
 
     async def test____get_cancelled_exc_class____returns_asyncio_CancelledError(
         self,
@@ -254,6 +247,8 @@ class TestAsyncIOBackend:
         mock_loop_getnameinfo.assert_awaited_once_with(mocker.sentinel.sockaddr, mocker.sentinel.flags)
 
     @pytest.mark.parametrize("happy_eyeballs_delay", [None, 42], ids=lambda p: f"happy_eyeballs_delay=={p}")
+    @pytest.mark.parametrize("local_address", [("local_address", 12345), None], ids=lambda addr: f"local_address=={addr}")
+    @pytest.mark.parametrize("remote_address", [("remote_address", 5000)], ids=lambda addr: f"remote_address=={addr}")
     async def test____create_tcp_connection____use_loop_create_connection(
         self,
         happy_eyeballs_delay: float | None,
@@ -309,7 +304,233 @@ class TestAsyncIOBackend:
         mock_AsyncioTransportStreamSocketAdapter.assert_called_once_with(backend, mock_asyncio_transport, mock_protocol)
         assert socket is mocker.sentinel.socket
 
-    async def test____wrap_stream_socket____use_asyncio_open_connection(
+    @pytest.mark.parametrize(
+        "local_address",
+        [
+            None,
+            "/path/to/local.sock",
+            b"/path/to/local.sock",
+            "\0local_sock",
+            b"\x00local_sock",
+            "",  # <- Arbitrary abstract Unix address given by kernel
+            b"",  # <- Arbitrary abstract Unix address given by kernel
+        ],
+        ids=lambda addr: f"local_address=={addr!r}",
+    )
+    @pytest.mark.parametrize(
+        "remote_address",
+        [
+            "/path/to/unix.sock",
+            b"/path/to/unix.sock",
+            "\0unix_sock",
+            b"\x00unix_sock",
+        ],
+        ids=lambda addr: f"remote_address=={addr!r}",
+    )
+    async def test____create_unix_stream_connection____use_loop_create_unix_connection(
+        self,
+        local_address: str | bytes | None,
+        remote_address: str | bytes,
+        backend: AsyncIOBackend,
+        mock_unix_stream_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        AF_UNIX = AF_UNIX_or_skip()
+        mock_socket_cls = mocker.patch("socket.socket", return_value=mock_unix_stream_socket)
+        event_loop = asyncio.get_running_loop()
+        mock_asyncio_transport = mocker.NonCallableMagicMock(spec=asyncio.Transport)
+        mock_protocol = mocker.NonCallableMagicMock(spec=StreamReaderBufferedProtocol)
+        mock_AsyncioTransportStreamSocketAdapter: MagicMock = mocker.patch(
+            f"{_ASYNCIO_BACKEND_MODULE}.stream.socket.AsyncioTransportStreamSocketAdapter",
+            return_value=mocker.sentinel.socket,
+        )
+        mock_event_loop_create_unix_connection: AsyncMock = mocker.patch.object(
+            event_loop,
+            "create_unix_connection",
+            new_callable=mocker.AsyncMock,
+            return_value=(mock_asyncio_transport, mock_protocol),
+        )
+        mock_sock_connect: AsyncMock = mocker.patch.object(
+            event_loop,
+            "sock_connect",
+            new_callable=mocker.AsyncMock,
+            side_effect=lambda sock, addr: sock.connect(addr),
+        )
+
+        # Act
+        socket = await backend.create_unix_stream_connection(remote_address, local_path=local_address)
+
+        # Assert
+        mock_socket_cls.assert_called_once_with(AF_UNIX, SOCK_STREAM, 0)
+        if local_address is None:
+            assert mock_unix_stream_socket.mock_calls == [
+                mocker.call.setblocking(False),
+                mocker.call.connect(remote_address),
+            ]
+        else:
+            assert mock_unix_stream_socket.mock_calls == [
+                mocker.call.bind(local_address),
+                mocker.call.setblocking(False),
+                mocker.call.connect(remote_address),
+            ]
+
+        mock_sock_connect.assert_awaited_once_with(mock_unix_stream_socket, remote_address)
+        mock_event_loop_create_unix_connection.assert_awaited_once_with(
+            partial_eq(StreamReaderBufferedProtocol, loop=event_loop),
+            sock=mock_unix_stream_socket,
+        )
+        mock_AsyncioTransportStreamSocketAdapter.assert_called_once_with(backend, mock_asyncio_transport, mock_protocol)
+        assert socket is mocker.sentinel.socket
+
+    @pytest.mark.parametrize(
+        "local_address",
+        [
+            "/path/to/local.sock",
+            b"/path/to/local.sock",
+            "\0local_sock",
+            b"\x00local_sock",
+        ],
+        ids=lambda addr: f"local_address=={addr!r}",
+    )
+    @pytest.mark.parametrize(
+        "remote_address",
+        [
+            "/path/to/unix.sock",
+            b"/path/to/unix.sock",
+            "\0unix_sock",
+            b"\x00unix_sock",
+        ],
+        ids=lambda addr: f"remote_address=={addr!r}",
+    )
+    @pytest.mark.parametrize(
+        "bind_error",
+        [
+            OSError(errno.EPERM, os.strerror(errno.EPERM)),
+            OSError("AF_UNIX path too long."),
+        ],
+        ids=lambda exc: f"bind_error=={exc!r}",
+    )
+    async def test____create_unix_stream_connection____bind_error(
+        self,
+        local_address: str | bytes,
+        remote_address: str | bytes,
+        bind_error: OSError,
+        backend: AsyncIOBackend,
+        mock_unix_stream_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        AF_UNIX = AF_UNIX_or_skip()
+        mock_socket_cls = mocker.patch("socket.socket", return_value=mock_unix_stream_socket)
+        mock_unix_stream_socket.bind.side_effect = bind_error
+        event_loop = asyncio.get_running_loop()
+        mock_asyncio_transport = mocker.NonCallableMagicMock(spec=asyncio.Transport)
+        mock_protocol = mocker.NonCallableMagicMock(spec=StreamReaderBufferedProtocol)
+        mock_AsyncioTransportStreamSocketAdapter: MagicMock = mocker.patch(
+            f"{_ASYNCIO_BACKEND_MODULE}.stream.socket.AsyncioTransportStreamSocketAdapter",
+            return_value=mocker.sentinel.socket,
+        )
+        mock_event_loop_create_unix_connection: AsyncMock = mocker.patch.object(
+            event_loop,
+            "create_unix_connection",
+            new_callable=mocker.AsyncMock,
+            return_value=(mock_asyncio_transport, mock_protocol),
+        )
+        mock_sock_connect: AsyncMock = mocker.patch.object(
+            event_loop,
+            "sock_connect",
+            new_callable=mocker.AsyncMock,
+            side_effect=lambda sock, addr: sock.connect(addr),
+        )
+
+        # Act
+        with pytest.raises(OSError) as exc_info:
+            _ = await backend.create_unix_stream_connection(remote_address, local_path=local_address)
+
+        # Assert
+        mock_socket_cls.assert_called_once_with(AF_UNIX, SOCK_STREAM, 0)
+        assert mock_unix_stream_socket.mock_calls == [
+            mocker.call.bind(local_address),
+            mocker.call.close(),
+        ]
+        if bind_error.errno:
+            assert exc_info.value.errno == bind_error.errno
+        else:
+            assert exc_info.value.errno == errno.EINVAL
+
+        mock_sock_connect.assert_not_awaited()
+        mock_event_loop_create_unix_connection.assert_not_awaited()
+        mock_AsyncioTransportStreamSocketAdapter.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "remote_address",
+        [
+            "/path/to/unix.sock",
+            b"/path/to/unix.sock",
+            "\0unix_sock",
+            b"\x00unix_sock",
+        ],
+        ids=lambda addr: f"remote_address=={addr!r}",
+    )
+    @pytest.mark.parametrize(
+        "connect_error",
+        [
+            OSError(errno.ECONNREFUSED, os.strerror(errno.ECONNREFUSED)),
+            OSError(errno.EPERM, os.strerror(errno.EPERM)),
+        ],
+        ids=lambda exc: f"connect_error=={exc!r}",
+    )
+    async def test____create_unix_stream_connection____connect_error(
+        self,
+        remote_address: str | bytes,
+        connect_error: OSError,
+        backend: AsyncIOBackend,
+        mock_unix_stream_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        AF_UNIX = AF_UNIX_or_skip()
+        mock_socket_cls = mocker.patch("socket.socket", return_value=mock_unix_stream_socket)
+        mock_unix_stream_socket.connect.side_effect = connect_error
+        event_loop = asyncio.get_running_loop()
+        mock_asyncio_transport = mocker.NonCallableMagicMock(spec=asyncio.Transport)
+        mock_protocol = mocker.NonCallableMagicMock(spec=StreamReaderBufferedProtocol)
+        mock_AsyncioTransportStreamSocketAdapter: MagicMock = mocker.patch(
+            f"{_ASYNCIO_BACKEND_MODULE}.stream.socket.AsyncioTransportStreamSocketAdapter",
+            return_value=mocker.sentinel.socket,
+        )
+        mock_event_loop_create_unix_connection: AsyncMock = mocker.patch.object(
+            event_loop,
+            "create_unix_connection",
+            new_callable=mocker.AsyncMock,
+            return_value=(mock_asyncio_transport, mock_protocol),
+        )
+        mock_sock_connect: AsyncMock = mocker.patch.object(
+            event_loop,
+            "sock_connect",
+            new_callable=mocker.AsyncMock,
+            side_effect=lambda sock, addr: sock.connect(addr),
+        )
+
+        # Act
+        with pytest.raises(OSError) as exc_info:
+            _ = await backend.create_unix_stream_connection(remote_address)
+
+        # Assert
+        mock_socket_cls.assert_called_once_with(AF_UNIX, SOCK_STREAM, 0)
+        assert mock_unix_stream_socket.mock_calls == [
+            mocker.call.setblocking(False),
+            mocker.call.connect(remote_address),
+            mocker.call.close(),
+        ]
+        assert exc_info.value.errno == connect_error.errno
+
+        mock_sock_connect.assert_awaited_once_with(mock_unix_stream_socket, remote_address)
+        mock_event_loop_create_unix_connection.assert_not_awaited()
+        mock_AsyncioTransportStreamSocketAdapter.assert_not_called()
+
+    async def test____wrap_stream_socket____use_loop_create_connection_for_tcp_sockets(
         self,
         backend: AsyncIOBackend,
         mock_tcp_socket: MagicMock,
@@ -329,6 +550,12 @@ class TestAsyncIOBackend:
             new_callable=mocker.AsyncMock,
             return_value=(mock_asyncio_transport, mock_protocol),
         )
+        mock_event_loop_create_unix_connection: AsyncMock = mocker.patch.object(
+            event_loop,
+            "create_unix_connection",
+            new_callable=mocker.AsyncMock,
+            return_value=(mock_asyncio_transport, mock_protocol),
+        )
 
         # Act
         socket = await backend.wrap_stream_socket(mock_tcp_socket)
@@ -338,9 +565,50 @@ class TestAsyncIOBackend:
             partial_eq(StreamReaderBufferedProtocol, loop=event_loop),
             sock=mock_tcp_socket,
         )
+        mock_event_loop_create_unix_connection.assert_not_called()
         mock_AsyncioTransportStreamSocketAdapter.assert_called_once_with(backend, mock_asyncio_transport, mock_protocol)
         assert socket is mocker.sentinel.socket
         mock_tcp_socket.setblocking.assert_called_with(False)
+
+    async def test____wrap_stream_socket____use_loop_create_unix_connection_for_unix_sockets(
+        self,
+        backend: AsyncIOBackend,
+        mock_unix_stream_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        event_loop = asyncio.get_running_loop()
+        mock_asyncio_transport = mocker.NonCallableMagicMock(spec=asyncio.Transport)
+        mock_protocol = mocker.NonCallableMagicMock(spec=StreamReaderBufferedProtocol)
+        mock_AsyncioTransportStreamSocketAdapter: MagicMock = mocker.patch(
+            f"{_ASYNCIO_BACKEND_MODULE}.stream.socket.AsyncioTransportStreamSocketAdapter",
+            return_value=mocker.sentinel.socket,
+        )
+        mock_event_loop_create_connection: AsyncMock = mocker.patch.object(
+            event_loop,
+            "create_connection",
+            new_callable=mocker.AsyncMock,
+            return_value=(mock_asyncio_transport, mock_protocol),
+        )
+        mock_event_loop_create_unix_connection: AsyncMock = mocker.patch.object(
+            event_loop,
+            "create_unix_connection",
+            new_callable=mocker.AsyncMock,
+            return_value=(mock_asyncio_transport, mock_protocol),
+        )
+
+        # Act
+        socket = await backend.wrap_stream_socket(mock_unix_stream_socket)
+
+        # Assert
+        mock_event_loop_create_unix_connection.assert_awaited_once_with(
+            partial_eq(StreamReaderBufferedProtocol, loop=event_loop),
+            sock=mock_unix_stream_socket,
+        )
+        mock_event_loop_create_connection.assert_not_called()
+        mock_AsyncioTransportStreamSocketAdapter.assert_called_once_with(backend, mock_asyncio_transport, mock_protocol)
+        assert socket is mocker.sentinel.socket
+        mock_unix_stream_socket.setblocking.assert_called_with(False)
 
     async def test____create_tcp_listeners____open_listener_sockets(
         self,
@@ -379,7 +647,7 @@ class TestAsyncIOBackend:
         listener_sockets: Sequence[Any] = await backend.create_tcp_listeners(
             remote_host,
             remote_port,
-            backlog=123456789,
+            backlog=mocker.sentinel.backlog,
             reuse_port=mocker.sentinel.reuse_port,
         )
 
@@ -392,10 +660,10 @@ class TestAsyncIOBackend:
         )
         mock_open_listeners.assert_called_once_with(
             addrinfo_list,
-            backlog=123456789,
             reuse_address=mocker.ANY,  # Determined according to OS
             reuse_port=mocker.sentinel.reuse_port,
         )
+        mock_tcp_socket.listen.assert_called_once_with(mocker.sentinel.backlog)
         mock_ListenerSocketAdapter.assert_called_once_with(backend, mock_tcp_socket, expected_factory)
         assert listener_sockets == [mocker.sentinel.listener_socket]
 
@@ -447,7 +715,7 @@ class TestAsyncIOBackend:
         listener_sockets: Sequence[Any] = await backend.create_tcp_listeners(
             remote_host,
             remote_port,
-            backlog=123456789,
+            backlog=mocker.sentinel.backlog,
             reuse_port=mocker.sentinel.reuse_port,
         )
 
@@ -468,53 +736,175 @@ class TestAsyncIOBackend:
             )
         mock_open_listeners.assert_called_once_with(
             addrinfo_list,
-            backlog=123456789,
             reuse_address=mocker.ANY,  # Determined according to OS
             reuse_port=mocker.sentinel.reuse_port,
         )
+        mock_tcp_socket_ipv4.listen.assert_called_once_with(mocker.sentinel.backlog)
+        mock_tcp_socket_ipv6.listen.assert_called_once_with(mocker.sentinel.backlog)
         assert mock_ListenerSocketAdapter.call_args_list == [
             mocker.call(backend, sock, expected_factory) for sock in [mock_tcp_socket_ipv6, mock_tcp_socket_ipv4]
         ]
         assert listener_sockets == [mocker.sentinel.listener_socket_ipv6, mocker.sentinel.listener_socket_ipv4]
 
-    async def test____create_tcp_listeners____invalid_backlog(
+    @pytest.mark.parametrize(
+        "local_address",
+        [
+            "/path/to/local.sock",
+            b"/path/to/local.sock",
+            "\0local_sock",
+            b"\x00local_sock",
+            "",  # <- Arbitrary abstract Unix address given by kernel
+            b"",  # <- Arbitrary abstract Unix address given by kernel
+        ],
+        ids=lambda addr: f"local_address=={addr!r}",
+    )
+    @pytest.mark.parametrize("mode", [None, 0o640], ids=lambda mode: f"mode=={mode!r}")
+    async def test____create_unix_stream_listener____open_listener_socket(
         self,
         backend: AsyncIOBackend,
+        local_address: str | bytes,
+        mode: int | None,
+        mock_unix_stream_socket: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        remote_host = "remote_address"
-        remote_port = 5000
-        mock_resolve_listener_addresses = mocker.patch.object(
-            AsyncIODNSResolver,
-            "resolve_listener_addresses",
-            new_callable=mocker.AsyncMock,
-            side_effect=AssertionError,
-        )
-        mock_open_listeners = mocker.patch(
-            "easynetwork.lowlevel._utils.open_listener_sockets_from_getaddrinfo_result",
-            side_effect=AssertionError,
-        )
+        AF_UNIX = AF_UNIX_or_skip()
+        mock_socket_cls = mocker.patch("socket.socket", return_value=mock_unix_stream_socket)
+        mock_os_chmod = mocker.patch("os.chmod", autospec=True, return_value=None)
         mock_ListenerSocketAdapter: MagicMock = mocker.patch(
             f"{_ASYNCIO_BACKEND_MODULE}.stream.listener.ListenerSocketAdapter",
-            side_effect=AssertionError,
+            return_value=mocker.sentinel.listener_socket,
+        )
+        expected_factory: AbstractAcceptedSocketFactory[Any] = AcceptedSocketFactory()
+
+        # Act
+        listener_socket = await backend.create_unix_stream_listener(
+            local_address,
+            backlog=mocker.sentinel.backlog,
+            mode=mode,
+        )
+
+        # Assert
+        mock_socket_cls.assert_called_once_with(AF_UNIX, SOCK_STREAM, 0)
+        assert mock_unix_stream_socket.mock_calls == [
+            mocker.call.bind(local_address),
+            mocker.call.setblocking(False),
+            mocker.call.listen(mocker.sentinel.backlog),
+        ]
+        if mode is None:
+            mock_os_chmod.assert_not_called()
+        else:
+            mock_os_chmod.assert_called_once_with(local_address, mode)
+        mock_ListenerSocketAdapter.assert_called_once_with(backend, mock_unix_stream_socket, expected_factory)
+        assert listener_socket is mocker.sentinel.listener_socket
+
+    @pytest.mark.parametrize(
+        "local_address",
+        [
+            "/path/to/local.sock",
+            b"/path/to/local.sock",
+            "\0local_sock",
+            b"\x00local_sock",
+            "",  # <- Arbitrary abstract Unix address given by kernel
+            b"",  # <- Arbitrary abstract Unix address given by kernel
+        ],
+        ids=lambda addr: f"local_address=={addr!r}",
+    )
+    @pytest.mark.parametrize(
+        "bind_error",
+        [
+            OSError(errno.EPERM, os.strerror(errno.EPERM)),
+            OSError("AF_UNIX path too long."),
+        ],
+        ids=lambda exc: f"bind_error=={exc!r}",
+    )
+    @pytest.mark.parametrize("mode", [None, 0o640], ids=lambda mode: f"mode=={mode!r}")
+    async def test____create_unix_stream_listener____bind_failed(
+        self,
+        backend: AsyncIOBackend,
+        local_address: str | bytes,
+        bind_error: OSError,
+        mode: int | None,
+        mock_unix_stream_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        AF_UNIX = AF_UNIX_or_skip()
+        mock_socket_cls = mocker.patch("socket.socket", return_value=mock_unix_stream_socket)
+        mock_os_chmod = mocker.patch("os.chmod", autospec=True, return_value=None)
+        mock_unix_stream_socket.bind.side_effect = bind_error
+        mock_ListenerSocketAdapter: MagicMock = mocker.patch(
+            f"{_ASYNCIO_BACKEND_MODULE}.stream.listener.ListenerSocketAdapter",
+            return_value=mocker.sentinel.listener_socket,
         )
 
         # Act
-        with pytest.raises(TypeError, match=r"^backlog: Expected an integer$"):
-            await backend.create_tcp_listeners(
-                remote_host,
-                remote_port,
-                backlog=None,  # type: ignore[arg-type]
-                reuse_port=mocker.sentinel.reuse_port,
+        with pytest.raises(OSError) as exc_info:
+            _ = await backend.create_unix_stream_listener(
+                local_address,
+                backlog=mocker.sentinel.backlog,
+                mode=mode,
             )
 
         # Assert
-        mock_resolve_listener_addresses.assert_not_called()
-        mock_open_listeners.assert_not_called()
+        mock_socket_cls.assert_called_once_with(AF_UNIX, SOCK_STREAM, 0)
+        assert mock_unix_stream_socket.mock_calls == [
+            mocker.call.bind(local_address),
+            mocker.call.close(),
+        ]
+        if bind_error.errno:
+            assert exc_info.value.errno == bind_error.errno
+        else:
+            assert exc_info.value.errno == errno.EINVAL
+        mock_os_chmod.assert_not_called()
+        mock_ListenerSocketAdapter.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "local_address",
+        [
+            "/path/to/local.sock",
+            b"/path/to/local.sock",
+        ],
+        ids=lambda addr: f"local_address=={addr!r}",
+    )
+    async def test____create_unix_stream_listener____chmod_failed(
+        self,
+        backend: AsyncIOBackend,
+        local_address: str | bytes,
+        mock_unix_stream_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        chmod_error = OSError(errno.EPERM, os.strerror(errno.EPERM))
+        mode: int = 0o640
+        AF_UNIX_or_skip()
+        mocker.patch("socket.socket", return_value=mock_unix_stream_socket)
+        mock_os_chmod = mocker.patch("os.chmod", autospec=True, side_effect=chmod_error)
+        mock_ListenerSocketAdapter: MagicMock = mocker.patch(
+            f"{_ASYNCIO_BACKEND_MODULE}.stream.listener.ListenerSocketAdapter",
+            return_value=mocker.sentinel.listener_socket,
+        )
+
+        # Act
+        with pytest.raises(OSError) as exc_info:
+            _ = await backend.create_unix_stream_listener(
+                local_address,
+                backlog=mocker.sentinel.backlog,
+                mode=mode,
+            )
+
+        # Assert
+        assert exc_info.value is chmod_error
+        assert mock_unix_stream_socket.mock_calls == [
+            mocker.call.bind(local_address),
+            mocker.call.close(),
+        ]
+        mock_os_chmod.assert_called_once()
         mock_ListenerSocketAdapter.assert_not_called()
 
     @pytest.mark.parametrize("socket_family", [None, AF_INET, AF_INET6], ids=lambda p: f"family=={p}")
+    @pytest.mark.parametrize("local_address", [("local_address", 12345), None], ids=lambda addr: f"local_address=={addr}")
+    @pytest.mark.parametrize("remote_address", [("remote_address", 5000)], ids=lambda addr: f"remote_address=={addr}")
     async def test____create_udp_endpoint____use_loop_create_datagram_endpoint(
         self,
         local_address: tuple[str, int] | None,
@@ -561,14 +951,263 @@ class TestAsyncIOBackend:
 
         assert socket is mocker.sentinel.socket
 
-    async def test____wrap_connected_datagram_socket____use_loop_create_datagram_endpoint(
+    @pytest.mark.parametrize(
+        "local_address",
+        [
+            None,
+            "/path/to/local.sock",
+            b"/path/to/local.sock",
+            "\0local_sock",
+            b"\x00local_sock",
+            "",  # <- Arbitrary abstract Unix address given by kernel
+            b"",  # <- Arbitrary abstract Unix address given by kernel
+        ],
+        ids=lambda addr: f"local_address=={addr!r}",
+    )
+    @pytest.mark.parametrize(
+        "remote_address",
+        [
+            "/path/to/unix.sock",
+            b"/path/to/unix.sock",
+            "\0unix_sock",
+            b"\x00unix_sock",
+        ],
+        ids=lambda addr: f"remote_address=={addr!r}",
+    )
+    async def test____create_unix_datagram_endpoint____use_loop_create_datagram_endpoint(
         self,
+        local_address: str | bytes | None,
+        remote_address: str | bytes,
         backend: AsyncIOBackend,
-        mock_udp_socket: MagicMock,
+        mock_unix_datagram_socket: MagicMock,
         mock_datagram_endpoint_factory: Callable[[], MagicMock],
         mocker: MockerFixture,
     ) -> None:
         # Arrange
+        AF_UNIX = AF_UNIX_or_skip()
+        mock_socket_cls = mocker.patch("socket.socket", return_value=mock_unix_datagram_socket)
+        event_loop = asyncio.get_running_loop()
+        mock_endpoint = mock_datagram_endpoint_factory()
+        mock_AsyncioTransportDatagramSocketAdapter: MagicMock = mocker.patch(
+            f"{_ASYNCIO_BACKEND_MODULE}.datagram.socket.AsyncioTransportDatagramSocketAdapter",
+            return_value=mocker.sentinel.socket,
+        )
+        mock_create_datagram_endpoint: AsyncMock = mocker.patch(
+            f"{_ASYNCIO_BACKEND_MODULE}.datagram.endpoint.create_datagram_endpoint",
+            new_callable=mocker.AsyncMock,
+            return_value=mock_endpoint,
+        )
+        mock_sock_connect: AsyncMock = mocker.patch.object(
+            event_loop,
+            "sock_connect",
+            new_callable=mocker.AsyncMock,
+            side_effect=lambda sock, addr: sock.connect(addr),
+        )
+
+        # Act
+        socket = await backend.create_unix_datagram_endpoint(
+            remote_address,
+            local_path=local_address,
+        )
+
+        # Assert
+        mock_socket_cls.assert_called_once_with(AF_UNIX, SOCK_DGRAM, 0)
+        if local_address is None:
+            assert mock_unix_datagram_socket.mock_calls == [
+                mocker.call.setblocking(False),
+                mocker.call.connect(remote_address),
+            ]
+        else:
+            assert mock_unix_datagram_socket.mock_calls == [
+                mocker.call.bind(local_address),
+                mocker.call.setblocking(False),
+                mocker.call.connect(remote_address),
+            ]
+
+        mock_sock_connect.assert_awaited_once_with(mock_unix_datagram_socket, remote_address)
+        mock_create_datagram_endpoint.assert_awaited_once_with(sock=mock_unix_datagram_socket)
+        mock_AsyncioTransportDatagramSocketAdapter.assert_called_once_with(backend, mock_endpoint)
+        assert socket is mocker.sentinel.socket
+
+    @pytest.mark.parametrize(
+        "local_address",
+        [
+            "/path/to/local.sock",
+            b"/path/to/local.sock",
+            "\0local_sock",
+            b"\x00local_sock",
+        ],
+        ids=lambda addr: f"local_address=={addr!r}",
+    )
+    @pytest.mark.parametrize(
+        "remote_address",
+        [
+            "/path/to/unix.sock",
+            b"/path/to/unix.sock",
+            "\0unix_sock",
+            b"\x00unix_sock",
+        ],
+        ids=lambda addr: f"remote_address=={addr!r}",
+    )
+    @pytest.mark.parametrize(
+        "bind_error",
+        [
+            OSError(errno.EPERM, os.strerror(errno.EPERM)),
+            OSError("AF_UNIX path too long."),
+        ],
+        ids=lambda exc: f"bind_error=={exc!r}",
+    )
+    async def test____create_unix_datagram_endpoint____bind_error(
+        self,
+        local_address: str | bytes,
+        remote_address: str | bytes,
+        bind_error: OSError,
+        backend: AsyncIOBackend,
+        mock_unix_datagram_socket: MagicMock,
+        mock_datagram_endpoint_factory: Callable[[], MagicMock],
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        AF_UNIX = AF_UNIX_or_skip()
+        mock_socket_cls = mocker.patch("socket.socket", return_value=mock_unix_datagram_socket)
+        mock_unix_datagram_socket.bind.side_effect = bind_error
+        event_loop = asyncio.get_running_loop()
+        mock_endpoint = mock_datagram_endpoint_factory()
+        mock_AsyncioTransportDatagramSocketAdapter: MagicMock = mocker.patch(
+            f"{_ASYNCIO_BACKEND_MODULE}.datagram.socket.AsyncioTransportDatagramSocketAdapter",
+            return_value=mocker.sentinel.socket,
+        )
+        mock_create_datagram_endpoint: AsyncMock = mocker.patch(
+            f"{_ASYNCIO_BACKEND_MODULE}.datagram.endpoint.create_datagram_endpoint",
+            new_callable=mocker.AsyncMock,
+            return_value=mock_endpoint,
+        )
+        mock_sock_connect: AsyncMock = mocker.patch.object(
+            event_loop,
+            "sock_connect",
+            new_callable=mocker.AsyncMock,
+            side_effect=lambda sock, addr: sock.connect(addr),
+        )
+
+        # Act
+        with pytest.raises(OSError) as exc_info:
+            _ = await backend.create_unix_datagram_endpoint(
+                remote_address,
+                local_path=local_address,
+            )
+
+        # Assert
+        mock_socket_cls.assert_called_once_with(AF_UNIX, SOCK_DGRAM, 0)
+        assert mock_unix_datagram_socket.mock_calls == [
+            mocker.call.bind(local_address),
+            mocker.call.close(),
+        ]
+        if bind_error.errno:
+            assert exc_info.value.errno == bind_error.errno
+        else:
+            assert exc_info.value.errno == errno.EINVAL
+
+        mock_sock_connect.assert_not_awaited()
+        mock_create_datagram_endpoint.assert_not_awaited()
+        mock_AsyncioTransportDatagramSocketAdapter.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "local_address",
+        [
+            "/path/to/local.sock",
+            b"/path/to/local.sock",
+            "\0local_sock",
+            b"\x00local_sock",
+        ],
+        ids=lambda addr: f"local_address=={addr!r}",
+    )
+    @pytest.mark.parametrize(
+        "remote_address",
+        [
+            "/path/to/unix.sock",
+            b"/path/to/unix.sock",
+            "\0unix_sock",
+            b"\x00unix_sock",
+        ],
+        ids=lambda addr: f"remote_address=={addr!r}",
+    )
+    @pytest.mark.parametrize(
+        "connect_error",
+        [
+            OSError(errno.EPERM, os.strerror(errno.EPERM)),
+        ],
+        ids=lambda exc: f"connect_error=={exc!r}",
+    )
+    async def test____create_unix_datagram_endpoint____connect_error(
+        self,
+        local_address: str | bytes,
+        remote_address: str | bytes,
+        connect_error: OSError,
+        backend: AsyncIOBackend,
+        mock_unix_datagram_socket: MagicMock,
+        mock_datagram_endpoint_factory: Callable[[], MagicMock],
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        AF_UNIX = AF_UNIX_or_skip()
+        mock_socket_cls = mocker.patch("socket.socket", return_value=mock_unix_datagram_socket)
+        mock_unix_datagram_socket.connect.side_effect = connect_error
+        event_loop = asyncio.get_running_loop()
+        mock_endpoint = mock_datagram_endpoint_factory()
+        mock_AsyncioTransportDatagramSocketAdapter: MagicMock = mocker.patch(
+            f"{_ASYNCIO_BACKEND_MODULE}.datagram.socket.AsyncioTransportDatagramSocketAdapter",
+            return_value=mocker.sentinel.socket,
+        )
+        mock_create_datagram_endpoint: AsyncMock = mocker.patch(
+            f"{_ASYNCIO_BACKEND_MODULE}.datagram.endpoint.create_datagram_endpoint",
+            new_callable=mocker.AsyncMock,
+            return_value=mock_endpoint,
+        )
+        mock_sock_connect: AsyncMock = mocker.patch.object(
+            event_loop,
+            "sock_connect",
+            new_callable=mocker.AsyncMock,
+            side_effect=lambda sock, addr: sock.connect(addr),
+        )
+
+        # Act
+        with pytest.raises(OSError) as exc_info:
+            _ = await backend.create_unix_datagram_endpoint(
+                remote_address,
+                local_path=local_address,
+            )
+
+        # Assert
+        mock_socket_cls.assert_called_once_with(AF_UNIX, SOCK_DGRAM, 0)
+        assert mock_unix_datagram_socket.mock_calls == [
+            mocker.call.bind(local_address),
+            mocker.call.setblocking(False),
+            mocker.call.connect(remote_address),
+            mocker.call.close(),
+        ]
+        assert exc_info.value.errno == connect_error.errno
+
+        mock_sock_connect.assert_awaited_once_with(mock_unix_datagram_socket, remote_address)
+        mock_create_datagram_endpoint.assert_not_awaited()
+        mock_AsyncioTransportDatagramSocketAdapter.assert_not_called()
+
+    @pytest.mark.parametrize("socket_family_name", ["INET", "UNIX"], ids=lambda p: f"family=={p}")
+    async def test____wrap_connected_datagram_socket____use_loop_create_datagram_endpoint(
+        self,
+        backend: AsyncIOBackend,
+        socket_family_name: str,
+        mock_udp_socket_factory: Callable[[], MagicMock],
+        mock_unix_datagram_socket_factory: Callable[[], MagicMock],
+        mock_datagram_endpoint_factory: Callable[[], MagicMock],
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        match socket_family_name:
+            case "INET":
+                mock_datagram_socket = mock_udp_socket_factory()
+            case "UNIX":
+                mock_datagram_socket = mock_unix_datagram_socket_factory()
+
         mock_endpoint = mock_datagram_endpoint_factory()
         mock_AsyncioTransportDatagramSocketAdapter: MagicMock = mocker.patch(
             f"{_ASYNCIO_BACKEND_MODULE}.datagram.socket.AsyncioTransportDatagramSocketAdapter",
@@ -581,14 +1220,14 @@ class TestAsyncIOBackend:
         )
 
         # Act
-        socket = await backend.wrap_connected_datagram_socket(mock_udp_socket)
+        socket = await backend.wrap_connected_datagram_socket(mock_datagram_socket)
 
         # Assert
-        mock_create_datagram_endpoint.assert_awaited_once_with(sock=mock_udp_socket)
+        mock_create_datagram_endpoint.assert_awaited_once_with(sock=mock_datagram_socket)
         mock_AsyncioTransportDatagramSocketAdapter.assert_called_once_with(backend, mock_endpoint)
 
         assert socket is mocker.sentinel.socket
-        mock_udp_socket.setblocking.assert_called_with(False)
+        mock_datagram_socket.setblocking.assert_called_with(False)
 
     async def test____create_udp_listeners____open_listener_sockets(
         self,
@@ -647,7 +1286,6 @@ class TestAsyncIOBackend:
         )
         mock_open_listeners.assert_called_once_with(
             addrinfo_list,
-            backlog=None,
             reuse_address=False,
             reuse_port=mocker.sentinel.reuse_port,
         )
@@ -736,7 +1374,6 @@ class TestAsyncIOBackend:
             )
         mock_open_listeners.assert_called_once_with(
             addrinfo_list,
-            backlog=None,
             reuse_address=False,
             reuse_port=mocker.sentinel.reuse_port,
         )
@@ -755,6 +1392,190 @@ class TestAsyncIOBackend:
             ]
         ]
         assert listener_sockets == [mocker.sentinel.listener_socket_ipv6, mocker.sentinel.listener_socket_ipv4]
+
+    @pytest.mark.parametrize(
+        "local_address",
+        [
+            "/path/to/local.sock",
+            b"/path/to/local.sock",
+            "\0local_sock",
+            b"\x00local_sock",
+            "",  # <- Arbitrary abstract Unix address given by kernel
+            b"",  # <- Arbitrary abstract Unix address given by kernel
+        ],
+        ids=lambda addr: f"local_address=={addr!r}",
+    )
+    @pytest.mark.parametrize("mode", [None, 0o640], ids=lambda mode: f"mode=={mode!r}")
+    async def test____create_unix_datagram_listener____open_listener_socket(
+        self,
+        backend: AsyncIOBackend,
+        local_address: str | bytes,
+        mode: int | None,
+        mock_unix_datagram_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        AF_UNIX = AF_UNIX_or_skip()
+        event_loop = asyncio.get_running_loop()
+        mock_socket_cls = mocker.patch("socket.socket", return_value=mock_unix_datagram_socket)
+        mock_os_chmod = mocker.patch("os.chmod", autospec=True, return_value=None)
+        mock_transport = mocker.NonCallableMagicMock(spec=asyncio.DatagramTransport)
+        mock_protocol = mocker.NonCallableMagicMock(spec=DatagramListenerProtocol)
+        mock_create_datagram_endpoint: AsyncMock = mocker.patch.object(
+            event_loop,
+            "create_datagram_endpoint",
+            new_callable=mocker.AsyncMock,
+            return_value=(mock_transport, mock_protocol),
+        )
+        mock_DatagramListenerSocketAdapter: MagicMock = mocker.patch(
+            f"{_ASYNCIO_BACKEND_MODULE}.datagram.listener.DatagramListenerSocketAdapter",
+            return_value=mocker.sentinel.listener_socket,
+        )
+
+        # Act
+        listener_socket = await backend.create_unix_datagram_listener(
+            local_address,
+            mode=mode,
+        )
+
+        # Assert
+        mock_socket_cls.assert_called_once_with(AF_UNIX, SOCK_DGRAM, 0)
+        assert mock_unix_datagram_socket.mock_calls == [
+            mocker.call.bind(local_address),
+            mocker.call.setblocking(False),
+        ]
+        if mode is None:
+            mock_os_chmod.assert_not_called()
+        else:
+            mock_os_chmod.assert_called_once_with(local_address, mode)
+        mock_create_datagram_endpoint.assert_awaited_once_with(
+            partial_eq(DatagramListenerProtocol, loop=event_loop),
+            sock=mock_unix_datagram_socket,
+        )
+        mock_DatagramListenerSocketAdapter.assert_called_once_with(backend, mock_transport, mock_protocol)
+        assert listener_socket is mocker.sentinel.listener_socket
+
+    @pytest.mark.parametrize(
+        "local_address",
+        [
+            "/path/to/local.sock",
+            b"/path/to/local.sock",
+            "\0local_sock",
+            b"\x00local_sock",
+            "",  # <- Arbitrary abstract Unix address given by kernel
+            b"",  # <- Arbitrary abstract Unix address given by kernel
+        ],
+        ids=lambda addr: f"local_address=={addr!r}",
+    )
+    @pytest.mark.parametrize(
+        "bind_error",
+        [
+            OSError(errno.EPERM, os.strerror(errno.EPERM)),
+            OSError("AF_UNIX path too long."),
+        ],
+        ids=lambda exc: f"bind_error=={exc!r}",
+    )
+    @pytest.mark.parametrize("mode", [None, 0o640], ids=lambda mode: f"mode=={mode!r}")
+    async def test____create_unix_datagram_listener____bind_failed(
+        self,
+        backend: AsyncIOBackend,
+        local_address: str | bytes,
+        bind_error: OSError,
+        mode: int | None,
+        mock_unix_datagram_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        AF_UNIX = AF_UNIX_or_skip()
+        event_loop = asyncio.get_running_loop()
+        mock_socket_cls = mocker.patch("socket.socket", return_value=mock_unix_datagram_socket)
+        mock_os_chmod = mocker.patch("os.chmod", autospec=True, return_value=None)
+        mock_unix_datagram_socket.bind.side_effect = bind_error
+        mock_transport = mocker.NonCallableMagicMock(spec=asyncio.DatagramTransport)
+        mock_protocol = mocker.NonCallableMagicMock(spec=DatagramListenerProtocol)
+        mock_create_datagram_endpoint: AsyncMock = mocker.patch.object(
+            event_loop,
+            "create_datagram_endpoint",
+            new_callable=mocker.AsyncMock,
+            return_value=(mock_transport, mock_protocol),
+        )
+        mock_DatagramListenerSocketAdapter: MagicMock = mocker.patch(
+            f"{_ASYNCIO_BACKEND_MODULE}.datagram.listener.DatagramListenerSocketAdapter",
+            return_value=mocker.sentinel.listener_socket,
+        )
+
+        # Act
+        with pytest.raises(OSError) as exc_info:
+            _ = await backend.create_unix_datagram_listener(
+                local_address,
+                mode=mode,
+            )
+
+        # Assert
+        mock_socket_cls.assert_called_once_with(AF_UNIX, SOCK_DGRAM, 0)
+        assert mock_unix_datagram_socket.mock_calls == [
+            mocker.call.bind(local_address),
+            mocker.call.close(),
+        ]
+        if bind_error.errno:
+            assert exc_info.value.errno == bind_error.errno
+        else:
+            assert exc_info.value.errno == errno.EINVAL
+        mock_os_chmod.assert_not_called()
+        mock_create_datagram_endpoint.assert_not_called()
+        mock_DatagramListenerSocketAdapter.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "local_address",
+        [
+            "/path/to/local.sock",
+            b"/path/to/local.sock",
+        ],
+        ids=lambda addr: f"local_address=={addr!r}",
+    )
+    async def test____create_unix_datagram_listener____chmod_failed(
+        self,
+        backend: AsyncIOBackend,
+        local_address: str | bytes,
+        mock_unix_datagram_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        chmod_error = OSError(errno.EPERM, os.strerror(errno.EPERM))
+        mode: int = 0o640
+        AF_UNIX_or_skip()
+        event_loop = asyncio.get_running_loop()
+        mocker.patch("socket.socket", return_value=mock_unix_datagram_socket)
+        mock_os_chmod = mocker.patch("os.chmod", autospec=True, side_effect=chmod_error)
+        mock_transport = mocker.NonCallableMagicMock(spec=asyncio.DatagramTransport)
+        mock_protocol = mocker.NonCallableMagicMock(spec=DatagramListenerProtocol)
+        mock_create_datagram_endpoint: AsyncMock = mocker.patch.object(
+            event_loop,
+            "create_datagram_endpoint",
+            new_callable=mocker.AsyncMock,
+            return_value=(mock_transport, mock_protocol),
+        )
+        mock_DatagramListenerSocketAdapter: MagicMock = mocker.patch(
+            f"{_ASYNCIO_BACKEND_MODULE}.datagram.listener.DatagramListenerSocketAdapter",
+            return_value=mocker.sentinel.listener_socket,
+        )
+
+        # Act
+        with pytest.raises(OSError) as exc_info:
+            _ = await backend.create_unix_datagram_listener(
+                local_address,
+                mode=mode,
+            )
+
+        # Assert
+        assert exc_info.value is chmod_error
+        assert mock_unix_datagram_socket.mock_calls == [
+            mocker.call.bind(local_address),
+            mocker.call.close(),
+        ]
+        mock_os_chmod.assert_called_once()
+        mock_create_datagram_endpoint.assert_not_called()
+        mock_DatagramListenerSocketAdapter.assert_not_called()
 
     @pytest.mark.parametrize("fair_lock", [False, True], ids=lambda p: f"fair_lock=={p}")
     async def test____create_lock____use_asyncio_Lock_class(

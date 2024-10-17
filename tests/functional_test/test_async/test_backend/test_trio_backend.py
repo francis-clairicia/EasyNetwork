@@ -1018,7 +1018,7 @@ class TestTrioBackend:
             assert caplog.records[0].levelno == logging.ERROR
             assert caplog.records[0].exc_info is not None
             assert caplog.records[0].exc_info[1] is value
-            assert caplog.records[0].message == "\n".join(
+            assert caplog.records[0].getMessage() == "\n".join(
                 [
                     "Task exception was not retrieved because future object is cancelled",
                     f"task: {subcoroutine_task[0]!r}",

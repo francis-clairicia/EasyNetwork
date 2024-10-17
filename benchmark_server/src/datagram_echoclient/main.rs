@@ -1,5 +1,3 @@
-#![allow(clippy::assigning_clones)]
-
 use std::{
     io,
     sync::{mpsc::channel, Arc, Barrier},
@@ -45,10 +43,12 @@ impl Default for OutputFormat {
     }
 }
 
-fn client_from_args(args: &Args) -> io::Result<DatagramClient> {
+fn client_from_args(args: &Args, worker_id: u64) -> io::Result<DatagramClient> {
     let client = {
         if args.addr.starts_with("file://") {
-            DatagramClient::unix(args.addr.trim_start_matches("file://"))?
+            let path = std::path::Path::new(args.addr.trim_start_matches("file://"));
+            let local_path = path.with_file_name(format!("client-{}-{}.sock", worker_id, uuid::Uuid::new_v4().simple()));
+            DatagramClient::unix(path, local_path)?
         } else {
             DatagramClient::udp(&args.addr)?
         }
@@ -63,10 +63,10 @@ fn start_workers(args: &Args) -> io::Result<std::sync::mpsc::Receiver<RequestRep
     let barrier = Arc::new(Barrier::new(args.workers));
     let (sender, receiver) = channel::<RequestReport>();
 
-    for _ in 0..args.workers {
+    for worker_id in 0..args.workers {
         let barrier = barrier.clone();
         let sender = sender.clone();
-        let mut client = client_from_args(args)?;
+        let mut client = client_from_args(args, worker_id as u64)?;
 
         let request = "x".repeat(args.message_size);
         let duration = Duration::from_secs(args.duration);

@@ -135,7 +135,7 @@ def main() -> None:
         trio.run(echo_stream_server, port, ssl_context)
     else:
         if ssl_context:
-            raise OSError("loop.sock_sendall() and loop.sock_recv() do not support SSL")
+            raise OSError("bare sockets do not support SSL")
         trio.run(echo_server, ("0.0.0.0", port))
 
 
