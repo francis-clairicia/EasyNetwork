@@ -29,6 +29,7 @@ import socket
 import warnings
 from collections import deque
 from collections.abc import Callable, Iterable, Mapping
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar
 
 try:
@@ -66,7 +67,7 @@ class SocketStreamTransport(base_selector.SelectorStreamTransport):
     A stream data transport implementation which wraps a stream :class:`~socket.socket`.
     """
 
-    __slots__ = ("__socket",)
+    __slots__ = ("__socket", "__extra_attributes")
 
     def __init__(
         self,
@@ -89,6 +90,8 @@ class SocketStreamTransport(base_selector.SelectorStreamTransport):
             raise ValueError("A 'SOCK_STREAM' socket is expected")
         self.__socket: socket.socket = sock
         self.__socket.setblocking(False)
+
+        self.__extra_attributes = MappingProxyType(socket_tools._get_socket_extra(self.__socket))
 
     def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
         try:
@@ -169,8 +172,7 @@ class SocketStreamTransport(base_selector.SelectorStreamTransport):
     @property
     @_utils.inherit_doc(base_selector.SelectorStreamTransport)
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
-        socket = self.__socket
-        return socket_tools._get_socket_extra(socket)
+        return self.__extra_attributes
 
 
 class SSLStreamTransport(base_selector.SelectorStreamTransport):
@@ -178,7 +180,7 @@ class SSLStreamTransport(base_selector.SelectorStreamTransport):
     A stream data transport implementation which wraps a stream :class:`~socket.socket`.
     """
 
-    __slots__ = ("__socket", "__ssl_shutdown_timeout", "__standard_compatible")
+    __slots__ = ("__socket", "__ssl_shutdown_timeout", "__standard_compatible", "__extra_attributes")
 
     def __init__(
         self,
@@ -247,6 +249,13 @@ class SSLStreamTransport(base_selector.SelectorStreamTransport):
 
         self.__ssl_shutdown_timeout: float = shutdown_timeout
         self.__standard_compatible: bool = standard_compatible
+
+        self.__extra_attributes = MappingProxyType(
+            {
+                **socket_tools._get_socket_extra(self.__socket),
+                **socket_tools._get_tls_extra(self.__socket, self.__standard_compatible),
+            }
+        )
 
     def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
         try:
@@ -317,12 +326,7 @@ class SSLStreamTransport(base_selector.SelectorStreamTransport):
     @property
     @_utils.inherit_doc(base_selector.SelectorStreamTransport)
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
-        socket = self.__socket
-        return {
-            **socket_tools._get_socket_extra(socket),
-            **socket_tools._get_tls_extra(socket),
-            socket_tools.TLSAttribute.standard_compatible: lambda: self.__standard_compatible,
-        }
+        return self.__extra_attributes
 
 
 class SocketDatagramTransport(base_selector.SelectorDatagramTransport):
@@ -330,7 +334,7 @@ class SocketDatagramTransport(base_selector.SelectorDatagramTransport):
     A datagram transport implementation which wraps a datagram :class:`~socket.socket`.
     """
 
-    __slots__ = ("__socket", "__max_datagram_size")
+    __slots__ = ("__socket", "__max_datagram_size", "__extra_attributes")
 
     def __init__(
         self,
@@ -361,6 +365,8 @@ class SocketDatagramTransport(base_selector.SelectorDatagramTransport):
 
         self.__socket: socket.socket = sock
         self.__socket.setblocking(False)
+
+        self.__extra_attributes = MappingProxyType(socket_tools._get_socket_extra(self.__socket))
 
     def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
         try:
@@ -397,5 +403,4 @@ class SocketDatagramTransport(base_selector.SelectorDatagramTransport):
     @property
     @_utils.inherit_doc(base_selector.SelectorDatagramTransport)
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
-        socket = self.__socket
-        return socket_tools._get_socket_extra(socket)
+        return self.__extra_attributes

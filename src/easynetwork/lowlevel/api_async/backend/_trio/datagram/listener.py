@@ -23,6 +23,7 @@ import contextlib
 import socket as _socket
 import warnings
 from collections.abc import Awaitable, Callable, Coroutine, Mapping
+from types import MappingProxyType
 from typing import Any, NoReturn, final
 
 import trio
@@ -38,9 +39,9 @@ class TrioDatagramListenerSocketAdapter(AsyncDatagramListener[tuple[Any, ...]]):
     __slots__ = (
         "__backend",
         "__listener",
-        "__trsock",
         "__serve_guard",
         "__send_lock",
+        "__extra_attributes",
         "__wait_readable",
         "__wait_writable",
     )
@@ -59,9 +60,9 @@ class TrioDatagramListenerSocketAdapter(AsyncDatagramListener[tuple[Any, ...]]):
 
         self.__backend: AsyncBackend = backend
         self.__listener: _socket.socket = sock
-        self.__trsock: socket_tools.SocketProxy = socket_tools.SocketProxy(sock)
         self.__serve_guard: _utils.ResourceGuard = _utils.ResourceGuard(f"{self.__class__.__name__}.serve() awaited twice.")
         self.__send_lock: ILock = FastFIFOLock()
+        self.__extra_attributes = MappingProxyType(socket_tools._get_socket_extra(sock))
 
         self.__wait_readable: Callable[[_socket.socket], Awaitable[None]] = wait_readable
         self.__wait_writable: Callable[[_socket.socket], Awaitable[None]] = wait_writable
@@ -131,4 +132,4 @@ class TrioDatagramListenerSocketAdapter(AsyncDatagramListener[tuple[Any, ...]]):
 
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
-        return socket_tools._get_socket_extra(self.__trsock, wrap_in_proxy=False)
+        return self.__extra_attributes

@@ -72,6 +72,7 @@ class AsyncTLSStreamTransport(AsyncStreamTransport):
     __transport_recv_lock: ILock = dataclasses.field(init=False)
     __closing: bool = dataclasses.field(init=False, default=False)
     __closed: IEvent = dataclasses.field(init=False)
+    __tls_extra_atributes: Mapping[Any, Callable[[], Any]] = dataclasses.field(init=False)
 
     def __post_init__(self) -> None:
         backend = self._transport.backend()
@@ -79,6 +80,7 @@ class AsyncTLSStreamTransport(AsyncStreamTransport):
         self.__transport_send_lock = backend.create_fair_lock()
         self.__transport_recv_lock = backend.create_fair_lock()
         self.__closed = backend.create_event()
+        self.__tls_extra_atributes = socket_tools._get_tls_extra(self._ssl_object, self._standard_compatible)
 
     @classmethod
     async def wrap(
@@ -310,8 +312,7 @@ class AsyncTLSStreamTransport(AsyncStreamTransport):
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         return {
             **self._transport.extra_attributes,
-            **socket_tools._get_tls_extra(self._ssl_object),
-            socket_tools.TLSAttribute.standard_compatible: lambda: self._standard_compatible,
+            **self.__tls_extra_atributes,
         }
 
 
@@ -327,6 +328,7 @@ class AsyncTLSListener(AsyncListener[AsyncTLSStreamTransport]):
         "__handshake_timeout",
         "__shutdown_timeout",
         "__handshake_error_handler",
+        "__tls_extra_attributes",
     )
 
     def __init__(
@@ -362,6 +364,7 @@ class AsyncTLSListener(AsyncListener[AsyncTLSStreamTransport]):
         self.__shutdown_timeout: float | None = shutdown_timeout
         self.__standard_compatible: bool = standard_compatible
         self.__handshake_error_handler: Callable[[Exception], None] | None = handshake_error_handler
+        self.__tls_extra_attributes = self.__make_tls_extra_attributes(self.__ssl_context, self.__standard_compatible)
 
     def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
         try:
@@ -427,13 +430,19 @@ class AsyncTLSListener(AsyncListener[AsyncTLSStreamTransport]):
     def backend(self) -> AsyncBackend:
         return self.__listener.backend()
 
+    @staticmethod
+    def __make_tls_extra_attributes(ssl_context: SSLContext, standard_compatible: bool) -> dict[Any, Callable[[], Any]]:
+        return {
+            socket_tools.TLSAttribute.sslcontext: lambda: ssl_context,
+            socket_tools.TLSAttribute.standard_compatible: lambda: standard_compatible,
+        }
+
     @property
     @_utils.inherit_doc(AsyncListener)
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         return {
             **self.__listener.extra_attributes,
-            socket_tools.TLSAttribute.sslcontext: lambda: self.__ssl_context,
-            socket_tools.TLSAttribute.standard_compatible: lambda: self.__standard_compatible,
+            **self.__tls_extra_attributes,
         }
 
 

@@ -27,6 +27,7 @@ import dataclasses
 import logging
 import warnings
 from collections.abc import Callable, Coroutine, Mapping
+from types import MappingProxyType
 from typing import Any, NoReturn, final
 
 from ..... import _utils, socket as socket_tools
@@ -42,8 +43,8 @@ class DatagramListenerSocketAdapter(transports.AsyncDatagramListener[tuple[Any, 
         "__backend",
         "__transport",
         "__protocol",
-        "__socket",
         "__closing",
+        "__extra_attributes",
     )
 
     def __init__(self, backend: AsyncBackend, transport: asyncio.DatagramTransport, protocol: DatagramListenerProtocol) -> None:
@@ -56,12 +57,13 @@ class DatagramListenerSocketAdapter(transports.AsyncDatagramListener[tuple[Any, 
         self.__backend: AsyncBackend = backend
         self.__transport: asyncio.DatagramTransport = transport
         self.__protocol: DatagramListenerProtocol = protocol
-        self.__socket: asyncio.trsock.TransportSocket = socket
 
         # asyncio.DatagramTransport.is_closing() can suddently become true if there is something wrong with the socket
         # even if transport.close() was never called.
         # To bypass this side effect, we use our own flag.
         self.__closing: bool = False
+
+        self.__extra_attributes = MappingProxyType(socket_tools._get_socket_extra(socket, wrap_in_proxy=False))
 
     def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
         try:
@@ -104,8 +106,7 @@ class DatagramListenerSocketAdapter(transports.AsyncDatagramListener[tuple[Any, 
 
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
-        socket = self.__socket
-        return socket_tools._get_socket_extra(socket, wrap_in_proxy=False)
+        return self.__extra_attributes
 
 
 @dataclasses.dataclass(eq=False, frozen=True, slots=True)

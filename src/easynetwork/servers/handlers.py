@@ -38,6 +38,8 @@ if TYPE_CHECKING:
 
 
 class INETClientAttribute(typed_attr.TypedAttributeSet):
+    __slots__ = ()
+
     socket: socket_tools.ISocket = socket_tools.SocketAttribute.socket
     """:class:`socket.socket` instance."""
 

@@ -34,6 +34,7 @@ import socket as _socket
 import warnings
 from abc import abstractmethod
 from collections.abc import Callable, Coroutine, Mapping
+from types import MappingProxyType
 from typing import Any, Generic, NoReturn, TypeVar, final
 
 from ..... import _utils, constants, socket as socket_tools
@@ -49,10 +50,10 @@ class ListenerSocketAdapter(AsyncListener[_T_Stream]):
     __slots__ = (
         "__backend",
         "__socket",
-        "__trsock",
         "__accepted_socket_factory",
         "__accept_scope",
         "__serve_guard",
+        "__extra_attributes",
     )
 
     def __init__(
@@ -68,13 +69,15 @@ class ListenerSocketAdapter(AsyncListener[_T_Stream]):
 
         _utils.check_socket_no_ssl(socket)
         socket.setblocking(False)
+        trsock: asyncio.trsock.TransportSocket = asyncio.trsock.TransportSocket(socket)
 
         self.__socket: _socket.socket | None = socket
-        self.__trsock: asyncio.trsock.TransportSocket = asyncio.trsock.TransportSocket(socket)
         self.__backend: AsyncBackend = backend
         self.__accepted_socket_factory = accepted_socket_factory
         self.__accept_scope: CancelScope | None = None
         self.__serve_guard: _utils.ResourceGuard = _utils.ResourceGuard(f"{self.__class__.__name__}.serve() awaited twice.")
+
+        self.__extra_attributes = MappingProxyType(socket_tools._get_socket_extra(trsock, wrap_in_proxy=False))
 
     def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
         try:
@@ -186,7 +189,7 @@ class ListenerSocketAdapter(AsyncListener[_T_Stream]):
 
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
-        return socket_tools._get_socket_extra(self.__trsock, wrap_in_proxy=False)
+        return self.__extra_attributes
 
 
 class AbstractAcceptedSocketFactory(Generic[_T_Stream]):

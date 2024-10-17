@@ -616,21 +616,24 @@ def disable_socket_linger(sock: SupportsSocketOptions) -> None:
 
 
 def _get_socket_extra(sock: ISocket, *, wrap_in_proxy: bool = True) -> dict[Any, Callable[[], Any]]:
+    if wrap_in_proxy:
+        sock = SocketProxy(sock)
     return {
-        SocketAttribute.socket: (lambda: sock) if not wrap_in_proxy else (lambda: SocketProxy(sock)),
+        SocketAttribute.socket: lambda: sock,
         SocketAttribute.family: lambda: _cast_socket_family(sock.family),
         SocketAttribute.sockname: lambda: _address_or_lookup_error(sock.fileno, sock.getsockname),
         SocketAttribute.peername: lambda: _address_or_lookup_error(sock.fileno, sock.getpeername),
     }
 
 
-def _get_tls_extra(ssl_object: SSLObject | SSLSocket) -> dict[Any, Callable[[], Any]]:
+def _get_tls_extra(ssl_object: SSLObject | SSLSocket, standard_compatible: bool) -> dict[Any, Callable[[], Any]]:
     return {
         TLSAttribute.sslcontext: lambda: ssl_object.context,
         TLSAttribute.peercert: lambda: _value_or_lookup_error(ssl_object.getpeercert()),
         TLSAttribute.cipher: lambda: _value_or_lookup_error(ssl_object.cipher()),
         TLSAttribute.compression: lambda: _value_or_lookup_error(ssl_object.compression()),
         TLSAttribute.tls_version: lambda: _value_or_lookup_error(ssl_object.version()),
+        TLSAttribute.standard_compatible: lambda: standard_compatible,
     }
 
 
