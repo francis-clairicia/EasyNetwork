@@ -12,7 +12,7 @@
 # limitations under the License.
 #
 #
-"""Asynchronous UDP Network client implementation module."""
+"""Asynchronous UDP Network server implementation module."""
 
 from __future__ import annotations
 
@@ -20,9 +20,9 @@ __all__ = ["AsyncUDPNetworkServer"]
 
 import contextlib
 import logging
-import types
 import weakref
 from collections.abc import Callable, Coroutine, Mapping, Sequence
+from types import TracebackType
 from typing import Any, Generic, NoReturn, TypeAlias, final
 
 from .._typevars import _T_Request, _T_Response
@@ -88,9 +88,9 @@ class AsyncUDPNetworkServer(
         """
         super().__init__(
             backend=backend,
-            servers_factory=type(self).__activate_listeners,
-            initialize_service=type(self).__initialize_service,
-            lowlevel_serve=type(self).__lowlevel_serve,
+            servers_factory=_utils.weak_method_proxy(self.__activate_listeners),
+            initialize_service=_utils.weak_method_proxy(self.__initialize_service),
+            lowlevel_serve=_utils.weak_method_proxy(self.__lowlevel_serve),
             logger=logger or logging.getLogger(__name__),
         )
 
@@ -148,7 +148,12 @@ class AsyncUDPNetworkServer(
         lowlevel_client: _datagram_server.DatagramClientContext[_T_Response, tuple[Any, ...]],
         client_cache: _ClientCacheDictType[_T_Response],
     ) -> _ClientContext[_T_Response]:
-        return _ClientContext(lowlevel_client, client_cache, self.__service_available, self.logger)
+        return _ClientContext(
+            lowlevel_client=lowlevel_client,
+            client_cache=client_cache,
+            service_available=self.__service_available,
+            logger=self.logger,
+        )
 
     @_utils.inherit_doc(_base.BaseAsyncNetworkServerImpl)
     def get_addresses(self) -> Sequence[SocketAddress]:
@@ -201,9 +206,11 @@ class _ClientAPI(AsyncDatagramClient[_T_Response]):
         return h
 
     def __eq__(self, other: object) -> bool:
-        if not isinstance(other, _ClientAPI):
-            return NotImplemented
-        return self.__context == other.__context
+        match other:
+            case _ClientAPI():
+                return self.__context == other.__context
+            case _:
+                return NotImplemented
 
     def is_closing(self) -> bool:
         return self.__is_closing(self.__service_available, self.__context.server)
@@ -244,6 +251,7 @@ class _ClientAPI(AsyncDatagramClient[_T_Response]):
             INETClientAttribute.socket: self.__get_server_socket,
             INETClientAttribute.local_address: self.__get_server_address,
             INETClientAttribute.remote_address: self.__get_remote_address,
+            INETSocketAttribute.family: _utils.make_callback(self.__context.server.extra, INETSocketAttribute.family),
         }
 
 
@@ -265,6 +273,7 @@ class _ClientContext(Generic[_T_Response]):
 
     def __init__(
         self,
+        *,
         lowlevel_client: _datagram_server.DatagramClientContext[_T_Response, tuple[Any, ...]],
         client_cache: _ClientCacheDictType[_T_Response],
         service_available: _utils.Flag,
@@ -287,55 +296,16 @@ class _ClientContext(Generic[_T_Response]):
         self,
         exc_type: type[BaseException] | None,
         exc_val: BaseException | None,
-        exc_tb: types.TracebackType | None,
+        exc_tb: TracebackType | None,
         /,
     ) -> bool:
         # Fast path.
         if exc_val is None:
             return False
 
-        del exc_type, exc_tb
-
+        client_address_cb = self.__client_cache[self.__lowlevel_client].extra_attributes[INETClientAttribute.remote_address]
+        error_handler = _base.ClientErrorHandler(logger=self.__logger, client_address_cb=client_address_cb, suppress_errors=())
         try:
-            match exc_val:
-                case BaseExceptionGroup():
-                    connection_errors, exc_val = exc_val.split(ClientClosedError)
-                    if connection_errors is not None:
-                        self.__log_closed_client_errors(connection_errors)
-                    match exc_val:
-                        case None:
-                            return True
-                        case Exception():
-                            self.__log_exception(exc_val)
-                            return True
-                        case _:  # pragma: no cover
-                            del connection_errors
-                            raise exc_val
-                case ClientClosedError():
-                    self.__log_closed_client_errors(ExceptionGroup("", [exc_val]))
-                    return True
-                case Exception():
-                    self.__log_exception(exc_val)
-                    return True
-                case _:
-                    return False
+            return error_handler.__exit__(exc_type, exc_val, exc_tb)
         finally:
-            del exc_val
-
-    def __log_closed_client_errors(self, exc: ExceptionGroup[ClientClosedError]) -> None:
-        lowlevel_client = self.__lowlevel_client
-        self.__logger.warning(
-            "There have been attempts to do operation on closed client %s",
-            new_socket_address(lowlevel_client.address, lowlevel_client.server.extra(INETSocketAttribute.family)),
-            exc_info=exc,
-        )
-
-    def __log_exception(self, exc: Exception) -> None:
-        lowlevel_client = self.__lowlevel_client
-        self.__logger.error("-" * 40)
-        self.__logger.error(
-            "Exception occurred during processing of request from %s",
-            new_socket_address(lowlevel_client.address, lowlevel_client.server.extra(INETSocketAttribute.family)),
-            exc_info=exc,
-        )
-        self.__logger.error("-" * 40)
+            exc_type = exc_val = exc_tb = None

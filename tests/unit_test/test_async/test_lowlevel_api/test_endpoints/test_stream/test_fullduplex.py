@@ -10,6 +10,7 @@ from easynetwork.lowlevel.api_async.transports.abc import AsyncStreamTransport
 import pytest
 import pytest_asyncio
 
+from ....._utils import make_async_recv_into_side_effect as make_recv_into_side_effect
 from ....mock_tools import make_transport_mock
 from .base import BaseAsyncEndpointReceiveTests, BaseAsyncEndpointSendTests
 
@@ -142,3 +143,55 @@ class TestAsyncStreamEndpoint(BaseAsyncEndpointSendTests, BaseAsyncEndpointRecei
         mock_stream_transport.send_eof.assert_awaited_once_with()
         with pytest.raises(RuntimeError, match=r"^send_eof\(\) has been called earlier$"):
             await endpoint.send_packet(mocker.sentinel.packet)
+
+    @pytest.mark.parametrize("stream_protocol_mode", ["data"], indirect=True)
+    async def test____special_case____send_packet____eof_error____still_try_socket_send(
+        self,
+        endpoint: AsyncStreamEndpoint[Any, Any],
+        mock_stream_transport: MagicMock,
+        mock_stream_protocol: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        chunks: list[bytes] = []
+        mock_stream_transport.send_all_from_iterable.side_effect = lambda it: chunks.extend(it)
+        mock_stream_transport.recv.side_effect = [b""]
+        with pytest.raises(ConnectionAbortedError):
+            _ = await endpoint.recv_packet()
+
+        mock_stream_transport.recv.reset_mock()
+
+        # Act
+        await endpoint.send_packet(mocker.sentinel.packet)
+
+        # Assert
+        mock_stream_protocol.generate_chunks.assert_called_with(mocker.sentinel.packet)
+        mock_stream_transport.send_all_from_iterable.assert_awaited_once_with(mocker.ANY)
+        mock_stream_transport.send_all.assert_not_called()
+        assert chunks == [b"packet\n"]
+
+    @pytest.mark.parametrize("stream_protocol_mode", ["buffer"], indirect=True)
+    async def test____special_case____send_packet____eof_error____recv_buffered____still_try_socket_send(
+        self,
+        endpoint: AsyncStreamEndpoint[Any, Any],
+        mock_stream_transport: MagicMock,
+        mock_stream_protocol: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        chunks: list[bytes] = []
+        mock_stream_transport.send_all_from_iterable.side_effect = lambda it: chunks.extend(it)
+        mock_stream_transport.recv_into.side_effect = make_recv_into_side_effect([b""])
+        with pytest.raises(ConnectionAbortedError):
+            _ = await endpoint.recv_packet()
+
+        mock_stream_transport.recv_into.reset_mock()
+
+        # Act
+        await endpoint.send_packet(mocker.sentinel.packet)
+
+        # Assert
+        mock_stream_protocol.generate_chunks.assert_called_with(mocker.sentinel.packet)
+        mock_stream_transport.send_all_from_iterable.assert_awaited_once_with(mocker.ANY)
+        mock_stream_transport.send_all.assert_not_called()
+        assert chunks == [b"packet\n"]

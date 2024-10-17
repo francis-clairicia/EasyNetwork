@@ -56,10 +56,8 @@ def addrinfo_list() -> Sequence[tuple[int, int, int, str, tuple[Any, ...]]]:
 @pytest.mark.parametrize("SO_REUSEADDR_raise_error", [False, True], ids=lambda boolean: f"SO_REUSEADDR_raise_error=={boolean}")
 @pytest.mark.parametrize("IPPROTO_IPV6_available", [False, True], ids=lambda boolean: f"IPPROTO_IPV6_available=={boolean}")
 @pytest.mark.parametrize("reuse_port", [False, True], ids=lambda boolean: f"reuse_port=={boolean}")
-@pytest.mark.parametrize("backlog", [123456, None], ids=lambda value: f"backlog=={value}")
 def test____open_listener_sockets_from_getaddrinfo_result____create_listener_sockets(
     reuse_address: bool,
-    backlog: int | None,
     SO_REUSEADDR_available: bool,
     SO_REUSEADDR_raise_error: bool,
     IPPROTO_IPV6_available: bool,
@@ -91,7 +89,6 @@ def test____open_listener_sockets_from_getaddrinfo_result____create_listener_soc
         "list[MagicMock]",
         open_listener_sockets_from_getaddrinfo_result(
             addrinfo_list,
-            backlog=backlog,
             reuse_address=reuse_address,
             reuse_port=reuse_port,
         ),
@@ -112,10 +109,7 @@ def test____open_listener_sockets_from_getaddrinfo_result____create_listener_soc
         assert socket.setsockopt.mock_calls == expected_setsockopt_calls
 
         socket.bind.assert_called_once_with(sock_addr)
-        if backlog is None:
-            socket.listen.assert_not_called()
-        else:
-            socket.listen.assert_called_once_with(backlog)
+        socket.listen.assert_not_called()
         socket.close.assert_not_called()
 
 
@@ -129,7 +123,7 @@ def test____open_listener_sockets_from_getaddrinfo_result____ignore_bad_combinat
     mock_socket_cls.side_effect = [mock_tcp_socket_factory(), OSError]
 
     # Act
-    sockets = open_listener_sockets_from_getaddrinfo_result(addrinfo_list, backlog=10, reuse_address=True, reuse_port=False)
+    sockets = open_listener_sockets_from_getaddrinfo_result(addrinfo_list, reuse_address=True, reuse_port=False)
 
     # Assert
     assert len(sockets) == 1
@@ -148,7 +142,7 @@ def test____open_listener_sockets_from_getaddrinfo_result____bind_failed(
 
     # Act
     with pytest.raises(ExceptionGroup, match=r"^Error when trying to create listeners \(1 sub-exception\)$") as exc_info:
-        open_listener_sockets_from_getaddrinfo_result(addrinfo_list, backlog=10, reuse_address=True, reuse_port=False)
+        open_listener_sockets_from_getaddrinfo_result(addrinfo_list, reuse_address=True, reuse_port=False)
 
     # Assert
     os_errors, exc = exc_info.value.split(OSError)
@@ -173,7 +167,7 @@ def test____open_listener_sockets_from_getaddrinfo_result____ipv6_scope_id_not_p
     mock_socket_cls.side_effect = [mock_socket_ipv6]
 
     # Act
-    sockets = open_listener_sockets_from_getaddrinfo_result(addrinfo_list, backlog=10, reuse_address=True, reuse_port=False)
+    sockets = open_listener_sockets_from_getaddrinfo_result(addrinfo_list, reuse_address=True, reuse_port=False)
 
     # Assert
     assert sockets == [mock_socket_ipv6]

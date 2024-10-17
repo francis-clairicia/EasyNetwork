@@ -31,23 +31,22 @@ def readline(sock: Socket) -> bytes:
 
 
 @pytest.mark.usefixtures("simulate_no_ssl_module")
-@pytest.mark.flaky(retries=3, delay=1)
+@pytest.mark.flaky(retries=3, delay=0.1)
 class TestTCPNetworkClient:
     @pytest.fixture
     @staticmethod
-    def server(socket_pair: tuple[Socket, Socket]) -> Socket:
-        server = socket_pair[0]
+    def server(inet_socket_pair: tuple[Socket, Socket]) -> Socket:
+        server = inet_socket_pair[0]
         server.setsockopt(IPPROTO_TCP, TCP_NODELAY, 1)
         return server
 
     @pytest.fixture
     @staticmethod
     def client(
-        socket_pair: tuple[Socket, Socket],
+        inet_socket_pair: tuple[Socket, Socket],
         stream_protocol: AnyStreamProtocolType[str, str],
     ) -> Iterator[TCPNetworkClient[str, str]]:
-        with TCPNetworkClient(socket_pair[1], stream_protocol) as client:
-            client.socket.setsockopt(IPPROTO_TCP, TCP_NODELAY, 1)
+        with TCPNetworkClient(inet_socket_pair[1], stream_protocol) as client:
             yield client
 
     def test____close____idempotent(self, client: TCPNetworkClient[str, str]) -> None:
