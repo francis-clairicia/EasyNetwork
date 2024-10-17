@@ -24,7 +24,7 @@ import asyncio.trsock
 import errno as _errno
 import warnings
 from collections.abc import Callable, Iterable, Mapping
-from types import TracebackType
+from types import MappingProxyType, TracebackType
 from typing import TYPE_CHECKING, Any, final
 
 from ......exceptions import UnsupportedOperation
@@ -44,8 +44,8 @@ class AsyncioTransportStreamSocketAdapter(AsyncStreamTransport):
         "__backend",
         "__transport",
         "__protocol",
-        "__socket",
         "__closing",
+        "__extra_attributes",
     )
 
     def __init__(
@@ -63,7 +63,6 @@ class AsyncioTransportStreamSocketAdapter(AsyncStreamTransport):
         if over_ssl:
             raise NotImplementedError(f"{self.__class__.__name__} does not support SSL")
 
-        self.__socket: asyncio.trsock.TransportSocket = socket
         self.__backend: AsyncBackend = backend
         self.__transport: asyncio.Transport = transport
         self.__protocol: StreamReaderBufferedProtocol = protocol
@@ -75,6 +74,8 @@ class AsyncioTransportStreamSocketAdapter(AsyncStreamTransport):
 
         # Disable in-memory byte buffering.
         transport.set_write_buffer_limits(0)
+
+        self.__extra_attributes = MappingProxyType(socket_tools._get_socket_extra(socket, wrap_in_proxy=False))
 
     def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
         try:
@@ -132,7 +133,7 @@ class AsyncioTransportStreamSocketAdapter(AsyncStreamTransport):
 
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
-        return socket_tools._get_socket_extra(self.__socket, wrap_in_proxy=False)
+        return self.__extra_attributes
 
 
 class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):

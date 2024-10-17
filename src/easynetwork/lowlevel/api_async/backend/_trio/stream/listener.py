@@ -25,6 +25,7 @@ import logging
 import os
 import warnings
 from collections.abc import Callable, Coroutine, Mapping
+from types import MappingProxyType
 from typing import Any, NoReturn, final
 
 import trio
@@ -41,8 +42,8 @@ class TrioListenerSocketAdapter(AsyncListener[TrioStreamSocketAdapter]):
     __slots__ = (
         "__backend",
         "__listener",
-        "__trsock",
         "__serve_guard",
+        "__extra_attributes",
     )
 
     def __init__(self, backend: AsyncBackend, listener: trio.SocketListener) -> None:
@@ -50,8 +51,8 @@ class TrioListenerSocketAdapter(AsyncListener[TrioStreamSocketAdapter]):
 
         self.__backend: AsyncBackend = backend
         self.__listener: trio.SocketListener = listener
-        self.__trsock: socket_tools.SocketProxy = socket_tools.SocketProxy(listener.socket)
         self.__serve_guard: _utils.ResourceGuard = _utils.ResourceGuard(f"{self.__class__.__name__}.serve() awaited twice.")
+        self.__extra_attributes = MappingProxyType(socket_tools._get_socket_extra(listener.socket))
 
     def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
         try:
@@ -111,4 +112,4 @@ class TrioListenerSocketAdapter(AsyncListener[TrioStreamSocketAdapter]):
 
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
-        return socket_tools._get_socket_extra(self.__trsock, wrap_in_proxy=False)
+        return self.__extra_attributes

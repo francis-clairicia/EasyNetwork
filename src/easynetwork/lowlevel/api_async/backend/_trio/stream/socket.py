@@ -24,6 +24,7 @@ import itertools
 import warnings
 from collections import deque
 from collections.abc import Callable, Iterable, Mapping
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, final
 
 import trio
@@ -43,7 +44,7 @@ class TrioStreamSocketAdapter(AsyncStreamTransport):
     __slots__ = (
         "__backend",
         "__stream",
-        "__trsock",
+        "__extra_attributes",
     )
 
     def __init__(self, backend: AsyncBackend, stream: trio.SocketStream) -> None:
@@ -51,7 +52,7 @@ class TrioStreamSocketAdapter(AsyncStreamTransport):
 
         self.__backend: AsyncBackend = backend
         self.__stream: trio.SocketStream = stream
-        self.__trsock: socket_tools.SocketProxy = socket_tools.SocketProxy(stream.socket)
+        self.__extra_attributes = MappingProxyType(socket_tools._get_socket_extra(stream.socket))
 
     def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
         try:
@@ -109,4 +110,4 @@ class TrioStreamSocketAdapter(AsyncStreamTransport):
 
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
-        return socket_tools._get_socket_extra(self.__trsock, wrap_in_proxy=False)
+        return self.__extra_attributes

@@ -22,6 +22,7 @@ __all__ = ["TrioDatagramSocketAdapter"]
 import socket as _socket
 import warnings
 from collections.abc import Callable, Mapping
+from types import MappingProxyType
 from typing import Any, final
 
 import trio
@@ -36,7 +37,7 @@ class TrioDatagramSocketAdapter(AsyncDatagramTransport):
     __slots__ = (
         "__backend",
         "__socket",
-        "__trsock",
+        "__extra_attributes",
     )
 
     from .....constants import MAX_DATAGRAM_BUFSIZE
@@ -49,7 +50,7 @@ class TrioDatagramSocketAdapter(AsyncDatagramTransport):
 
         self.__backend: AsyncBackend = backend
         self.__socket: trio.socket.SocketType = sock
-        self.__trsock: socket_tools.SocketProxy = socket_tools.SocketProxy(sock)
+        self.__extra_attributes = MappingProxyType(socket_tools._get_socket_extra(sock))
 
     def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
         try:
@@ -78,4 +79,4 @@ class TrioDatagramSocketAdapter(AsyncDatagramTransport):
 
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
-        return socket_tools._get_socket_extra(self.__trsock, wrap_in_proxy=False)
+        return self.__extra_attributes
