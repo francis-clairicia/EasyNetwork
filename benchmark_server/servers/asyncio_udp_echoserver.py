@@ -27,20 +27,23 @@ async def echo_server(address: tuple[str, int]) -> NoReturn:
         stack.enter_context(sock)
         task_group = await stack.enter_async_context(asyncio.TaskGroup())
 
+        lock = asyncio.Lock()
         while True:
             datagram, addr = await loop.sock_recvfrom(sock, 65536)
-            task_group.create_task(_echo_datagram_client(loop, sock, datagram, addr))
+            task_group.create_task(_echo_datagram_client(loop, lock, sock, datagram, addr))
 
     raise AssertionError("unreachable")
 
 
 async def _echo_datagram_client(
     loop: asyncio.AbstractEventLoop,
+    lock: asyncio.Lock,
     server: socket.socket,
     datagram: bytes,
-    addr: tuple[Any, ...],
+    addr: Any,
 ) -> None:
-    await loop.sock_sendto(server, datagram, addr)
+    async with lock:
+        await loop.sock_sendto(server, datagram, addr)
 
 
 async def echo_server_stream(address: tuple[str, int]) -> NoReturn:
@@ -60,7 +63,7 @@ async def echo_server_stream(address: tuple[str, int]) -> NoReturn:
 async def _echo_datagram_client_stream(
     server: asyncio_dgram.DatagramServer,
     datagram: bytes,
-    addr: socket._Address,
+    addr: Any,
 ) -> None:
     await server.send(datagram, addr)
 
@@ -137,7 +140,10 @@ def main() -> None:
         if args.streams:
             runner.run(echo_server_stream(("0.0.0.0", port)))
         elif args.proto:
-            _, protocol = runner.run(runner.get_loop().create_datagram_endpoint(EchoProtocol, local_addr=("0.0.0.0", port)))
+            transport, protocol = runner.run(
+                runner.get_loop().create_datagram_endpoint(EchoProtocol, local_addr=("0.0.0.0", port))
+            )
+            LOGGER.info(f"Server listening at {transport.get_extra_info('sockname')}")
             runner.run(protocol.connection_lost_event.wait())
         else:
             runner.run(echo_server(("0.0.0.0", port)))

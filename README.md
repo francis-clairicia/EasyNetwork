@@ -46,7 +46,7 @@ You choose the data format and the library takes care of the rest.
 
 This project is especially useful for simple **message** exchange between clients and servers.
 
-Works with TCP and UDP.
+Works with TCP, UDP, and Unix sockets.
 
 Interested ? Here is the documentation : https://easynetwork.readthedocs.io/
 

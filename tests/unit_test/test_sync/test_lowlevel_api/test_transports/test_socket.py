@@ -7,7 +7,7 @@ import math
 import os
 import ssl
 from collections.abc import Callable, Iterable, Iterator
-from socket import SHUT_RDWR, SHUT_WR
+from socket import AF_INET, SHUT_RDWR, SHUT_WR
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.exceptions import TypedAttributeLookupError, UnsupportedOperation
@@ -23,7 +23,7 @@ from easynetwork.lowlevel.socket import SocketAttribute, SocketProxy, TLSAttribu
 
 import pytest
 
-from ....base import MixinTestSocketSendMSG
+from ....base import BaseTestSocketTransport, MixinTestSocketSendMSG
 
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
@@ -40,7 +40,7 @@ def _retry_side_effect(self: Any, callback: Callable[[], Any], timeout: float) -
             pass
 
 
-class TestSocketStreamTransport(MixinTestSocketSendMSG):
+class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG):
     @pytest.fixture(autouse=True)
     @staticmethod
     def mock_transport_retry(mocker: MockerFixture) -> MagicMock:
@@ -61,52 +61,72 @@ class TestSocketStreamTransport(MixinTestSocketSendMSG):
         return getattr(request, "param", 12345)
 
     @pytest.fixture
-    @staticmethod
-    def mock_tcp_socket(mock_tcp_socket: MagicMock, socket_fileno: int, mocker: MockerFixture) -> MagicMock:
-        mock_tcp_socket.fileno.return_value = socket_fileno
-        mock_tcp_socket.getsockname.return_value = ("local_address", 11111)
-        mock_tcp_socket.getpeername.return_value = ("remote_address", 12345)
+    @classmethod
+    def mock_stream_socket(
+        cls,
+        socket_family_name: str,
+        socket_fileno: int,
+        local_address: tuple[str, int] | bytes,
+        remote_address: tuple[str, int] | bytes,
+        mock_tcp_socket_factory: Callable[[int, int], MagicMock],
+        mock_unix_stream_socket_factory: Callable[[int], MagicMock],
+        mocker: MockerFixture,
+    ) -> MagicMock:
+        mock_stream_socket: MagicMock
+
+        match socket_family_name:
+            case "AF_INET":
+                mock_stream_socket = mock_tcp_socket_factory(AF_INET, socket_fileno)
+            case "AF_UNIX":
+                mock_stream_socket = mock_unix_stream_socket_factory(socket_fileno)
+            case _:
+                pytest.fail(f"Invalid param: {socket_family_name!r}")
+
+        cls.set_local_address_to_socket_mock(mock_stream_socket, mock_stream_socket.family, local_address)
+        cls.set_remote_address_to_socket_mock(mock_stream_socket, mock_stream_socket.family, remote_address)
 
         # Always create a new mock instance because sendmsg() is not available on all platforms
         # therefore the mocker's autospec will consider sendmsg() unknown on these ones.
-        mock_tcp_socket.sendmsg = mocker.MagicMock(
-            spec=lambda *args: None,
-            side_effect=lambda buffers, *args: sum(map(len, map(lambda v: memoryview(v), buffers))),
-        )
-        return mock_tcp_socket
+        if not hasattr(mock_stream_socket, "sendmsg"):
+            mock_stream_socket.sendmsg = mocker.MagicMock(spec=lambda *args: None)
+        mock_stream_socket.sendmsg.side_effect = lambda buffers, *args: sum(map(len, map(lambda v: memoryview(v), buffers)))
+        return mock_stream_socket
 
     @pytest.fixture
     @staticmethod
-    def transport(mock_tcp_socket: MagicMock) -> Iterator[SocketStreamTransport]:
-        transport = SocketStreamTransport(mock_tcp_socket, math.inf)
-        mock_tcp_socket.reset_mock()
+    def transport(mock_stream_socket: MagicMock) -> Iterator[SocketStreamTransport]:
+        transport = SocketStreamTransport(mock_stream_socket, math.inf)
+        mock_stream_socket.reset_mock()
         with transport:
             yield transport
 
     def test____dunder_init____default(
         self,
         request: pytest.FixtureRequest,
-        mock_tcp_socket: MagicMock,
+        mock_stream_socket: MagicMock,
+        local_address: tuple[str, int] | bytes,
+        remote_address: tuple[str, int] | bytes,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
         mock_selector_factory = mocker.stub()
 
         # Act
-        transport = SocketStreamTransport(mock_tcp_socket, math.inf, selector_factory=mock_selector_factory)
+        transport = SocketStreamTransport(mock_stream_socket, math.inf, selector_factory=mock_selector_factory)
         request.addfinalizer(transport.close)
 
         # Assert
         assert transport._retry_interval is math.inf
         assert transport._selector_factory is mock_selector_factory
         assert isinstance(transport.extra(SocketAttribute.socket), SocketProxy)
-        assert transport.extra(SocketAttribute.family) == mock_tcp_socket.family
-        assert transport.extra(SocketAttribute.sockname) == ("local_address", 11111)
-        assert transport.extra(SocketAttribute.peername) == ("remote_address", 12345)
-        mock_tcp_socket.getsockname.assert_called_once_with()
-        mock_tcp_socket.getpeername.assert_called()
-        mock_tcp_socket.setblocking.assert_called_once_with(False)
-        mock_tcp_socket.settimeout.assert_not_called()
+        assert transport.extra(SocketAttribute.family) == mock_stream_socket.family
+        assert transport.extra(SocketAttribute.sockname) == local_address
+        assert transport.extra(SocketAttribute.peername) == remote_address
+
+        mock_stream_socket.getsockname.assert_called_once_with()
+        mock_stream_socket.getpeername.assert_called()
+        mock_stream_socket.setblocking.assert_called_once_with(False)
+        mock_stream_socket.settimeout.assert_not_called()
 
     def test____dunder_init____forbid_ssl_sockets(
         self,
@@ -130,16 +150,16 @@ class TestSocketStreamTransport(MixinTestSocketSendMSG):
 
     def test____dunder_del____ResourceWarning(
         self,
-        mock_tcp_socket: MagicMock,
+        mock_stream_socket: MagicMock,
     ) -> None:
         # Arrange
-        transport = SocketStreamTransport(mock_tcp_socket, math.inf)
+        transport = SocketStreamTransport(mock_stream_socket, math.inf)
 
         # Act & Assert
         with pytest.warns(ResourceWarning, match=r"^unclosed transport .+$"):
             del transport
 
-        mock_tcp_socket.close.assert_called()
+        mock_stream_socket.close.assert_called()
 
     @pytest.mark.parametrize(
         ["socket_fileno", "expected_state"],
@@ -169,34 +189,34 @@ class TestSocketStreamTransport(MixinTestSocketSendMSG):
         self,
         error: type[OSError] | None,
         transport: SocketStreamTransport,
-        mock_tcp_socket: MagicMock,
+        mock_stream_socket: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
         if error is not None:
-            mock_tcp_socket.shutdown.side_effect = error
+            mock_stream_socket.shutdown.side_effect = error
 
         # Act
         transport.close()
 
         # Assert
-        assert mock_tcp_socket.mock_calls == [mocker.call.shutdown(SHUT_RDWR), mocker.call.close()]
+        assert mock_stream_socket.mock_calls == [mocker.call.shutdown(SHUT_RDWR), mocker.call.close()]
 
     def test____recv_noblock____default(
         self,
         transport: SocketStreamTransport,
-        mock_tcp_socket: MagicMock,
+        mock_stream_socket: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_tcp_socket.recv.return_value = mocker.sentinel.bytes
+        mock_stream_socket.recv.return_value = mocker.sentinel.bytes
 
         # Act
         result = transport.recv_noblock(mocker.sentinel.bufsize)
 
         # Assert
-        mock_tcp_socket.recv.assert_called_once_with(mocker.sentinel.bufsize)
-        mock_tcp_socket.fileno.assert_not_called()
+        mock_stream_socket.recv.assert_called_once_with(mocker.sentinel.bufsize)
+        mock_stream_socket.fileno.assert_not_called()
         assert result is mocker.sentinel.bytes
 
     @pytest.mark.parametrize("error", [BlockingIOError, InterruptedError])
@@ -204,36 +224,36 @@ class TestSocketStreamTransport(MixinTestSocketSendMSG):
         self,
         error: type[OSError],
         transport: SocketStreamTransport,
-        mock_tcp_socket: MagicMock,
+        mock_stream_socket: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_tcp_socket.recv.side_effect = error
+        mock_stream_socket.recv.side_effect = error
 
         # Act
         with pytest.raises(WouldBlockOnRead) as exc_info:
             transport.recv_noblock(mocker.sentinel.bufsize)
 
         # Assert
-        mock_tcp_socket.recv.assert_called_once_with(mocker.sentinel.bufsize)
-        mock_tcp_socket.fileno.assert_called_once()
-        assert exc_info.value.fileno is mock_tcp_socket.fileno.return_value
+        mock_stream_socket.recv.assert_called_once_with(mocker.sentinel.bufsize)
+        mock_stream_socket.fileno.assert_called_once()
+        assert exc_info.value.fileno is mock_stream_socket.fileno.return_value
 
     def test____recv_noblock_into____default(
         self,
         transport: SocketStreamTransport,
-        mock_tcp_socket: MagicMock,
+        mock_stream_socket: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_tcp_socket.recv_into.return_value = mocker.sentinel.nb_bytes_written
+        mock_stream_socket.recv_into.return_value = mocker.sentinel.nb_bytes_written
 
         # Act
         result = transport.recv_noblock_into(mocker.sentinel.buffer)
 
         # Assert
-        mock_tcp_socket.recv_into.assert_called_once_with(mocker.sentinel.buffer)
-        mock_tcp_socket.fileno.assert_not_called()
+        mock_stream_socket.recv_into.assert_called_once_with(mocker.sentinel.buffer)
+        mock_stream_socket.fileno.assert_not_called()
         assert result is mocker.sentinel.nb_bytes_written
 
     @pytest.mark.parametrize("error", [BlockingIOError, InterruptedError])
@@ -241,36 +261,36 @@ class TestSocketStreamTransport(MixinTestSocketSendMSG):
         self,
         error: type[OSError],
         transport: SocketStreamTransport,
-        mock_tcp_socket: MagicMock,
+        mock_stream_socket: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_tcp_socket.recv_into.side_effect = error
+        mock_stream_socket.recv_into.side_effect = error
 
         # Act
         with pytest.raises(WouldBlockOnRead) as exc_info:
             transport.recv_noblock_into(mocker.sentinel.buffer)
 
         # Assert
-        mock_tcp_socket.recv_into.assert_called_once_with(mocker.sentinel.buffer)
-        mock_tcp_socket.fileno.assert_called_once()
-        assert exc_info.value.fileno is mock_tcp_socket.fileno.return_value
+        mock_stream_socket.recv_into.assert_called_once_with(mocker.sentinel.buffer)
+        mock_stream_socket.fileno.assert_called_once()
+        assert exc_info.value.fileno is mock_stream_socket.fileno.return_value
 
     def test____send_noblock____default(
         self,
         transport: SocketStreamTransport,
-        mock_tcp_socket: MagicMock,
+        mock_stream_socket: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_tcp_socket.send.return_value = mocker.sentinel.nb_bytes_sent
+        mock_stream_socket.send.return_value = mocker.sentinel.nb_bytes_sent
 
         # Act
         result = transport.send_noblock(mocker.sentinel.data)
 
         # Assert
-        mock_tcp_socket.send.assert_called_once_with(mocker.sentinel.data)
-        mock_tcp_socket.fileno.assert_not_called()
+        mock_stream_socket.send.assert_called_once_with(mocker.sentinel.data)
+        mock_stream_socket.fileno.assert_not_called()
         assert result is mocker.sentinel.nb_bytes_sent
 
     @pytest.mark.parametrize("error", [BlockingIOError, InterruptedError])
@@ -278,25 +298,25 @@ class TestSocketStreamTransport(MixinTestSocketSendMSG):
         self,
         error: type[OSError],
         transport: SocketStreamTransport,
-        mock_tcp_socket: MagicMock,
+        mock_stream_socket: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_tcp_socket.send.side_effect = error
+        mock_stream_socket.send.side_effect = error
 
         # Act
         with pytest.raises(WouldBlockOnWrite) as exc_info:
             transport.send_noblock(mocker.sentinel.data)
 
         # Assert
-        mock_tcp_socket.send.assert_called_once_with(mocker.sentinel.data)
-        mock_tcp_socket.fileno.assert_called_once()
-        assert exc_info.value.fileno is mock_tcp_socket.fileno.return_value
+        mock_stream_socket.send.assert_called_once_with(mocker.sentinel.data)
+        mock_stream_socket.fileno.assert_called_once()
+        assert exc_info.value.fileno is mock_stream_socket.fileno.return_value
 
     def test____send_all_from_iterable____use_socket_sendmsg_when_available(
         self,
         transport: SocketStreamTransport,
-        mock_tcp_socket: MagicMock,
+        mock_stream_socket: MagicMock,
         mock_transport_retry: MagicMock,
         mock_transport_send_all: MagicMock,
         mocker: MockerFixture,
@@ -309,7 +329,7 @@ class TestSocketStreamTransport(MixinTestSocketSendMSG):
             chunks.append(list(map(bytes, buffers)))
             return sum(map(len, map(lambda v: memoryview(v), buffers)))
 
-        mock_tcp_socket.sendmsg.side_effect = sendmsg_side_effect
+        mock_stream_socket.sendmsg.side_effect = sendmsg_side_effect
 
         # Act
         transport.send_all_from_iterable(iter([b"data", b"to", b"send"]), 123456)
@@ -317,14 +337,14 @@ class TestSocketStreamTransport(MixinTestSocketSendMSG):
         # Assert
         mock_transport_send_all.assert_not_called()
         mock_transport_retry.assert_called_once_with(transport, mocker.ANY, 123456)
-        mock_tcp_socket.sendmsg.assert_called_once()
+        mock_stream_socket.sendmsg.assert_called_once()
         assert chunks == [[b"data", b"to", b"send"]]
 
     @pytest.mark.parametrize("SC_IOV_MAX", [2], ids=lambda p: f"SC_IOV_MAX=={p}", indirect=True)
     def test____send_all_from_iterable____nb_buffers_greather_than_SC_IOV_MAX(
         self,
         transport: SocketStreamTransport,
-        mock_tcp_socket: MagicMock,
+        mock_stream_socket: MagicMock,
     ) -> None:
         # Arrange
         chunks: list[list[bytes]] = []
@@ -334,13 +354,13 @@ class TestSocketStreamTransport(MixinTestSocketSendMSG):
             chunks.append(list(map(bytes, buffers)))
             return sum(map(len, map(lambda v: memoryview(v), buffers)))
 
-        mock_tcp_socket.sendmsg.side_effect = sendmsg_side_effect
+        mock_stream_socket.sendmsg.side_effect = sendmsg_side_effect
 
         # Act
         transport.send_all_from_iterable(iter([b"a", b"b", b"c", b"d", b"e"]), 123456)
 
         # Assert
-        assert mock_tcp_socket.sendmsg.call_count == 3
+        assert mock_stream_socket.sendmsg.call_count == 3
         assert chunks == [
             [b"a", b"b"],
             [b"c", b"d"],
@@ -350,7 +370,7 @@ class TestSocketStreamTransport(MixinTestSocketSendMSG):
     def test____send_all_from_iterable____adjust_leftover_buffer(
         self,
         transport: SocketStreamTransport,
-        mock_tcp_socket: MagicMock,
+        mock_stream_socket: MagicMock,
     ) -> None:
         # Arrange
         chunks: list[list[bytes]] = []
@@ -360,13 +380,13 @@ class TestSocketStreamTransport(MixinTestSocketSendMSG):
             chunks.append(list(map(bytes, buffers)))
             return min(sum(map(len, map(lambda v: memoryview(v), buffers))), 3)
 
-        mock_tcp_socket.sendmsg.side_effect = sendmsg_side_effect
+        mock_stream_socket.sendmsg.side_effect = sendmsg_side_effect
 
         # Act
         transport.send_all_from_iterable(iter([b"abcd", b"efg", b"hijkl", b"mnop"]), 123456)
 
         # Assert
-        assert mock_tcp_socket.sendmsg.call_count == 6
+        assert mock_stream_socket.sendmsg.call_count == 6
         assert chunks == [
             [b"abcd", b"efg", b"hijkl", b"mnop"],
             [b"d", b"efg", b"hijkl", b"mnop"],
@@ -381,7 +401,7 @@ class TestSocketStreamTransport(MixinTestSocketSendMSG):
         self,
         error: type[OSError],
         transport: SocketStreamTransport,
-        mock_tcp_socket: MagicMock,
+        mock_stream_socket: MagicMock,
         mock_transport_retry: MagicMock,
         mock_transport_send_all: MagicMock,
         mocker: MockerFixture,
@@ -397,7 +417,7 @@ class TestSocketStreamTransport(MixinTestSocketSendMSG):
             chunks.append(list(map(bytes, buffers)))
             return sum(map(len, map(lambda v: memoryview(v), buffers)))
 
-        mock_tcp_socket.sendmsg.side_effect = sendmsg_side_effect
+        mock_stream_socket.sendmsg.side_effect = sendmsg_side_effect
 
         # Act
         transport.send_all_from_iterable(iter([b"data"]), 123456)
@@ -405,19 +425,19 @@ class TestSocketStreamTransport(MixinTestSocketSendMSG):
         # Assert
         mock_transport_send_all.assert_not_called()
         mock_transport_retry.assert_called_once_with(transport, mocker.ANY, 123456)
-        assert mock_tcp_socket.sendmsg.call_count == 2
+        assert mock_stream_socket.sendmsg.call_count == 2
         assert chunks == [[b"data"]]
 
     def test____send_all_from_iterable____fallback_to_send_all____sendmsg_unavailable(
         self,
         transport: SocketStreamTransport,
-        mock_tcp_socket: MagicMock,
+        mock_stream_socket: MagicMock,
         mock_transport_retry: MagicMock,
         mock_transport_send_all: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        del mock_tcp_socket.sendmsg
+        del mock_stream_socket.sendmsg
 
         # Act
         transport.send_all_from_iterable(iter([b"data", b"to", b"send"]), 123456)
@@ -432,7 +452,7 @@ class TestSocketStreamTransport(MixinTestSocketSendMSG):
     def test____send_all_from_iterable____fallback_to_send_all____sendmsg_available_but_no_defined_limit(
         self,
         transport: SocketStreamTransport,
-        mock_tcp_socket: MagicMock,
+        mock_stream_socket: MagicMock,
         mock_transport_retry: MagicMock,
         mock_transport_send_all: MagicMock,
         mocker: MockerFixture,
@@ -444,7 +464,7 @@ class TestSocketStreamTransport(MixinTestSocketSendMSG):
 
         # Assert
         mock_transport_retry.assert_not_called()
-        mock_tcp_socket.sendmsg.assert_not_called()
+        mock_stream_socket.sendmsg.assert_not_called()
         assert mock_transport_send_all.call_args_list == [
             mocker.call(b"".join([b"data", b"to", b"send"]), mocker.ANY),
         ]
@@ -458,25 +478,25 @@ class TestSocketStreamTransport(MixinTestSocketSendMSG):
         self,
         os_error: int | None,
         transport: SocketStreamTransport,
-        mock_tcp_socket: MagicMock,
+        mock_stream_socket: MagicMock,
     ) -> None:
         # Arrange
         if os_error is not None:
-            mock_tcp_socket.shutdown.side_effect = OSError(os_error, os.strerror(os_error))
+            mock_stream_socket.shutdown.side_effect = OSError(os_error, os.strerror(os_error))
 
         # Act
         transport.send_eof()
 
         # Assert
-        mock_tcp_socket.shutdown.assert_called_once_with(SHUT_WR)
+        mock_stream_socket.shutdown.assert_called_once_with(SHUT_WR)
 
     def test____send_eof____os_error(
         self,
         transport: SocketStreamTransport,
-        mock_tcp_socket: MagicMock,
+        mock_stream_socket: MagicMock,
     ) -> None:
         # Arrange
-        mock_tcp_socket.shutdown.side_effect = OSError
+        mock_stream_socket.shutdown.side_effect = OSError
 
         # Act & Assert
         with pytest.raises(OSError):
@@ -485,17 +505,17 @@ class TestSocketStreamTransport(MixinTestSocketSendMSG):
     def test____send_eof____transport_closed(
         self,
         transport: SocketStreamTransport,
-        mock_tcp_socket: MagicMock,
+        mock_stream_socket: MagicMock,
     ) -> None:
         # Arrange
         transport.close()
-        mock_tcp_socket.reset_mock()
+        mock_stream_socket.reset_mock()
 
         # Act
         transport.send_eof()
 
         # Assert
-        mock_tcp_socket.shutdown.assert_not_called()
+        mock_stream_socket.shutdown.assert_not_called()
 
     @pytest.mark.parametrize(
         ["extra_attribute", "called_socket_method", "os_error"],
@@ -510,18 +530,17 @@ class TestSocketStreamTransport(MixinTestSocketSendMSG):
         called_socket_method: str,
         os_error: int,
         transport: SocketStreamTransport,
-        mock_tcp_socket: MagicMock,
+        mock_stream_socket: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_get_address: MagicMock = getattr(mock_tcp_socket, called_socket_method)
+        mock_get_address: MagicMock = getattr(mock_stream_socket, called_socket_method)
         mock_get_address.side_effect = OSError(os_error, os.strerror(os_error))
 
         # Act & Assert
         with pytest.raises(TypedAttributeLookupError):
             transport.extra(extra_attribute)
         mock_get_address.assert_called_once()
-        assert transport.extra(extra_attribute, mocker.sentinel.default_value) is mocker.sentinel.default_value
 
     @pytest.mark.parametrize(
         ["extra_attribute", "called_socket_method"],
@@ -535,12 +554,12 @@ class TestSocketStreamTransport(MixinTestSocketSendMSG):
         extra_attribute: Any,
         called_socket_method: str,
         transport: SocketStreamTransport,
-        mock_tcp_socket: MagicMock,
+        mock_stream_socket: MagicMock,
     ) -> None:
         # Arrange
-        mock_get_address: MagicMock = getattr(mock_tcp_socket, called_socket_method)
+        mock_get_address: MagicMock = getattr(mock_stream_socket, called_socket_method)
         transport.close()
-        assert mock_tcp_socket.fileno.return_value == -1
+        assert mock_stream_socket.fileno.return_value == -1
 
         # Act & Assert
         with pytest.raises(TypedAttributeLookupError):
@@ -648,6 +667,7 @@ class TestSSLStreamTransport:
         assert transport.extra(SocketAttribute.family) == mock_tcp_socket.family
         assert transport.extra(SocketAttribute.sockname) == ("local_address", 11111)
         assert transport.extra(SocketAttribute.peername) == ("remote_address", 12345)
+
         assert transport.extra(TLSAttribute.sslcontext) is mock_ssl_context
         assert transport.extra(TLSAttribute.peercert) is mocker.sentinel.peercert
         assert transport.extra(TLSAttribute.cipher) is mocker.sentinel.cipher
@@ -1100,7 +1120,6 @@ class TestSSLStreamTransport:
         with pytest.raises(TypedAttributeLookupError):
             transport.extra(extra_attribute)
         mock_get_address.assert_called_once()
-        assert transport.extra(extra_attribute, mocker.sentinel.default_value) is mocker.sentinel.default_value
 
     @pytest.mark.parametrize(
         ["extra_attribute", "called_socket_method"],
@@ -1151,22 +1170,39 @@ class TestSSLStreamTransport:
         with pytest.raises(TypedAttributeLookupError):
             transport.extra(extra_attribute)
         mock_get_value.assert_called_once()
-        assert transport.extra(extra_attribute, mocker.sentinel.default_value) is mocker.sentinel.default_value
 
 
-class TestSocketDatagramTransport:
+class TestSocketDatagramTransport(BaseTestSocketTransport):
     @pytest.fixture
     @staticmethod
     def socket_fileno(request: pytest.FixtureRequest) -> int:
         return getattr(request, "param", 12345)
 
     @pytest.fixture
-    @staticmethod
-    def mock_udp_socket(mock_udp_socket: MagicMock, socket_fileno: int) -> MagicMock:
-        mock_udp_socket.fileno.return_value = socket_fileno
-        mock_udp_socket.getsockname.return_value = ("local_address", 11111)
-        mock_udp_socket.getpeername.return_value = ("remote_address", 12345)
-        return mock_udp_socket
+    @classmethod
+    def mock_datagram_socket(
+        cls,
+        socket_family_name: str,
+        socket_fileno: int,
+        local_address: tuple[str, int] | bytes,
+        remote_address: tuple[str, int] | bytes,
+        mock_udp_socket_factory: Callable[[int, int], MagicMock],
+        mock_unix_datagram_socket_factory: Callable[[int], MagicMock],
+    ) -> MagicMock:
+        mock_datagram_socket: MagicMock
+
+        match socket_family_name:
+            case "AF_INET":
+                mock_datagram_socket = mock_udp_socket_factory(AF_INET, socket_fileno)
+            case "AF_UNIX":
+                mock_datagram_socket = mock_unix_datagram_socket_factory(socket_fileno)
+            case _:
+                pytest.fail(f"Invalid param: {socket_family_name!r}")
+
+        cls.set_local_address_to_socket_mock(mock_datagram_socket, mock_datagram_socket.family, local_address)
+        cls.set_remote_address_to_socket_mock(mock_datagram_socket, mock_datagram_socket.family, remote_address)
+
+        return mock_datagram_socket
 
     @pytest.fixture
     @staticmethod
@@ -1175,61 +1211,42 @@ class TestSocketDatagramTransport:
 
     @pytest.fixture
     @staticmethod
-    def transport(mock_udp_socket: MagicMock, max_datagram_size: int | None) -> Iterator[SocketDatagramTransport]:
+    def transport(mock_datagram_socket: MagicMock, max_datagram_size: int | None) -> Iterator[SocketDatagramTransport]:
         if max_datagram_size is None:
-            transport = SocketDatagramTransport(mock_udp_socket, math.inf)
+            transport = SocketDatagramTransport(mock_datagram_socket, math.inf)
         else:
-            transport = SocketDatagramTransport(mock_udp_socket, math.inf, max_datagram_size=max_datagram_size)
-        mock_udp_socket.reset_mock()
+            transport = SocketDatagramTransport(mock_datagram_socket, math.inf, max_datagram_size=max_datagram_size)
+        mock_datagram_socket.reset_mock()
         with transport:
             yield transport
 
     def test____dunder_init____default(
         self,
         request: pytest.FixtureRequest,
-        mock_udp_socket: MagicMock,
+        local_address: tuple[str, int] | bytes,
+        remote_address: tuple[str, int] | bytes,
+        mock_datagram_socket: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
         mock_selector_factory = mocker.stub()
 
         # Act
-        transport = SocketDatagramTransport(mock_udp_socket, math.inf, selector_factory=mock_selector_factory)
+        transport = SocketDatagramTransport(mock_datagram_socket, math.inf, selector_factory=mock_selector_factory)
         request.addfinalizer(transport.close)
 
         # Assert
         assert transport._retry_interval is math.inf
         assert transport._selector_factory is mock_selector_factory
         assert isinstance(transport.extra(SocketAttribute.socket), SocketProxy)
-        assert transport.extra(SocketAttribute.family) == mock_udp_socket.family
-        assert transport.extra(SocketAttribute.sockname) == ("local_address", 11111)
-        assert transport.extra(SocketAttribute.peername) == ("remote_address", 12345)
-        mock_udp_socket.getsockname.assert_called_once_with()
-        mock_udp_socket.getpeername.assert_called()
-        mock_udp_socket.setblocking.assert_called_once_with(False)
-        mock_udp_socket.settimeout.assert_not_called()
+        assert transport.extra(SocketAttribute.family) == mock_datagram_socket.family
+        assert transport.extra(SocketAttribute.sockname) == local_address
+        assert transport.extra(SocketAttribute.peername) == remote_address
 
-    def test____dunder_init____getpeername_raises_OSError(
-        self,
-        request: pytest.FixtureRequest,
-        mock_udp_socket: MagicMock,
-    ) -> None:
-        # Arrange
-        mock_udp_socket.getpeername.side_effect = OSError(errno.ENOTCONN, os.strerror(errno.ENOTCONN))
-
-        # Act
-        transport = SocketDatagramTransport(mock_udp_socket, math.inf)
-        request.addfinalizer(transport.close)
-
-        # Assert
-        assert transport.extra(SocketAttribute.sockname) == ("local_address", 11111)
-        with pytest.raises(TypedAttributeLookupError):
-            transport.extra(SocketAttribute.peername)
-        assert transport.extra(SocketAttribute.peername, None) is None
-        mock_udp_socket.getsockname.assert_called_once_with()
-        mock_udp_socket.getpeername.assert_called()
-        mock_udp_socket.setblocking.assert_called_once_with(False)
-        mock_udp_socket.settimeout.assert_not_called()
+        mock_datagram_socket.getsockname.assert_called_once_with()
+        mock_datagram_socket.getpeername.assert_called()
+        mock_datagram_socket.setblocking.assert_called_once_with(False)
+        mock_datagram_socket.settimeout.assert_not_called()
 
     def test____dunder_init____forbid_ssl_sockets(
         self,
@@ -1255,26 +1272,26 @@ class TestSocketDatagramTransport:
     def test____dunder_init____invalid_datagram_size(
         self,
         max_datagram_size: int,
-        mock_udp_socket: MagicMock,
+        mock_datagram_socket: MagicMock,
     ) -> None:
         # Arrange
 
         # Act & Assert
         with pytest.raises(ValueError, match=r"^max_datagram_size must not be <= 0$"):
-            _ = SocketDatagramTransport(mock_udp_socket, math.inf, max_datagram_size=max_datagram_size)
+            _ = SocketDatagramTransport(mock_datagram_socket, math.inf, max_datagram_size=max_datagram_size)
 
     def test____dunder_del____ResourceWarning(
         self,
-        mock_udp_socket: MagicMock,
+        mock_datagram_socket: MagicMock,
     ) -> None:
         # Arrange
-        transport = SocketDatagramTransport(mock_udp_socket, math.inf)
+        transport = SocketDatagramTransport(mock_datagram_socket, math.inf)
 
         # Act & Assert
         with pytest.warns(ResourceWarning, match=r"^unclosed transport .+$"):
             del transport
 
-        mock_udp_socket.close.assert_called()
+        mock_datagram_socket.close.assert_called()
 
     @pytest.mark.parametrize(
         ["socket_fileno", "expected_state"],
@@ -1302,7 +1319,7 @@ class TestSocketDatagramTransport:
     def test____close____default(
         self,
         transport: SocketDatagramTransport,
-        mock_udp_socket: MagicMock,
+        mock_datagram_socket: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -1311,28 +1328,28 @@ class TestSocketDatagramTransport:
         transport.close()
 
         # Assert
-        assert mock_udp_socket.mock_calls == [mocker.call.close()]
+        assert mock_datagram_socket.mock_calls == [mocker.call.close()]
 
     @pytest.mark.parametrize("max_datagram_size", [None, 1024], ids=lambda p: f"max_datagram_size=={p}", indirect=True)
     def test____recv_noblock____default(
         self,
         max_datagram_size: int | None,
         transport: SocketDatagramTransport,
-        mock_udp_socket: MagicMock,
+        mock_datagram_socket: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_udp_socket.recv.return_value = mocker.sentinel.bytes
+        mock_datagram_socket.recv.return_value = mocker.sentinel.bytes
 
         # Act
         result = transport.recv_noblock()
 
         # Assert
         if max_datagram_size is None:
-            mock_udp_socket.recv.assert_called_once_with(MAX_DATAGRAM_BUFSIZE)
+            mock_datagram_socket.recv.assert_called_once_with(MAX_DATAGRAM_BUFSIZE)
         else:
-            mock_udp_socket.recv.assert_called_once_with(max_datagram_size)
-        mock_udp_socket.fileno.assert_not_called()
+            mock_datagram_socket.recv.assert_called_once_with(max_datagram_size)
+        mock_datagram_socket.fileno.assert_not_called()
         assert result is mocker.sentinel.bytes
 
     @pytest.mark.parametrize("error", [BlockingIOError, InterruptedError])
@@ -1342,10 +1359,10 @@ class TestSocketDatagramTransport:
         max_datagram_size: int | None,
         error: type[OSError],
         transport: SocketDatagramTransport,
-        mock_udp_socket: MagicMock,
+        mock_datagram_socket: MagicMock,
     ) -> None:
         # Arrange
-        mock_udp_socket.recv.side_effect = error
+        mock_datagram_socket.recv.side_effect = error
 
         # Act
         with pytest.raises(WouldBlockOnRead) as exc_info:
@@ -1353,27 +1370,27 @@ class TestSocketDatagramTransport:
 
         # Assert
         if max_datagram_size is None:
-            mock_udp_socket.recv.assert_called_once_with(MAX_DATAGRAM_BUFSIZE)
+            mock_datagram_socket.recv.assert_called_once_with(MAX_DATAGRAM_BUFSIZE)
         else:
-            mock_udp_socket.recv.assert_called_once_with(max_datagram_size)
-        mock_udp_socket.fileno.assert_called_once()
-        assert exc_info.value.fileno is mock_udp_socket.fileno.return_value
+            mock_datagram_socket.recv.assert_called_once_with(max_datagram_size)
+        mock_datagram_socket.fileno.assert_called_once()
+        assert exc_info.value.fileno is mock_datagram_socket.fileno.return_value
 
     def test____send_noblock____default(
         self,
         transport: SocketDatagramTransport,
-        mock_udp_socket: MagicMock,
+        mock_datagram_socket: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_udp_socket.send.return_value = mocker.sentinel.nb_bytes_sent
+        mock_datagram_socket.send.return_value = mocker.sentinel.nb_bytes_sent
 
         # Act
         result = transport.send_noblock(mocker.sentinel.data)
 
         # Assert
-        mock_udp_socket.send.assert_called_once_with(mocker.sentinel.data)
-        mock_udp_socket.fileno.assert_not_called()
+        mock_datagram_socket.send.assert_called_once_with(mocker.sentinel.data)
+        mock_datagram_socket.fileno.assert_not_called()
         assert result is None
 
     @pytest.mark.parametrize("error", [BlockingIOError, InterruptedError])
@@ -1381,20 +1398,20 @@ class TestSocketDatagramTransport:
         self,
         error: type[OSError],
         transport: SocketDatagramTransport,
-        mock_udp_socket: MagicMock,
+        mock_datagram_socket: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_udp_socket.send.side_effect = error
+        mock_datagram_socket.send.side_effect = error
 
         # Act
         with pytest.raises(WouldBlockOnWrite) as exc_info:
             transport.send_noblock(mocker.sentinel.data)
 
         # Assert
-        mock_udp_socket.send.assert_called_once_with(mocker.sentinel.data)
-        mock_udp_socket.fileno.assert_called_once()
-        assert exc_info.value.fileno is mock_udp_socket.fileno.return_value
+        mock_datagram_socket.send.assert_called_once_with(mocker.sentinel.data)
+        mock_datagram_socket.fileno.assert_called_once()
+        assert exc_info.value.fileno is mock_datagram_socket.fileno.return_value
 
     @pytest.mark.parametrize(
         ["extra_attribute", "called_socket_method", "os_error"],
@@ -1409,18 +1426,17 @@ class TestSocketDatagramTransport:
         called_socket_method: str,
         os_error: int,
         transport: SocketDatagramTransport,
-        mock_udp_socket: MagicMock,
+        mock_datagram_socket: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_get_address: MagicMock = getattr(mock_udp_socket, called_socket_method)
+        mock_get_address: MagicMock = getattr(mock_datagram_socket, called_socket_method)
         mock_get_address.side_effect = OSError(os_error, os.strerror(os_error))
 
         # Act & Assert
         with pytest.raises(TypedAttributeLookupError):
             transport.extra(extra_attribute)
         mock_get_address.assert_called_once()
-        assert transport.extra(extra_attribute, mocker.sentinel.default_value) is mocker.sentinel.default_value
 
     @pytest.mark.parametrize(
         ["extra_attribute", "called_socket_method"],
@@ -1434,12 +1450,12 @@ class TestSocketDatagramTransport:
         extra_attribute: Any,
         called_socket_method: str,
         transport: SocketDatagramTransport,
-        mock_udp_socket: MagicMock,
+        mock_datagram_socket: MagicMock,
     ) -> None:
         # Arrange
-        mock_get_address: MagicMock = getattr(mock_udp_socket, called_socket_method)
+        mock_get_address: MagicMock = getattr(mock_datagram_socket, called_socket_method)
         transport.close()
-        assert mock_udp_socket.fileno.return_value == -1
+        assert mock_datagram_socket.fileno.return_value == -1
 
         # Act & Assert
         with pytest.raises(TypedAttributeLookupError):

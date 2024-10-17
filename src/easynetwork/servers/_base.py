@@ -16,7 +16,11 @@
 
 from __future__ import annotations
 
-__all__ = ["BaseAsyncNetworkServerImpl", "BaseStandaloneNetworkServerImpl"]
+__all__ = [
+    "BaseAsyncNetworkServerImpl",
+    "BaseStandaloneNetworkServerImpl",
+    "ClientErrorHandler",
+]
 
 import concurrent.futures
 import contextlib
@@ -26,9 +30,9 @@ import threading as _threading
 from abc import abstractmethod
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from types import TracebackType
-from typing import Any, Generic, NoReturn, Protocol, Self, TypeVar
+from typing import Any, Generic, Literal, NoReturn, Protocol, TypeVar
 
-from ..exceptions import ServerAlreadyRunning, ServerClosedError
+from ..exceptions import ClientClosedError, ServerAlreadyRunning, ServerClosedError
 from ..lowlevel import _utils
 from ..lowlevel._lock import ForkSafeLock
 from ..lowlevel.api_async.backend.abc import AsyncBackend, CancelScope, Task, TaskGroup, ThreadsPortal
@@ -232,10 +236,6 @@ class _BindServer(contextlib.AbstractContextManager[None]):
 
 
 class BaseAsyncNetworkServerImpl(AbstractAsyncNetworkServer, Generic[_T_LowLevelServer, _T_Address]):
-    """
-    An asynchronous network server for TCP connections.
-    """
-
     __slots__ = (
         "__backend",
         "__servers",
@@ -257,23 +257,19 @@ class BaseAsyncNetworkServerImpl(AbstractAsyncNetworkServer, Generic[_T_LowLevel
         self,
         *,
         backend: AsyncBackend | BuiltinAsyncBackendLiteral | None,
-        servers_factory: Callable[[Self], Awaitable[Sequence[_T_LowLevelServer]]],
-        initialize_service: Callable[[Self, contextlib.AsyncExitStack], Awaitable[None]],
-        lowlevel_serve: Callable[[Self, _T_LowLevelServer, TaskGroup], Awaitable[NoReturn]],
+        servers_factory: Callable[[], Awaitable[Sequence[_T_LowLevelServer]]],
+        initialize_service: Callable[[contextlib.AsyncExitStack], Awaitable[None]],
+        lowlevel_serve: Callable[[_T_LowLevelServer, TaskGroup], Awaitable[NoReturn]],
         logger: logging.Logger,
     ) -> None:
-        """
-        Parameters:
-            backend: The :term:`asynchronous backend interface` to use.
-        """
         super().__init__()
 
         backend = ensure_backend(backend)
 
         self.__backend: AsyncBackend = backend
-        self.__servers_factory_cb: Callable[[Self], Awaitable[Sequence[_T_LowLevelServer]]] | None = servers_factory
-        self.__initialize_service_cb: Callable[[Self, contextlib.AsyncExitStack], Awaitable[None]] = initialize_service
-        self.__lowlevel_serve_cb: Callable[[Self, _T_LowLevelServer, TaskGroup], Awaitable[NoReturn]] = lowlevel_serve
+        self.__servers_factory_cb: Callable[[], Awaitable[Sequence[_T_LowLevelServer]]] | None = servers_factory
+        self.__initialize_service_cb: Callable[[contextlib.AsyncExitStack], Awaitable[None]] = initialize_service
+        self.__lowlevel_serve_cb: Callable[[_T_LowLevelServer, TaskGroup], Awaitable[NoReturn]] = lowlevel_serve
 
         self.__servers_factory_scope: CancelScope | None = None
         self.__server_run_scope: CancelScope | None = None
@@ -296,8 +292,15 @@ class BaseAsyncNetworkServerImpl(AbstractAsyncNetworkServer, Generic[_T_LowLevel
     def is_listening(self) -> bool:
         return bool(self.__servers) and all(not server.is_closing() for server in self.__servers)
 
-    @_utils.inherit_doc(AbstractAsyncNetworkServer)
     async def server_activate(self) -> None:
+        """
+        Opens all listeners.
+
+        This method is idempotent. Further calls to :meth:`is_listening` will return :data:`True`.
+
+        Raises:
+            ServerClosedError: The server is closed.
+        """
         async with self.__server_activation_lock:
             assert self.__servers_factory_scope is None  # nosec assert_used
             if (servers_factory := self.__servers_factory_cb) is None:
@@ -308,7 +311,7 @@ class BaseAsyncNetworkServerImpl(AbstractAsyncNetworkServer, Generic[_T_LowLevel
             try:
                 with self.__backend.open_cancel_scope() as self.__servers_factory_scope:
                     await self.__backend.coro_yield()
-                    listeners.extend(await servers_factory(self))  # type: ignore[arg-type]
+                    listeners.extend(await servers_factory())
                 if self.__servers_factory_scope.cancelled_caught():
                     raise ServerClosedError("Server has been closed")
             finally:
@@ -380,7 +383,7 @@ class BaseAsyncNetworkServerImpl(AbstractAsyncNetworkServer, Generic[_T_LowLevel
 
                 # Initialize service
                 initialize_service = self.__initialize_service_cb
-                await initialize_service(self, server_exit_stack)  # type: ignore[arg-type]
+                await initialize_service(server_exit_stack)
                 ############################
 
                 # Setup task group
@@ -412,7 +415,7 @@ class BaseAsyncNetworkServerImpl(AbstractAsyncNetworkServer, Generic[_T_LowLevel
         Returns all interfaces to which the server is bound.
 
         Returns:
-            A sequence of network socket address.
+            A sequence of socket address.
             If the server is not serving (:meth:`is_serving` returns :data:`False`), an empty sequence is returned.
         """
         raise NotImplementedError
@@ -427,7 +430,7 @@ class BaseAsyncNetworkServerImpl(AbstractAsyncNetworkServer, Generic[_T_LowLevel
     ) -> NoReturn:
         lowlevel_serve = self.__lowlevel_serve_cb
         with _BindServer(self.__attach_server, self.__detach_server):
-            await lowlevel_serve(self, server, task_group)  # type: ignore[arg-type]
+            await lowlevel_serve(server, task_group)
 
     def __attach_server(self) -> None:
         self.__active_tasks += 1
@@ -450,3 +453,83 @@ class BaseAsyncNetworkServerImpl(AbstractAsyncNetworkServer, Generic[_T_LowLevel
     @property
     def logger(self) -> logging.Logger:
         return self.__logger
+
+
+class ClientErrorHandler(Generic[_T_Address]):
+    __slots__ = (
+        "__logger",
+        "__client_address_cb",
+        "__suppress_errors",
+    )
+
+    def __init__(
+        self,
+        *,
+        logger: logging.Logger,
+        client_address_cb: Callable[[], _T_Address],
+        suppress_errors: type[Exception] | tuple[type[Exception], ...],
+    ) -> None:
+        self.__logger: logging.Logger = logger
+        self.__client_address_cb: Callable[[], _T_Address] = client_address_cb
+        self.__suppress_errors: type[Exception] | tuple[type[Exception], ...] = suppress_errors
+
+    def __enter__(self) -> None:
+        return
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+        /,
+    ) -> bool:
+        # Fast path.
+        if exc_val is None:
+            return False
+
+        del exc_type, exc_tb
+
+        try:
+            match exc_val:
+                case BaseExceptionGroup():
+                    connection_errors, exc_val = exc_val.split(ClientClosedError)
+                    if connection_errors is not None:
+                        self.__log_closed_client_errors(connection_errors)
+                    if exc_val is not None:
+                        exc_val = exc_val.split(self.__suppress_errors)[1]
+                    connection_errors = None
+                    match exc_val:
+                        case None:
+                            return True
+                        case Exception():
+                            self.__log_exception(exc_val)
+                            return True
+                        case _:  # pragma: no cover
+                            raise exc_val
+                case ClientClosedError():
+                    self.__log_closed_client_errors(ExceptionGroup("", [exc_val]))
+                    return True
+                case Exception():
+                    if not isinstance(exc_val, self.__suppress_errors):
+                        self.__log_exception(exc_val)
+                    return True
+                case _:
+                    return False
+        finally:
+            del exc_val
+
+    def __log_closed_client_errors(self, exc: ExceptionGroup[ClientClosedError]) -> None:
+        client_address = self.__compute_client_address()
+        self.__logger.warning("There have been attempts to do operation on closed client %s", client_address, exc_info=exc)
+
+    def __log_exception(self, exc: Exception) -> None:
+        client_address = self.__compute_client_address()
+        self.__logger.error("-" * 40)
+        self.__logger.error("Exception occurred during processing of request from %s", client_address, exc_info=exc)
+        self.__logger.error("-" * 40)
+
+    def __compute_client_address(self) -> _T_Address | Literal["<unknown>"]:
+        client_address: _T_Address | Literal["<unknown>"] = "<unknown>"
+        with contextlib.suppress(Exception):
+            client_address = self.__client_address_cb()
+        return client_address

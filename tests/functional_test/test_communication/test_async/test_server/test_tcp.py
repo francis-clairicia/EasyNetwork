@@ -45,7 +45,7 @@ class NoListenerErrorBackend(AsyncIOBackend):
         return []
 
 
-def client_address(client: AsyncStreamClient[Any]) -> SocketAddress:
+def fetch_client_address(client: AsyncStreamClient[Any]) -> SocketAddress:
     return client.extra(INETClientAttribute.remote_address)
 
 
@@ -56,7 +56,7 @@ class RandomError(Exception):
 LOGGER = logging.getLogger(__name__)
 
 
-class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
+class MyStreamRequestHandler(AsyncStreamRequestHandler[str, str]):
     connected_clients: WeakValueDictionary[tuple[Any, ...], AsyncStreamClient[str]]
     request_received: collections.defaultdict[tuple[Any, ...], list[str]]
     request_count: collections.Counter[tuple[Any, ...]]
@@ -90,8 +90,8 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
         pass
 
     async def on_connection(self, client: AsyncStreamClient[str]) -> None:
-        assert client_address(client) not in self.connected_clients
-        self.connected_clients[client_address(client)] = client
+        assert fetch_client_address(client) not in self.connected_clients
+        self.connected_clients[fetch_client_address(client)] = client
         if self.milk_handshake:
             await client.send_packet("milk")
         if self.close_all_clients_on_connection:
@@ -99,22 +99,22 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
             await client.aclose()
 
     async def on_disconnection(self, client: AsyncStreamClient[str]) -> None:
-        del self.connected_clients[client_address(client)]
-        del self.request_count[client_address(client)]
+        del self.connected_clients[fetch_client_address(client)]
+        del self.request_count[fetch_client_address(client)]
         if self.fail_on_disconnection:
             raise ConnectionError("Trying to use the client in a disconnected state")
 
     async def handle(self, client: AsyncStreamClient[str]) -> AsyncGenerator[None, str]:
         if (
             self.close_client_after_n_request >= 0
-            and self.request_count[client_address(client)] >= self.close_client_after_n_request
+            and self.request_count[fetch_client_address(client)] >= self.close_client_after_n_request
         ):
             await client.aclose()
         while True:
             async with self.handle_bad_requests(client):
                 request = yield
                 break
-        self.request_count[client_address(client)] += 1
+        self.request_count[fetch_client_address(client)] += 1
         match request:
             case "__error__":
                 raise RandomError("Sorry man!")
@@ -150,10 +150,10 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
                     async with self.handle_bad_requests(client):
                         request = yield
                         break
-                self.request_received[client_address(client)].append(request)
+                self.request_received[fetch_client_address(client)].append(request)
                 await client.send_packet(f"After wait: {request}")
             case _:
-                self.request_received[client_address(client)].append(request)
+                self.request_received[fetch_client_address(client)].append(request)
                 try:
                     await client.send_packet(request.upper())
                 except Exception as exc:
@@ -169,7 +169,7 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
             yield
         except StreamProtocolParseError as exc:
             remove_traceback_frames_in_place(exc, 1)
-            self.bad_request_received[client_address(client)].append(exc)
+            self.bad_request_received[fetch_client_address(client)].append(exc)
             await client.send_packet("wrong encoding man.")
 
 
@@ -329,33 +329,38 @@ class MyAsyncTCPServer(AsyncTCPNetworkServer[str, str]):
     __slots__ = ()
 
 
-@pytest.mark.flaky(retries=3, delay=1)
+@pytest.mark.flaky(retries=3, delay=0.1)
 class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     @pytest.fixture(params=["NO_SSL", "USE_SSL"])
     @staticmethod
-    def use_ssl(request: Any) -> bool:
+    def use_ssl(request: pytest.FixtureRequest) -> bool:
         match request.param:
             case "NO_SSL":
                 return False
             case "USE_SSL":
                 return True
             case _:
-                pytest.fail(f"Invalid parameter: {request.param}")
+                pytest.fail(f"Invalid use_ssl parameter: {request.param}")
 
     @pytest.fixture
     @staticmethod
-    def request_handler(request: Any) -> AsyncStreamRequestHandler[str, str]:
-        request_handler_cls: type[AsyncStreamRequestHandler[str, str]] = getattr(request, "param", MyAsyncTCPRequestHandler)
+    def request_handler(request: pytest.FixtureRequest) -> AsyncStreamRequestHandler[str, str]:
+        request_handler_cls: type[AsyncStreamRequestHandler[str, str]] = getattr(request, "param", MyStreamRequestHandler)
         return request_handler_cls()
 
     @pytest.fixture
     @staticmethod
-    def ssl_handshake_timeout(request: Any) -> float | None:
+    def ssl_handshake_timeout(request: pytest.FixtureRequest) -> float | None:
         return getattr(request, "param", None)
 
     @pytest.fixture
     @staticmethod
-    def ssl_standard_compatible(request: Any) -> bool | None:
+    def ssl_standard_compatible(request: pytest.FixtureRequest) -> bool | None:
+        return getattr(request, "param", None)
+
+    @pytest.fixture
+    @staticmethod
+    def log_client_connection(request: pytest.FixtureRequest) -> bool | None:
         return getattr(request, "param", None)
 
     @pytest.fixture
@@ -367,7 +372,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     @staticmethod
     async def server_not_activated(
         asyncio_backend: AsyncIOBackend,
-        request_handler: MyAsyncTCPRequestHandler,
+        request_handler: MyStreamRequestHandler,
         localhost_ip: str,
         stream_protocol: AnyStreamProtocolType[str, str],
         caplog: pytest.LogCaptureFixture,
@@ -396,13 +401,14 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     @staticmethod
     async def server(
         asyncio_backend: AsyncIOBackend,
-        request_handler: MyAsyncTCPRequestHandler,
+        request_handler: MyStreamRequestHandler,
         localhost_ip: str,
         stream_protocol: AnyStreamProtocolType[str, str],
         use_ssl: bool,
         server_ssl_context: ssl.SSLContext | None,
         ssl_handshake_timeout: float | None,
         ssl_standard_compatible: bool | None,
+        log_client_connection: bool | None,
         caplog: pytest.LogCaptureFixture,
         logger_crash_threshold_level: dict[str, int],
     ) -> AsyncIterator[MyAsyncTCPServer]:
@@ -423,6 +429,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
             ssl=server_ssl_context if use_ssl else None,
             ssl_handshake_timeout=ssl_handshake_timeout,
             ssl_standard_compatible=ssl_standard_compatible,
+            log_client_connection=log_client_connection,
             logger=LOGGER,
         ) as server:
             assert server.is_listening()
@@ -495,15 +502,12 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         await asyncio.sleep(0.1)
 
     @pytest.mark.parametrize("host", [None, ""], ids=repr)
-    @pytest.mark.parametrize("log_client_connection", [True, False], ids=lambda p: f"log_client_connection=={p}")
     async def test____dunder_init____bind_to_all_available_interfaces(
         self,
         host: str | None,
-        log_client_connection: bool,
-        request_handler: MyAsyncTCPRequestHandler,
+        request_handler: MyStreamRequestHandler,
         stream_protocol: AnyStreamProtocolType[str, str],
         asyncio_backend: AsyncIOBackend,
-        caplog: pytest.LogCaptureFixture,
     ) -> None:
         async with MyAsyncTCPServer(
             host,
@@ -511,10 +515,8 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
             stream_protocol,
             request_handler,
             asyncio_backend,
-            log_client_connection=log_client_connection,
             logger=LOGGER,
         ) as s:
-            caplog.set_level(logging.DEBUG, LOGGER.name)
             is_up_event = asyncio.Event()
             _ = asyncio.create_task(s.serve_forever(is_up_event=is_up_event))
             async with asyncio.timeout(1):
@@ -530,8 +532,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
 
                 assert await reader.readline() == b"milk\n"
 
-                client_host, client_port = writer.get_extra_info("sockname")[:2]
-
                 writer.close()
                 await writer.wait_closed()
                 await asyncio.sleep(0.1)
@@ -539,21 +539,11 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
             finally:
                 await s.shutdown()
 
-            expected_accept_message = f"Accepted new connection (address = ({client_host!r}, {client_port}))"
-            expected_disconnect_message = f"({client_host!r}, {client_port}) disconnected"
-            expected_log_level: int = logging.INFO if log_client_connection else logging.DEBUG
-
-            accept_record = next((record for record in caplog.records if record.message == expected_accept_message), None)
-            disconnect_record = next((record for record in caplog.records if record.message == expected_disconnect_message), None)
-
-            assert accept_record is not None and disconnect_record is not None
-            assert accept_record.levelno == expected_log_level and disconnect_record.levelno == expected_log_level
-
     @pytest.mark.parametrize("ssl_parameter", ["ssl_handshake_timeout", "ssl_shutdown_timeout", "ssl_standard_compatible"])
     async def test____dunder_init____useless_parameter_if_no_ssl_context(
         self,
         ssl_parameter: str,
-        request_handler: MyAsyncTCPRequestHandler,
+        request_handler: MyStreamRequestHandler,
         stream_protocol: AnyStreamProtocolType[str, str],
         asyncio_backend: AsyncIOBackend,
     ) -> None:
@@ -571,7 +561,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     async def test____dunder_init____negative_or_null_recv_size(
         self,
         max_recv_size: int,
-        request_handler: MyAsyncTCPRequestHandler,
+        request_handler: MyStreamRequestHandler,
         stream_protocol: AnyStreamProtocolType[str, str],
         asyncio_backend: AsyncIOBackend,
     ) -> None:
@@ -580,7 +570,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
 
     async def test____serve_forever____empty_listener_list(
         self,
-        request_handler: MyAsyncTCPRequestHandler,
+        request_handler: MyStreamRequestHandler,
         stream_protocol: AnyStreamProtocolType[str, str],
     ) -> None:
         s = MyAsyncTCPServer(None, 0, stream_protocol, request_handler, NoListenerErrorBackend())
@@ -596,18 +586,31 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     async def test____serve_forever____server_assignment(
         self,
         server: MyAsyncTCPServer,
-        request_handler: MyAsyncTCPRequestHandler,
+        request_handler: MyStreamRequestHandler,
     ) -> None:
         assert request_handler.server == server
         assert isinstance(request_handler.server, AsyncTCPNetworkServer)
 
+    @pytest.mark.parametrize(
+        "log_client_connection",
+        [True, False, None],
+        ids=lambda p: f"log_client_connection=={p}",
+        indirect=True,
+    )
     async def test____serve_forever____accept_client(
         self,
+        log_client_connection: bool | None,
         client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
-        request_handler: MyAsyncTCPRequestHandler,
+        request_handler: MyStreamRequestHandler,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
+        caplog.set_level(logging.DEBUG, LOGGER.name)
+        if log_client_connection is None:
+            # Should be True by default
+            log_client_connection = True
         reader, writer = await client_factory()
         client_address: tuple[Any, ...] = writer.get_extra_info("sockname")
+        client_host, client_port = client_address[:2]
 
         assert client_address in request_handler.connected_clients
 
@@ -619,6 +622,18 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         await self._wait_client_disconnected(writer)
         assert client_address not in request_handler.connected_clients
 
+        expected_accept_message = f"Accepted new connection (address = ({client_host!r}, {client_port}))"
+        expected_disconnect_message = f"({client_host!r}, {client_port}) disconnected"
+        expected_log_level: int = logging.INFO if log_client_connection else logging.DEBUG
+
+        accept_record = next((record for record in caplog.records if record.getMessage() == expected_accept_message), None)
+        disconnect_record = next(
+            (record for record in caplog.records if record.getMessage() == expected_disconnect_message), None
+        )
+
+        assert accept_record is not None and accept_record.levelno == expected_log_level
+        assert disconnect_record is not None and disconnect_record.levelno == expected_log_level
+
     # skip Windows for this test, the ECONNRESET will happen on socket.send() or socket.recv()
     @PlatformMarkers.skipif_platform_win32_because("socket.getpeername() works by some magic on Windows")
     @pytest.mark.parametrize("socket_family", ["AF_INET"], indirect=True)
@@ -626,7 +641,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         self,
         server_address: tuple[str, int],
         caplog: pytest.LogCaptureFixture,
-        logger_crash_maximum_nb_lines: dict[str, int],
     ) -> None:
         from socket import socket as SocketType
 
@@ -651,7 +665,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     async def test____serve_forever____client_extra_attributes(
         self,
         client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
-        request_handler: MyAsyncTCPRequestHandler,
+        request_handler: MyStreamRequestHandler,
         use_ssl: bool,
     ) -> None:
         all_writers: list[asyncio.StreamWriter] = [(await client_factory())[1] for _ in range(3)]
@@ -672,7 +686,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     async def test____serve_forever____disable_nagle_algorithm(
         self,
         client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
-        request_handler: MyAsyncTCPRequestHandler,
+        request_handler: MyStreamRequestHandler,
     ) -> None:
         for _ in range(3):
             _ = await client_factory()
@@ -701,7 +715,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     async def test____serve_forever____partial_request(
         self,
         client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
-        request_handler: MyAsyncTCPRequestHandler,
+        request_handler: MyStreamRequestHandler,
     ) -> None:
         reader, writer = await client_factory()
         client_address: tuple[Any, ...] = writer.get_extra_info("sockname")
@@ -717,7 +731,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     async def test____serve_forever____several_requests_at_same_time(
         self,
         client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
-        request_handler: MyAsyncTCPRequestHandler,
+        request_handler: MyStreamRequestHandler,
     ) -> None:
         reader, writer = await client_factory()
         client_address: tuple[Any, ...] = writer.get_extra_info("sockname")
@@ -731,7 +745,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     async def test____serve_forever____several_requests_at_same_time____close_between(
         self,
         client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
-        request_handler: MyAsyncTCPRequestHandler,
+        request_handler: MyStreamRequestHandler,
     ) -> None:
         reader, writer = await client_factory()
         client_address: tuple[Any, ...] = writer.get_extra_info("sockname")
@@ -746,7 +760,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     async def test____serve_forever____save_request_handler_context(
         self,
         client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
-        request_handler: MyAsyncTCPRequestHandler,
+        request_handler: MyStreamRequestHandler,
     ) -> None:
         reader, writer = await client_factory()
         client_address: tuple[Any, ...] = writer.get_extra_info("sockname")
@@ -759,7 +773,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     async def test____serve_forever____bad_request(
         self,
         client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
-        request_handler: MyAsyncTCPRequestHandler,
+        request_handler: MyStreamRequestHandler,
     ) -> None:
         reader, writer = await client_factory()
         client_address: tuple[Any, ...] = writer.get_extra_info("sockname")
@@ -776,7 +790,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     @pytest.mark.parametrize(
         "request_handler",
         [
-            pytest.param(MyAsyncTCPRequestHandler, id="during_handle"),
+            pytest.param(MyStreamRequestHandler, id="during_handle"),
             pytest.param(InitialHandshakeRequestHandler, id="during_on_connection_hook"),
         ],
         indirect=True,
@@ -879,7 +893,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         client_factory_no_handshake: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
         caplog: pytest.LogCaptureFixture,
         logger_crash_maximum_nb_lines: dict[str, int],
-        request_handler: MyAsyncTCPRequestHandler,
+        request_handler: MyStreamRequestHandler,
     ) -> None:
         request_handler.milk_handshake = False
         caplog.set_level(logging.ERROR, LOGGER.name)
@@ -895,7 +909,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
 
         assert len(caplog.records) == 1
         assert caplog.records[0].levelno == logging.ERROR
-        assert caplog.records[0].message == "RuntimeError: protocol.generate_chunks() crashed (caused by SystemError: CRASH)"
+        assert caplog.records[0].getMessage() == "RuntimeError: protocol.generate_chunks() crashed (caused by SystemError: CRASH)"
 
     async def test____serve_forever____os_error(
         self,
@@ -938,7 +952,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
 
         assert len(caplog.records) == 1
         assert caplog.records[0].levelno == logging.WARNING
-        assert caplog.records[0].message == f"There have been attempts to do operation on closed client ({host!r}, {port})"
+        assert caplog.records[0].getMessage() == f"There have been attempts to do operation on closed client ({host!r}, {port})"
 
     async def test____serve_forever____connection_error_in_request_handler(
         self,
@@ -957,7 +971,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     async def test____serve_forever____connection_error_in_disconnect_hook(
         self,
         client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
-        request_handler: MyAsyncTCPRequestHandler,
+        request_handler: MyStreamRequestHandler,
         caplog: pytest.LogCaptureFixture,
         logger_crash_maximum_nb_lines: dict[str, int],
     ) -> None:
@@ -971,7 +985,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         # ECONNRESET not logged
         assert len(caplog.records) == 1
         assert caplog.records[0].levelno == logging.WARNING
-        assert caplog.records[0].message == "ConnectionError raised in request_handler.on_disconnection()"
+        assert caplog.records[0].getMessage() == "ConnectionError raised in request_handler.on_disconnection()"
 
     @pytest.mark.parametrize("forcefully_closed", [False, True], ids=lambda p: f"forcefully_closed=={p}")
     async def test____serve_forever____explicitly_closed_by_request_handler(
@@ -1016,7 +1030,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     async def test____serve_forever____close_client_on_connection_hook(
         self,
         client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
-        request_handler: MyAsyncTCPRequestHandler,
+        request_handler: MyStreamRequestHandler,
     ) -> None:
         request_handler.close_all_clients_on_connection = True
         reader, _ = await client_factory()
@@ -1199,7 +1213,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     @pytest.mark.parametrize(
         "request_handler",
         [
-            pytest.param(MyAsyncTCPRequestHandler, id="during_handle"),
+            pytest.param(MyStreamRequestHandler, id="during_handle"),
             pytest.param(InitialHandshakeRequestHandler, id="during_on_connection_hook"),
         ],
         indirect=True,

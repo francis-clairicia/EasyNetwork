@@ -11,6 +11,7 @@ from easynetwork.protocol import AnyStreamProtocolType, BufferedStreamProtocol, 
 
 import pytest
 
+from ...fixtures.socket import AF_UNIX_or_skip
 from .serializer import BadSerializeStringSerializer, NotGoodStringSerializer, StringSerializer
 
 if TYPE_CHECKING:
@@ -41,27 +42,50 @@ def localhost_ip(socket_family: int) -> str:
 
 
 @pytest.fixture
-def socket_factory(socket_family: int) -> Iterator[Callable[[int], Socket]]:
+def inet_socket_factory(socket_family: int) -> Iterator[Callable[[int], Socket]]:
     if not HAS_IPV6 and socket_family == AF_INET6:
         pytest.skip("socket.has_ipv6 is False")
 
     socket_stack = ExitStack()
 
-    def socket_factory(type: int) -> Socket:
+    def inet_socket_factory(type: int) -> Socket:
         return socket_stack.enter_context(Socket(socket_family, type))
 
     with socket_stack:
-        yield socket_factory
+        yield inet_socket_factory
 
 
 @pytest.fixture
-def tcp_socket_factory(socket_factory: Callable[[int], Socket]) -> Callable[[], Socket]:
-    return partial(socket_factory, SOCK_STREAM)
+def tcp_socket_factory(inet_socket_factory: Callable[[int], Socket]) -> Callable[[], Socket]:
+    return partial(inet_socket_factory, SOCK_STREAM)
 
 
 @pytest.fixture
-def udp_socket_factory(socket_factory: Callable[[int], Socket]) -> Callable[[], Socket]:
-    return partial(socket_factory, SOCK_DGRAM)
+def udp_socket_factory(inet_socket_factory: Callable[[int], Socket]) -> Callable[[], Socket]:
+    return partial(inet_socket_factory, SOCK_DGRAM)
+
+
+@pytest.fixture
+def unix_socket_factory() -> Iterator[Callable[[int], Socket]]:
+    from ...fixtures.socket import AF_UNIX_or_skip
+
+    socket_stack = ExitStack()
+
+    def unix_socket_factory(type: int) -> Socket:
+        return socket_stack.enter_context(Socket(AF_UNIX_or_skip(), type))
+
+    with socket_stack:
+        yield unix_socket_factory
+
+
+@pytest.fixture
+def unix_stream_socket_factory(unix_socket_factory: Callable[[int], Socket]) -> Callable[[], Socket]:
+    return partial(unix_socket_factory, SOCK_STREAM)
+
+
+@pytest.fixture
+def unix_datagram_socket_factory(unix_socket_factory: Callable[[int], Socket]) -> Callable[[], Socket]:
+    return partial(unix_socket_factory, SOCK_DGRAM)
 
 
 @pytest.fixture(params=["data"])
@@ -97,7 +121,7 @@ def stream_protocol(request: pytest.FixtureRequest) -> AnyStreamProtocolType[str
 # Origin: https://gist.github.com/4325783, by Geert Jansen.  Public domain.
 # Cannot use socket.socketpair() vendored with Python on unix since it is required to use AF_UNIX family :)
 @pytest.fixture
-def socket_pair(localhost_ip: str, tcp_socket_factory: Callable[[], Socket]) -> Iterator[tuple[Socket, Socket]]:
+def inet_socket_pair(localhost_ip: str, tcp_socket_factory: Callable[[], Socket]) -> Iterator[tuple[Socket, Socket]]:
     # We create a connected TCP socket. Note the trick with
     # setblocking(False) that prevents us from having to create a thread.
     lsock = tcp_socket_factory()
@@ -122,6 +146,21 @@ def socket_pair(localhost_ip: str, tcp_socket_factory: Callable[[], Socket]) -> 
         lsock.close()
     with ssock:  # csock will be closed later by tcp_socket_factory() teardown
         yield ssock, csock
+
+
+@pytest.fixture
+def unix_socket_pair() -> Iterator[tuple[Socket, Socket]]:
+    from socket import socketpair
+
+    from easynetwork.lowlevel import _unix_utils
+
+    left_sock, right_sock = socketpair(AF_UNIX_or_skip())
+    with left_sock, right_sock:
+        if _unix_utils.platform_supports_automatic_socket_bind():
+            left_sock.bind("")
+            right_sock.bind("")
+
+        yield left_sock, right_sock
 
 
 @pytest.fixture(scope="session")

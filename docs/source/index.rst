@@ -12,6 +12,7 @@ Welcome to EasyNetwork's documentation!
    tutorials/index
    howto/index
    howto/advanced/index
+   alternatives/index
    api/index
    glossary
 

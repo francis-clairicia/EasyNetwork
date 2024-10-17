@@ -309,8 +309,7 @@ Concurrency And Multithreading
 
    .. group-tab:: Synchronous
 
-      All client methods are thread-safe (such as :class:`asyncio.Lock`).
-      Synchronization follows these rules:
+      All client methods are thread-safe. Synchronization follows these rules:
 
       * :meth:`~.UDPNetworkClient.send_packet` and :meth:`~.UDPNetworkClient.recv_packet` do not share the same
         :class:`threading.Lock` instance.
@@ -322,7 +321,8 @@ Concurrency And Multithreading
 
    .. group-tab:: Asynchronous
 
-      All client methods do not require external task synchronization. Synchronization follows these rules:
+      All client methods do not require external task synchronization (such as :class:`asyncio.Lock`).
+      Synchronization follows these rules:
 
       * :meth:`~.AsyncUDPNetworkClient.send_packet` and :meth:`~.AsyncUDPNetworkClient.recv_packet` do not share the same lock instance.
 

@@ -47,7 +47,7 @@ pub struct StreamClient {
 }
 
 impl StreamClient {
-    pub fn tcp<A: ToSocketAddrs>(addr: A) -> io::Result<Self> {
+    pub fn tcp(addr: impl ToSocketAddrs) -> io::Result<Self> {
         let socket = TcpStream::connect(addr)?;
 
         socket.set_nodelay(true)?;
@@ -55,7 +55,7 @@ impl StreamClient {
         Ok(Self { inner: Box::new(socket) })
     }
 
-    pub fn unix<P: AsRef<Path>>(path: P) -> io::Result<Self> {
+    pub fn unix(path: impl AsRef<Path>) -> io::Result<Self> {
         #[cfg(unix)]
         {
             let socket = UnixStream::connect(path)?;
@@ -86,10 +86,8 @@ impl StreamClient {
 
     pub fn read_owned(&mut self, max_size: usize) -> io::Result<Box<[u8]>> {
         let mut buffer: Vec<u8> = vec![0; max_size];
-        if !buffer.is_empty() {
-            let bufsize = self.read(&mut buffer)?;
-            buffer.truncate(bufsize);
-        }
+        let bufsize = self.read(&mut buffer)?;
+        buffer.truncate(bufsize);
         Ok(buffer.into_boxed_slice())
     }
 }
@@ -98,13 +96,13 @@ impl Deref for StreamClient {
     type Target = dyn Stream;
 
     fn deref(&self) -> &Self::Target {
-        self.inner.as_ref()
+        &*self.inner
     }
 }
 
 impl DerefMut for StreamClient {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.inner.as_mut()
+        &mut *self.inner
     }
 }
 

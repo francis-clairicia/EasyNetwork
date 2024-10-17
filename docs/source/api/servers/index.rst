@@ -34,6 +34,20 @@ UDP Implementation
    :members:
    :inherited-members:
 
+UNIX Stream Implementation
+--------------------------
+
+.. automodule:: easynetwork.servers.async_unix_stream
+   :members:
+   :inherited-members:
+
+UNIX Datagram Implementation
+----------------------------
+
+.. automodule:: easynetwork.servers.async_unix_datagram
+   :members:
+   :inherited-members:
+
 
 Synchronous Server Objects
 ==========================
@@ -49,6 +63,20 @@ UDP Implementation
 ------------------
 
 .. automodule:: easynetwork.servers.standalone_udp
+   :members:
+   :inherited-members:
+
+UNIX Stream Implementation
+--------------------------
+
+.. automodule:: easynetwork.servers.standalone_unix_stream
+   :members:
+   :inherited-members:
+
+UNIX Datagram Implementation
+----------------------------
+
+.. automodule:: easynetwork.servers.standalone_unix_datagram
    :members:
    :inherited-members:
 
@@ -84,6 +112,9 @@ Client Attributes
 .. autoclass:: INETClientAttribute
    :members:
 
+.. autoclass:: UNIXClientAttribute
+   :members:
+
 
 ------
 
@@ -100,8 +131,17 @@ Server implementation tools
 
 .. seealso::
 
-   :doc:`/howto/tcp_servers` and :doc:`/howto/udp_servers`
-      Describes what can be done with the servers.
-
    :doc:`/howto/advanced/standalone_servers`
       Explains the case of stand-alone servers.
+
+   :doc:`/howto/tcp_servers`
+      Describes what can be done with the servers.
+
+   :doc:`/howto/udp_servers`
+      Describes what can be done with the servers.
+
+   :doc:`/alternatives/unix_sockets/unix_stream_servers`
+      Describes what can be done with the servers.
+
+   :doc:`/alternatives/unix_sockets/unix_datagram_servers`
+      Describes what can be done with the servers.

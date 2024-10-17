@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import logging
-import pathlib
 import socket
 import sys
 from typing import Any, Final, NoReturn
@@ -13,23 +12,23 @@ import trio
 
 LOGGER: Final[logging.Logger] = logging.getLogger("trio server")
 
-ROOT_DIR: Final[pathlib.Path] = pathlib.Path(__file__).parent
-
 
 async def echo_server(address: tuple[str, int]) -> NoReturn:
     sock = trio.socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     await sock.bind(address)
-    LOGGER.info(f"Server listening at {address}")
+    LOGGER.info(f"Server listening at {sock.getsockname()}")
 
     with sock:
         async with trio.open_nursery() as nursery:
+            lock = trio.Lock()
             while True:
                 datagram, addr = await sock.recvfrom(65536)
-                nursery.start_soon(_echo_client, sock, datagram, addr)
+                nursery.start_soon(_echo_client, lock, sock, datagram, addr)
 
 
-async def _echo_client(sock: trio.socket.SocketType, datagram: bytes, addr: Any) -> None:
-    await sock.sendto(datagram, addr)
+async def _echo_client(lock: trio.Lock, server: trio.socket.SocketType, datagram: bytes, addr: Any) -> None:
+    async with lock:
+        await server.sendto(datagram, addr)
 
 
 def main() -> None:

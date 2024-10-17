@@ -21,24 +21,12 @@ __all__ = ["TrioDNSResolver"]
 
 import socket as _socket
 
-import trio
-
-from .... import _utils
 from .._common.dns_resolver import BaseAsyncDNSResolver
+from . import _trio_utils
 
 
 class TrioDNSResolver(BaseAsyncDNSResolver):
     __slots__ = ()
 
     async def connect_socket(self, socket: _socket.socket, address: tuple[str, int] | tuple[str, int, int, int]) -> None:
-        await trio.lowlevel.checkpoint_if_cancelled()
-        try:
-            socket.connect(address)
-        except BlockingIOError:
-            pass
-        else:
-            await trio.lowlevel.cancel_shielded_checkpoint()
-            return
-
-        await trio.lowlevel.wait_writable(socket)
-        _utils.check_real_socket_state(socket, error_msg=f"Could not connect to {address!r}: {{strerror}}")
+        await _trio_utils.connect_sock_to_resolved_address(socket, address)

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import socket
 import threading
 import time
 from collections.abc import AsyncGenerator, Iterator
@@ -11,9 +10,14 @@ from easynetwork.servers.abc import AbstractNetworkServer
 from easynetwork.servers.handlers import AsyncBaseClientInterface, AsyncDatagramRequestHandler, AsyncStreamRequestHandler
 from easynetwork.servers.standalone_tcp import StandaloneTCPNetworkServer
 from easynetwork.servers.standalone_udp import StandaloneUDPNetworkServer
+from easynetwork.servers.standalone_unix_datagram import StandaloneUnixDatagramServer
+from easynetwork.servers.standalone_unix_stream import StandaloneUnixStreamServer
 from easynetwork.servers.threads_helper import NetworkServerThread
 
 import pytest
+
+from .....pytest_plugins.unix_sockets import UnixSocketPathFactory
+from .....tools import PlatformMarkers
 
 
 class EchoRequestHandler(AsyncStreamRequestHandler[str, str], AsyncDatagramRequestHandler[str, str]):
@@ -22,7 +26,7 @@ class EchoRequestHandler(AsyncStreamRequestHandler[str, str], AsyncDatagramReque
         await client.send_packet(request)
 
 
-@pytest.mark.flaky(retries=3, delay=1)
+@pytest.mark.flaky(retries=3, delay=0.1)
 class BaseTestStandaloneNetworkServer:
     @pytest.fixture
     @staticmethod
@@ -116,13 +120,6 @@ class TestStandaloneTCPNetworkServer(BaseTestStandaloneNetworkServer):
     def server(stream_protocol: AnyStreamProtocolType[str, str]) -> StandaloneTCPNetworkServer[str, str]:
         return StandaloneTCPNetworkServer(None, 0, stream_protocol, EchoRequestHandler(), "asyncio")
 
-    @pytest.fixture
-    @staticmethod
-    def client(server: StandaloneTCPNetworkServer[str, str], start_server: None) -> Iterator[socket.socket]:
-        port = server.get_addresses()[0].port
-        with socket.create_connection(("localhost", port)) as client:
-            yield client
-
     def test____socket_property____server_is_not_running(self, server: StandaloneTCPNetworkServer[str, str]) -> None:
         with server:
             assert len(server.get_sockets()) == 0
@@ -149,3 +146,45 @@ class TestStandaloneUDPNetworkServer(BaseTestStandaloneNetworkServer):
     def test____socket_property____server_is_running(self, server: StandaloneUDPNetworkServer[str, str]) -> None:
         assert len(server.get_sockets()) > 0
         assert len(server.get_addresses()) > 0
+
+
+@PlatformMarkers.skipif_platform_win32
+class TestStandaloneUnixStreamServer(BaseTestStandaloneNetworkServer):
+    @pytest.fixture
+    @staticmethod
+    def server(
+        unix_socket_path_factory: UnixSocketPathFactory,
+        stream_protocol: AnyStreamProtocolType[str, str],
+    ) -> StandaloneUnixStreamServer[str, str]:
+        return StandaloneUnixStreamServer(unix_socket_path_factory(), stream_protocol, EchoRequestHandler(), "asyncio")
+
+    def test____socket_property____server_is_not_running(self, server: StandaloneUnixStreamServer[str, str]) -> None:
+        with server:
+            assert len(server.get_sockets()) == 0
+            assert len(server.get_addresses()) == 0
+
+    @pytest.mark.usefixtures("start_server")
+    def test____socket_property____server_is_running(self, server: StandaloneUnixStreamServer[str, str]) -> None:
+        assert len(server.get_sockets()) == 1
+        assert len(server.get_addresses()) == 1
+
+
+@PlatformMarkers.skipif_platform_win32
+class TestStandaloneUnixDatagramServer(BaseTestStandaloneNetworkServer):
+    @pytest.fixture
+    @staticmethod
+    def server(
+        unix_socket_path_factory: UnixSocketPathFactory,
+        datagram_protocol: DatagramProtocol[str, str],
+    ) -> StandaloneUnixDatagramServer[str, str]:
+        return StandaloneUnixDatagramServer(unix_socket_path_factory(), datagram_protocol, EchoRequestHandler(), "asyncio")
+
+    def test____socket_property____server_is_not_running(self, server: StandaloneUnixDatagramServer[str, str]) -> None:
+        with server:
+            assert len(server.get_sockets()) == 0
+            assert len(server.get_addresses()) == 0
+
+    @pytest.mark.usefixtures("start_server")
+    def test____socket_property____server_is_running(self, server: StandaloneUnixDatagramServer[str, str]) -> None:
+        assert len(server.get_sockets()) == 1
+        assert len(server.get_addresses()) == 1

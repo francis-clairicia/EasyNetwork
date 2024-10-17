@@ -236,6 +236,18 @@ a coroutine function:
    :emphasize-lines: 6
 
 
+Client Metadata
+---------------
+
+The client's metadata are available via :class:`.INETClientAttribute`:
+
+.. literalinclude:: ../_include/examples/howto/tcp_servers/request_handler_explanation.py
+   :pyobject: ClientExtraAttributesRequestHandler.handle
+   :dedent:
+   :linenos:
+   :emphasize-lines: 5
+
+
 Service Initialization
 ----------------------
 

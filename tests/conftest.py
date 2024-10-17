@@ -28,6 +28,7 @@ pytest_plugins = [
     f"{PYTEST_PLUGINS_PACKAGE}.auto_markers",
     f"{PYTEST_PLUGINS_PACKAGE}.extra_features",
     f"{PYTEST_PLUGINS_PACKAGE}.ssl_module",
+    f"{PYTEST_PLUGINS_PACKAGE}.unix_sockets",
     f"{PYTEST_PLUGINS_PACKAGE}.xdist_for_vscode",
 ]
 
@@ -40,5 +41,6 @@ if TYPE_CHECKING:
         auto_markers as auto_markers,
         extra_features as extra_features,
         ssl_module as ssl_module,
+        unix_sockets as unix_sockets,
         xdist_for_vscode as xdist_for_vscode,
     )

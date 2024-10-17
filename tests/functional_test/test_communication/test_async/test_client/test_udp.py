@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import functools
 from collections.abc import AsyncIterator, Awaitable, Callable
 from socket import AF_INET, socket as Socket
 
@@ -20,11 +21,11 @@ from .._utils import delay
 
 @pytest.fixture
 def udp_socket_factory(
-    request: pytest.FixtureRequest,
+    udp_socket_factory: Callable[[], Socket],
     localhost_ip: str,
 ) -> Callable[[], Socket]:
-    udp_socket_factory: Callable[[], Socket] = request.getfixturevalue("udp_socket_factory")
 
+    @functools.wraps(udp_socket_factory)
     def bound_udp_socket_factory() -> Socket:
         sock = udp_socket_factory()
         sock.settimeout(3)
@@ -40,6 +41,7 @@ async def datagram_endpoint_factory(
     localhost_ip: str,
 ) -> AsyncIterator[Callable[[], Awaitable[DatagramEndpoint]]]:
     async with contextlib.AsyncExitStack() as stack:
+        stack.enter_context(contextlib.suppress(OSError))
 
         async def factory() -> DatagramEndpoint:
             endpoint = await create_datagram_endpoint(
@@ -53,7 +55,7 @@ async def datagram_endpoint_factory(
 
 
 @pytest.mark.asyncio
-@pytest.mark.flaky(retries=3, delay=1)
+@pytest.mark.flaky(retries=3, delay=0.1)
 class TestAsyncUDPNetworkClient:
     @pytest_asyncio.fixture
     @staticmethod
@@ -259,7 +261,7 @@ class TestAsyncUDPNetworkClientConnection:
     def remote_address(server: asyncio.DatagramTransport) -> tuple[str, int]:
         return server.get_extra_info("sockname")[:2]
 
-    async def test____dunder_init____connect_to_server(
+    async def test____dunder_init____automatic_local_address(
         self,
         remote_address: tuple[str, int],
         datagram_protocol: DatagramProtocol[str, str],
@@ -331,10 +333,10 @@ class TestAsyncUDPNetworkClientConnection:
         remote_address: tuple[str, int],
         datagram_protocol: DatagramProtocol[str, str],
     ) -> None:
-        async with contextlib.aclosing(AsyncUDPNetworkClient(remote_address, datagram_protocol, "asyncio")) as client:
-            await client.aclose()
-            with pytest.raises(ClientClosedError):
-                await client.wait_connected()
+        client = AsyncUDPNetworkClient(remote_address, datagram_protocol, "asyncio")
+        await client.aclose()
+        with pytest.raises(ClientClosedError):
+            await client.wait_connected()
 
     async def test____socket_property____connection_not_performed_yet(
         self,
@@ -348,6 +350,7 @@ class TestAsyncUDPNetworkClientConnection:
             await client.wait_connected()
 
             assert isinstance(client.socket, SocketProxy)
+            assert client.socket is client.socket
 
     async def test____get_local_address____connection_not_performed_yet(
         self,
@@ -360,7 +363,7 @@ class TestAsyncUDPNetworkClientConnection:
 
             await client.wait_connected()
 
-            assert client.get_local_address()
+            _ = client.get_local_address()
 
     async def test____get_remote_address____connection_not_performed_yet(
         self,
