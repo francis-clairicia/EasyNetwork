@@ -107,13 +107,13 @@ class UDPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
                 pass
             case (str(host), int(port)):
                 if (family := kwargs.get("family", _socket.AF_UNSPEC)) != _socket.AF_UNSPEC:
-                    _utils.check_socket_family(family)
+                    _utils.check_inet_socket_family(family)
                 socket = _create_udp_socket(remote_address=(host, port), **kwargs)
             case _:
                 raise TypeError("Invalid arguments")
 
         try:
-            _utils.check_socket_family(socket.family)
+            _utils.check_inet_socket_family(socket.family)
             _utils.check_socket_is_connected(socket)
 
             local_address: tuple[Any, ...] = socket.getsockname()

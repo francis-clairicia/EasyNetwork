@@ -26,7 +26,8 @@ if TYPE_CHECKING:
 
     from .....pytest_plugins.async_finalizer import AsyncFinalizer
 
-from ....base import UNSUPPORTED_FAMILIES, BaseTestWithStreamProtocol
+from ...._utils import unsupported_families
+from ....base import INET_FAMILIES, BaseTestWithStreamProtocol
 from .base import BaseTestClient
 
 
@@ -241,7 +242,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient, BaseTestWithStreamProtocol):
         # Assert
         assert exc_info.value.errno == errno.ENOTCONN
 
-    @pytest.mark.parametrize("socket_family", list(UNSUPPORTED_FAMILIES), indirect=True)
+    @pytest.mark.parametrize("socket_family", list(unsupported_families(INET_FAMILIES)), indirect=True)
     @pytest.mark.parametrize("use_ssl", [False, True], ids=lambda p: f"use_ssl=={p}")
     async def test____dunder_init____use_given_socket____invalid_socket_family(
         self,

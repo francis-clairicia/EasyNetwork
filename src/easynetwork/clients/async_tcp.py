@@ -216,7 +216,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         match __arg:
             case _socket.socket() as socket:
                 _utils.check_socket_no_ssl(socket)
-                _utils.check_socket_family(socket.family)
+                _utils.check_inet_socket_family(socket.family)
                 _utils.check_socket_is_connected(socket)
                 if ssl:
                     if server_hostname is None:
@@ -330,7 +330,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
 
         socket_proxy = SocketProxy(transport.extra(INETSocketAttribute.socket))
 
-        _utils.check_socket_family(socket_proxy.family)
+        _utils.check_inet_socket_family(socket_proxy.family)
 
         with contextlib.suppress(OSError):
             set_tcp_nodelay(socket_proxy, True)

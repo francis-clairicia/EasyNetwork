@@ -128,12 +128,12 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         match __arg:
             case _socket.socket() as socket:
                 _utils.check_socket_no_ssl(socket)
-                _utils.check_socket_family(socket.family)
+                _utils.check_inet_socket_family(socket.family)
                 _utils.check_socket_is_connected(socket)
                 socket_factory = _utils.make_callback(backend.wrap_connected_datagram_socket, socket, **kwargs)
             case (str(host), int(port)):
                 if (family := kwargs.get("family", _socket.AF_UNSPEC)) != _socket.AF_UNSPEC:
-                    _utils.check_socket_family(family)
+                    _utils.check_inet_socket_family(family)
                 socket_factory = _utils.make_callback(backend.create_udp_endpoint, host, port, **kwargs)
             case _:
                 raise TypeError("Invalid arguments")

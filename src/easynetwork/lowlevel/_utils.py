@@ -19,8 +19,8 @@ __all__ = [
     "Flag",
     "WarnCallback",
     "adjust_leftover_buffer",
+    "check_inet_socket_family",
     "check_real_socket_state",
-    "check_socket_family",
     "check_socket_no_ssl",
     "error_from_errno",
     "exception_with_notes",
@@ -45,7 +45,6 @@ import contextlib
 import errno as _errno
 import functools
 import math
-import os
 import socket as _socket
 import threading
 import time
@@ -63,6 +62,7 @@ else:
     del _ssl
 
 from . import constants
+from ._errno import error_from_errno
 
 if TYPE_CHECKING:
     from ssl import SSLError as _SSLError, SSLSocket as _SSLSocket
@@ -146,11 +146,6 @@ def inherit_doc(base_cls: type[Any]) -> Callable[[_T_Func], _T_Func]:
     return decorator
 
 
-def error_from_errno(errno: int, msg: str = "{strerror}") -> OSError:
-    msg = msg.format(strerror=os.strerror(errno))
-    return OSError(errno, msg)
-
-
 def missing_extra_deps(extra_name: str, *, feature_name: str = "") -> ModuleNotFoundError:
     if not feature_name:
         feature_name = extra_name
@@ -160,7 +155,7 @@ def missing_extra_deps(extra_name: str, *, feature_name: str = "") -> ModuleNotF
     )
 
 
-def check_socket_family(family: int) -> None:
+def check_inet_socket_family(family: int) -> None:
     if family not in {_socket.AF_INET, _socket.AF_INET6}:
         raise ValueError("Only these families are supported: AF_INET, AF_INET6")
 

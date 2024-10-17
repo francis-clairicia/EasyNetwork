@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import socket
-from collections.abc import Callable
+import sys
+from collections.abc import Callable, Iterator
+from errno import EBADF, ENOTCONN
 from socket import AF_INET, AF_INET6, IPPROTO_TCP, SO_KEEPALIVE, SO_LINGER, SOL_SOCKET, TCP_NODELAY
+from struct import Struct
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.lowlevel.socket import (
@@ -10,6 +13,7 @@ from easynetwork.lowlevel.socket import (
     IPv6SocketAddress,
     SocketAddress,
     SocketProxy,
+    _get_peer_credentials_impl_from_platform,
     disable_socket_linger,
     enable_socket_linger,
     get_socket_linger,
@@ -18,12 +22,13 @@ from easynetwork.lowlevel.socket import (
     set_tcp_keepalive,
     set_tcp_nodelay,
     socket_linger,
+    socket_ucred,
 )
 
 import pytest
 
-from .._utils import partial_eq
-from ..base import UNSUPPORTED_FAMILIES
+from .._utils import partial_eq, unsupported_families
+from ..base import INET_FAMILIES
 
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
@@ -65,7 +70,7 @@ class TestSocketAddress:
         # Assert
         assert isinstance(socket_address, expected_type)
 
-    @pytest.mark.parametrize("socket_family_name", list(UNSUPPORTED_FAMILIES))
+    @pytest.mark.parametrize("socket_family_name", list(unsupported_families(INET_FAMILIES)))
     def test____new_socket_address____unsupported_family(
         self,
         socket_family_name: str,
@@ -271,90 +276,411 @@ class TestSocketProxy:
             runner_stub.assert_called_once_with(getattr(mock_tcp_socket, method))
 
 
-@pytest.mark.parametrize("state", [False, True])
-def test____set_tcp_nodelay____setsockopt(
-    state: bool,
-    mock_tcp_socket: MagicMock,
-) -> None:
-    # Arrange
+class TestSocketOptions:
+    @pytest.mark.parametrize("state", [False, True])
+    def test____set_tcp_nodelay____setsockopt(
+        self,
+        state: bool,
+        mock_tcp_socket: MagicMock,
+    ) -> None:
+        # Arrange
 
-    # Act
-    set_tcp_nodelay(mock_tcp_socket, state)
+        # Act
+        set_tcp_nodelay(mock_tcp_socket, state)
 
-    # Assert
-    mock_tcp_socket.setsockopt.assert_called_once_with(IPPROTO_TCP, TCP_NODELAY, state)
+        # Assert
+        mock_tcp_socket.setsockopt.assert_called_once_with(IPPROTO_TCP, TCP_NODELAY, state)
+
+    @pytest.mark.parametrize("state", [False, True])
+    def test____set_tcp_keepalive____setsockopt(
+        self,
+        state: bool,
+        mock_tcp_socket: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act
+        set_tcp_keepalive(mock_tcp_socket, state)
+
+        # Assert
+        mock_tcp_socket.setsockopt.assert_called_once_with(SOL_SOCKET, SO_KEEPALIVE, state)
+
+    @pytest.mark.parametrize(
+        ["enabled", "timeout"],
+        [
+            pytest.param(False, 0),
+            pytest.param(True, 0),
+            pytest.param(True, 60),
+        ],
+    )
+    def test____get_socket_linger____getsockopt(
+        self,
+        mock_tcp_socket: MagicMock,
+        enabled: bool,
+        timeout: int,
+    ) -> None:
+        # Arrange
+        linger_struct = get_socket_linger_struct()
+        expected_buffer: bytes = linger_struct.pack(enabled, timeout)
+        mock_tcp_socket.getsockopt.return_value = expected_buffer
+
+        # Act
+        linger = get_socket_linger(mock_tcp_socket)
+
+        # Assert
+        mock_tcp_socket.getsockopt.assert_called_once_with(SOL_SOCKET, SO_LINGER, linger_struct.size)
+        assert isinstance(linger, socket_linger)
+        if enabled:
+            assert linger.enabled is True
+        else:
+            assert linger.enabled is False
+        assert linger.timeout == timeout
+
+    @pytest.mark.parametrize("timeout", [0, 60])
+    def test____enable_socket_linger____setsockopt(
+        self,
+        mock_tcp_socket: MagicMock,
+        timeout: int,
+    ) -> None:
+        # Arrange
+        linger_struct = get_socket_linger_struct()
+        expected_buffer: bytes = linger_struct.pack(1, timeout)  # Enabled with timeout
+
+        # Act
+        enable_socket_linger(mock_tcp_socket, timeout)
+
+        # Assert
+        mock_tcp_socket.setsockopt.assert_called_once_with(SOL_SOCKET, SO_LINGER, expected_buffer)
+
+    def test____disable_socket_linger____setsockopt(
+        self,
+        mock_tcp_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        linger_struct = get_socket_linger_struct()
+        expected_buffer: bytes = linger_struct.pack(0, 0)
+
+        # Act
+        disable_socket_linger(mock_tcp_socket)
+
+        # Assert
+        mock_tcp_socket.setsockopt.assert_called_once_with(SOL_SOCKET, SO_LINGER, expected_buffer)
 
 
-@pytest.mark.parametrize("state", [False, True])
-def test____set_tcp_keepalive____setsockopt(
-    state: bool,
-    mock_tcp_socket: MagicMock,
-) -> None:
-    # Arrange
+class TestSocketPeerCredentials:
+    WINDOWS = ("win32", "cygwin")
+    LINUX = ("linux",)
+    MACOS = ("darwin",)
+    BSD = ("freebsdXX", "openbsdXX", "netbsdXX", "dragonflyXX")
 
-    # Act
-    set_tcp_keepalive(mock_tcp_socket, state)
+    @pytest.fixture(scope="class", autouse=True)
+    @staticmethod
+    def clear_cache_at_end() -> Iterator[None]:
+        yield
+        _get_peer_credentials_impl_from_platform.cache_clear()
 
-    # Assert
-    mock_tcp_socket.setsockopt.assert_called_once_with(SOL_SOCKET, SO_KEEPALIVE, state)
+    @pytest.fixture(autouse=True)
+    @staticmethod
+    def clear_cache_before_proceed() -> None:
+        _get_peer_credentials_impl_from_platform.cache_clear()
 
+    @pytest.fixture(autouse=True)
+    @staticmethod
+    def SO_PEERCRED(monkeypatch: pytest.MonkeyPatch) -> int:
+        SO_PEERCRED: int = 17
+        monkeypatch.setattr("socket.SO_PEERCRED", SO_PEERCRED, raising=False)
+        return SO_PEERCRED
 
-@pytest.mark.parametrize(
-    ["enabled", "timeout"],
-    [
-        pytest.param(False, 0),
-        pytest.param(True, 0),
-        pytest.param(True, 60),
-    ],
-)
-def test____get_socket_linger____getsockopt(
-    mock_tcp_socket: MagicMock,
-    enabled: bool,
-    timeout: int,
-) -> None:
-    # Arrange
-    linger_struct = get_socket_linger_struct()
-    expected_buffer: bytes = linger_struct.pack(enabled, timeout)
-    mock_tcp_socket.getsockopt.return_value = expected_buffer
+    @pytest.fixture(autouse=True)
+    @staticmethod
+    def platform(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> str:
+        if hasattr(request, "param"):
+            monkeypatch.setattr(sys, "platform", request.param)
+            assert sys.platform == request.param
+        return sys.platform
 
-    # Act
-    linger = get_socket_linger(mock_tcp_socket)
+    @pytest.fixture(autouse=True)
+    @staticmethod
+    def mock_find_library(platform: str, mocker: MockerFixture) -> MagicMock:
+        match platform:
+            case "darwin":
+                return mocker.patch("ctypes.util.find_library", side_effect=lambda lib: f"/path/to/lib{lib}.dylib")
+            case _:
+                return mocker.patch("ctypes.util.find_library", side_effect=lambda lib: f"/path/to/lib{lib}.so")
 
-    # Assert
-    mock_tcp_socket.getsockopt.assert_called_once_with(SOL_SOCKET, SO_LINGER, linger_struct.size)
-    assert isinstance(linger, socket_linger)
-    if enabled:
-        assert linger.enabled is True
-    else:
-        assert linger.enabled is False
-    assert linger.timeout == timeout
+    @pytest.fixture
+    @staticmethod
+    def mock_shared_lib(mocker: MockerFixture) -> MagicMock:
+        return mocker.NonCallableMagicMock()
 
+    @pytest.fixture(autouse=True)
+    @staticmethod
+    def mock_CDLL(mock_shared_lib: MagicMock, mocker: MockerFixture) -> MagicMock:
+        return mocker.patch("ctypes.CDLL", return_value=mock_shared_lib)
 
-@pytest.mark.parametrize("timeout", [0, 60])
-def test____enable_socket_linger____setsockopt(
-    mock_tcp_socket: MagicMock,
-    timeout: int,
-) -> None:
-    # Arrange
-    linger_struct = get_socket_linger_struct()
-    expected_buffer: bytes = linger_struct.pack(1, timeout)  # Enabled with timeout
+    @pytest.fixture
+    @staticmethod
+    def linux_ucred_struct() -> Struct:
+        return Struct("@iII")
 
-    # Act
-    enable_socket_linger(mock_tcp_socket, timeout)
+    def test____socket_ucred___field_order(self) -> None:
+        # Arrange
 
-    # Assert
-    mock_tcp_socket.setsockopt.assert_called_once_with(SOL_SOCKET, SO_LINGER, expected_buffer)
+        # Act
+        ucred = socket_ucred(12345, 1001, 1002)
 
+        # Assert
+        assert ucred.pid == 12345
+        assert ucred.uid == 1001
+        assert ucred.gid == 1002
 
-def test____disable_socket_linger____setsockopt(
-    mock_tcp_socket: MagicMock,
-) -> None:
-    # Arrange
-    linger_struct = get_socket_linger_struct()
-    expected_buffer: bytes = linger_struct.pack(0, 0)
+    @pytest.mark.parametrize("platform", WINDOWS, indirect=True)
+    def test____get_peer_credentials_impl_from_platform____not_implemented(
+        self,
+        platform: str,
+    ) -> None:
+        # Arrange
 
-    # Act
-    disable_socket_linger(mock_tcp_socket)
+        # Act & Assert
+        with pytest.raises(NotImplementedError, match=r"^There is no implementation available for '%s'$" % platform):
+            _get_peer_credentials_impl_from_platform()
 
-    # Assert
-    mock_tcp_socket.setsockopt.assert_called_once_with(SOL_SOCKET, SO_LINGER, expected_buffer)
+    @pytest.mark.parametrize("platform", LINUX, indirect=True)
+    def test____get_peer_credentials_impl_from_platform____linux_impl(
+        self,
+        mock_unix_stream_socket: MagicMock,
+        linux_ucred_struct: Struct,
+        SO_PEERCRED: int,
+    ) -> None:
+        # Arrange
+        get_peer_credentials = _get_peer_credentials_impl_from_platform()
+        mock_unix_stream_socket.getsockopt.return_value = linux_ucred_struct.pack(12345, 1001, 1002)
+
+        # Act
+        peer_creds = get_peer_credentials(mock_unix_stream_socket)
+
+        # Assert
+        assert peer_creds.pid == 12345
+        assert peer_creds.uid == 1001
+        assert peer_creds.gid == 1002
+        mock_unix_stream_socket.getsockopt.assert_called_once_with(SOL_SOCKET, SO_PEERCRED, linux_ucred_struct.size)
+
+    @pytest.mark.parametrize("platform", LINUX, indirect=True)
+    def test____get_peer_credentials_impl_from_platform____linux_impl____socket_closed(
+        self,
+        mock_unix_stream_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        get_peer_credentials = _get_peer_credentials_impl_from_platform()
+        mock_unix_stream_socket.close()
+
+        # Act
+        with pytest.raises(OSError) as exc_info:
+            _ = get_peer_credentials(mock_unix_stream_socket)
+
+        # Assert
+        assert exc_info.value.errno == EBADF
+
+    @pytest.mark.parametrize("platform", MACOS, indirect=True)
+    def test____get_peer_credentials_impl_from_platform____macos_impl(
+        self,
+        mock_find_library: MagicMock,
+        mock_shared_lib: MagicMock,
+        mock_CDLL: MagicMock,
+        mock_unix_stream_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        get_peer_credentials = _get_peer_credentials_impl_from_platform()
+        mock_find_library.assert_called_once_with("c")
+        mock_CDLL.assert_called_once_with("/path/to/libc.dylib", use_errno=True)
+
+        def getpeereid(fileno: Any, uid_ptr: Any, gid_ptr: Any, /) -> int:
+            uid_ptr._obj.value = 1001
+            gid_ptr._obj.value = 1002
+            return 0
+
+        mock_shared_lib.getpeereid.side_effect = getpeereid
+
+        mock_unix_stream_socket.getsockopt.return_value = 12345
+
+        # Act
+        peer_creds = get_peer_credentials(mock_unix_stream_socket)
+
+        # Assert
+        assert peer_creds.pid == 12345
+        assert peer_creds.uid == 1001
+        assert peer_creds.gid == 1002
+        mock_shared_lib.getpeereid.assert_called_once_with(mock_unix_stream_socket.fileno(), mocker.ANY, mocker.ANY)
+        mock_unix_stream_socket.getsockopt.assert_called_once_with(0, 2)  # SOL_LOCAL=0, LOCAL_PEERPID=2
+
+    @pytest.mark.parametrize("platform", MACOS, indirect=True)
+    def test____get_peer_credentials_impl_from_platform____macos_impl____socket_closed(
+        self,
+        mock_find_library: MagicMock,
+        mock_shared_lib: MagicMock,
+        mock_CDLL: MagicMock,
+        mock_unix_stream_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        get_peer_credentials = _get_peer_credentials_impl_from_platform()
+        mock_find_library.assert_called_once_with("c")
+        mock_CDLL.assert_called_once_with("/path/to/libc.dylib", use_errno=True)
+        mock_unix_stream_socket.close()
+
+        # Act
+        with pytest.raises(OSError) as exc_info:
+            _ = get_peer_credentials(mock_unix_stream_socket)
+
+        # Assert
+        assert exc_info.value.errno == EBADF
+        mock_shared_lib.getpeereid.assert_not_called()
+        mock_unix_stream_socket.getsockopt.assert_not_called()
+
+    @pytest.mark.parametrize("platform", MACOS, indirect=True)
+    def test____get_peer_credentials_impl_from_platform____macos_impl____getpeereid_failed(
+        self,
+        mock_find_library: MagicMock,
+        mock_shared_lib: MagicMock,
+        mock_CDLL: MagicMock,
+        mock_unix_stream_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        import ctypes
+
+        get_peer_credentials = _get_peer_credentials_impl_from_platform()
+        mock_find_library.assert_called_once_with("c")
+        mock_CDLL.assert_called_once_with("/path/to/libc.dylib", use_errno=True)
+
+        def getpeereid(fileno: Any, uid_ptr: Any, gid_ptr: Any, /) -> int:
+            ctypes.set_errno(ENOTCONN)
+            return -1
+
+        mock_shared_lib.getpeereid.side_effect = getpeereid
+
+        # Act
+        with pytest.raises(OSError) as exc_info:
+            _ = get_peer_credentials(mock_unix_stream_socket)
+
+        # Assert
+        assert exc_info.value.errno == ENOTCONN
+        mock_shared_lib.getpeereid.asset_called_once()
+        mock_unix_stream_socket.getsockopt.assert_not_called()
+
+    @pytest.mark.parametrize("platform", MACOS, indirect=True)
+    def test____get_peer_credentials_impl_from_platform____macos_impl____libc_not_found(
+        self,
+        platform: str,
+        mock_find_library: MagicMock,
+        mock_CDLL: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_find_library.side_effect = [None]
+
+        # Act
+        with pytest.raises(NotImplementedError, match=r"^Could not find libc on '%s'$" % platform):
+            _ = _get_peer_credentials_impl_from_platform()
+
+        # Assert
+        mock_CDLL.assert_not_called()
+
+    @pytest.mark.parametrize("platform", BSD, indirect=True)
+    def test____get_peer_credentials_impl_from_platform____bsd_impl(
+        self,
+        mock_find_library: MagicMock,
+        mock_shared_lib: MagicMock,
+        mock_CDLL: MagicMock,
+        mock_unix_stream_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        get_peer_credentials = _get_peer_credentials_impl_from_platform()
+        mock_find_library.assert_called_once_with("bsd")
+        mock_CDLL.assert_called_once_with("/path/to/libbsd.so", use_errno=True)
+
+        def getpeereid(fileno: Any, uid_ptr: Any, gid_ptr: Any, /) -> int:
+            uid_ptr._obj.value = 1001
+            gid_ptr._obj.value = 1002
+            return 0
+
+        mock_shared_lib.getpeereid.side_effect = getpeereid
+
+        # Act
+        peer_creds = get_peer_credentials(mock_unix_stream_socket)
+
+        # Assert
+        assert peer_creds.pid == -1
+        assert peer_creds.uid == 1001
+        assert peer_creds.gid == 1002
+        mock_shared_lib.getpeereid.assert_called_once_with(mock_unix_stream_socket.fileno(), mocker.ANY, mocker.ANY)
+        mock_unix_stream_socket.getsockopt.asset_not_called()
+
+    @pytest.mark.parametrize("platform", BSD, indirect=True)
+    def test____get_peer_credentials_impl_from_platform____bsd_impl____socket_closed(
+        self,
+        mock_find_library: MagicMock,
+        mock_shared_lib: MagicMock,
+        mock_CDLL: MagicMock,
+        mock_unix_stream_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        get_peer_credentials = _get_peer_credentials_impl_from_platform()
+        mock_find_library.assert_called_once_with("bsd")
+        mock_CDLL.assert_called_once_with("/path/to/libbsd.so", use_errno=True)
+        mock_unix_stream_socket.close()
+
+        # Act
+        with pytest.raises(OSError) as exc_info:
+            _ = get_peer_credentials(mock_unix_stream_socket)
+
+        # Assert
+        assert exc_info.value.errno == EBADF
+        mock_shared_lib.getpeereid.assert_not_called()
+        mock_unix_stream_socket.getsockopt.assert_not_called()
+
+    @pytest.mark.parametrize("platform", BSD, indirect=True)
+    def test____get_peer_credentials_impl_from_platform____bsd_impl____getpeereid_failed(
+        self,
+        mock_find_library: MagicMock,
+        mock_shared_lib: MagicMock,
+        mock_CDLL: MagicMock,
+        mock_unix_stream_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        import ctypes
+
+        get_peer_credentials = _get_peer_credentials_impl_from_platform()
+        mock_find_library.assert_called_once_with("bsd")
+        mock_CDLL.assert_called_once_with("/path/to/libbsd.so", use_errno=True)
+
+        def getpeereid(fileno: Any, uid_ptr: Any, gid_ptr: Any, /) -> int:
+            ctypes.set_errno(ENOTCONN)
+            return -1
+
+        mock_shared_lib.getpeereid.side_effect = getpeereid
+
+        # Act
+        with pytest.raises(OSError) as exc_info:
+            _ = get_peer_credentials(mock_unix_stream_socket)
+
+        # Assert
+        assert exc_info.value.errno == ENOTCONN
+        mock_shared_lib.getpeereid.asset_called_once()
+        mock_unix_stream_socket.getsockopt.assert_not_called()
+
+    @pytest.mark.parametrize("platform", BSD, indirect=True)
+    def test____get_peer_credentials_impl_from_platform____bsd_impl____libbsd_not_found(
+        self,
+        platform: str,
+        mock_find_library: MagicMock,
+        mock_CDLL: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_find_library.side_effect = [None]
+
+        # Act
+        with pytest.raises(NotImplementedError, match=r"^Could not find libbsd on '%s'$" % platform):
+            _ = _get_peer_credentials_impl_from_platform()
+
+        # Assert
+        mock_CDLL.assert_not_called()

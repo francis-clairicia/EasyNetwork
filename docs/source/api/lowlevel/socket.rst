@@ -14,6 +14,10 @@ Data Structures And Constants
    :members:
    :inherited-members:
 
+.. autoclass:: UNIXSocketAttribute
+   :members:
+   :inherited-members:
+
 .. autoclass:: TLSAttribute
    :members:
 
@@ -42,6 +46,17 @@ Functions
 =========
 
 .. autofunction:: new_socket_address
+
+UNIX Credentials
+----------------
+
+.. autonamedtuple:: socket_ucred
+   :members:
+
+.. autofunction:: get_peer_credentials
+
+TCP Options
+-----------
 
 .. autofunction:: set_tcp_nodelay
 
