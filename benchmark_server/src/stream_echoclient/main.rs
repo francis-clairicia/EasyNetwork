@@ -1,5 +1,3 @@
-#![allow(clippy::assigning_clones)]
-
 use std::{
     io,
     sync::{mpsc::channel, Arc, Barrier},

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
-from socket import AF_INET, IPPROTO_TCP, IPPROTO_UDP, SOCK_DGRAM, SOCK_STREAM, socket as Socket
+from socket import AF_INET, AF_INET6, IPPROTO_TCP, IPPROTO_UDP, SOCK_DGRAM, SOCK_STREAM, socket as Socket
 from ssl import SSLContext, SSLObject, SSLSocket
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.converter import AbstractPacketConverterComposite
+from easynetwork.lowlevel.socket import UnixCredentials
 from easynetwork.protocol import BufferedStreamProtocol, DatagramProtocol, StreamProtocol
 from easynetwork.serializers.abc import (
     AbstractIncrementalPacketSerializer,
@@ -36,6 +38,25 @@ def remove_SO_REUSEPORT_support(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture
+def fake_ucred() -> UnixCredentials:
+    return UnixCredentials(pid=os.getpid(), uid=1000, gid=1000)
+
+
+@pytest.fixture
+def mock_get_peer_credentials(mocker: MockerFixture) -> MagicMock:
+    mock_get_peer_credentials = mocker.MagicMock(
+        name="mock_get_peer_credentials",
+        spec=lambda sock: None,
+    )
+
+    def patch_get_peer_credentials_impl() -> Callable[[Any], UnixCredentials]:
+        return mock_get_peer_credentials
+
+    mocker.patch("easynetwork.lowlevel._unix_utils._get_peer_credentials_impl_from_platform", patch_get_peer_credentials_impl)
+    return mock_get_peer_credentials
+
+
+@pytest.fixture
 def mock_socket_factory(mocker: MockerFixture) -> Callable[[], MagicMock]:
     def factory(family: int = -1, type: int = -1, proto: int = -1, fileno: int = 123) -> MagicMock:
         if family == -1:
@@ -59,6 +80,8 @@ def mock_socket_factory(mocker: MockerFixture) -> Callable[[], MagicMock]:
 
         mock_socket.close.side_effect = close_side_effect
         mock_socket.detach.side_effect = detached_side_effect
+        mock_socket.connect.return_value = None
+        mock_socket.bind.return_value = None
         return mock_socket
 
     return factory
@@ -70,9 +93,10 @@ def original_socket_cls() -> type[Socket]:
 
 
 @pytest.fixture
-def mock_tcp_socket_factory(mock_socket_factory: Callable[[int, int, int], MagicMock]) -> Callable[[], MagicMock]:
-    def factory(family: int = -1) -> MagicMock:
-        return mock_socket_factory(family, SOCK_STREAM, IPPROTO_TCP)
+def mock_tcp_socket_factory(mock_socket_factory: Callable[[int, int, int, int], MagicMock]) -> Callable[[], MagicMock]:
+    def factory(family: int = -1, fileno: int = 123) -> MagicMock:
+        assert family in {AF_INET, AF_INET6, -1}
+        return mock_socket_factory(family, SOCK_STREAM, IPPROTO_TCP, fileno)
 
     return factory
 
@@ -83,9 +107,10 @@ def mock_tcp_socket(mock_tcp_socket_factory: Callable[[], MagicMock]) -> MagicMo
 
 
 @pytest.fixture
-def mock_udp_socket_factory(mock_socket_factory: Callable[[int, int, int], MagicMock]) -> Callable[[], MagicMock]:
-    def factory(family: int = -1) -> MagicMock:
-        return mock_socket_factory(family, SOCK_DGRAM, IPPROTO_UDP)
+def mock_udp_socket_factory(mock_socket_factory: Callable[[int, int, int, int], MagicMock]) -> Callable[[], MagicMock]:
+    def factory(family: int = -1, fileno: int = 123) -> MagicMock:
+        assert family in {AF_INET, AF_INET6, -1}
+        return mock_socket_factory(family, SOCK_DGRAM, IPPROTO_UDP, fileno)
 
     return factory
 
@@ -93,6 +118,36 @@ def mock_udp_socket_factory(mock_socket_factory: Callable[[int, int, int], Magic
 @pytest.fixture
 def mock_udp_socket(mock_udp_socket_factory: Callable[[], MagicMock]) -> MagicMock:
     return mock_udp_socket_factory()
+
+
+@pytest.fixture
+def mock_unix_stream_socket_factory(mock_socket_factory: Callable[[int, int, int, int], MagicMock]) -> Callable[[], MagicMock]:
+    from ..fixtures.socket import AF_UNIX_or_skip
+
+    def factory(fileno: int = 123) -> MagicMock:
+        return mock_socket_factory(AF_UNIX_or_skip(), SOCK_STREAM, 0, fileno)
+
+    return factory
+
+
+@pytest.fixture
+def mock_unix_stream_socket(mock_unix_stream_socket_factory: Callable[[], MagicMock]) -> MagicMock:
+    return mock_unix_stream_socket_factory()
+
+
+@pytest.fixture
+def mock_unix_datagram_socket_factory(mock_socket_factory: Callable[[int, int, int, int], MagicMock]) -> Callable[[], MagicMock]:
+    from ..fixtures.socket import AF_UNIX_or_skip
+
+    def factory(fileno: int = 123) -> MagicMock:
+        return mock_socket_factory(AF_UNIX_or_skip(), SOCK_DGRAM, 0, fileno)
+
+    return factory
+
+
+@pytest.fixture
+def mock_unix_datagram_socket(mock_unix_datagram_socket_factory: Callable[[], MagicMock]) -> MagicMock:
+    return mock_unix_datagram_socket_factory()
 
 
 @pytest.fixture
@@ -117,6 +172,8 @@ def mock_ssl_socket_factory(mocker: MockerFixture) -> Callable[[], MagicMock]:
 
         mock_socket.close.side_effect = close_side_effect
         mock_socket.detach.side_effect = detached_side_effect
+        mock_socket.connect.return_value = None
+        mock_socket.bind.return_value = None
         return mock_socket
 
     return factory

@@ -56,26 +56,26 @@ def mock_backend(fake_cancellation_cls: type[BaseException], mocker: MockerFixtu
 
 
 @pytest.fixture
-def mock_stream_socket_adapter_factory(asyncio_backend: AsyncIOBackend, mocker: MockerFixture) -> Callable[[], MagicMock]:
+def mock_stream_transport_factory(asyncio_backend: AsyncIOBackend, mocker: MockerFixture) -> Callable[[], MagicMock]:
     def factory() -> MagicMock:
         mock = make_transport_mock(mocker=mocker, spec=AsyncStreamTransport, backend=asyncio_backend)
 
-        async def sendall_fromiter(iterable_of_data: Iterable[bytes | bytearray | memoryview]) -> None:
+        async def send_all_from_iterable(iterable_of_data: Iterable[bytes | bytearray | memoryview]) -> None:
             await AsyncStreamTransport.send_all_from_iterable(mock, iterable_of_data)
 
-        mock.send_all_from_iterable.side_effect = sendall_fromiter
+        mock.send_all_from_iterable.side_effect = send_all_from_iterable
         return mock
 
     return factory
 
 
 @pytest.fixture
-def mock_stream_socket_adapter(mock_stream_socket_adapter_factory: Callable[[], MagicMock]) -> MagicMock:
-    return mock_stream_socket_adapter_factory()
+def mock_stream_transport(mock_stream_transport_factory: Callable[[], MagicMock]) -> MagicMock:
+    return mock_stream_transport_factory()
 
 
 @pytest.fixture
-def mock_datagram_socket_adapter_factory(asyncio_backend: AsyncIOBackend, mocker: MockerFixture) -> Callable[[], MagicMock]:
+def mock_datagram_transport_factory(asyncio_backend: AsyncIOBackend, mocker: MockerFixture) -> Callable[[], MagicMock]:
     def factory() -> MagicMock:
         mock = make_transport_mock(mocker=mocker, spec=AsyncDatagramTransport, backend=asyncio_backend)
         return mock
@@ -84,5 +84,5 @@ def mock_datagram_socket_adapter_factory(asyncio_backend: AsyncIOBackend, mocker
 
 
 @pytest.fixture
-def mock_datagram_socket_adapter(mock_datagram_socket_adapter_factory: Callable[[], MagicMock]) -> MagicMock:
-    return mock_datagram_socket_adapter_factory()
+def mock_datagram_transport(mock_datagram_transport_factory: Callable[[], MagicMock]) -> MagicMock:
+    return mock_datagram_transport_factory()

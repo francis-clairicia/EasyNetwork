@@ -4,8 +4,16 @@ Socket Helpers
 
 .. automodule:: easynetwork.lowlevel.socket
 
+.. contents:: Table of Contents
+   :local:
+
+-----
+
 Data Structures And Constants
 =============================
+
+Typed Attributes
+----------------
 
 .. autoclass:: SocketAttribute
    :members:
@@ -14,8 +22,15 @@ Data Structures And Constants
    :members:
    :inherited-members:
 
+.. autoclass:: UNIXSocketAttribute
+   :members:
+   :inherited-members:
+
 .. autoclass:: TLSAttribute
    :members:
+
+Internet addresses
+------------------
 
 .. autonamedtuple:: IPv4SocketAddress
    :members:
@@ -25,6 +40,15 @@ Data Structures And Constants
 
 .. autodata:: SocketAddress
    :annotation: :TypeAlias = IPv4SocketAddress | IPv6SocketAddress
+
+Unix-related
+------------
+
+.. autoclass:: UnixSocketAddress
+   :members:
+
+.. autonamedtuple:: UnixCredentials
+   :members:
 
 
 Classes
@@ -41,7 +65,13 @@ Classes
 Functions
 =========
 
+Internet addresses
+------------------
+
 .. autofunction:: new_socket_address
+
+TCP Options
+-----------
 
 .. autofunction:: set_tcp_nodelay
 

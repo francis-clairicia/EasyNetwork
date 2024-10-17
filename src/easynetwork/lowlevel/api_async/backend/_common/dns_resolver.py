@@ -26,6 +26,7 @@ from collections import OrderedDict
 from collections.abc import Sequence
 from typing import Any, cast
 
+from .... import _utils
 from ..abc import AsyncBackend, IEvent
 
 
@@ -46,7 +47,7 @@ class BaseAsyncDNSResolver(metaclass=ABCMeta):
         proto: int = 0,
         flags: int = 0,
     ) -> Sequence[tuple[int, int, int, str, tuple[str, int] | tuple[str, int, int, int]]]:
-        info: Sequence[tuple[int, int, int, str, tuple[str, int] | tuple[str, int, int, int]]]
+        info: Sequence[tuple[int, int, int, str, tuple[str, int] | tuple[str, int, int, int]]] | None
         try:
             info = _socket.getaddrinfo(
                 host, port, family=family, type=type, proto=proto, flags=flags | _socket.AI_NUMERICHOST | _socket.AI_NUMERICSERV
@@ -54,6 +55,8 @@ class BaseAsyncDNSResolver(metaclass=ABCMeta):
         except _socket.gaierror as exc:
             if exc.errno != _socket.EAI_NONAME:
                 raise
+            info = None
+        if info is None:
             info = await backend.getaddrinfo(host, port, family=family, type=type, proto=proto, flags=flags)
         if not info:
             raise OSError(f"getaddrinfo({host!r}) returned empty list")
@@ -128,6 +131,8 @@ class BaseAsyncDNSResolver(metaclass=ABCMeta):
         local_address: tuple[str, int] | None = None,
         family: int = _socket.AF_UNSPEC,
     ) -> _socket.socket:
+        if family != _socket.AF_UNSPEC:
+            _utils.check_inet_socket_family(family)
         remote_addrinfo: Sequence[tuple[int, int, int, str, tuple[Any, ...]]] = await self.ensure_resolved(
             backend,
             host,
@@ -177,10 +182,10 @@ class BaseAsyncDNSResolver(metaclass=ABCMeta):
                                 continue
                             try:
                                 socket.bind(local_sockaddr)
-                                break
                             except OSError as exc:
-                                msg = f"error while attempting to bind on address {local_sockaddr!r}: {exc.strerror.lower()}"
-                                bind_errors.append(OSError(exc.errno, msg).with_traceback(exc.__traceback__))
+                                bind_errors.append(_utils.convert_socket_bind_error(exc, local_sockaddr))
+                            else:
+                                break
                         else:  # all bind attempts failed
                             if bind_errors:
                                 socket.close()
