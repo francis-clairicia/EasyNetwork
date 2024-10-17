@@ -67,6 +67,8 @@ class PlatformMarkers:
     def runs_only_on_platform(platform: str | tuple[str, ...], reason: str) -> pytest.MarkDecorator:
         return _make_skipif_not_on_platform(platform, reason)
 
+    abstract_sockets_supported = runs_only_on_platform("linux", "abstract sockets are available only on Linux")
+
 
 def send_return(gen: Generator[Any, _T_contra, _V_co], value: _T_contra, /) -> _V_co:
     with pytest.raises(StopIteration) as exc_info:

@@ -30,25 +30,28 @@ import errno as _errno
 import socket as _socket
 import traceback
 import warnings
-from typing import Any, final
+from typing import TYPE_CHECKING, Any, final
 
-from ..... import _utils
+from ..... import _unix_utils, _utils
 from .._flow_control import WriteFlowControl
+
+if TYPE_CHECKING:
+    from socket import _Address, _RetAddress
 
 
 async def create_datagram_endpoint(
     *,
     family: int = 0,
-    local_addr: tuple[str, int] | None = None,
-    remote_addr: tuple[str, int] | None = None,
+    local_addr: tuple[str, int] | str | None = None,
+    remote_addr: tuple[str, int] | str | None = None,
     reuse_port: bool | None = None,
     sock: _socket.socket | None = None,
 ) -> DatagramEndpoint:
     loop = asyncio.get_running_loop()
-    recv_queue: asyncio.Queue[tuple[bytes, tuple[Any, ...]] | None] = asyncio.Queue()
+    recv_queue: asyncio.Queue[tuple[bytes, _RetAddress] | None] = asyncio.Queue()
     exception_queue: asyncio.Queue[Exception] = asyncio.Queue()
     flags: int = 0
-    if remote_addr is not None:
+    if remote_addr is not None and not _unix_utils.is_unix_socket_family(family):
         flags |= _socket.AI_PASSIVE
 
     transport, protocol = await loop.create_datagram_endpoint(
@@ -79,11 +82,11 @@ class DatagramEndpoint:
         transport: asyncio.DatagramTransport,
         protocol: DatagramEndpointProtocol,
         *,
-        recv_queue: asyncio.Queue[tuple[bytes, tuple[Any, ...]] | None],
+        recv_queue: asyncio.Queue[tuple[bytes, _RetAddress] | None],
         exception_queue: asyncio.Queue[Exception],
     ) -> None:
         super().__init__()
-        self.__recv_queue: asyncio.Queue[tuple[bytes, tuple[Any, ...]] | None] = recv_queue
+        self.__recv_queue: asyncio.Queue[tuple[bytes, _RetAddress] | None] = recv_queue
         self.__exception_queue: asyncio.Queue[Exception] = exception_queue
         self.__transport: asyncio.DatagramTransport = transport
         self.__protocol: DatagramEndpointProtocol = protocol
@@ -109,7 +112,7 @@ class DatagramEndpoint:
     def is_closing(self) -> bool:
         return self.__transport.is_closing()
 
-    async def recvfrom(self) -> tuple[bytes, tuple[Any, ...]]:
+    async def recvfrom(self) -> tuple[bytes, _RetAddress]:
         if self.__transport.is_closing():
             try:
                 data_and_address = self.__recv_queue.get_nowait()
@@ -129,7 +132,7 @@ class DatagramEndpoint:
                 raise _utils.error_from_errno(_errno.ECONNABORTED)
         return data_and_address
 
-    async def sendto(self, data: bytes | bytearray | memoryview, address: tuple[Any, ...] | None = None, /) -> None:
+    async def sendto(self, data: bytes | bytearray | memoryview, address: _Address | None = None, /) -> None:
         self.__transport.sendto(data, address)
         await self.__protocol._drain_helper()
 
@@ -163,14 +166,14 @@ class DatagramEndpointProtocol(asyncio.DatagramProtocol):
         self,
         *,
         loop: asyncio.AbstractEventLoop | None = None,
-        recv_queue: asyncio.Queue[tuple[bytes, tuple[Any, ...]] | None],
+        recv_queue: asyncio.Queue[tuple[bytes, _RetAddress] | None],
         exception_queue: asyncio.Queue[Exception],
     ) -> None:
         super().__init__()
         if loop is None:
             loop = asyncio.get_running_loop()
         self.__loop: asyncio.AbstractEventLoop = loop
-        self.__recv_queue: asyncio.Queue[tuple[bytes, tuple[Any, ...]] | None] = recv_queue
+        self.__recv_queue: asyncio.Queue[tuple[bytes, _RetAddress] | None] = recv_queue
         self.__exception_queue: asyncio.Queue[Exception] = exception_queue
         self.__transport: asyncio.DatagramTransport | None = None
         self.__closed: asyncio.Future[None] = loop.create_future()
@@ -198,7 +201,7 @@ class DatagramEndpointProtocol(asyncio.DatagramProtocol):
             if exc is not None:
                 self.__exception_queue.put_nowait(exc)
 
-    def datagram_received(self, data: bytes, addr: tuple[Any, ...]) -> None:
+    def datagram_received(self, data: bytes, addr: _RetAddress) -> None:
         if self.__transport is not None:
             self.__recv_queue.put_nowait((data, addr))
 
@@ -234,6 +237,6 @@ def _monkeypatch_transport(transport: asyncio.DatagramTransport, loop: asyncio.A
         #     await loop.create_datagram_endpoint(sock=my_socket)
         #
         # This is a monkeypatch to force update the internal address attribute
-        peername: tuple[Any, ...] | None = transport.get_extra_info("peername", None)
+        peername: _RetAddress | None = transport.get_extra_info("peername", None)
         if peername is not None and getattr(transport, "_address") != peername:
             setattr(transport, "_address", peername)

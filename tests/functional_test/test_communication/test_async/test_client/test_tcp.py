@@ -14,27 +14,17 @@ from easynetwork.protocol import AnyStreamProtocolType
 import pytest
 import pytest_asyncio
 
-
-async def readline(loop: asyncio.AbstractEventLoop, sock: Socket) -> bytes:
-    buf: list[bytes] = []
-    while True:
-        chunk = await loop.sock_recv(sock, 1024)
-        if not chunk:
-            break
-        buf.append(chunk)
-        if b"\n" in chunk:
-            break
-    return b"".join(buf)
+from .common import sock_readline
 
 
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("simulate_no_ssl_module")
-@pytest.mark.flaky(retries=3, delay=1)
+@pytest.mark.flaky(retries=3, delay=0.1)
 class TestAsyncTCPNetworkClient:
     @pytest.fixture
     @staticmethod
-    def server(socket_pair: tuple[Socket, Socket]) -> Socket:
-        server = socket_pair[0]
+    def server(inet_socket_pair: tuple[Socket, Socket]) -> Socket:
+        server = inet_socket_pair[0]
         server.setsockopt(IPPROTO_TCP, TCP_NODELAY, 1)
         server.setblocking(False)
         return server
@@ -42,10 +32,10 @@ class TestAsyncTCPNetworkClient:
     @pytest_asyncio.fixture
     @staticmethod
     async def client(
-        socket_pair: tuple[Socket, Socket],
+        inet_socket_pair: tuple[Socket, Socket],
         stream_protocol: AnyStreamProtocolType[str, str],
     ) -> AsyncIterator[AsyncTCPNetworkClient[str, str]]:
-        async with AsyncTCPNetworkClient(socket_pair[1], stream_protocol, "asyncio") as client:
+        async with AsyncTCPNetworkClient(inet_socket_pair[1], stream_protocol, "asyncio") as client:
             assert client.is_connected()
             yield client
 
@@ -71,7 +61,7 @@ class TestAsyncTCPNetworkClient:
         event_loop = asyncio.get_running_loop()
 
         await client.send_packet("ABCDEF")
-        assert await readline(event_loop, server) == b"ABCDEF\n"
+        assert await sock_readline(event_loop, server) == b"ABCDEF\n"
 
     async def test____send_packet____closed_client(self, client: AsyncTCPNetworkClient[str, str]) -> None:
         await client.aclose()
@@ -94,7 +84,7 @@ class TestAsyncTCPNetworkClient:
         event_loop = asyncio.get_running_loop()
 
         await client.send_eof()
-        assert await readline(event_loop, server) == b""
+        assert await sock_readline(event_loop, server) == b""
         with pytest.raises(RuntimeError):
             await client.send_packet("ABC")
         await event_loop.sock_sendall(server, b"ABCDEF\n")
@@ -115,7 +105,7 @@ class TestAsyncTCPNetworkClient:
         event_loop = asyncio.get_running_loop()
 
         await client.send_eof()
-        assert await readline(event_loop, server) == b""
+        assert await sock_readline(event_loop, server) == b""
         await client.send_eof()
         await client.send_eof()
 
@@ -181,7 +171,7 @@ class TestAsyncTCPNetworkClient:
             await client.recv_packet()
 
         await client.send_packet("ABCDEF")
-        assert await readline(event_loop, server) == b"ABCDEF\n"
+        assert await sock_readline(event_loop, server) == b"ABCDEF\n"
 
     async def test____recv_packet____client_close_error(self, client: AsyncTCPNetworkClient[str, str]) -> None:
         await client.aclose()
@@ -364,10 +354,10 @@ class TestAsyncTCPNetworkClientConnection:
         remote_address: tuple[str, int],
         stream_protocol: AnyStreamProtocolType[str, str],
     ) -> None:
-        async with contextlib.aclosing(AsyncTCPNetworkClient(remote_address, stream_protocol, "asyncio")) as client:
-            await client.aclose()
-            with pytest.raises(ClientClosedError):
-                await client.wait_connected()
+        client = AsyncTCPNetworkClient(remote_address, stream_protocol, "asyncio")
+        await client.aclose()
+        with pytest.raises(ClientClosedError):
+            await client.wait_connected()
 
     async def test____socket_property____connection_not_performed_yet(
         self,
@@ -381,6 +371,7 @@ class TestAsyncTCPNetworkClientConnection:
             await client.wait_connected()
 
             assert isinstance(client.socket, SocketProxy)
+            assert client.socket is client.socket
 
     async def test____get_local_address____connection_not_performed_yet(
         self,
@@ -393,7 +384,7 @@ class TestAsyncTCPNetworkClientConnection:
 
             await client.wait_connected()
 
-            assert client.get_local_address()
+            _ = client.get_local_address()
 
     async def test____get_remote_address____connection_not_performed_yet(
         self,
@@ -435,13 +426,12 @@ class TestAsyncSSLOverTCPNetworkClient:
             pytest.skip("trustme is not installed")
 
         async def client_connected_cb(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-            try:
+            with contextlib.closing(writer):
                 data: bytes = await reader.readline()
                 writer.write(data)
                 await writer.drain()
-            finally:
-                writer.close()
-                await writer.wait_closed()
+
+            await writer.wait_closed()
 
         async with await asyncio.start_server(
             client_connected_cb,

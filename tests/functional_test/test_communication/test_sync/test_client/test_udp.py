@@ -26,7 +26,7 @@ def udp_socket_factory(udp_socket_factory: Callable[[], Socket], localhost_ip: s
     return bound_udp_socket_factory
 
 
-@pytest.mark.flaky(retries=3, delay=1)
+@pytest.mark.flaky(retries=3, delay=0.1)
 class TestUDPNetworkClient:
     @pytest.fixture
     @staticmethod

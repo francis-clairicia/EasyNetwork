@@ -7,16 +7,17 @@ import os
 from collections.abc import AsyncIterator, Callable, Coroutine, Iterable, Iterator
 from typing import TYPE_CHECKING, Any
 
+from easynetwork.exceptions import TypedAttributeLookupError
 from easynetwork.lowlevel.api_async.backend._trio.backend import TrioBackend
 from easynetwork.lowlevel.api_async.backend.abc import TaskGroup
 from easynetwork.lowlevel.constants import ACCEPT_CAPACITY_ERRNOS, CLOSED_SOCKET_ERRNOS
-from easynetwork.lowlevel.socket import SocketAttribute, SocketProxy
+from easynetwork.lowlevel.socket import SocketAttribute, SocketProxy, UnixCredentials, UNIXSocketAttribute
 
 import pytest
 
 from ....fixtures.trio import trio_fixture
 from ....tools import PlatformMarkers
-from ...base import BaseTestSocket, MixinTestSocketSendMSG
+from ...base import BaseTestSocketTransport, MixinTestSocketSendMSG
 
 if TYPE_CHECKING:
     from unittest.mock import AsyncMock, MagicMock
@@ -30,7 +31,7 @@ if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
 
-class BaseTestTransportStreamSocket(BaseTestSocket):
+class BaseTestTrioSocketStream(BaseTestSocketTransport):
     @staticmethod
     def _make_broken_resource_error(connection_error_errno: int) -> _BrokenResourceError:
         import trio
@@ -53,29 +54,47 @@ class BaseTestTransportStreamSocket(BaseTestSocket):
 
 
 @pytest.mark.feature_trio(async_test_auto_mark=True)
-class TestTrioStreamSocketAdapter(BaseTestTransportStreamSocket, MixinTestSocketSendMSG):
+@pytest.mark.usefixtures("mock_get_peer_credentials")
+class TestTrioStreamSocketAdapter(BaseTestTrioSocketStream, MixinTestSocketSendMSG):
     @pytest.fixture
     @classmethod
-    def mock_trio_tcp_socket(cls, mock_trio_tcp_socket: MagicMock, mocker: MockerFixture) -> MagicMock:
-        cls.set_local_address_to_socket_mock(mock_trio_tcp_socket, mock_trio_tcp_socket.family, ("127.0.0.1", 11111))
-        cls.set_remote_address_to_socket_mock(mock_trio_tcp_socket, mock_trio_tcp_socket.family, ("127.0.0.1", 12345))
+    def mock_trio_stream_socket(
+        cls,
+        socket_family_name: str,
+        local_address: tuple[str, int] | bytes,
+        remote_address: tuple[str, int] | bytes,
+        mock_trio_tcp_socket_factory: Callable[[], MagicMock],
+        mock_trio_unix_stream_socket_factory: Callable[[], MagicMock],
+    ) -> MagicMock:
+        mock_trio_stream_socket: MagicMock
 
-        # Always create a new mock instance because sendmsg() is not available on all platforms
-        # therefore the mocker's autospec will consider sendmsg() unknown on these ones.
-        mock_trio_tcp_socket.sendmsg = mocker.AsyncMock(
-            spec=lambda *args: None,
-            side_effect=lambda buffers, *args: sum(map(len, map(lambda v: memoryview(v), buffers))),
-        )
-        return mock_trio_tcp_socket
+        match socket_family_name:
+            case "AF_INET":
+                mock_trio_stream_socket = mock_trio_tcp_socket_factory()
+            case "AF_UNIX":
+                mock_trio_stream_socket = mock_trio_unix_stream_socket_factory()
+            case _:
+                pytest.fail(f"Invalid param: {socket_family_name!r}")
+
+        cls.set_local_address_to_socket_mock(mock_trio_stream_socket, mock_trio_stream_socket.family, local_address)
+        cls.set_remote_address_to_socket_mock(mock_trio_stream_socket, mock_trio_stream_socket.family, remote_address)
+        return mock_trio_stream_socket
 
     @pytest.fixture
     @staticmethod
     def mock_trio_socket_stream(
-        mock_trio_tcp_socket: MagicMock,
+        mock_trio_stream_socket: MagicMock,
         mock_trio_socket_stream_factory: Callable[[MagicMock], MagicMock],
+        mocker: MockerFixture,
     ) -> MagicMock:
-        mock_trio_socket_stream = mock_trio_socket_stream_factory(mock_trio_tcp_socket)
-        assert mock_trio_socket_stream.socket is mock_trio_tcp_socket
+        # Always create a new mock instance because sendmsg() is not available on all platforms
+        # therefore the mocker's autospec will consider sendmsg() unknown on these ones.
+        if not hasattr(mock_trio_stream_socket, "sendmsg"):
+            mock_trio_stream_socket.sendmsg = mocker.AsyncMock(spec=lambda *args: None)
+        mock_trio_stream_socket.sendmsg.side_effect = lambda buffers, *args: sum(map(len, map(lambda v: memoryview(v), buffers)))
+
+        mock_trio_socket_stream = mock_trio_socket_stream_factory(mock_trio_stream_socket)
+        assert mock_trio_socket_stream.socket is mock_trio_stream_socket
 
         mock_trio_socket_stream.send_all.return_value = None
 
@@ -480,43 +499,152 @@ class TestTrioStreamSocketAdapter(BaseTestTransportStreamSocket, MixinTestSocket
     async def test____extra_attributes____returns_socket_info(
         self,
         transport: TrioStreamSocketAdapter,
-        mock_trio_tcp_socket: MagicMock,
+        socket_family_name: str,
+        mock_trio_stream_socket: MagicMock,
+        local_address: tuple[str, int] | bytes,
+        remote_address: tuple[str, int] | bytes,
+        fake_ucred: UnixCredentials,
+        mock_get_peer_credentials: MagicMock,
     ) -> None:
         # Arrange
+        mock_get_peer_credentials.return_value = fake_ucred
 
         # Act & Assert
         trsock = transport.extra(SocketAttribute.socket)
         assert isinstance(trsock, SocketProxy)
-        assert transport.extra(SocketAttribute.family) == mock_trio_tcp_socket.family
-        assert transport.extra(SocketAttribute.sockname) == ("127.0.0.1", 11111)
-        assert transport.extra(SocketAttribute.peername) == ("127.0.0.1", 12345)
+        assert transport.extra(SocketAttribute.family) == mock_trio_stream_socket.family
+        assert transport.extra(SocketAttribute.sockname) == local_address
+        assert transport.extra(SocketAttribute.peername) == remote_address
 
-        mock_trio_tcp_socket.reset_mock()
+        if socket_family_name == "AF_UNIX":
+            assert UNIXSocketAttribute.peer_credentials in transport.extra_attributes
+            assert transport.extra(UNIXSocketAttribute.peer_credentials) == fake_ucred
+            mock_get_peer_credentials.assert_called_once_with(transport.extra(SocketAttribute.socket))
+        else:
+            assert UNIXSocketAttribute.peer_credentials not in transport.extra_attributes
+            assert transport.extra(UNIXSocketAttribute.peer_credentials, None) is None
+            mock_get_peer_credentials.assert_not_called()
+
+        mock_trio_stream_socket.reset_mock()
         trsock.fileno()
-        mock_trio_tcp_socket.fileno.assert_called_once()
+        mock_trio_stream_socket.fileno.assert_called_once()
+
+    @pytest.mark.parametrize("socket_family_name", ["AF_UNIX"], indirect=True)
+    async def test____extra_attributes____credentials_lookup_raises_OSError(
+        self,
+        transport: TrioStreamSocketAdapter,
+        mock_get_peer_credentials: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        os_error = errno.EACCES
+        mock_get_peer_credentials.side_effect = OSError(os_error, os.strerror(os_error))
+
+        # Act & Assert
+        with pytest.raises(TypedAttributeLookupError):
+            transport.extra(UNIXSocketAttribute.peer_credentials)
+        mock_get_peer_credentials.assert_called_once()
+
+    @pytest.mark.parametrize("socket_family_name", ["AF_UNIX"], indirect=True)
+    async def test____extra_attributes____get_peer_credentials_not_implemented(
+        self,
+        transport: TrioStreamSocketAdapter,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        get_peer_credentials_impl_from_platform = mocker.patch(
+            "easynetwork.lowlevel.socket._get_peer_credentials_impl_from_platform",
+            side_effect=NotImplementedError,
+        )
+
+        # Act & Assert
+        with pytest.raises(TypedAttributeLookupError):
+            transport.extra(UNIXSocketAttribute.peer_credentials)
+        get_peer_credentials_impl_from_platform.assert_called_once_with()
 
 
 @pytest.mark.feature_trio(async_test_auto_mark=True)
-class TestTrioListenerSocketAdapter(BaseTestTransportStreamSocket):
+class TestTrioListenerSocketAdapter(BaseTestTrioSocketStream):
     @pytest.fixture
     @classmethod
-    def mock_trio_tcp_listener_socket(
+    def mock_accepted_trio_stream_socket(
         cls,
+        socket_family_name: str,
+        local_address: tuple[str, int] | bytes,
+        remote_address: tuple[str, int] | bytes,
         mock_trio_tcp_socket_factory: Callable[[], MagicMock],
+        mock_trio_unix_stream_socket_factory: Callable[[], MagicMock],
     ) -> MagicMock:
-        mock_socket = mock_trio_tcp_socket_factory()
-        cls.set_local_address_to_socket_mock(mock_socket, mock_socket.family, ("127.0.0.1", 11111))
-        cls.configure_socket_mock_to_raise_ENOTCONN(mock_socket)
-        return mock_socket
+        mock_accepted_trio_stream_socket: MagicMock
+
+        match socket_family_name:
+            case "AF_INET":
+                mock_accepted_trio_stream_socket = mock_trio_tcp_socket_factory()
+            case "AF_UNIX":
+                mock_accepted_trio_stream_socket = mock_trio_unix_stream_socket_factory()
+            case _:
+                pytest.fail(f"Invalid param: {socket_family_name!r}")
+
+        cls.set_local_address_to_socket_mock(
+            mock_accepted_trio_stream_socket,
+            mock_accepted_trio_stream_socket.family,
+            local_address,
+        )
+        cls.set_remote_address_to_socket_mock(
+            mock_accepted_trio_stream_socket,
+            mock_accepted_trio_stream_socket.family,
+            remote_address,
+        )
+        return mock_accepted_trio_stream_socket
+
+    @pytest.fixture
+    @staticmethod
+    def mock_accepted_trio_socket_stream(
+        mock_accepted_trio_stream_socket: MagicMock,
+        mock_trio_socket_stream_factory: Callable[[MagicMock], MagicMock],
+    ) -> MagicMock:
+        mock_accepted_trio_socket_stream = mock_trio_socket_stream_factory(mock_accepted_trio_stream_socket)
+        assert mock_accepted_trio_socket_stream.socket is mock_accepted_trio_stream_socket
+
+        return mock_accepted_trio_socket_stream
+
+    @pytest.fixture
+    @classmethod
+    def mock_trio_stream_listener_socket(
+        cls,
+        socket_family_name: str,
+        local_address: tuple[str, int] | bytes,
+        mock_trio_tcp_socket_factory: Callable[[], MagicMock],
+        mock_trio_unix_stream_socket_factory: Callable[[], MagicMock],
+    ) -> MagicMock:
+        mock_trio_stream_listener_socket: MagicMock
+
+        match socket_family_name:
+            case "AF_INET":
+                mock_trio_stream_listener_socket = mock_trio_tcp_socket_factory()
+            case "AF_UNIX":
+                mock_trio_stream_listener_socket = mock_trio_unix_stream_socket_factory()
+            case _:
+                pytest.fail(f"Invalid param: {socket_family_name!r}")
+
+        cls.set_local_address_to_socket_mock(
+            mock_trio_stream_listener_socket,
+            mock_trio_stream_listener_socket.family,
+            local_address,
+        )
+        cls.configure_socket_mock_to_raise_ENOTCONN(mock_trio_stream_listener_socket)
+        return mock_trio_stream_listener_socket
 
     @pytest.fixture
     @staticmethod
     def mock_trio_socket_listener(
-        mock_trio_tcp_listener_socket: MagicMock,
+        mock_trio_stream_listener_socket: MagicMock,
         mock_trio_socket_listener_factory: Callable[[MagicMock], MagicMock],
+        mock_accepted_trio_socket_stream: MagicMock,
     ) -> MagicMock:
-        mock_trio_socket_listener = mock_trio_socket_listener_factory(mock_trio_tcp_listener_socket)
-        assert mock_trio_socket_listener.socket is mock_trio_tcp_listener_socket
+        mock_trio_socket_listener = mock_trio_socket_listener_factory(mock_trio_stream_listener_socket)
+        assert mock_trio_socket_listener.socket is mock_trio_stream_listener_socket
+        mock_trio_socket_listener.accept.return_value = mock_accepted_trio_socket_stream
         return mock_trio_socket_listener
 
     @pytest.fixture
@@ -604,7 +732,7 @@ class TestTrioListenerSocketAdapter(BaseTestTransportStreamSocket):
         external_group: bool,
         handler: AsyncMock,
         mock_trio_socket_listener: MagicMock,
-        mock_trio_socket_stream_factory: Callable[[], MagicMock],
+        mock_accepted_trio_socket_stream: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -613,9 +741,8 @@ class TestTrioListenerSocketAdapter(BaseTestTransportStreamSocket):
         from easynetwork.lowlevel.api_async.backend._trio.stream.socket import TrioStreamSocketAdapter
 
         accepted_client_transport = mocker.NonCallableMagicMock(spec=TrioStreamSocketAdapter)
-        accepted_client_stream = mock_trio_socket_stream_factory()
         mock_trio_socket_listener.accept.side_effect = self._make_accept_side_effect(
-            [accepted_client_stream, (await self._get_cancelled_exc())],
+            [mock_accepted_trio_socket_stream, (await self._get_cancelled_exc())],
             mocker,
             sleep_time=0.1,
         )
@@ -631,7 +758,7 @@ class TestTrioListenerSocketAdapter(BaseTestTransportStreamSocket):
                 await listener.serve(handler, task_group)
 
         # Assert
-        mock_TrioStreamSocketAdapter.assert_called_once_with(trio_backend, accepted_client_stream)
+        mock_TrioStreamSocketAdapter.assert_called_once_with(trio_backend, mock_accepted_trio_socket_stream)
         handler.assert_awaited_once_with(accepted_client_transport)
 
     @pytest.mark.parametrize("closed_socket_errno", sorted(CLOSED_SOCKET_ERRNOS), ids=errno.errorcode.__getitem__)
@@ -729,7 +856,8 @@ class TestTrioListenerSocketAdapter(BaseTestTransportStreamSocket):
     async def test____extra_attributes____returns_socket_info(
         self,
         listener: TrioListenerSocketAdapter,
-        mock_trio_tcp_listener_socket: MagicMock,
+        local_address: tuple[str, int] | bytes,
+        mock_trio_stream_listener_socket: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -737,10 +865,10 @@ class TestTrioListenerSocketAdapter(BaseTestTransportStreamSocket):
         # Act & Assert
         trsock = listener.extra(SocketAttribute.socket)
         assert isinstance(trsock, SocketProxy)
-        assert listener.extra(SocketAttribute.family) == mock_trio_tcp_listener_socket.family
-        assert listener.extra(SocketAttribute.sockname) == ("127.0.0.1", 11111)
+        assert listener.extra(SocketAttribute.family) == mock_trio_stream_listener_socket.family
+        assert listener.extra(SocketAttribute.sockname) == local_address
         assert listener.extra(SocketAttribute.peername, mocker.sentinel.no_value) is mocker.sentinel.no_value
 
-        mock_trio_tcp_listener_socket.reset_mock()
+        mock_trio_stream_listener_socket.reset_mock()
         trsock.fileno()
-        mock_trio_tcp_listener_socket.fileno.assert_called_once()
+        mock_trio_stream_listener_socket.fileno.assert_called_once()

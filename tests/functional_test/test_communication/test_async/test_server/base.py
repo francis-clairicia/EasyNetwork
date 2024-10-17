@@ -67,12 +67,12 @@ class BaseTestAsyncServer:
             if log_line_counter[record.name] <= maximum_nb_lines:
                 continue
             threshold_level_name = logging.getLevelName(threshold_level)
-            if not maximum_nb_lines:
-                pytest.fail(f"Logs with level equal to or greater than {threshold_level_name} caught in {record.name} logger")
-            else:
+            if maximum_nb_lines:
                 pytest.fail(
                     f"More than {maximum_nb_lines} logs with level equal to or greater than {threshold_level_name} caught in {record.name} logger"
                 )
+            else:
+                pytest.fail(f"Logs with level equal to or greater than {threshold_level_name} caught in {record.name} logger")
 
     @pytest_asyncio.fixture  # DO NOT SET autouse=True
     @staticmethod
@@ -96,9 +96,21 @@ class BaseTestAsyncServer:
     ) -> None:
         await run_server.wait()
         await server.server_close()
-        await asyncio.sleep(0.5)
 
         # There is no client so the server loop should stop by itself
+        assert not server.is_serving()
+        assert not server.is_listening()
+
+    async def test____server_close____while_server_is_running____closed_forcefully(
+        self,
+        server: AbstractAsyncNetworkServer,
+        run_server: asyncio.Event,
+    ) -> None:
+        await run_server.wait()
+        with server.backend().move_on_after(0) as scope:
+            await server.server_close()
+        assert scope.cancelled_caught()
+
         assert not server.is_serving()
         assert not server.is_listening()
 
@@ -157,6 +169,8 @@ class BaseTestAsyncServer:
         server_not_activated: AbstractAsyncNetworkServer,
         enable_eager_tasks: bool,
     ) -> None:
+        assert not server_not_activated.is_listening()
+
         async def serve() -> None:
             with pytest.raises(ServerClosedError):
                 await server_not_activated.server_activate()

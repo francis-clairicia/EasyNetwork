@@ -38,14 +38,14 @@ class RandomError(Exception):
     pass
 
 
-def client_address(client: AsyncDatagramClient[Any]) -> SocketAddress:
+def fetch_client_address(client: AsyncDatagramClient[Any]) -> SocketAddress:
     return client.extra(INETClientAttribute.remote_address)
 
 
 LOGGER = logging.getLogger(__name__)
 
 
-class MyAsyncUDPRequestHandler(AsyncDatagramRequestHandler[str, str]):
+class MyDatagramRequestHandler(AsyncDatagramRequestHandler[str, str]):
     request_count: collections.Counter[tuple[Any, ...]]
     request_received: collections.defaultdict[tuple[Any, ...], list[str]]
     bad_request_received: collections.defaultdict[tuple[Any, ...], list[BaseProtocolParseError]]
@@ -75,7 +75,7 @@ class MyAsyncUDPRequestHandler(AsyncDatagramRequestHandler[str, str]):
         exit_stack.push_async_callback(self.service_quit)
 
     async def service_quit(self) -> None:
-        # At this point, ALL clients should be closed (since the UDP socket is closed)
+        # At this point, ALL clients should be closed (since the socket is closed)
         for client in self.created_clients:
             assert client.is_closing()
             with pytest.raises(ClientClosedError):
@@ -83,12 +83,12 @@ class MyAsyncUDPRequestHandler(AsyncDatagramRequestHandler[str, str]):
 
     async def handle(self, client: AsyncDatagramClient[str]) -> AsyncGenerator[None, str]:
         self.created_clients.add(client)
-        self.created_clients_map.setdefault(client_address(client), client)
+        self.created_clients_map.setdefault(fetch_client_address(client), client)
         while True:
             async with self.handle_bad_requests(client):
                 request = yield
                 break
-        self.request_count[client_address(client)] += 1
+        self.request_count[fetch_client_address(client)] += 1
         match request:
             case "__ping__":
                 await client.send_packet("pong")
@@ -112,7 +112,7 @@ class MyAsyncUDPRequestHandler(AsyncDatagramRequestHandler[str, str]):
                 else:
                     await client.send_packet("True")
             case "__cache__":
-                stored_client_object = self.created_clients_map[client_address(client)]
+                stored_client_object = self.created_clients_map[fetch_client_address(client)]
                 try:
                     assert client is stored_client_object, "client is not stored_client_object"
                 except AssertionError as exc:
@@ -125,10 +125,10 @@ class MyAsyncUDPRequestHandler(AsyncDatagramRequestHandler[str, str]):
                     async with self.handle_bad_requests(client):
                         request = yield
                         break
-                self.request_received[client_address(client)].append(request)
+                self.request_received[fetch_client_address(client)].append(request)
                 await client.send_packet(f"After wait: {request}")
             case _:
-                self.request_received[client_address(client)].append(request)
+                self.request_received[fetch_client_address(client)].append(request)
                 try:
                     await client.send_packet(request.upper())
                 except Exception as exc:
@@ -143,7 +143,7 @@ class MyAsyncUDPRequestHandler(AsyncDatagramRequestHandler[str, str]):
             yield
         except DatagramProtocolParseError as exc:
             remove_traceback_frames_in_place(exc, 1)
-            self.bad_request_received[client_address(client)].append(exc)
+            self.bad_request_received[fetch_client_address(client)].append(exc)
             await client.send_packet("wrong encoding man.")
 
 
@@ -263,12 +263,12 @@ class MyAsyncUDPServer(AsyncUDPNetworkServer[str, str]):
     __slots__ = ()
 
 
-@pytest.mark.flaky(retries=3, delay=1)
+@pytest.mark.flaky(retries=3, delay=0.1)
 class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
     @pytest.fixture
     @staticmethod
-    def request_handler(request: Any) -> AsyncDatagramRequestHandler[str, str]:
-        request_handler_cls: type[AsyncDatagramRequestHandler[str, str]] = getattr(request, "param", MyAsyncUDPRequestHandler)
+    def request_handler(request: pytest.FixtureRequest) -> AsyncDatagramRequestHandler[str, str]:
+        request_handler_cls: type[AsyncDatagramRequestHandler[str, str]] = getattr(request, "param", MyDatagramRequestHandler)
         return request_handler_cls()
 
     @pytest.fixture
@@ -373,7 +373,7 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
 
     async def test____serve_forever____empty_listener_list(
         self,
-        request_handler: MyAsyncUDPRequestHandler,
+        request_handler: MyDatagramRequestHandler,
         datagram_protocol: DatagramProtocol[str, str],
     ) -> None:
         s = MyAsyncUDPServer(None, 0, datagram_protocol, request_handler, NoListenerErrorBackend())
@@ -389,7 +389,7 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
     async def test____serve_forever____server_assignment(
         self,
         server: MyAsyncUDPServer,
-        request_handler: MyAsyncUDPRequestHandler,
+        request_handler: MyDatagramRequestHandler,
     ) -> None:
         assert request_handler.server == server
         assert isinstance(request_handler.server, AsyncUDPNetworkServer)
@@ -397,7 +397,7 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
     async def test____serve_forever____handle_request(
         self,
         client_factory: Callable[[], Awaitable[DatagramEndpoint]],
-        request_handler: MyAsyncUDPRequestHandler,
+        request_handler: MyDatagramRequestHandler,
     ) -> None:
         endpoint = await client_factory()
         client_address: tuple[Any, ...] = endpoint.get_extra_info("sockname")
@@ -411,7 +411,7 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
     async def test____serve_forever____client_extra_attributes(
         self,
         client_factory: Callable[[], Awaitable[DatagramEndpoint]],
-        request_handler: MyAsyncUDPRequestHandler,
+        request_handler: MyDatagramRequestHandler,
     ) -> None:
         all_endpoints: list[DatagramEndpoint] = [await client_factory() for _ in range(3)]
 
@@ -453,7 +453,7 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
     async def test____serve_forever____save_request_handler_context(
         self,
         client_factory: Callable[[], Awaitable[DatagramEndpoint]],
-        request_handler: MyAsyncUDPRequestHandler,
+        request_handler: MyDatagramRequestHandler,
     ) -> None:
         endpoint = await client_factory()
         client_address: tuple[Any, ...] = endpoint.get_extra_info("sockname")
@@ -467,7 +467,7 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
     async def test____serve_forever____save_request_handler_context____extra_datagram_are_rescheduled(
         self,
         client_factory: Callable[[], Awaitable[DatagramEndpoint]],
-        request_handler: MyAsyncUDPRequestHandler,
+        request_handler: MyDatagramRequestHandler,
     ) -> None:
         endpoint = await client_factory()
         client_address: tuple[Any, ...] = endpoint.get_extra_info("sockname")
@@ -482,7 +482,7 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
     async def test____serve_forever____bad_request(
         self,
         client_factory: Callable[[], Awaitable[DatagramEndpoint]],
-        request_handler: MyAsyncUDPRequestHandler,
+        request_handler: MyDatagramRequestHandler,
     ) -> None:
         endpoint = await client_factory()
         client_address: tuple[Any, ...] = endpoint.get_extra_info("sockname")
@@ -571,7 +571,7 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
 
         assert len(caplog.records) == 1
         assert caplog.records[0].levelno == logging.ERROR
-        assert caplog.records[0].message == "RuntimeError: protocol.make_datagram() crashed (caused by SystemError: CRASH)"
+        assert caplog.records[0].getMessage() == "RuntimeError: protocol.make_datagram() crashed (caused by SystemError: CRASH)"
 
     async def test____serve_forever____os_error(
         self,
@@ -611,7 +611,7 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
 
         assert len(caplog.records) == 1
         assert caplog.records[0].levelno == logging.WARNING
-        assert caplog.records[0].message == f"There have been attempts to do operation on closed client ({host!r}, {port})"
+        assert caplog.records[0].getMessage() == f"There have been attempts to do operation on closed client ({host!r}, {port})"
 
     @pytest.mark.parametrize("request_handler", [TimeoutYieldedRequestHandler, TimeoutContextRequestHandler], indirect=True)
     @pytest.mark.parametrize("request_timeout", [0.0, 1.0], ids=lambda p: f"timeout=={p}")
@@ -722,17 +722,17 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         request_handler.recreate_generator = recreate_generator
         endpoint = await client_factory()
 
-        await endpoint.sendto(b"something", None)
-        await asyncio.sleep(0.1)
-        await endpoint.sendto(b"hello, world.", None)
-        for i in range(3):
-            await endpoint.sendto(b"something", None)
-            await endpoint.sendto(f"hello, world {i+2} times.".encode(), None)
-        await endpoint.sendto(b"something", None)
-        await asyncio.sleep(0.1)
-        request_handler.sleep_time_before_response = None
-        await endpoint.sendto(b"hello, world. new game +", None)
         async with asyncio.timeout(5):
+            await endpoint.sendto(b"something", None)
+            await asyncio.sleep(0.1)
+            await endpoint.sendto(b"hello, world.", None)
+            for i in range(3):
+                await endpoint.sendto(b"something", None)
+                await endpoint.sendto(f"hello, world {i+2} times.".encode(), None)
+            await endpoint.sendto(b"something", None)
+            await asyncio.sleep(0.1)
+            request_handler.sleep_time_before_response = None
+            await endpoint.sendto(b"hello, world. new game +", None)
             assert (await endpoint.recvfrom())[0] == b"After wait: hello, world."
             assert (await endpoint.recvfrom())[0] == b"After wait: hello, world 2 times."
             assert (await endpoint.recvfrom())[0] == b"After wait: hello, world 3 times."

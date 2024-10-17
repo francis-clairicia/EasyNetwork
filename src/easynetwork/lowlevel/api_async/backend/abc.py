@@ -996,6 +996,30 @@ class AsyncBackend(metaclass=ABCMeta):
         """
         raise NotImplementedError
 
+    async def create_unix_stream_connection(
+        self,
+        path: str | bytes,
+        *,
+        local_path: str | bytes | None = None,
+    ) -> _transports.AsyncStreamTransport:  # pragma: no cover
+        """
+        Opens a connection to a Unix stream socket.
+
+        .. versionadded:: 1.1
+
+        Parameters:
+            path: Path of the socket to which the connection is made.
+            local_path: If given, is a Unix socket address used to bind the socket locally.
+
+        Raises:
+            ConnectionError: Cannot connect to `path`.
+            OSError: unrelated OS error occurred.
+
+        Returns:
+            A stream socket.
+        """
+        raise NotImplementedError
+
     @abstractmethod
     async def wrap_stream_socket(self, socket: _socket.socket) -> _transports.AsyncStreamTransport:
         """
@@ -1054,6 +1078,31 @@ class AsyncBackend(metaclass=ABCMeta):
         """
         raise NotImplementedError
 
+    async def create_unix_stream_listener(
+        self,
+        path: str | bytes,
+        backlog: int,
+        *,
+        mode: int | None = None,
+    ) -> _transports.AsyncListener[_transports.AsyncStreamTransport]:  # pragma: no cover
+        """
+        Opens a listener socket for Unix stream connections.
+
+        .. versionadded:: 1.1
+
+        Parameters:
+            path: Path of the socket.
+            backlog: is the maximum number of queued connections passed to :class:`~socket.socket.listen`.
+            mode: Permissions to set on the socket.
+
+        Raises:
+            OSError: unrelated OS error occurred.
+
+        Returns:
+            A listener socket.
+        """
+        raise NotImplementedError
+
     @abstractmethod
     async def create_udp_endpoint(
         self,
@@ -1064,13 +1113,36 @@ class AsyncBackend(metaclass=ABCMeta):
         family: int = ...,
     ) -> _transports.AsyncDatagramTransport:
         """
-        Opens an endpoint using the UDP protocol.
+        Opens an endpoint using the UDP/IP protocol.
 
         Parameters:
             remote_host: The host IP/domain name.
             remote_port: Port of connection.
             local_address: If given, is a ``(local_host, local_port)`` tuple used to bind the socket locally.
             family: The address family. Should be any of ``AF_UNSPEC``, ``AF_INET`` or ``AF_INET6``.
+
+        Raises:
+            OSError: unrelated OS error occurred.
+
+        Returns:
+            A datagram socket.
+        """
+        raise NotImplementedError
+
+    async def create_unix_datagram_endpoint(
+        self,
+        path: str | bytes,
+        *,
+        local_path: str | bytes | None = None,
+    ) -> _transports.AsyncDatagramTransport:  # pragma: no cover
+        """
+        Opens an endpoint to a Unix datagram socket.
+
+        .. versionadded:: 1.1
+
+        Parameters:
+            path: Path of the socket to which the connection is made.
+            local_path: If given, is a Unix socket address used to bind the socket locally.
 
         Raises:
             OSError: unrelated OS error occurred.
@@ -1088,7 +1160,7 @@ class AsyncBackend(metaclass=ABCMeta):
         Important:
             The returned stream socket takes the ownership of `socket`.
 
-            You should use :meth:`AsyncDatagramTransport.aclose` to close the socket.
+            You should use :meth:`.AsyncDatagramTransport.aclose` to close the socket.
 
         Parameters:
             socket: The socket to wrap.
@@ -1131,6 +1203,29 @@ class AsyncBackend(metaclass=ABCMeta):
 
         Returns:
             A sequence of datagram listener sockets.
+        """
+        raise NotImplementedError
+
+    async def create_unix_datagram_listener(
+        self,
+        path: str | bytes,
+        *,
+        mode: int | None = None,
+    ) -> _transports.AsyncDatagramListener[str | bytes]:  # pragma: no cover
+        """
+        Opens a Unix datagram endpoint.
+
+        .. versionadded:: 1.1
+
+        Parameters:
+            path: Path of the socket.
+            mode: Permissions to set on the socket.
+
+        Raises:
+            OSError: unrelated OS error occurred.
+
+        Returns:
+            A datagram listener socket.
         """
         raise NotImplementedError
 

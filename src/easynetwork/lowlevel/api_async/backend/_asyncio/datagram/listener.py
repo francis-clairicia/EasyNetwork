@@ -28,7 +28,7 @@ import logging
 import warnings
 from collections.abc import Callable, Coroutine, Mapping
 from types import MappingProxyType
-from typing import Any, NoReturn, final
+from typing import TYPE_CHECKING, Any, NoReturn, final
 
 from ..... import _utils, socket as socket_tools
 from ....transports import abc as transports
@@ -36,9 +36,12 @@ from ...abc import AsyncBackend, TaskGroup
 from .._flow_control import WriteFlowControl
 from .endpoint import _monkeypatch_transport
 
+if TYPE_CHECKING:
+    from socket import _Address, _RetAddress
+
 
 @final
-class DatagramListenerSocketAdapter(transports.AsyncDatagramListener[tuple[Any, ...]]):
+class DatagramListenerSocketAdapter(transports.AsyncDatagramListener["_RetAddress"]):
     __slots__ = (
         "__backend",
         "__transport",
@@ -86,7 +89,7 @@ class DatagramListenerSocketAdapter(transports.AsyncDatagramListener[tuple[Any, 
 
     async def serve(
         self,
-        handler: Callable[[bytes, tuple[Any, ...]], Coroutine[Any, Any, None]],
+        handler: Callable[[bytes, _RetAddress], Coroutine[Any, Any, None]],
         task_group: TaskGroup | None = None,
     ) -> NoReturn:
         async with contextlib.AsyncExitStack() as stack:
@@ -96,7 +99,7 @@ class DatagramListenerSocketAdapter(transports.AsyncDatagramListener[tuple[Any, 
 
         raise AssertionError("Expected code to be unreachable.")
 
-    async def send_to(self, data: bytes | bytearray | memoryview, address: tuple[Any, ...]) -> None:
+    async def send_to(self, data: bytes | bytearray | memoryview, address: _Address) -> None:
         assert address is not None, "Address is None"  # nosec assert_used
         self.__transport.sendto(data, address)
         await self.__protocol.writer_drain()
@@ -111,10 +114,10 @@ class DatagramListenerSocketAdapter(transports.AsyncDatagramListener[tuple[Any, 
 
 @dataclasses.dataclass(eq=False, frozen=True, slots=True)
 class _DatagramListenerServeContext:
-    datagram_handler: Callable[[bytes, tuple[Any, ...]], Coroutine[Any, Any, None]]
+    datagram_handler: Callable[[bytes, _RetAddress], Coroutine[Any, Any, None]]
     task_group: TaskGroup
 
-    def handle(self, data: bytes, addr: tuple[Any, ...]) -> None:
+    def handle(self, data: bytes, addr: _RetAddress) -> None:
         self.task_group.start_soon(self.datagram_handler, data, addr)
 
 
@@ -140,7 +143,7 @@ class DatagramListenerProtocol(asyncio.DatagramProtocol):
             loop = asyncio.get_running_loop()
         self.__loop: asyncio.AbstractEventLoop = loop
         self.__datagram_serve_ctx: _DatagramListenerServeContext | None = None
-        self.__delayed_datagrams_queue: collections.deque[tuple[bytes, tuple[Any, ...]]] = collections.deque()
+        self.__delayed_datagrams_queue: collections.deque[tuple[bytes, _RetAddress]] = collections.deque()
         self.__transport: asyncio.DatagramTransport | None = None
         self.__closed: asyncio.Future[None] = loop.create_future()
         self.__write_flow: WriteFlowControl
@@ -165,7 +168,7 @@ class DatagramListenerProtocol(asyncio.DatagramProtocol):
 
         self.__transport = None
 
-    def datagram_received(self, data: bytes, addr: tuple[Any, ...]) -> None:
+    def datagram_received(self, data: bytes, addr: _RetAddress) -> None:
         if (datagram_serve_ctx := self.__datagram_serve_ctx) is None:
             # serve() is not yet awaited.
             self.__delayed_datagrams_queue.append((data, addr))
@@ -180,7 +183,7 @@ class DatagramListenerProtocol(asyncio.DatagramProtocol):
 
     async def serve(
         self,
-        handler: Callable[[bytes, tuple[Any, ...]], Coroutine[Any, Any, None]],
+        handler: Callable[[bytes, _RetAddress], Coroutine[Any, Any, None]],
         task_group: TaskGroup,
     ) -> NoReturn:
         if self.__datagram_serve_ctx is not None:

@@ -19,9 +19,10 @@ __all__ = [
     "Flag",
     "WarnCallback",
     "adjust_leftover_buffer",
+    "check_inet_socket_family",
     "check_real_socket_state",
-    "check_socket_family",
     "check_socket_no_ssl",
+    "convert_socket_bind_error",
     "error_from_errno",
     "exception_with_notes",
     "get_callable_name",
@@ -39,16 +40,17 @@ __all__ = [
     "supports_socket_sendmsg",
     "validate_listener_hosts",
     "validate_timeout_delay",
+    "weak_method_proxy",
 ]
 
 import contextlib
 import errno as _errno
 import functools
 import math
-import os
 import socket as _socket
 import threading
 import time
+import weakref
 from abc import abstractmethod
 from collections import deque
 from collections.abc import Callable, Iterable, Iterator, Sequence
@@ -63,6 +65,7 @@ else:
     del _ssl
 
 from . import constants
+from ._errno import error_from_errno
 
 if TYPE_CHECKING:
     from ssl import SSLError as _SSLError, SSLSocket as _SSLSocket
@@ -84,7 +87,7 @@ def replace_kwargs(kwargs: dict[str, Any], keys: dict[str, str]) -> None:
         raise ValueError("Empty key dict")
     for old_key, new_key in keys.items():
         if new_key in kwargs:
-            raise TypeError(f"Cannot set {old_key!r} to {new_key!r}: {new_key!r} in dictionary")
+            raise ValueError(f"Cannot set {old_key!r} to {new_key!r}: {new_key!r} in dictionary")
         try:
             kwargs[new_key] = kwargs.pop(old_key)
         except KeyError:
@@ -93,6 +96,30 @@ def replace_kwargs(kwargs: dict[str, Any], keys: dict[str, str]) -> None:
 
 def make_callback(func: Callable[_P, _T_Return], /, *args: _P.args, **kwargs: _P.kwargs) -> Callable[[], _T_Return]:
     return functools.partial(func, *args, **kwargs)
+
+
+@overload
+def weak_method_proxy(weak_method: weakref.WeakMethod[Callable[_P, _T_Return]], /) -> Callable[_P, _T_Return]: ...
+
+
+@overload
+def weak_method_proxy(weak_method: Callable[_P, _T_Return], /) -> Callable[_P, _T_Return]: ...
+
+
+def weak_method_proxy(
+    weak_method: weakref.WeakMethod[Callable[_P, _T_Return]] | Callable[_P, _T_Return], /
+) -> Callable[_P, _T_Return]:
+    if not isinstance(weak_method, weakref.WeakMethod):
+        weak_method = weakref.WeakMethod(weak_method)
+
+    @functools.wraps(weak_method, assigned=(), updated=())
+    def weak_method_proxy(*args: _P.args, **kwargs: _P.kwargs) -> _T_Return:
+        method = weak_method()
+        if method is None:
+            raise ReferenceError("weakly-referenced object no longer exists")
+        return method(*args, **kwargs)
+
+    return weak_method_proxy
 
 
 @overload
@@ -146,11 +173,6 @@ def inherit_doc(base_cls: type[Any]) -> Callable[[_T_Func], _T_Func]:
     return decorator
 
 
-def error_from_errno(errno: int, msg: str = "{strerror}") -> OSError:
-    msg = msg.format(strerror=os.strerror(errno))
-    return OSError(errno, msg)
-
-
 def missing_extra_deps(extra_name: str, *, feature_name: str = "") -> ModuleNotFoundError:
     if not feature_name:
         feature_name = extra_name
@@ -160,7 +182,7 @@ def missing_extra_deps(extra_name: str, *, feature_name: str = "") -> ModuleNotF
     )
 
 
-def check_socket_family(family: int) -> None:
+def check_inet_socket_family(family: int) -> None:
     if family not in {_socket.AF_INET, _socket.AF_INET6}:
         raise ValueError("Only these families are supported: AF_INET, AF_INET6")
 
@@ -290,7 +312,6 @@ def validate_listener_hosts(host: str | Sequence[str] | None) -> list[str | None
 def open_listener_sockets_from_getaddrinfo_result(
     infos: Iterable[tuple[int, int, int, str, tuple[Any, ...]]],
     *,
-    backlog: int | None,
     reuse_address: bool,
     reuse_port: bool,
 ) -> list[_socket.socket]:
@@ -329,14 +350,8 @@ def open_listener_sockets_from_getaddrinfo_result(
             try:
                 sock.bind(sa)
             except OSError as exc:
-                errors.append(
-                    OSError(
-                        exc.errno, f"error while attempting to bind to address {sa!r}: {exc.strerror.lower()}"
-                    ).with_traceback(exc.__traceback__)
-                )
+                errors.append(convert_socket_bind_error(exc, sa))
                 continue
-            if backlog is not None:
-                sock.listen(backlog)
 
         if errors:
             # No need to call errors.clear(), this is done by exit stack
@@ -346,6 +361,15 @@ def open_listener_sockets_from_getaddrinfo_result(
         socket_exit_stack.pop_all()
 
     return sockets
+
+
+def convert_socket_bind_error(exc: OSError, addr: Any) -> OSError:
+    if exc.errno:
+        msg = f"error while attempting to bind on address {addr!r}: {exc.strerror}"
+        return OSError(exc.errno, msg).with_traceback(exc.__traceback__)
+    else:
+        msg = f"error while attempting to bind on address {addr!r}: {exc}"
+        return OSError(_errno.EINVAL, msg).with_traceback(exc.__traceback__)
 
 
 def exception_with_notes(exc: _T_Exception, notes: str | Iterable[str]) -> _T_Exception:

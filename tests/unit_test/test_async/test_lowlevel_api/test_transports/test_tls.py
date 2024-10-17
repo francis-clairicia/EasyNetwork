@@ -1269,7 +1269,7 @@ class TestAsyncTLSListener:
             case _:
                 assert len(caplog.records) == 1
                 assert caplog.records[0].levelno == logging.WARNING
-                assert caplog.records[0].message == "Error in client task (during TLS handshake)"
+                assert caplog.records[0].getMessage() == "Error in client task (during TLS handshake)"
                 assert caplog.records[0].exc_info == (type(exc), exc, mocker.ANY)
 
     @pytest.mark.parametrize(
@@ -1304,6 +1304,6 @@ class TestAsyncTLSListener:
         mock_wrapped_client_transport.aclose.assert_awaited_once_with()
         assert len(caplog.records) == 1
         assert caplog.records[0].levelno == logging.WARNING
-        assert caplog.records[0].message == "Error in client task (during TLS handshake)"
+        assert caplog.records[0].getMessage() == "Error in client task (during TLS handshake)"
         assert caplog.records[0].exc_info == (RuntimeError, error_handler_exc, mocker.ANY)
         assert error_handler_exc.__context__ is exc

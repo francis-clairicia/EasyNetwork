@@ -222,7 +222,7 @@ class BufferedStreamProtocol(Generic[_T_SentPacket, _T_ReceivedPacket, _T_Buffer
 class StreamProtocol(Generic[_T_SentPacket, _T_ReceivedPacket]):
     """A :term:`protocol object` class for connection-oriented stream communication."""
 
-    __slots__ = ("__serializer", "__converter", "__buffered_receiver", "__weakref__")
+    __slots__ = ("__serializer", "__converter", "__weakref__")
 
     @overload
     def __init__(

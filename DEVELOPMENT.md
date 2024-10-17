@@ -84,4 +84,4 @@ tox run -q -f mypy
     ]
 }
 ```
-> :warning: **NEVER** run all the test suite with VS code integrated testing tool ! There are 8000+ tests.
+> :warning: **NEVER** run all the test suite with VS code integrated testing tool ! There are 10_000+ tests.

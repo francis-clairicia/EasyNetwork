@@ -26,10 +26,14 @@ __all__ = [
     "SocketProxy",
     "SupportsSocketOptions",
     "TLSAttribute",
+    "UNIXSocketAttribute",
+    "UnixCredentials",
+    "UnixSocketAddress",
     "_get_socket_extra",
     "_get_tls_extra",
     "disable_socket_linger",
     "enable_socket_linger",
+    "get_peer_credentials",
     "get_socket_linger",
     "get_socket_linger_struct",
     "new_socket_address",
@@ -41,7 +45,9 @@ __all__ = [
 import contextlib
 import functools
 import os
+import pathlib
 import socket as _socket
+import sys
 import threading
 from abc import abstractmethod
 from collections.abc import Callable
@@ -53,6 +59,7 @@ from typing import (
     NamedTuple,
     ParamSpec,
     Protocol,
+    Self,
     TypeAlias,
     TypeVar,
     final,
@@ -60,7 +67,7 @@ from typing import (
     runtime_checkable,
 )
 
-from . import typed_attr
+from . import _unix_utils, typed_attr
 from ._final import runtime_final_class
 
 if TYPE_CHECKING:
@@ -102,6 +109,40 @@ class INETSocketAttribute(SocketAttribute):
 
     peername: tuple[str, int] | tuple[str, int, int, int]
     """the remote address to which the socket is connected, result of :meth:`socket.socket.getpeername`."""
+
+
+class UNIXSocketAttribute(SocketAttribute):
+    """
+    Typed attributes which can be used on an endpoint or a transport.
+
+    .. versionadded:: 1.1
+    """
+
+    __slots__ = ()
+
+    if sys.platform != "win32":
+
+        family: Literal[_socket.AddressFamily.AF_UNIX]
+        """the socket's family, as returned by :attr:`socket.socket.family`."""
+
+        if sys.platform == "linux":
+            # Abstract Unix socket addresses are returned as bytes.
+
+            sockname: str | bytes
+            """the socket's own address, result of :meth:`socket.socket.getsockname`."""
+
+            peername: str | bytes
+            """the remote address to which the socket is connected, result of :meth:`socket.socket.getpeername`."""
+
+        else:
+            sockname: str
+            """the socket's own address, result of :meth:`socket.socket.getsockname`."""
+
+            peername: str
+            """the remote address to which the socket is connected, result of :meth:`socket.socket.getpeername`."""
+
+    peer_credentials: UnixCredentials = typed_attr.typed_attribute()
+    """the credentials of the peer process connected to this socket, result of :func:`.get_peer_credentials`."""
 
 
 class TLSAttribute(typed_attr.TypedAttributeSet):
@@ -219,6 +260,243 @@ def new_socket_address(addr: tuple[Any, ...], family: int) -> SocketAddress:
             return IPv6SocketAddress(*addr)
         case _:
             raise ValueError(f"Unsupported address family {family!r}")
+
+
+@final
+@runtime_final_class
+class UnixSocketAddress:
+    """
+    An address associated with a Unix socket.
+
+    .. versionadded:: 1.1
+    """
+
+    __slots__ = ("__addr",)
+
+    def __init__(self) -> None:
+        """
+        Constructs an unnamed socket address::
+
+            >>> addr = UnixSocketAddress()
+            >>> addr
+            UnixSocketAddress(<unnamed>)
+            >>> addr.is_unnamed()
+            True
+        """
+        self.__addr: str | bytes | None = None
+
+    @classmethod
+    def from_pathname(cls, path: str | os.PathLike[str]) -> Self:
+        """
+        Constructs a :class:`UnixSocketAddress` with the provided path.
+
+        Examples:
+
+            >>> addr = UnixSocketAddress.from_pathname("/path/to/socket")
+            >>> addr
+            UnixSocketAddress('/path/to/socket' <pathname>)
+            >>> addr.as_pathname()
+            PosixPath('/path/to/socket')
+
+            Creating a :class:`UnixSocketAddress` with a NULL byte results in an error.
+
+            >>> addr = UnixSocketAddress.from_pathname("/path/with/\\0/bytes")
+            Traceback (most recent call last):
+            ...
+            ValueError: paths must not contain interior null bytes
+
+            Creating a :class:`UnixSocketAddress` with an empty string results in an unnamed socket address.
+
+            >>> addr = UnixSocketAddress.from_pathname("")
+            >>> addr
+            UnixSocketAddress(<unnamed>)
+            >>> addr.is_unnamed()
+            True
+        """
+        path = os.fspath(path)
+        if not isinstance(path, str):
+            raise TypeError(f"Expected a str object or an os.PathLike object, got {path!r}")
+        return cls.__from_pathname_unchecked(path)
+
+    @classmethod
+    def __from_pathname_unchecked(cls, path: str) -> Self:
+        if "\0" in path:
+            raise ValueError("paths must not contain interior null bytes")
+        self = cls()
+        self.__addr = path or None
+        return self
+
+    @classmethod
+    def from_abstract_name(cls, name: str | bytes) -> Self:
+        """
+        Creates a Unix socket address in the abstract namespace.
+
+        The abstract namespace is a Linux-specific extension that allows Unix sockets to be bound
+        without creating an entry in the filesystem. Abstract sockets are unaffected by filesystem layout or permissions,
+        and no cleanup is necessary when the socket is closed.
+
+        An abstract socket address name may contain any bytes, including zero.
+
+        Examples:
+
+            >>> addr = UnixSocketAddress.from_abstract_name("hidden")
+            >>> addr
+            UnixSocketAddress(b'hidden' <abstract>)
+            >>> addr.as_abstract_name()
+            b'hidden'
+        """
+        if not isinstance(name, (str, bytes)):
+            raise TypeError(f"Expected a str object or a bytes object, got {name!r}")
+        name = os.fsencode(name)
+        return cls.__from_abstract_name_unchecked(b"\0" + name)
+
+    @classmethod
+    def __from_abstract_name_unchecked(cls, name: bytes) -> Self:
+        assert name[0] == 0, "Should start with a NUL byte."  # nosec assert_used
+        self = cls()
+        self.__addr = name
+        return self
+
+    @classmethod
+    def from_raw(cls, addr: Any) -> Self:
+        """
+        Constructs a :class:`UnixSocketAddress` from the raw `addr` supplied by the :class:`~socket.socket`.
+
+        * the result of :meth:`socket.socket.getsockname` or :meth:`socket.socket.getpeername`;
+
+        * the address retrieved by :meth:`socket.socket.recvfrom`;
+
+        * etc.
+        """
+        match addr:
+            case str():
+                if addr and addr[0] == "\0":
+                    return cls.__from_abstract_name_unchecked(os.fsencode(addr))
+                else:
+                    return cls.__from_pathname_unchecked(addr)
+            case bytes():
+                if addr and addr[0] == 0:
+                    return cls.__from_abstract_name_unchecked(addr)
+                else:
+                    return cls.__from_pathname_unchecked(os.fsdecode(addr))
+            case _:
+                raise TypeError(f"Cannot convert {addr!r} to a {cls.__name__}")
+
+    def __repr__(self) -> str:
+        match self.__addr:
+            case str(addr):
+                return f"{self.__class__.__name__}({addr!r} <pathname>)"
+            case bytes(addr):
+                return f"{self.__class__.__name__}({addr[1:]!r} <abstract>)"
+            case _:
+                return f"{self.__class__.__name__}(<unnamed>)"
+
+    def __str__(self) -> str:
+        match self.__addr:
+            case str(addr):
+                return f"{addr} (pathname)"
+            case bytes(addr):
+                return f"{addr[1:]!r} (abstract)"
+            case _:
+                return "(unnamed)"
+
+    def __hash__(self) -> int:
+        return hash(self.__addr)
+
+    def __eq__(self, other: object) -> bool:
+        match other:
+            case UnixSocketAddress():
+                return self.__addr == other.__addr
+            case _:
+                return NotImplemented
+
+    def is_unnamed(self) -> bool:
+        """
+        Returns :data:`True` if the address is ``unnamed``.
+
+        Examples:
+
+            A named address:
+
+            >>> import socket                                         # doctest: +SKIP
+            >>> s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) # doctest: +SKIP
+            >>> s.bind("/tmp/sock")                                   # doctest: +SKIP
+            >>> addr = UnixSocketAddress.from_raw(s.getsockname())    # doctest: +SKIP
+            >>> addr.is_unnamed()                                     # doctest: +SKIP
+            False
+
+            An unnamed address:
+
+            >>> import socket
+            >>> s = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+            >>> addr = UnixSocketAddress.from_raw(s.getsockname())
+            >>> addr.is_unnamed()
+            True
+        """
+        return self.__addr is None
+
+    def as_pathname(self) -> pathlib.Path | None:
+        """
+        Returns the contents of this address if it is a ``pathname`` address.
+
+        Examples:
+
+            With a pathname:
+
+            >>> import socket                                         # doctest: +SKIP
+            >>> s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) # doctest: +SKIP
+            >>> s.bind("/tmp/sock")                                   # doctest: +SKIP
+            >>> addr = UnixSocketAddress.from_raw(s.getsockname())    # doctest: +SKIP
+            >>> addr.as_pathname()                                    # doctest: +SKIP
+            PosixPath('/tmp/sock')
+
+            Without a pathname:
+
+            >>> import socket
+            >>> s = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+            >>> addr = UnixSocketAddress.from_raw(s.getsockname())
+            >>> print(addr.as_pathname())
+            None
+        """
+        match self.__addr:
+            case str(addr):
+                return pathlib.Path(addr)
+            case _:
+                return None
+
+    def as_abstract_name(self) -> bytes | None:
+        """
+        Returns the contents of this address if it is in the abstract namespace.
+
+        Examples:
+
+            >>> import socket
+            >>> s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            >>> s.bind(b"\\0hidden")
+            >>> addr = UnixSocketAddress.from_raw(s.getsockname())
+            >>> addr.as_abstract_name()
+            b'hidden'
+        """
+        match self.__addr:
+            case bytes(addr):
+                return addr[1:]
+            case _:
+                return None
+
+    def as_raw(self) -> str | bytes:
+        """
+        Returns the raw representation of this address.
+
+        Examples:
+
+            >>> UnixSocketAddress.from_pathname("/tmp/sock").as_raw()
+            '/tmp/sock'
+            >>> UnixSocketAddress.from_abstract_name(b"hidden").as_raw()
+            b'\\x00hidden'
+            >>> UnixSocketAddress().as_raw() # Unnamed
+            ''
+        """
+        return self.__addr or ""
 
 
 @runtime_checkable
@@ -375,7 +653,7 @@ class SocketProxy:
 
     def __repr__(self) -> str:
         fd: int = self.fileno()
-        s = f"<{type(self).__name__} fd={fd}, " f"family={self.family!s}, type={self.type!s}, " f"proto={self.proto}"
+        s = f"<{self.__class__.__name__} fd={fd}, family={self.family!s}, type={self.type!s}, proto={self.proto}"
 
         if fd != -1:
             try:
@@ -511,6 +789,44 @@ def set_tcp_keepalive(sock: SupportsSocketOptions, state: bool) -> None:
         sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_KEEPALIVE, state)
 
 
+class UnixCredentials(NamedTuple):
+    """
+    The Unix credentials tuple of the connected process.
+
+    .. versionadded:: 1.1
+    """
+
+    pid: int | None
+    """Process ID of the peer process."""
+
+    uid: int
+    """Effective user ID of the peer process."""
+
+    gid: int
+    """Effective Group ID of the peer process."""
+
+
+def get_peer_credentials(sock: ISocket) -> UnixCredentials:
+    """
+    Returns the credentials of the peer process connected to this (Unix) socket.
+
+    The returned credentials are those that were in effect at the time of the call to :manpage:`connect(2)`, :manpage:`listen(2)`
+    or :manpage:`socketpair(2)`. See :manpage:`unix(7)` for details.
+
+    .. versionadded:: 1.1
+
+    Warning:
+        The `pid` field can be set to :data:`None` if this information is not available.
+
+    Raises:
+        NotImplementedError: The current platform is not supported.
+        OSError: Unrelated OS error occurred. You should check :attr:`OSError.errno`.
+    """
+    _unix_utils.check_unix_socket_family(sock.family)
+    get_peer_credentials_impl = _get_peer_credentials_impl_from_platform()
+    return get_peer_credentials_impl(sock)
+
+
 if os.name == "nt":  # Windows
     # https://learn.microsoft.com/en-us/windows/win32/api/winsock2/ns-winsock2-linger
     # linger struct uses unsigned short ints
@@ -624,12 +940,17 @@ def disable_socket_linger(sock: SupportsSocketOptions) -> None:
 def _get_socket_extra(sock: ISocket, *, wrap_in_proxy: bool = True) -> dict[Any, Callable[[], Any]]:
     if wrap_in_proxy:
         sock = SocketProxy(sock)
-    return {
+    attrs: dict[Any, Callable[[], Any]] = {
         SocketAttribute.socket: lambda: sock,
         SocketAttribute.family: lambda: _cast_socket_family(sock.family),
         SocketAttribute.sockname: lambda: _address_or_lookup_error(sock.fileno, sock.getsockname),
         SocketAttribute.peername: lambda: _address_or_lookup_error(sock.fileno, sock.getpeername),
     }
+
+    if sock.type == _socket.SOCK_STREAM and _unix_utils.is_unix_socket_family(sock.family):
+        attrs[UNIXSocketAttribute.peer_credentials] = lambda: _peer_creds_or_lookup_error(sock)
+
+    return attrs
 
 
 def _get_tls_extra(ssl_object: SSLObject | SSLSocket, standard_compatible: bool) -> dict[Any, Callable[[], Any]]:
@@ -662,7 +983,7 @@ def _address_or_lookup_error(fileno: Callable[[], int], getsockaddr: Callable[[]
         if fileno() < 0:
             from errno import EBADF
 
-            from ._utils import error_from_errno
+            from ._errno import error_from_errno
 
             raise error_from_errno(EBADF)
         return getsockaddr()
@@ -678,3 +999,156 @@ def _value_or_lookup_error(value: _T_Return | None) -> _T_Return:
 
         raise TypedAttributeLookupError("value not available")
     return value
+
+
+def _peer_creds_or_lookup_error(sock: ISocket) -> UnixCredentials:
+    try:
+        return get_peer_credentials(sock)
+    except (OSError, NotImplementedError) as exc:
+        from ..exceptions import TypedAttributeLookupError
+
+        raise TypedAttributeLookupError("credentials not available") from exc
+
+
+@functools.cache
+def _get_peer_credentials_impl_from_platform() -> Callable[[ISocket], UnixCredentials]:
+    import sys
+
+    match sys.platform:
+        case "darwin":
+            return __get_peer_eid_macos_impl()
+        case platform if platform.startswith(("linux", "openbsd", "netbsd")):
+            return __get_ucred_impl()
+        case platform if platform.startswith(("freebsd", "dragonfly")):
+            return __get_peer_eid_bsd_generic_impl()
+        case platform:
+            raise NotImplementedError(f"There is no implementation available for {platform!r}")
+
+
+def __get_ucred_impl() -> Callable[[ISocket], UnixCredentials]:
+    import sys
+    from errno import EBADF, EINVAL
+
+    from ._errno import error_from_errno
+
+    if sys.platform.startswith("netbsd"):
+        # The constants are not defined in _socket module (at least on 3.11).
+        # https://man.netbsd.org/unix.4
+        SOL_LOCAL: int = 0
+        LOCAL_PEEREID: int = 3
+
+        level = SOL_LOCAL
+        option = LOCAL_PEEREID
+    else:
+        from socket import SO_PEERCRED, SOL_SOCKET  # type: ignore[attr-defined, unused-ignore]
+
+        level = SOL_SOCKET
+        option = SO_PEERCRED
+
+    _UID_GID_MAX: int = 2**32 - 1
+
+    if sys.platform.startswith("openbsd"):
+        # Surprise! The fields order differs.
+        # https://unix.stackexchange.com/a/496586
+
+        _ucred_struct = Struct("@IIi")
+
+        def _unpack_ucred(buffer: bytes, /) -> tuple[int, int, int]:
+            uid, gid, pid = _ucred_struct.unpack(buffer)
+            return pid, uid, gid
+
+    else:
+        _ucred_struct = Struct("@iII")
+
+        _unpack_ucred = _ucred_struct.unpack
+
+    def get_peer_credentials(sock: ISocket, /) -> UnixCredentials:
+        if sock.fileno() < 0:
+            raise error_from_errno(EBADF)
+
+        ucred = UnixCredentials._make(_unpack_ucred(sock.getsockopt(level, option, _ucred_struct.size)))
+        if ucred.pid == 0 or ucred.uid == _UID_GID_MAX or ucred.gid == _UID_GID_MAX:
+            raise error_from_errno(EINVAL)
+
+        return ucred
+
+    return get_peer_credentials
+
+
+def __get_peer_eid_macos_impl() -> Callable[[ISocket], UnixCredentials]:
+    import ctypes
+    import ctypes.util
+    import sys
+    from errno import EBADF
+
+    from ._errno import error_from_errno
+
+    # The constants are not defined in _socket module (at least on 3.11).
+    # c.f. https://stackoverflow.com/a/67971484
+    SOL_LOCAL: int = 0
+    LOCAL_PEERPID: int = 2
+
+    c_uid_t = ctypes.c_uint
+    c_gid_t = ctypes.c_uint
+
+    if (libc_name := ctypes.util.find_library("c")) is None:
+        raise NotImplementedError(f"Could not find libc on {sys.platform!r}")
+
+    libc = ctypes.CDLL(libc_name, use_errno=True)
+    libc.getpeereid.argtypes = [ctypes.c_int, ctypes.POINTER(c_uid_t), ctypes.POINTER(c_gid_t)]
+    libc.getpeereid.restype = ctypes.c_int
+
+    def get_peer_credentials(sock: ISocket, /) -> UnixCredentials:
+        fileno = sock.fileno()
+        if fileno < 0:
+            raise error_from_errno(EBADF)
+
+        uid = c_uid_t(1)
+        gid = c_gid_t(1)
+        if libc.getpeereid(fileno, ctypes.byref(uid), ctypes.byref(gid)) != 0:
+            raise error_from_errno(ctypes.get_errno())
+
+        pid = sock.getsockopt(SOL_LOCAL, LOCAL_PEERPID)
+        return UnixCredentials(pid, uid.value, gid.value)
+
+    return get_peer_credentials
+
+
+def __get_peer_eid_bsd_generic_impl() -> Callable[[ISocket], UnixCredentials]:
+    import ctypes
+    import ctypes.util
+    import sys
+    from errno import EBADF
+
+    from ._errno import error_from_errno
+
+    c_uid_t = ctypes.c_uint
+    c_gid_t = ctypes.c_uint
+
+    if (libc_name := ctypes.util.find_library("c")) is None:
+        raise NotImplementedError(f"Could not find libc on {sys.platform!r}")
+
+    libc = ctypes.CDLL(libc_name, use_errno=True)
+    libc.getpeereid.argtypes = [ctypes.c_int, ctypes.POINTER(c_uid_t), ctypes.POINTER(c_gid_t)]
+    libc.getpeereid.restype = ctypes.c_int
+
+    def get_peer_credentials(sock: ISocket, /) -> UnixCredentials:
+        fileno = sock.fileno()
+        if fileno < 0:
+            raise error_from_errno(EBADF)
+
+        uid = c_uid_t(1)
+        gid = c_gid_t(1)
+        if libc.getpeereid(fileno, ctypes.byref(uid), ctypes.byref(gid)) != 0:
+            raise error_from_errno(ctypes.get_errno())
+
+        return UnixCredentials(None, uid.value, gid.value)
+
+    return get_peer_credentials
+
+
+if hasattr(_socket, "AF_UNIX"):
+    # Try to pre-populate cache at module import.
+    # Will raise an error on platforms that do not support this feature.
+    with contextlib.suppress(Exception):
+        _get_peer_credentials_impl_from_platform()
