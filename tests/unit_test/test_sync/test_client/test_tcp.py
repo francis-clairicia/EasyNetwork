@@ -27,7 +27,8 @@ if TYPE_CHECKING:
 
     from pytest_mock import MockerFixture
 
-from ...base import UNSUPPORTED_FAMILIES, BaseTestWithStreamProtocol, MixinTestSocketSendMSG
+from ..._utils import unsupported_families
+from ...base import INET_FAMILIES, BaseTestWithStreamProtocol, MixinTestSocketSendMSG
 from .base import BaseTestClient
 
 
@@ -410,7 +411,7 @@ class TestTCPNetworkClient(BaseTestClient, BaseTestWithStreamProtocol, MixinTest
             ]
             assert mock_ssl_context.mock_calls == []
 
-    @pytest.mark.parametrize("socket_family", list(UNSUPPORTED_FAMILIES), indirect=True)
+    @pytest.mark.parametrize("socket_family", list(unsupported_families(INET_FAMILIES)), indirect=True)
     def test____dunder_init____use_given_socket____invalid_socket_family(
         self,
         mock_tcp_socket: MagicMock,

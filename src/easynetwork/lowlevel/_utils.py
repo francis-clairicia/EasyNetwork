@@ -19,8 +19,8 @@ __all__ = [
     "Flag",
     "WarnCallback",
     "adjust_leftover_buffer",
+    "check_inet_socket_family",
     "check_real_socket_state",
-    "check_socket_family",
     "check_socket_no_ssl",
     "error_from_errno",
     "exception_with_notes",
@@ -160,7 +160,7 @@ def missing_extra_deps(extra_name: str, *, feature_name: str = "") -> ModuleNotF
     )
 
 
-def check_socket_family(family: int) -> None:
+def check_inet_socket_family(family: int) -> None:
     if family not in {_socket.AF_INET, _socket.AF_INET6}:
         raise ValueError("Only these families are supported: AF_INET, AF_INET6")
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Generator
+from collections.abc import Generator, Iterable
 from socket import AF_INET, AF_INET6
 from typing import TYPE_CHECKING, Any
 
@@ -13,8 +13,14 @@ if TYPE_CHECKING:
 
     from pytest_mock import MockerFixture
 
-SUPPORTED_FAMILIES: tuple[str, ...] = tuple(sorted(("AF_INET", "AF_INET6")))
-UNSUPPORTED_FAMILIES: tuple[str, ...] = tuple(sorted(get_all_socket_families().difference(SUPPORTED_FAMILIES)))
+INET_FAMILIES: tuple[str, ...] = ("AF_INET", "AF_INET6")
+UNIX_FAMILIES: tuple[str, ...] = ("AF_UNIX",)
+
+
+def unsupported_families(supported_families: Iterable[str]) -> tuple[str, ...]:
+    if isinstance(supported_families, str):
+        raise ValueError("does not expect a str directly")
+    return tuple(sorted(get_all_socket_families().difference(supported_families)))
 
 
 class BaseTestSocket:

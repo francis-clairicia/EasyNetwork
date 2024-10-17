@@ -25,16 +25,19 @@ __all__ = [
     "SocketProxy",
     "SupportsSocketOptions",
     "TLSAttribute",
+    "UNIXSocketAttribute",
     "_get_socket_extra",
     "_get_tls_extra",
     "disable_socket_linger",
     "enable_socket_linger",
+    "get_peer_credentials",
     "get_socket_linger",
     "get_socket_linger_struct",
     "new_socket_address",
     "set_tcp_keepalive",
     "set_tcp_nodelay",
     "socket_linger",
+    "socket_ucred",
 ]
 
 import contextlib
@@ -101,6 +104,25 @@ class INETSocketAttribute(SocketAttribute):
 
     peername: tuple[str, int] | tuple[str, int, int, int]
     """the remote address to which the socket is connected, result of :meth:`socket.socket.getpeername`."""
+
+
+class UNIXSocketAttribute(SocketAttribute):
+    """Typed attributes which can be used on an endpoint or a transport."""
+
+    __slots__ = ()
+
+    family: int
+    """the socket's family, as returned by :attr:`socket.socket.family`."""
+
+    sockname: str | bytes
+    """the socket's own address, result of :meth:`socket.socket.getsockname`."""
+
+    peername: str | bytes
+    """the remote address to which the socket is connected, result of :meth:`socket.socket.getpeername`."""
+
+    peercreds: socket_ucred = typed_attr.typed_attribute()
+    """the credentials of the peer process connected to this socket.
+    The returned credentials are those that were in effect at the time of the call to :manpage:`connect(2)` or socketpair(2)."""
 
 
 class TLSAttribute(typed_attr.TypedAttributeSet):
@@ -505,6 +527,134 @@ def set_tcp_keepalive(sock: SupportsSocketOptions, state: bool) -> None:
         sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_KEEPALIVE, state)
 
 
+class socket_ucred(NamedTuple):
+    """
+    The unix credentials tuple of the connected process.
+
+    .. versionadded:: 1.1
+    """
+
+    pid: int
+    """Process ID of the peer process."""
+
+    uid: int
+    """Effective user ID of the peer process."""
+
+    gid: int
+    """Effective Group ID of the peer process."""
+
+
+def get_peer_credentials(sock: ISocket, /) -> socket_ucred:
+    """
+    Gets the credentials of the peer process connected to this (unix) socket.
+
+    The returned credentials are those that were in effect at the time of the call to :manpage:`connect(2)` or socketpair(2).
+    See :manpage:`unix(7)` for details.
+
+    Warning:
+        The `pid` field can be set to ``-1`` if the operating system does not support having this information.
+
+    .. versionadded:: 1.1
+
+    Parameters:
+        sock: The AF_UNIX socket.
+    """
+    raise NotImplementedError
+
+
+def __get_peer_credentials_linux_impl() -> Callable[[ISocket], socket_ucred]:
+    from errno import EBADF
+
+    _ucred_struct = Struct("@iII")
+
+    SO_PEERCRED: int = getattr(_socket, "SO_PEERCRED")
+
+    def get_peer_credentials(sock: ISocket, /) -> socket_ucred:
+        if sock.fileno() < 0:
+
+            from ._utils import error_from_errno
+
+            raise error_from_errno(EBADF)
+
+        ucred_result: bytes = sock.getsockopt(_socket.SOL_SOCKET, SO_PEERCRED, _ucred_struct.size)
+        return socket_ucred._make(_ucred_struct.unpack(ucred_result))
+
+    return get_peer_credentials
+
+
+def __get_peer_credentials_bsd_like_impl(platform: str) -> Callable[[ISocket], socket_ucred]:
+    import ctypes
+    import ctypes.util
+    from errno import EBADF
+
+    c_uid_t = ctypes.c_uint
+    c_gid_t = ctypes.c_uint
+
+    libc = ctypes.CDLL(ctypes.util.find_library("c") or "libc.so.6", use_errno=True)
+
+    getpeereid = libc.getpeereid
+    getpeereid.argtypes = [ctypes.c_int, ctypes.POINTER(c_uid_t), ctypes.POINTER(c_gid_t)]
+    getpeereid.restype = ctypes.c_int
+
+    if platform == "darwin":
+        # c.f. https://stackoverflow.com/a/67971484
+        SOL_LOCAL: int = getattr(_socket, "SOL_LOCAL", 0)
+        LOCAL_PEERPID: int = getattr(_socket, "LOCAL_PEERPID", 2)
+
+        def getpeerpid(sock: ISocket) -> int:
+            return sock.getsockopt(SOL_LOCAL, LOCAL_PEERPID)
+
+    else:
+
+        def getpeerpid(sock: ISocket) -> int:
+            return -1
+
+    def get_peer_credentials(sock: ISocket, /) -> socket_ucred:
+        fileno = sock.fileno()
+        if fileno < 0:
+            from ._utils import error_from_errno
+
+            raise error_from_errno(EBADF)
+
+        uid = c_uid_t(1)
+        gid = c_gid_t(1)
+        if getpeereid(fileno, ctypes.byref(uid), ctypes.byref(gid)) != 0:
+            from ._utils import error_from_errno
+
+            raise error_from_errno(ctypes.get_errno())
+
+        pid = getpeerpid(sock)
+        return socket_ucred(pid, uid.value, gid.value)
+
+    return get_peer_credentials
+
+
+__get_peer_credentials_not_implemented = get_peer_credentials
+
+
+def __get_peer_credentials_impl_from_platform() -> Callable[[ISocket], socket_ucred]:
+    from sys import platform
+
+    match platform:
+        case "linux":
+            return __get_peer_credentials_linux_impl()
+        case "darwin":
+            return __get_peer_credentials_bsd_like_impl(platform)
+        case _ if platform.startswith(("freebsd", "openbsd", "netbsd")):  # pragma: no cover
+            return __get_peer_credentials_bsd_like_impl(platform)
+        case _:
+            return __get_peer_credentials_not_implemented
+
+
+if (__get_peer_credentials_impl := __get_peer_credentials_impl_from_platform()) is not get_peer_credentials:
+    functools.update_wrapper(__get_peer_credentials_impl, get_peer_credentials)
+
+    # Makes the linter happy by not assigning the "def" function directly.
+    globals().update({"get_peer_credentials": __get_peer_credentials_impl})
+
+del __get_peer_credentials_impl
+
+
 if os.name == "nt":  # Windows
     # https://learn.microsoft.com/en-us/windows/win32/api/winsock2/ns-winsock2-linger
     # linger struct uses unsigned short ints
@@ -618,12 +768,17 @@ def disable_socket_linger(sock: SupportsSocketOptions) -> None:
 def _get_socket_extra(sock: ISocket, *, wrap_in_proxy: bool = True) -> dict[Any, Callable[[], Any]]:
     if wrap_in_proxy:
         sock = SocketProxy(sock)
-    return {
+    attrs: dict[Any, Callable[[], Any]] = {
         SocketAttribute.socket: lambda: sock,
         SocketAttribute.family: lambda: _cast_socket_family(sock.family),
         SocketAttribute.sockname: lambda: _address_or_lookup_error(sock.fileno, sock.getsockname),
         SocketAttribute.peername: lambda: _address_or_lookup_error(sock.fileno, sock.getpeername),
     }
+
+    if sock.family == getattr(_socket, "AF_UNIX", None) and sock.type == _socket.SOCK_STREAM:
+        attrs[UNIXSocketAttribute.peercreds] = lambda: _peer_creds_or_lookup_error(sock)
+
+    return attrs
 
 
 def _get_tls_extra(ssl_object: SSLObject | SSLSocket, standard_compatible: bool) -> dict[Any, Callable[[], Any]]:
@@ -672,3 +827,12 @@ def _value_or_lookup_error(value: _T_Return | None) -> _T_Return:
 
         raise TypedAttributeLookupError("value not available")
     return value
+
+
+def _peer_creds_or_lookup_error(sock: ISocket) -> socket_ucred:
+    try:
+        return get_peer_credentials(sock)
+    except OSError as exc:
+        from ..exceptions import TypedAttributeLookupError
+
+        raise TypedAttributeLookupError("address not available") from exc

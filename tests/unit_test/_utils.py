@@ -4,7 +4,7 @@ import contextlib
 import functools
 import inspect
 import threading
-from collections.abc import Awaitable, Callable, Coroutine, Iterator, Sequence
+from collections.abc import Awaitable, Callable, Coroutine, Iterable, Iterator, Sequence
 from socket import AF_INET, AF_INET6, IPPROTO_TCP, IPPROTO_UDP, SOCK_DGRAM, SOCK_STREAM
 from types import TracebackType
 from typing import TYPE_CHECKING, Any
@@ -118,6 +118,12 @@ class partial_eq(functools.partial[Any]):
         if not isinstance(other, functools.partial):
             return NotImplemented
         return self.func == other.func and self.args == other.args and self.keywords == other.keywords
+
+
+def unsupported_families(supported_families: Iterable[str]) -> tuple[str, ...]:
+    if isinstance(supported_families, str):
+        raise ValueError("does not expect a str directly")
+    return tuple(sorted(get_all_socket_families().difference(supported_families)))
 
 
 def get_all_socket_families() -> frozenset[str]:

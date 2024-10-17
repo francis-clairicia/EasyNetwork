@@ -202,7 +202,7 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
                 raise TypeError("Invalid arguments")
 
         try:
-            _utils.check_socket_family(socket.family)
+            _utils.check_inet_socket_family(socket.family)
             _utils.check_socket_is_connected(socket)
 
             transport: SocketStreamTransport | SSLStreamTransport
