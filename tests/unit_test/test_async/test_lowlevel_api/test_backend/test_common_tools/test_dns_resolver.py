@@ -30,8 +30,10 @@ from easynetwork.lowlevel.api_async.backend.abc import AsyncBackend
 
 import pytest
 
+from ......fixtures.socket import socket_family_or_skip
 from ......tools import PlatformMarkers
-from ....._utils import datagram_addrinfo_list, stream_addrinfo_list
+from ....._utils import datagram_addrinfo_list, stream_addrinfo_list, unsupported_families
+from .....base import INET_FAMILIES
 
 if TYPE_CHECKING:
     from unittest.mock import AsyncMock, MagicMock
@@ -962,3 +964,27 @@ async def test____create_stream_connection____happy_eyeballs_delay____addrinfo_r
         mocker.call(AF_INET6, SOCK_STREAM, IPPROTO_TCP),
         mocker.call(AF_INET, SOCK_STREAM, IPPROTO_TCP),
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("socket_family_name", unsupported_families(INET_FAMILIES))
+async def test____create_datagram_connection____invalid_socket_family(
+    asyncio_backend: AsyncBackend,
+    socket_family_name: str,
+    dns_resolver: MockedDNSResolver,
+    mock_socket_cls: MagicMock,
+) -> None:
+    # Arrange
+    socket_family = socket_family_or_skip(socket_family_name)
+    remote_host, remote_port = "localhost", 12345
+    dns_resolver.mock_async_getaddrinfo.side_effect = []
+    dns_resolver.mock_sock_connect.side_effect = []
+
+    # Act
+    with pytest.raises(ValueError, match=r"^Only these families are supported: AF_INET, AF_INET6$"):
+        _ = await dns_resolver.create_datagram_connection(asyncio_backend, remote_host, remote_port, family=socket_family)
+
+    # Assert
+    dns_resolver.mock_async_getaddrinfo.assert_not_called()
+    dns_resolver.mock_sock_connect.assert_not_called()
+    mock_socket_cls.assert_not_called()

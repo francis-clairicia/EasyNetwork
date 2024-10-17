@@ -21,7 +21,7 @@ __all__ = ["AsyncTCPNetworkServer"]
 import contextlib
 import logging
 import weakref
-from collections.abc import AsyncIterator, Callable, Coroutine, Iterator, Mapping, Sequence
+from collections.abc import AsyncIterator, Callable, Coroutine, Mapping, Sequence
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Generic, NoReturn, TypeVar, final
 
@@ -128,9 +128,9 @@ class AsyncTCPNetworkServer(
         """
         super().__init__(
             backend=backend,
-            servers_factory=type(self).__activate_listeners,
-            initialize_service=type(self).__initialize_service,
-            lowlevel_serve=type(self).__lowlevel_serve,
+            servers_factory=_utils.weak_method_proxy(self.__activate_listeners),
+            initialize_service=_utils.weak_method_proxy(self.__initialize_service),
+            lowlevel_serve=_utils.weak_method_proxy(self.__lowlevel_serve),
             logger=logger or logging.getLogger(__name__),
         )
 
@@ -289,8 +289,15 @@ class AsyncTCPNetworkServer(
                 return
 
             client_address = new_socket_address(client_address, lowlevel_client.extra(INETSocketAttribute.family))
+            client = _ConnectedClientAPI(client_address, lowlevel_client)
 
-            client_exit_stack.enter_context(self.__suppress_and_log_remaining_exception(client_address=client_address))
+            client_exit_stack.enter_context(
+                _base.ClientErrorHandler(
+                    logger=self.logger,
+                    client_address_cb=client.extra_attributes[INETClientAttribute.remote_address],
+                    suppress_errors=ConnectionError,
+                )
+            )
             # If the socket was not closed gracefully, (i.e. client.aclose() failed )
             # tell the OS to immediately abort the connection when calling socket.socket.close()
             # NOTE: Do not set this option if SSL/TLS is enabled
@@ -303,13 +310,10 @@ class AsyncTCPNetworkServer(
                 # We expect a TLS close handshake, so we must (try to) properly close the transport before
                 await client_exit_stack.enter_async_context(contextlib.aclosing(lowlevel_client))
 
-            logger: logging.Logger = self.logger
-            client = _ConnectedClientAPI(client_address, lowlevel_client)
-
             del lowlevel_client
 
-            logger.log(self.__client_connection_log_level, "Accepted new connection (address = %s)", client_address)
-            client_exit_stack.callback(logger.log, self.__client_connection_log_level, "%s disconnected", client_address)
+            self.logger.log(self.__client_connection_log_level, "Accepted new connection (address = %s)", client_address)
+            client_exit_stack.callback(self.logger.log, self.__client_connection_log_level, "%s disconnected", client_address)
             client_exit_stack.push_async_callback(client._on_disconnect)
 
             try:
@@ -323,29 +327,6 @@ class AsyncTCPNetworkServer(
         with contextlib.suppress(OSError):
             if socket.fileno() > -1:
                 enable_socket_linger(socket, timeout=0)
-
-    @contextlib.contextmanager
-    def __suppress_and_log_remaining_exception(self, client_address: SocketAddress) -> Iterator[None]:
-        try:
-            try:
-                yield
-            except* ClientClosedError as excgrp:
-                _utils.remove_traceback_frames_in_place(excgrp, 1)  # Removes the 'yield' frame just above
-                self.logger.warning(
-                    "There have been attempts to do operation on closed client %s",
-                    client_address,
-                    exc_info=excgrp,
-                )
-            except* ConnectionError:
-                # This exception come from the request handler ( most likely due to client.send_packet() )
-                # It is up to the user to log the ConnectionError stack trace
-                # There is already a "disconnected" info log
-                pass
-        except Exception as exc:
-            _utils.remove_traceback_frames_in_place(exc, 1)  # Removes the 'yield' frame just above
-            self.logger.error("-" * 40)
-            self.logger.error("Exception occurred during processing of request from %s", client_address, exc_info=exc)
-            self.logger.error("-" * 40)
 
     @classmethod
     def __client_tls_handshake_error_handler(cls, logger: logging.Logger, exc: Exception) -> None:
@@ -439,14 +420,17 @@ class _ConnectedClientAPI(AsyncStreamClient[_T_Response]):
             pass
 
     async def aclose(self) -> None:
-        try:
-            async with self.__send_lock:
+        async with contextlib.AsyncExitStack() as stack:
+            try:
+                await stack.enter_async_context(self.__send_lock)
+            except self.backend().get_cancelled_exc_class():
+                if not self.__closing:
+                    self.__closing = True
+                    await aclose_forcefully(self.__client)
+                raise
+            else:
                 self.__closing = True
                 await self.__client.aclose()
-        except self.backend().get_cancelled_exc_class():
-            self.__closing = True
-            await aclose_forcefully(self.__client)
-            raise
 
     async def send_packet(self, packet: _T_Response, /) -> None:
         async with self.__send_lock:

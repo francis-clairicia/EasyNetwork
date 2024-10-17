@@ -38,7 +38,7 @@ from .._typevars import _T_ReceivedPacket, _T_SentPacket
 from ..exceptions import ClientClosedError
 from ..lowlevel import _lock, _utils, constants
 from ..lowlevel.api_sync.endpoints.stream import StreamEndpoint
-from ..lowlevel.api_sync.transports.socket import SocketStreamTransport, SSLStreamTransport
+from ..lowlevel.api_sync.transports import socket as _transport_socket
 from ..lowlevel.socket import (
     INETSocketAttribute,
     SocketAddress,
@@ -202,10 +202,10 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
                 raise TypeError("Invalid arguments")
 
         try:
-            _utils.check_socket_family(socket.family)
+            _utils.check_inet_socket_family(socket.family)
             _utils.check_socket_is_connected(socket)
 
-            transport: SocketStreamTransport | SSLStreamTransport
+            transport: _transport_socket.SocketStreamTransport | _transport_socket.SSLStreamTransport
 
             if ssl:
                 if _ssl_module is None:
@@ -221,8 +221,8 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
                 if not server_hostname:
                     server_hostname = None
 
-                with self.__convert_socket_error():
-                    transport = SSLStreamTransport(
+                with self.__convert_socket_error(endpoint=None):
+                    transport = _transport_socket.SSLStreamTransport(
                         socket,
                         ssl_context=ssl,
                         retry_interval=retry_interval,
@@ -234,7 +234,7 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
                     )
 
             else:
-                transport = SocketStreamTransport(socket, retry_interval=retry_interval)
+                transport = _transport_socket.SocketStreamTransport(socket, retry_interval=retry_interval)
         except BaseException:
             socket.close()
             raise
@@ -271,9 +271,9 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
 
     def __repr__(self) -> str:
         try:
-            return f"<{type(self).__name__} endpoint={self.__endpoint!r}>"
+            return f"<{self.__class__.__name__} endpoint={self.__endpoint!r}>"
         except AttributeError:
-            return f"<{type(self).__name__} (partially initialized)>"
+            return f"<{self.__class__.__name__} (partially initialized)>"
 
     def is_closed(self) -> bool:
         """
@@ -331,8 +331,8 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
         with _utils.lock_with_timeout(self.__send_lock.get(), timeout) as timeout:
             endpoint = self.__endpoint
             if endpoint.is_closed():
-                raise ClientClosedError("Closed client")
-            with self.__convert_socket_error():
+                raise self.__closed()
+            with self.__convert_socket_error(endpoint=endpoint):
                 endpoint.send_packet(packet, timeout=timeout)
                 _utils.check_real_socket_state(endpoint.extra(INETSocketAttribute.socket))
 
@@ -349,7 +349,10 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
         """
         with self.__send_lock.get():
             endpoint = self.__endpoint
-            endpoint.send_eof()
+            if endpoint.is_closed():
+                return
+            with self.__convert_socket_error(endpoint=endpoint):
+                endpoint.send_eof()
 
     def recv_packet(self, *, timeout: float | None = None) -> _T_ReceivedPacket:
         """
@@ -379,28 +382,37 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
         with _utils.lock_with_timeout(self.__receive_lock.get(), timeout) as timeout:
             endpoint = self.__endpoint
             if endpoint.is_closed():
-                raise ClientClosedError("Closed client")
-            with self.__convert_socket_error():
+                raise self.__closed()
+            with self.__convert_socket_error(endpoint=endpoint):
                 return endpoint.recv_packet(timeout=timeout)
+            raise AssertionError("Expected code to be unreachable.")
 
+    @classmethod
     @contextlib.contextmanager
-    def __convert_socket_error(self) -> Iterator[None]:
+    def __convert_socket_error(cls, *, endpoint: StreamEndpoint[Any, Any] | None) -> Iterator[None]:
         try:
             yield
         except ConnectionError as exc:
-            raise self.__abort() from exc
+            raise cls.__abort() from exc
         except _ssl_module.SSLError if _ssl_module else () as exc:
             if _utils.is_ssl_eof_error(exc):
-                raise self.__abort() from exc
+                raise cls.__abort() from exc
             raise
         except OSError as exc:
             if exc.errno in constants.CLOSED_SOCKET_ERRNOS:
-                raise ClientClosedError("Closed client") from exc
+                if endpoint is not None and endpoint.is_closed():
+                    # close() called while recv_packet() is awaiting...
+                    raise cls.__closed() from exc
+                exc.add_note("The socket file descriptor was closed unexpectedly.")
             raise
 
     @staticmethod
     def __abort() -> OSError:
         return _utils.error_from_errno(_errno.ECONNABORTED)
+
+    @staticmethod
+    def __closed() -> ClientClosedError:
+        return ClientClosedError("Closed client")
 
     def get_local_address(self) -> SocketAddress:
         """
@@ -416,7 +428,7 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
         with self.__send_lock.get():
             endpoint = self.__endpoint
             if endpoint.is_closed():
-                raise ClientClosedError("Closed client")
+                raise self.__closed()
             local_address = endpoint.extra(INETSocketAttribute.sockname)
             address_family = endpoint.extra(INETSocketAttribute.family)
             return new_socket_address(local_address, address_family)
@@ -435,7 +447,7 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
         with self.__send_lock.get():
             endpoint = self.__endpoint
             if endpoint.is_closed():
-                raise ClientClosedError("Closed client")
+                raise self.__closed()
             remote_address = endpoint.extra(INETSocketAttribute.peername)
             address_family = endpoint.extra(INETSocketAttribute.family)
             return new_socket_address(remote_address, address_family)

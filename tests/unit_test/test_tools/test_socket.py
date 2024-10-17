@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import pathlib
 import socket
 from collections.abc import Callable
 from socket import AF_INET, AF_INET6, IPPROTO_TCP, SO_KEEPALIVE, SO_LINGER, SOL_SOCKET, TCP_NODELAY
@@ -10,6 +12,7 @@ from easynetwork.lowlevel.socket import (
     IPv6SocketAddress,
     SocketAddress,
     SocketProxy,
+    UnixSocketAddress,
     disable_socket_linger,
     enable_socket_linger,
     get_socket_linger,
@@ -22,8 +25,9 @@ from easynetwork.lowlevel.socket import (
 
 import pytest
 
-from .._utils import partial_eq
-from ..base import UNSUPPORTED_FAMILIES
+from ...tools import PlatformMarkers
+from .._utils import partial_eq, unsupported_families
+from ..base import INET_FAMILIES
 
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
@@ -42,6 +46,16 @@ class TestSocketAddress:
         # Assert
         assert host is address.host
         assert port is address.port
+
+    @pytest.mark.parametrize("address", [IPv4SocketAddress("127.0.0.1", 3000), IPv6SocketAddress("127.0.0.1", 3000)])
+    def test____display____show_host_and_port(self, address: SocketAddress) -> None:
+        # Arrange
+
+        # Act
+        address_as_str = str(address)
+
+        # Assert
+        assert address_as_str == f"({address.host!r}, {address.port})"
 
     @pytest.mark.parametrize(
         ["address", "family", "expected_type"],
@@ -65,7 +79,7 @@ class TestSocketAddress:
         # Assert
         assert isinstance(socket_address, expected_type)
 
-    @pytest.mark.parametrize("socket_family_name", list(UNSUPPORTED_FAMILIES))
+    @pytest.mark.parametrize("socket_family_name", list(unsupported_families(INET_FAMILIES)))
     def test____new_socket_address____unsupported_family(
         self,
         socket_family_name: str,
@@ -78,6 +92,197 @@ class TestSocketAddress:
         # Act & Assert
         with pytest.raises(ValueError, match=r"^Unsupported address family .+$"):
             _ = new_socket_address(("127.0.0.1", 12345), family)
+
+
+@PlatformMarkers.skipif_platform_win32
+class TestUnixSocketAddress:
+    def test____dunder_init____is_unnamed_address(self) -> None:
+        # Arrange
+
+        # Act
+        addr = UnixSocketAddress()
+
+        # Assert
+        assert addr.is_unnamed()
+        assert addr.as_pathname() is None
+        assert addr.as_abstract_name() is None
+        assert addr.as_raw() == ""
+
+    @pytest.mark.parametrize(
+        "path",
+        ["/path/to/sock", pathlib.Path("/path/to/sock"), pathlib.PurePath("/path/to/sock")],
+        ids=repr,
+    )
+    def test____from_pathname____is_named_address(self, path: str | pathlib.Path | pathlib.PurePath) -> None:
+        # Arrange
+
+        # Act
+        addr = UnixSocketAddress.from_pathname(path)
+
+        # Assert
+        assert not addr.is_unnamed()
+        assert addr.as_pathname() == pathlib.Path("/path/to/sock")
+        assert addr.as_abstract_name() is None
+        assert addr.as_raw() == "/path/to/sock"
+
+    @pytest.mark.parametrize(
+        "path",
+        ["/path/with/\0/bytes", pathlib.Path("/path/with/\0/bytes"), pathlib.PurePath("/path/with/\0/bytes")],
+        ids=repr,
+    )
+    def test____from_pathname____null_byte_in_str(self, path: str | pathlib.Path | pathlib.PurePath) -> None:
+        # Arrange
+
+        # Act & Assert
+        with pytest.raises(ValueError, match=r"^paths must not contain interior null bytes$"):
+            _ = UnixSocketAddress.from_pathname(path)
+
+    def test____from_pathname____bytes_path(self) -> None:
+        # Arrange
+
+        # Act & Assert
+        with pytest.raises(TypeError, match=r"^Expected a str object or an os.PathLike object, got .+$"):
+            _ = UnixSocketAddress.from_pathname(b"/path/to/sock")  # type: ignore[arg-type]
+
+    def test____from_pathname____empty_str(self) -> None:
+        # Arrange
+
+        # Act
+        addr = UnixSocketAddress.from_pathname("")
+
+        # Assert
+        assert addr.is_unnamed()
+        assert addr.as_pathname() is None
+        assert addr.as_abstract_name() is None
+        assert addr.as_raw() == ""
+
+    @pytest.mark.parametrize(
+        "name",
+        ["hidden", b"hidden"],
+        ids=repr,
+    )
+    def test____from_abstract_name____is_in_abstract_namespace(self, name: str | bytes) -> None:
+        # Arrange
+
+        # Act
+        addr = UnixSocketAddress.from_abstract_name(name)
+
+        # Assert
+        assert not addr.is_unnamed()
+        assert addr.as_pathname() is None
+        assert addr.as_abstract_name() == b"hidden"
+        assert addr.as_raw() == b"\x00hidden"
+
+    def test____from_abstract_name____refuse_path_like_objects(self) -> None:
+        # Arrange
+
+        # Act & Assert
+        with pytest.raises(TypeError, match=r"^Expected a str object or a bytes object, got .+$"):
+            _ = UnixSocketAddress.from_abstract_name(pathlib.Path("hidden"))  # type: ignore[arg-type]
+
+    @pytest.mark.parametrize(
+        "path",
+        ["/path/to/sock", b"/path/to/sock"],
+        ids=repr,
+    )
+    def test____from_raw____pathname(self, path: str | bytes) -> None:
+        # Arrange
+
+        # Act
+        addr = UnixSocketAddress.from_raw(path)
+
+        # Assert
+        assert not addr.is_unnamed()
+        assert addr.as_pathname() == pathlib.Path("/path/to/sock")
+        assert addr.as_abstract_name() is None
+        assert addr.as_raw() == "/path/to/sock"
+
+    @pytest.mark.parametrize(
+        "name",
+        ["\0hidden", b"\x00hidden"],
+        ids=repr,
+    )
+    def test____from_raw____is_in_abstract_namespace(self, name: str | bytes) -> None:
+        # Arrange
+
+        # Act
+        addr = UnixSocketAddress.from_raw(name)
+
+        # Assert
+        assert not addr.is_unnamed()
+        assert addr.as_pathname() is None
+        assert addr.as_abstract_name() == b"hidden"
+        assert addr.as_raw() == b"\x00hidden"
+
+    @pytest.mark.parametrize(
+        "name",
+        ["", b""],
+        ids=repr,
+    )
+    def test____from_raw____unnamed(self, name: str | bytes) -> None:
+        # Arrange
+
+        # Act
+        addr = UnixSocketAddress.from_raw(name)
+
+        # Assert
+        assert addr.is_unnamed()
+        assert addr.as_pathname() is None
+        assert addr.as_abstract_name() is None
+        assert addr.as_raw() == ""
+
+    def test____from_raw____invalid_object_type(self) -> None:
+        # Arrange
+
+        # Act & Assert
+        with pytest.raises(TypeError, match=r"^Cannot convert \('127.0.0.1', 12345\) to a UnixSocketAddress$"):
+            _ = UnixSocketAddress.from_raw(("127.0.0.1", 12345))
+
+    @pytest.mark.parametrize(
+        "raw_addr",
+        ["/path/to/sock", b"\0hidden", ""],
+        ids=repr,
+    )
+    def test____uniqueness____hash_and_eq(self, raw_addr: str | bytes) -> None:
+        # Arrange
+        addr_1 = UnixSocketAddress.from_raw(raw_addr)
+        addr_2 = UnixSocketAddress.from_raw(raw_addr)
+        addr_3 = UnixSocketAddress.from_raw("/path/to/other/sock")
+        assert addr_1 is not addr_2
+
+        # Act & Assert
+        assert addr_1 == addr_2
+        assert hash(addr_1) == hash(addr_2)
+        assert addr_1 == addr_2
+        assert addr_1 != addr_3
+        assert addr_2 != addr_3
+        assert hash(addr_1) != hash(addr_3)
+        assert hash(addr_2) != hash(addr_3)
+
+        assert addr_1 != raw_addr
+        assert addr_2 != raw_addr
+
+    @pytest.mark.parametrize(
+        "raw_addr",
+        ["/path/to/sock", b"\0hidden", ""],
+        ids=repr,
+    )
+    def test____display____show_value_and_kind(self, raw_addr: str | bytes) -> None:
+        # Arrange
+        address = UnixSocketAddress.from_raw(raw_addr)
+
+        # Act
+        address_as_str = str(address)
+
+        # Assert
+        if address.is_unnamed():
+            assert address_as_str == "(unnamed)"
+        elif (name := address.as_abstract_name()) is not None:
+            assert address_as_str == f"{name!r} (abstract)"
+        else:
+            path = address.as_pathname()
+            assert path is not None
+            assert address_as_str == f"{os.fspath(path)} (pathname)"
 
 
 class TestSocketProxy:
@@ -271,90 +476,92 @@ class TestSocketProxy:
             runner_stub.assert_called_once_with(getattr(mock_tcp_socket, method))
 
 
-@pytest.mark.parametrize("state", [False, True])
-def test____set_tcp_nodelay____setsockopt(
-    state: bool,
-    mock_tcp_socket: MagicMock,
-) -> None:
-    # Arrange
+class TestSocketOptions:
+    @pytest.mark.parametrize("state", [False, True])
+    def test____set_tcp_nodelay____setsockopt(
+        self,
+        state: bool,
+        mock_tcp_socket: MagicMock,
+    ) -> None:
+        # Arrange
 
-    # Act
-    set_tcp_nodelay(mock_tcp_socket, state)
+        # Act
+        set_tcp_nodelay(mock_tcp_socket, state)
 
-    # Assert
-    mock_tcp_socket.setsockopt.assert_called_once_with(IPPROTO_TCP, TCP_NODELAY, state)
+        # Assert
+        mock_tcp_socket.setsockopt.assert_called_once_with(IPPROTO_TCP, TCP_NODELAY, state)
 
+    @pytest.mark.parametrize("state", [False, True])
+    def test____set_tcp_keepalive____setsockopt(
+        self,
+        state: bool,
+        mock_tcp_socket: MagicMock,
+    ) -> None:
+        # Arrange
 
-@pytest.mark.parametrize("state", [False, True])
-def test____set_tcp_keepalive____setsockopt(
-    state: bool,
-    mock_tcp_socket: MagicMock,
-) -> None:
-    # Arrange
+        # Act
+        set_tcp_keepalive(mock_tcp_socket, state)
 
-    # Act
-    set_tcp_keepalive(mock_tcp_socket, state)
+        # Assert
+        mock_tcp_socket.setsockopt.assert_called_once_with(SOL_SOCKET, SO_KEEPALIVE, state)
 
-    # Assert
-    mock_tcp_socket.setsockopt.assert_called_once_with(SOL_SOCKET, SO_KEEPALIVE, state)
+    @pytest.mark.parametrize(
+        ["enabled", "timeout"],
+        [
+            pytest.param(False, 0),
+            pytest.param(True, 0),
+            pytest.param(True, 60),
+        ],
+    )
+    def test____get_socket_linger____getsockopt(
+        self,
+        mock_tcp_socket: MagicMock,
+        enabled: bool,
+        timeout: int,
+    ) -> None:
+        # Arrange
+        linger_struct = get_socket_linger_struct()
+        expected_buffer: bytes = linger_struct.pack(enabled, timeout)
+        mock_tcp_socket.getsockopt.return_value = expected_buffer
 
+        # Act
+        linger = get_socket_linger(mock_tcp_socket)
 
-@pytest.mark.parametrize(
-    ["enabled", "timeout"],
-    [
-        pytest.param(False, 0),
-        pytest.param(True, 0),
-        pytest.param(True, 60),
-    ],
-)
-def test____get_socket_linger____getsockopt(
-    mock_tcp_socket: MagicMock,
-    enabled: bool,
-    timeout: int,
-) -> None:
-    # Arrange
-    linger_struct = get_socket_linger_struct()
-    expected_buffer: bytes = linger_struct.pack(enabled, timeout)
-    mock_tcp_socket.getsockopt.return_value = expected_buffer
+        # Assert
+        mock_tcp_socket.getsockopt.assert_called_once_with(SOL_SOCKET, SO_LINGER, linger_struct.size)
+        assert isinstance(linger, socket_linger)
+        if enabled:
+            assert linger.enabled is True
+        else:
+            assert linger.enabled is False
+        assert linger.timeout == timeout
 
-    # Act
-    linger = get_socket_linger(mock_tcp_socket)
+    @pytest.mark.parametrize("timeout", [0, 60])
+    def test____enable_socket_linger____setsockopt(
+        self,
+        mock_tcp_socket: MagicMock,
+        timeout: int,
+    ) -> None:
+        # Arrange
+        linger_struct = get_socket_linger_struct()
+        expected_buffer: bytes = linger_struct.pack(1, timeout)  # Enabled with timeout
 
-    # Assert
-    mock_tcp_socket.getsockopt.assert_called_once_with(SOL_SOCKET, SO_LINGER, linger_struct.size)
-    assert isinstance(linger, socket_linger)
-    if enabled:
-        assert linger.enabled is True
-    else:
-        assert linger.enabled is False
-    assert linger.timeout == timeout
+        # Act
+        enable_socket_linger(mock_tcp_socket, timeout)
 
+        # Assert
+        mock_tcp_socket.setsockopt.assert_called_once_with(SOL_SOCKET, SO_LINGER, expected_buffer)
 
-@pytest.mark.parametrize("timeout", [0, 60])
-def test____enable_socket_linger____setsockopt(
-    mock_tcp_socket: MagicMock,
-    timeout: int,
-) -> None:
-    # Arrange
-    linger_struct = get_socket_linger_struct()
-    expected_buffer: bytes = linger_struct.pack(1, timeout)  # Enabled with timeout
+    def test____disable_socket_linger____setsockopt(
+        self,
+        mock_tcp_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        linger_struct = get_socket_linger_struct()
+        expected_buffer: bytes = linger_struct.pack(0, 0)
 
-    # Act
-    enable_socket_linger(mock_tcp_socket, timeout)
+        # Act
+        disable_socket_linger(mock_tcp_socket)
 
-    # Assert
-    mock_tcp_socket.setsockopt.assert_called_once_with(SOL_SOCKET, SO_LINGER, expected_buffer)
-
-
-def test____disable_socket_linger____setsockopt(
-    mock_tcp_socket: MagicMock,
-) -> None:
-    # Arrange
-    linger_struct = get_socket_linger_struct()
-    expected_buffer: bytes = linger_struct.pack(0, 0)
-
-    # Act
-    disable_socket_linger(mock_tcp_socket)
-
-    # Assert
-    mock_tcp_socket.setsockopt.assert_called_once_with(SOL_SOCKET, SO_LINGER, expected_buffer)
+        # Assert
+        mock_tcp_socket.setsockopt.assert_called_once_with(SOL_SOCKET, SO_LINGER, expected_buffer)

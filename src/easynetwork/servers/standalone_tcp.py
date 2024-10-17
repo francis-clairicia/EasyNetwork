@@ -67,7 +67,6 @@ class StandaloneTCPNetworkServer(
         max_recv_size: int | None = None,
         log_client_connection: bool | None = None,
         logger: logging.Logger | None = None,
-        **kwargs: Any,
     ) -> None:
         """
         For the other arguments, see :class:`.AsyncTCPNetworkServer` documentation.
@@ -93,7 +92,6 @@ class StandaloneTCPNetworkServer(
                 max_recv_size=max_recv_size,
                 log_client_connection=log_client_connection,
                 logger=logger,
-                **kwargs,
             ),
             runner_options=runner_options,
         )
@@ -103,7 +101,7 @@ class StandaloneTCPNetworkServer(
         Returns all interfaces to which the server is bound. Thread-safe.
 
         Returns:
-            A sequence of network socket address.
+            A sequence of socket address.
             If the server is not serving (:meth:`is_serving` returns :data:`False`), an empty sequence is returned.
         """
         return self._run_sync_or(lambda portal, server: portal.run_sync(server.get_addresses), ())

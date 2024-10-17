@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import functools
 import itertools
 import math
 import os
 import ssl
 import threading
+import weakref
 from collections import deque
 from collections.abc import Callable
-from errno import ENOTCONN, errorcode as errno_errorcode
+from errno import EADDRINUSE, EINVAL, ENOTCONN, errorcode as errno_errorcode
 from socket import SO_ERROR, SOL_SOCKET
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -20,10 +22,11 @@ from easynetwork.lowlevel._utils import (
     Flag,
     ResourceGuard,
     adjust_leftover_buffer,
+    check_inet_socket_family,
     check_real_socket_state,
-    check_socket_family,
     check_socket_is_connected,
     check_socket_no_ssl,
+    convert_socket_bind_error,
     error_from_errno,
     exception_with_notes,
     get_callable_name,
@@ -42,12 +45,14 @@ from easynetwork.lowlevel._utils import (
     supports_socket_sendmsg,
     validate_listener_hosts,
     validate_timeout_delay,
+    weak_method_proxy,
 )
 from easynetwork.lowlevel.constants import NOT_CONNECTED_SOCKET_ERRNOS
 
 import pytest
 
-from ..base import SUPPORTED_FAMILIES, UNSUPPORTED_FAMILIES
+from .._utils import unsupported_families
+from ..base import INET_FAMILIES
 
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
@@ -55,12 +60,7 @@ if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
 
-@pytest.fixture
-def mock_socket_cls(mock_tcp_socket_factory: Callable[[], MagicMock], mocker: MockerFixture) -> MagicMock:
-    return mocker.patch("socket.socket", side_effect=lambda f, t, p: mock_tcp_socket_factory())
-
-
-@pytest.fixture(params=list(SUPPORTED_FAMILIES))
+@pytest.fixture(params=list(INET_FAMILIES))
 def socket_family(request: Any) -> Any:
     import socket
 
@@ -94,7 +94,7 @@ def test____replace_kwargs____error_target_already_present() -> None:
     kwargs = {"arg1": 4, "arg12000": "Yes"}
 
     # Act
-    with pytest.raises(TypeError, match=r"^Cannot set 'arg1' to 'arg12000': 'arg12000' in dictionary$"):
+    with pytest.raises(ValueError, match=r"^Cannot set 'arg1' to 'arg12000': 'arg12000' in dictionary$"):
         replace_kwargs(kwargs, {"arg1": "arg12000"})
 
     # Assert
@@ -124,6 +124,60 @@ def test____make_callback____build_no_arg_callable(mocker: MockerFixture) -> Non
     # Assert
     assert cb() is mocker.sentinel.ret_val
     stub.assert_called_once_with(mocker.sentinel.arg1, mocker.sentinel.arg2, kw1=mocker.sentinel.kw1, kw2=mocker.sentinel.kw2)
+
+
+@pytest.mark.parametrize("already_weak_method", [True, False], ids=lambda p: f"already_weak_method=={p}")
+def test____weak_method_proxy_____wrap_method(already_weak_method: bool, mocker: MockerFixture) -> None:
+    # Arrange
+    @dataclasses.dataclass
+    class MyObject:
+        stub: MagicMock = dataclasses.field(default_factory=mocker.stub)
+
+        def method(self, *args: Any, **kwargs: Any) -> Any:
+            return self.stub(*args, **kwargs)
+
+    obj = MyObject()
+    obj.stub.return_value = mocker.sentinel.ret_val
+
+    # Act
+    cb: Callable[..., Any]
+    if already_weak_method:
+        cb = weak_method_proxy(weakref.WeakMethod(obj.method))
+    else:
+        cb = weak_method_proxy(obj.method)
+
+    # Assert
+    assert (
+        cb(
+            mocker.sentinel.arg1,
+            mocker.sentinel.arg2,
+            kw1=mocker.sentinel.kw1,
+            kw2=mocker.sentinel.kw2,
+        )
+        is mocker.sentinel.ret_val
+    )
+    obj.stub.assert_called_once_with(mocker.sentinel.arg1, mocker.sentinel.arg2, kw1=mocker.sentinel.kw1, kw2=mocker.sentinel.kw2)
+
+
+def test____weak_method_proxy_____strong_reference_dropped(mocker: MockerFixture) -> None:
+    # Arrange
+    @dataclasses.dataclass
+    class MyObject:
+        stub: MagicMock = dataclasses.field(default_factory=mocker.stub)
+
+        def method(self, *args: Any, **kwargs: Any) -> Any:
+            return self.stub(*args, **kwargs)
+
+    obj = MyObject()
+    obj.stub.return_value = mocker.sentinel.ret_val
+
+    # Act
+    cb = weak_method_proxy(obj.method)
+
+    # Assert
+    del obj
+    with pytest.raises(ReferenceError):
+        _ = cb()
 
 
 def test____prepend_argument____add_positional_argument____direct_call(mocker: MockerFixture) -> None:
@@ -325,7 +379,10 @@ def test____check_real_socket_state____socket_with_error(mock_tcp_socket: MagicM
     errno = 123456
     exception = OSError(errno, "errno message")
     mock_tcp_socket.getsockopt.return_value = errno
-    mock_error_from_errno = mocker.patch(f"{error_from_errno.__module__}.{error_from_errno.__qualname__}", return_value=exception)
+    mock_error_from_errno = mocker.patch(
+        f"{check_real_socket_state.__module__}.{error_from_errno.__qualname__}",
+        return_value=exception,
+    )
 
     # Act
     with pytest.raises(OSError) as exc_info:
@@ -345,7 +402,10 @@ def test____check_real_socket_state____socket_with_error____custom_message(
     errno = 123456
     exception = OSError(errno, "errno message")
     mock_tcp_socket.getsockopt.return_value = errno
-    mock_error_from_errno = mocker.patch(f"{error_from_errno.__module__}.{error_from_errno.__qualname__}", return_value=exception)
+    mock_error_from_errno = mocker.patch(
+        f"{check_real_socket_state.__module__}.{error_from_errno.__qualname__}",
+        return_value=exception,
+    )
 
     # Act
     with pytest.raises(OSError) as exc_info:
@@ -370,23 +430,24 @@ def test____check_real_socket_state____closed_socket(mock_tcp_socket: MagicMock,
     mock_error_from_errno.assert_not_called()
 
 
-def test____check_socket_family____valid_family(socket_family: int) -> None:
+@pytest.mark.parametrize("socket_family", list(INET_FAMILIES), indirect=True)
+def test____check_inet_socket_family____valid_family(socket_family: int) -> None:
     # Arrange
 
     # Act
-    check_socket_family(socket_family)
+    check_inet_socket_family(socket_family)
 
     # Assert
     ## There is no exception
 
 
-@pytest.mark.parametrize("socket_family", list(UNSUPPORTED_FAMILIES), indirect=True)
-def test____check_socket_family____invalid_family(socket_family: int) -> None:
+@pytest.mark.parametrize("socket_family", list(unsupported_families(INET_FAMILIES)), indirect=True)
+def test____check_inet_socket_family____invalid_family(socket_family: int) -> None:
     # Arrange
 
     # Act & Assert
-    with pytest.raises(ValueError, match=r"^Only these families are supported: .+$"):
-        check_socket_family(socket_family)
+    with pytest.raises(ValueError, match=r"^Only these families are supported: AF_INET, AF_INET6$"):
+        check_inet_socket_family(socket_family)
 
 
 def test____supports_socket_sendmsg____have_sendmsg_method(
@@ -713,6 +774,46 @@ def test____validate_listener_hosts____mix_is_forbidden() -> None:
     # Act & Assert
     with pytest.raises(TypeError):
         validate_listener_hosts(["local_address_1", None])  # type: ignore[list-item]
+
+
+def test____convert_socket_bind_error____add_context_to_error() -> None:
+    # Arrange
+    addr = ("127.0.0.1", 12345)
+    original_error = OSError(EADDRINUSE, os.strerror(EADDRINUSE))
+    with pytest.raises(OSError):
+        raise original_error
+    assert original_error.__traceback__ is not None
+
+    # Act
+    new_error = convert_socket_bind_error(original_error, addr)
+
+    # Assert
+    assert new_error.errno == EADDRINUSE
+    assert new_error.strerror == f"error while attempting to bind on address {addr!r}: {original_error.strerror}"
+    assert new_error.__traceback__ is original_error.__traceback__
+
+    ## Remove circular references
+    original_error.__traceback__ = new_error.__traceback__ = None
+
+
+def test____convert_socket_bind_error____add_context_to_error____without_errno() -> None:
+    # Arrange
+    addr = "/path/to/unix.sock"
+    original_error = OSError("AF_UNIX path too long.")  # <- Thanks CPython :)
+    with pytest.raises(OSError):
+        raise original_error
+    assert original_error.__traceback__ is not None
+
+    # Act
+    new_error = convert_socket_bind_error(original_error, addr)
+
+    # Assert
+    assert new_error.errno == EINVAL
+    assert new_error.strerror == f"error while attempting to bind on address {addr!r}: AF_UNIX path too long."
+    assert new_error.__traceback__ is original_error.__traceback__
+
+    ## Remove circular references
+    original_error.__traceback__ = new_error.__traceback__ = None
 
 
 def test____exception_with_notes____one_note() -> None:
