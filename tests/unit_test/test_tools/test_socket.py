@@ -22,8 +22,8 @@ from easynetwork.lowlevel.socket import (
 
 import pytest
 
-from .._utils import partial_eq
-from ..base import UNSUPPORTED_FAMILIES
+from .._utils import partial_eq, unsupported_families
+from ..base import INET_FAMILIES
 
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
@@ -65,7 +65,7 @@ class TestSocketAddress:
         # Assert
         assert isinstance(socket_address, expected_type)
 
-    @pytest.mark.parametrize("socket_family_name", list(UNSUPPORTED_FAMILIES))
+    @pytest.mark.parametrize("socket_family_name", list(unsupported_families(INET_FAMILIES)))
     def test____new_socket_address____unsupported_family(
         self,
         socket_family_name: str,

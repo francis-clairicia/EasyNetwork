@@ -23,7 +23,8 @@ if TYPE_CHECKING:
 
     from .....pytest_plugins.async_finalizer import AsyncFinalizer
 
-from ....base import UNSUPPORTED_FAMILIES, BaseTestWithDatagramProtocol
+from ...._utils import unsupported_families
+from ....base import INET_FAMILIES, BaseTestWithDatagramProtocol
 from .base import BaseTestClient
 
 
@@ -203,7 +204,7 @@ class TestAsyncUDPNetworkClient(BaseTestClient, BaseTestWithDatagramProtocol):
             local_address=mocker.sentinel.local_address,
         )
 
-    @pytest.mark.parametrize("socket_family", list(UNSUPPORTED_FAMILIES), indirect=True)
+    @pytest.mark.parametrize("socket_family", list(unsupported_families(INET_FAMILIES)), indirect=True)
     async def test____dunder_init____with_remote_address____invalid_socket_family(
         self,
         remote_address: tuple[str, int],
@@ -294,7 +295,7 @@ class TestAsyncUDPNetworkClient(BaseTestClient, BaseTestWithDatagramProtocol):
         # Assert
         assert exc_info.value.errno == errno.ENOTCONN
 
-    @pytest.mark.parametrize("socket_family", list(UNSUPPORTED_FAMILIES), indirect=True)
+    @pytest.mark.parametrize("socket_family", list(unsupported_families(INET_FAMILIES)), indirect=True)
     async def test____dunder_init____use_given_socket____invalid_socket_family(
         self,
         mock_udp_socket: MagicMock,

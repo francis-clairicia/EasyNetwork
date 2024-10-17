@@ -14,6 +14,10 @@ Data Structures And Constants
    :members:
    :inherited-members:
 
+.. autoclass:: UNIXSocketAttribute
+   :members:
+   :inherited-members:
+
 .. autoclass:: TLSAttribute
    :members:
 
@@ -35,6 +39,9 @@ Classes
 .. autoprotocol:: ISocket
 
 .. autoclass:: SocketProxy
+   :members:
+
+.. autonamedtuple:: socket_ucred
    :members:
 
 

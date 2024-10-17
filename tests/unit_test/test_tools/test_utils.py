@@ -20,8 +20,8 @@ from easynetwork.lowlevel._utils import (
     Flag,
     ResourceGuard,
     adjust_leftover_buffer,
+    check_inet_socket_family,
     check_real_socket_state,
-    check_socket_family,
     check_socket_is_connected,
     check_socket_no_ssl,
     error_from_errno,
@@ -47,7 +47,8 @@ from easynetwork.lowlevel.constants import NOT_CONNECTED_SOCKET_ERRNOS
 
 import pytest
 
-from ..base import SUPPORTED_FAMILIES, UNSUPPORTED_FAMILIES
+from .._utils import unsupported_families
+from ..base import INET_FAMILIES
 
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
@@ -60,7 +61,7 @@ def mock_socket_cls(mock_tcp_socket_factory: Callable[[], MagicMock], mocker: Mo
     return mocker.patch("socket.socket", side_effect=lambda f, t, p: mock_tcp_socket_factory())
 
 
-@pytest.fixture(params=list(SUPPORTED_FAMILIES))
+@pytest.fixture(params=list(INET_FAMILIES))
 def socket_family(request: Any) -> Any:
     import socket
 
@@ -370,23 +371,23 @@ def test____check_real_socket_state____closed_socket(mock_tcp_socket: MagicMock,
     mock_error_from_errno.assert_not_called()
 
 
-def test____check_socket_family____valid_family(socket_family: int) -> None:
+def test____check_inet_socket_family____valid_family(socket_family: int) -> None:
     # Arrange
 
     # Act
-    check_socket_family(socket_family)
+    check_inet_socket_family(socket_family)
 
     # Assert
     ## There is no exception
 
 
-@pytest.mark.parametrize("socket_family", list(UNSUPPORTED_FAMILIES), indirect=True)
-def test____check_socket_family____invalid_family(socket_family: int) -> None:
+@pytest.mark.parametrize("socket_family", list(unsupported_families(INET_FAMILIES)), indirect=True)
+def test____check_inet_socket_family____invalid_family(socket_family: int) -> None:
     # Arrange
 
     # Act & Assert
     with pytest.raises(ValueError, match=r"^Only these families are supported: .+$"):
-        check_socket_family(socket_family)
+        check_inet_socket_family(socket_family)
 
 
 def test____supports_socket_sendmsg____have_sendmsg_method(

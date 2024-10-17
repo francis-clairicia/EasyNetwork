@@ -21,8 +21,8 @@ if TYPE_CHECKING:
 
     from pytest_mock import MockerFixture
 
-from ..._utils import datagram_addrinfo_list
-from ...base import UNSUPPORTED_FAMILIES, BaseTestWithDatagramProtocol
+from ..._utils import datagram_addrinfo_list, unsupported_families
+from ...base import INET_FAMILIES, BaseTestWithDatagramProtocol
 from .base import BaseTestClient
 
 
@@ -257,7 +257,7 @@ class TestUDPNetworkClient(BaseTestClient, BaseTestWithDatagramProtocol):
             reuse_port=reuse_port,
         )
 
-    @pytest.mark.parametrize("socket_family", list(UNSUPPORTED_FAMILIES), indirect=True)
+    @pytest.mark.parametrize("socket_family", list(unsupported_families(INET_FAMILIES)), indirect=True)
     def test____dunder_init____create_datagram_endpoint____invalid_family(
         self,
         socket_family: int,
@@ -298,7 +298,7 @@ class TestUDPNetworkClient(BaseTestClient, BaseTestWithDatagramProtocol):
             mocker.call.setblocking(False),
         ]
 
-    @pytest.mark.parametrize("socket_family", list(UNSUPPORTED_FAMILIES), indirect=True)
+    @pytest.mark.parametrize("socket_family", list(unsupported_families(INET_FAMILIES)), indirect=True)
     def test____dunder_init____use_given_socket____invalid_socket_family(
         self,
         mock_udp_socket: MagicMock,
