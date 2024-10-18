@@ -106,10 +106,12 @@ test = [
     "pytest-cov~=5.0",
     "pytest-asyncio~=0.24.0",
     "trove-classifiers>=2023.11.9",
-    "trustme~=1.0",
     # "pytest-retry~=1.6",
     # Temporary use VCS to get the modifications added on main (c.f. https://github.com/str0zzapreti/pytest-retry/pull/39)
     "pytest-retry @ git+https://github.com/str0zzapreti/pytest-retry.git@bb465fff6f01f3f90a77229468f7e08a3bdbce20",
+]
+test-ssl = [
+    "trustme~=1.0",
 ]
 test-trio = [
     "pytest-trio~=0.8.0",

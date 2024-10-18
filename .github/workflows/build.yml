@@ -5,6 +5,8 @@ on:
     types:
       - opened
       - synchronize
+      - converted_to_draft
+      - ready_for_review
     branches:
       - main
     paths-ignore:
@@ -59,7 +61,9 @@ concurrency:
 
 jobs:
   build:
-    if: github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'Bump version:')
+    if: |
+      (github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'Bump version:'))
+      && (github.event_name != 'pull_request' || github.event.pull_request.draft != true)
     runs-on: ubuntu-24.04
     env:
       SOURCE_DATE_EPOCH: ${{ inputs.SOURCE_DATE_EPOCH }}

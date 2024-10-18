@@ -12,6 +12,8 @@ on:
     types:
       - opened
       - synchronize
+      - converted_to_draft
+      - ready_for_review
     branches:
       - main
     paths:
@@ -44,6 +46,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 
+env:
+  PYTEST_VERBOSE_FLAG: ${{ inputs.verbose && '-v' || '' }}
+  PDM_VERSION: '2.19.3'  # Used by FreeBSD VM
+
 jobs:
   tests:
     if: |
@@ -62,8 +68,6 @@ jobs:
             tox_py: py312
           - python_version: '3.13'
             tox_py: py313
-    env:
-      PYTEST_VERBOSE_FLAG: ${{ inputs.verbose && '-v' || '' }}
 
     name: test (${{ matrix.os }}, ${{ matrix.python_version }})
     steps:
@@ -107,4 +111,78 @@ jobs:
           flags: >-
             test-functional,
             OS-${{ runner.os }},
+            Py-${{ matrix.python_version }}
+
+  test-freebsd:
+    if: |
+      (github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'Bump version:'))
+      && (github.event_name != 'pull_request' || (github.event.pull_request.draft != true && !contains(github.event.pull_request.labels.*.name, 'pr-skip-test')))
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        # TODO: Add test with other python version
+        # c.f. https://bugs.freebsd.org/bugzilla/show_bug.cgi?id=271673
+        include:
+          # py3XX-sqlite3 is needed for coverage.py
+          - python_version: '3.11'
+            freebsd_ports: >-
+              python311
+              py311-sqlite3
+            tox_py: py311
+
+    name: test (FreeBSD, ${{ matrix.python_version }})
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Launch tests
+        # Add 5 minutes to let the VM boot and install dependencies
+        timeout-minutes: 25
+        uses: vmactions/freebsd-vm@v1
+        with:
+          release: '14.1'
+          usesh: true
+          prepare: |
+            set -e
+            pkg install -y curl git ${{ matrix.freebsd_ports }}
+            curl -sSL https://pdm-project.org/install-pdm.py | python${{ matrix.python_version }} - --version=${{ env.PDM_VERSION }} --path=/usr/local
+            pdm config check_update false
+            pdm config install.cache true
+          run: |
+            pdm install --frozen-lockfile --global --project=. --no-self --no-default --dev --group=tox
+            tox --version
+            tox run -f ${{ matrix.tox_py }} -- ${{ env.PYTEST_VERBOSE_FLAG }}
+            tox run -f coverage
+            rm -rf .tox
+            find . -name '__pycache__' | xargs rm -rf
+      - name: Check files in workspace
+        if: always()
+        run: ls -lA
+      # Currently, it is not possible to send several files with per-file tags.
+      # This is why the step is copy-paste twice.
+      # Issue: https://github.com/codecov/codecov-action/issues/1522
+      - name: Upload (unit tests) coverage to codecov
+        if: hashFiles('coverage.unit.xml') != ''  # Rudimentary `file.exists()`
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          disable_search: true
+          files: >-
+            coverage.unit.xml
+          flags: >-
+            test-unit,
+            OS-FreeBSD,
+            Py-${{ matrix.python_version }}
+      - name: Upload (functional tests) coverage to codecov
+        if: hashFiles('coverage.functional.xml') != ''  # Rudimentary `file.exists()`
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          disable_search: true
+          files: >-
+            coverage.functional.xml
+          flags: >-
+            test-functional,
+            OS-FreeBSD,
             Py-${{ matrix.python_version }}
