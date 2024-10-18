@@ -21,6 +21,7 @@ __all__ = [
     "ACCEPT_CAPACITY_ERROR_SLEEP_TIME",
     "DEFAULT_SERIALIZER_LIMIT",
     "DEFAULT_STREAM_BUFSIZE",
+    "IGNORABLE_ACCEPT_ERRNOS",
     "MAX_DATAGRAM_BUFSIZE",
     "NOT_CONNECTED_SOCKET_ERRNOS",
     "SC_IOV_MAX",
@@ -57,8 +58,7 @@ NOT_CONNECTED_SOCKET_ERRNOS: Final[frozenset[int]] = frozenset(
     }
 )
 
-# Errors that accept(2) can return, and which indicate that the system is
-# overloaded
+# Errors that accept(2) can return, and which indicate that the system is overloaded
 ACCEPT_CAPACITY_ERRNOS: Final[frozenset[int]] = frozenset(
     {
         _errno.EMFILE,
@@ -70,6 +70,36 @@ ACCEPT_CAPACITY_ERRNOS: Final[frozenset[int]] = frozenset(
 
 # How long to sleep when we get one of those errors
 ACCEPT_CAPACITY_ERROR_SLEEP_TIME: Final[float] = 0.100
+
+# Taken from Trio project
+# Errors that accept(2) can return, and can be skipped
+IGNORABLE_ACCEPT_ERRNOS: frozenset[int] = frozenset(
+    {
+        errno
+        for name in (
+            # Linux can do this when the a connection is denied by the firewall
+            "EPERM",
+            # BSDs with an early close/reset
+            "ECONNABORTED",
+            # All the other miscellany noted above -- may not happen in practice, but
+            # whatever.
+            "EPROTO",
+            "ENETDOWN",
+            "ENOPROTOOPT",
+            "EHOSTDOWN",
+            "ENONET",
+            "EHOSTUNREACH",
+            "EOPNOTSUPP",
+            "ENETUNREACH",
+            "ENOSR",
+            "ESOCKTNOSUPPORT",
+            "EPROTONOSUPPORT",
+            "ETIMEDOUT",
+            "ECONNRESET",
+        )
+        if (errno := getattr(_errno, name, None)) is not None
+    }
+)
 
 # Number of seconds to wait for SSL handshake to complete
 # The default timeout matches that of Nginx.
