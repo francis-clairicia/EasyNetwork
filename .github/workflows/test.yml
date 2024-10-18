@@ -57,7 +57,7 @@ jobs:
           - python_version: '3.13'
             tox_py: py313
 
-    name: Tests (${{ matrix.os }}, ${{ matrix.python_version }})
+    name: test (${{ matrix.os }}, ${{ matrix.python_version }})
     steps:
       - uses: actions/checkout@v4
         with:
@@ -100,3 +100,33 @@ jobs:
             test-functional,
             OS-${{ runner.os }},
             Py-${{ matrix.python_version }}
+
+  test-freebsd:
+    # TODO: Add this when the workflow is stable.
+    # if: |
+    #   (github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'Bump version:'))
+    #   && (github.event_name != 'pull_request' || (github.event.pull_request.draft != true && !contains(github.event.pull_request.labels.*.name, 'pr-skip-test')))
+    runs-on: ubuntu-22.04
+
+    name: test (FreeBSD, 3.11)
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Launch tests
+        # Add 10 minutes timeout because some wheels are
+        timeout-minutes: 30
+        uses: vmactions/freebsd-vm@v1
+        with:
+          release: '14.1'
+          # pkg install py311-sqlite3 is needed for coverage.py
+          # pkg install rust is needed to install cryptography from source
+          prepare: |
+            pkg install -y git python311 py311-sqlite3 py311-pdm rust
+            pdm config check_update false
+            pdm config install.cache true
+          run: |
+            pdm install  --frozen-lockfile --dev --group tox
+            pdm run tox run -f py311-standard -f coverage
+      - name: Check files in workspace
+        run: ls -lA
