@@ -87,9 +87,7 @@ class TestAsyncUDPNetworkClient:
         async with asyncio.timeout(3):
             assert await server.recvfrom() == (b"ABCDEF", client.get_local_address())
 
-    # Windows and MacOS do not raise error
-    @PlatformMarkers.skipif_platform_win32
-    @PlatformMarkers.skipif_platform_macOS
+    @PlatformMarkers.runs_only_on_platform("linux", "Windows and MacOS do not raise error")
     async def test____send_packet____connection_refused(
         self,
         client: AsyncUDPNetworkClient[str, str],
@@ -99,9 +97,7 @@ class TestAsyncUDPNetworkClient:
         with pytest.raises(ConnectionRefusedError):
             await client.send_packet("ABCDEF")
 
-    # Windows and MacOS do not raise error
-    @PlatformMarkers.skipif_platform_win32
-    @PlatformMarkers.skipif_platform_macOS
+    @PlatformMarkers.runs_only_on_platform("linux", "Windows and MacOS do not raise error")
     async def test____send_packet____connection_refused____after_previous_successful_try(
         self,
         client: AsyncUDPNetworkClient[str, str],

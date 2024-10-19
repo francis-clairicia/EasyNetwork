@@ -284,7 +284,6 @@ class AsyncTCPNetworkServer(
 
             client_address = lowlevel_client.extra(INETSocketAttribute.peername, None)
             if client_address is None:
-                self.__client_closed_before_starting_task(self.logger)
                 yield None
                 return
 
@@ -358,16 +357,9 @@ class AsyncTCPNetworkServer(
                 or _utils.is_ssl_eof_error(exc)
                 or exc.errno in constants.NOT_CONNECTED_SOCKET_ERRNOS
             ):
-                cls.__client_closed_before_starting_task(logger)
+                pass
             case _:  # pragma: no cover
                 logger.warning("Error in client task (during TLS handshake)", exc_info=exc)
-
-    @staticmethod
-    def __client_closed_before_starting_task(logger: logging.Logger) -> None:
-        # The remote host closed the connection before starting the task.
-        # See this test for details:
-        # test____serve_forever____accept_client____client_sent_RST_packet_right_after_accept
-        logger.warning("A client connection was interrupted just after listener.accept()")
 
     @_utils.inherit_doc(_base.BaseAsyncNetworkServerImpl)
     def get_addresses(self) -> Sequence[SocketAddress]:

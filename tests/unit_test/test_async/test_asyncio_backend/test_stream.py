@@ -24,7 +24,7 @@ from easynetwork.lowlevel.api_async.backend._asyncio.stream.socket import (
     StreamReaderBufferedProtocol,
 )
 from easynetwork.lowlevel.api_async.backend._asyncio.tasks import CancelScope, TaskGroup as AsyncIOTaskGroup
-from easynetwork.lowlevel.constants import ACCEPT_CAPACITY_ERRNOS, NOT_CONNECTED_SOCKET_ERRNOS
+from easynetwork.lowlevel.constants import ACCEPT_CAPACITY_ERRNOS, IGNORABLE_ACCEPT_ERRNOS, NOT_CONNECTED_SOCKET_ERRNOS
 from easynetwork.lowlevel.socket import SocketAttribute
 
 import pytest
@@ -345,11 +345,9 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket, BaseTestAsyncSock
                 assert len(caplog.records) == 0
                 accepted_socket_factory.log_connection_error.assert_not_called()
             case OSError(errno=errno) if errno in NOT_CONNECTED_SOCKET_ERRNOS:
-                # ENOTCONN error should not create a big Traceback error but only a warning (at least)
-                assert len(caplog.records) == 1
-                assert caplog.records[0].levelno == logging.WARNING
-                assert caplog.records[0].message == "A client connection was interrupted just after listener.accept()"
-                assert caplog.records[0].exc_info is None
+                # ENOTCONN error should not create a big Traceback error
+                assert len(caplog.records) == 0
+                accepted_socket_factory.log_connection_error.assert_not_called()
             case _:
                 assert len(caplog.records) == 0
                 accepted_socket_factory.log_connection_error.assert_called_once_with(
@@ -368,7 +366,7 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket, BaseTestAsyncSock
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         # Arrange
-        caplog.set_level(logging.ERROR)
+        caplog.set_level(logging.WARNING)
         mock_tcp_listener_socket.accept.side_effect = OSError(errno_value, os.strerror(errno_value))
 
         # Act
@@ -380,12 +378,36 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket, BaseTestAsyncSock
         # Assert
         assert len(caplog.records) in {9, 10}
         for record in caplog.records:
+            assert record.levelno == logging.ERROR
             assert "retrying" in record.message
             assert (
                 record.exc_info is not None
                 and isinstance(record.exc_info[1], OSError)
                 and record.exc_info[1].errno == errno_value
             )
+
+    @pytest.mark.parametrize("errno_value", sorted(IGNORABLE_ACCEPT_ERRNOS), ids=errno_errorcode.__getitem__)
+    async def test____accept____ignorable_error(
+        self,
+        errno_value: int,
+        listener: ListenerSocketAdapter[Any],
+        mock_tcp_listener_socket: MagicMock,
+        mock_tcp_socket: MagicMock,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        # Arrange
+        caplog.set_level(logging.WARNING)
+        mock_tcp_listener_socket.accept.side_effect = [
+            OSError(errno_value, os.strerror(errno_value)),
+            (mock_tcp_socket, ("127.0.0.1", 12345)),
+        ]
+
+        # Act
+        socket = await listener.raw_accept()
+
+        # Assert
+        assert socket is mock_tcp_socket
+        assert len(caplog.records) == 0
 
     async def test____accept____reraise_other_OSErrors(
         self,
@@ -394,7 +416,7 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket, BaseTestAsyncSock
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         # Arrange
-        caplog.set_level(logging.ERROR)
+        caplog.set_level(logging.WARNING)
         exc = OSError()
         mock_tcp_listener_socket.accept.side_effect = exc
 

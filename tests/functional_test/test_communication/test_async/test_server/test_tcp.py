@@ -624,7 +624,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         from socket import socket as SocketType
 
         caplog.set_level(logging.WARNING, LOGGER.name)
-        logger_crash_maximum_nb_lines[LOGGER.name] = 1
 
         socket = SocketType()
 
@@ -638,10 +637,8 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         # and will fail at client initialization when calling socket.getpeername() (errno.ENOTCONN will be raised)
         await asyncio.sleep(0.1)
 
-        # ENOTCONN error should not create a big Traceback error but only a warning (at least)
-        assert len(caplog.records) == 1
-        assert caplog.records[0].levelno == logging.WARNING
-        assert caplog.records[0].message == "A client connection was interrupted just after listener.accept()"
+        # On Linux: ENOTCONN error should not create a big Traceback error
+        assert len(caplog.records) == 0
 
     async def test____serve_forever____client_extra_attributes(
         self,
