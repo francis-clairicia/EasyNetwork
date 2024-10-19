@@ -12,12 +12,27 @@ runs:
     - name: Disable PDM update check
       run: echo "PDM_CHECK_UPDATE=False" >> $GITHUB_ENV
       shell: bash
+    - name: Get workflow cache key filepath
+      run: echo "WORKFLOW_CACHE_KEY_FILE=.github/.workflow.cache.key" >> $GITHUB_ENV
+      shell: bash
     - name: Create cache key from workflow
-      run: echo "Runner=${{ runner.os }}-${{ runner.arch }}; Workflow=${{ github.workflow }}" > .github/.workflow.cache.key
+      run: |
+        echo "Runner=${{ runner.os }}-${{ runner.arch }}; Workflow=${{ github.workflow }}" > $WORKFLOW_CACHE_KEY_FILE
+        echo "Workflow Cache Version: $CACHE_CONFIGURATION_VERSION" >> $WORKFLOW_CACHE_KEY_FILE
+      env:
+        # Increment the version each time the uploaded cache must be invalidated
+        # because the data stored have changed.
+        # - 1.0: Initial
+        # - 2.0: Add wheel cache ( by activating install.cache option )
+        CACHE_CONFIGURATION_VERSION: '2.0'
+      shell: bash
+    - name: Show cache key
+      run: cat ${{ env.WORKFLOW_CACHE_KEY_FILE }}
       shell: bash
     # Use a pinned commit to use the new feature added (and which is not currently added to v4)
     # c.f. https://github.com/pdm-project/setup-pdm/pull/60
     - uses: pdm-project/setup-pdm@2f3a9be7ac56a6e5c1ea605f8e9d0f0500363705  # v4
+      id: pdm
       with:
         version: '2.19.3'
         python-version: ${{ inputs.python-version }}
@@ -25,17 +40,28 @@ runs:
         cache-restore-exact-match: true
         cache-dependency-path: |
           ./pdm.lock
-          .github/.workflow.cache.key
-    - name: Install dependencies
-      ### This command fails at least 1 in 100 times on Windows
-      # run: pdm sync --global --project=. --no-self --dev --group=tox
+          ${{ env.WORKFLOW_CACHE_KEY_FILE }}
+    - name: Configure PDM before proceed
+      # Tell PDM to cache wheel installation as well
       run: |
-        pdm export --no-default --dev --group tox --format requirements --without-hashes --output requirements-tox.txt
-        pip install -r requirements-tox.txt
-        rm -f requirements-tox.txt
+        pdm config install.cache true
+      shell: bash
+    - name: Install dependencies
+      run: |
+        pdm install --frozen-lockfile --global --project=. --no-self --no-default --dev --group=tox
+        tox --version
+        ls -lA
       env:
         PDM_USE_VENV: False
       shell: bash
     - name: Disable tox parallel spinner by default
       run: echo "TOX_PARALLEL_NO_SPINNER=1" >> $GITHUB_ENV
       shell: bash
+    - name: Cache .tox
+      uses: actions/cache@v4
+      with:
+        key: tox-${{ runner.os }}-${{ runner.arch }}-python-${{ env.PYTHON_VERSION }}-${{ env.KEY_HASH }}
+        path: .tox
+      env:
+        PYTHON_VERSION: ${{ steps.pdm.outputs.python-version }}
+        KEY_HASH: ${{ hashFiles('./pdm.lock', './tox.ini', env.WORKFLOW_CACHE_KEY_FILE ) }}
