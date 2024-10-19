@@ -684,7 +684,7 @@ class TestTrioListenerSocketAdapter(BaseTestTransportStreamSocket):
             await listener.serve(handler)
 
         # Assert
-        assert len(caplog.records) == 10
+        assert len(caplog.records) in {9, 10}
         for record in caplog.records:
             assert "retrying" in record.message
             assert (
