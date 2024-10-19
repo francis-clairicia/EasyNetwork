@@ -12,13 +12,20 @@ runs:
     - name: Disable PDM update check
       run: echo "PDM_CHECK_UPDATE=False" >> $GITHUB_ENV
       shell: bash
-    - uses: pdm-project/setup-pdm@v4
+    - name: Create cache key from workflow
+      run: echo "Runner=${{ runner.os }}-${{ runner.arch }}; Workflow=${{ github.workflow }}" > .github/.workflow.cache.key
+      shell: bash
+    # Use a pinned commit to use the new feature added (and which is not currently added to v4)
+    # c.f. https://github.com/pdm-project/setup-pdm/pull/60
+    - uses: pdm-project/setup-pdm@2f3a9be7ac56a6e5c1ea605f8e9d0f0500363705  # v4
       with:
-        version: '2.19.1'
+        version: '2.19.3'
         python-version: ${{ inputs.python-version }}
-        ### setup-pdm cache seems broken. See https://github.com/pdm-project/setup-pdm/issues/43
-        # cache: true
-        # cache-dependency-path: './pdm.lock'
+        cache: true
+        cache-restore-exact-match: true
+        cache-dependency-path: |
+          ./pdm.lock
+          .github/.workflow.cache.key
     - name: Install dependencies
       ### This command fails at least 1 in 100 times on Windows
       # run: pdm sync --global --project=. --no-self --dev --group=tox

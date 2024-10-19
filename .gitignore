@@ -11,6 +11,9 @@ benchmark*.json
 benchmark*.html
 benchmark*.svg
 
+# Github Actions
+.github/.*.key
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
