@@ -122,7 +122,7 @@ class ListenerSocketAdapter(AsyncListener[_T_Stream]):
                     # The remote host closed the connection before starting the task.
                     # See this test for details:
                     # test____serve_forever____accept_client____client_sent_RST_packet_right_after_accept
-                    logger.warning("A client connection was interrupted just after listener.accept()")
+                    pass
                 else:
                     self.__accepted_socket_factory.log_connection_error(logger, exc)
 
@@ -181,7 +181,7 @@ class ListenerSocketAdapter(AsyncListener[_T_Stream]):
                             raise _utils.error_from_errno(_errno.EBADF) from None
                     finally:
                         self.__accept_scope = None
-                else:
+                elif exc.errno not in constants.IGNORABLE_ACCEPT_ERRNOS:
                     raise
 
     def backend(self) -> AsyncBackend:

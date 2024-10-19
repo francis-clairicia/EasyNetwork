@@ -2,6 +2,12 @@ name: Test
 
 on:
   workflow_dispatch:
+    inputs:
+      verbose:
+        description: 'Increase level of test verbosity'
+        required: false
+        default: false
+        type: boolean
   pull_request:
     types:
       - opened
@@ -56,8 +62,10 @@ jobs:
             tox_py: py312
           - python_version: '3.13'
             tox_py: py313
+    env:
+      PYTEST_VERBOSE_FLAG: ${{ inputs.verbose && '-v' || '' }}
 
-    name: Tests (${{ matrix.os }}, ${{ matrix.python_version }})
+    name: test (${{ matrix.os }}, ${{ matrix.python_version }})
     steps:
       - uses: actions/checkout@v4
         with:
@@ -68,7 +76,7 @@ jobs:
           python-version: ${{ matrix.python_version }}
       - name: Launch tests
         timeout-minutes: 20
-        run: tox run -f ${{ matrix.tox_py }} -- -v
+        run: tox run -f ${{ matrix.tox_py }} -- ${{ env.PYTEST_VERBOSE_FLAG }}
       - name: Generate coverage report
         if: hashFiles('.coverage.*') != ''  # Rudimentary `file.exists()`
         continue-on-error: true

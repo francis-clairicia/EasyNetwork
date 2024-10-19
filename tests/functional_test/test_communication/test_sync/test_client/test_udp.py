@@ -58,17 +58,13 @@ class TestUDPNetworkClient:
         client.send_packet("ABCDEF")
         assert server.recvfrom(1024) == (b"ABCDEF", client.get_local_address())
 
-    # Windows and MacOS do not raise error
-    @PlatformMarkers.skipif_platform_win32
-    @PlatformMarkers.skipif_platform_macOS
+    @PlatformMarkers.runs_only_on_platform("linux", "Windows and MacOS do not raise error")
     def test____send_packet____connection_refused(self, client: UDPNetworkClient[str, str], server: Socket) -> None:
         server.close()
         with pytest.raises(ConnectionRefusedError):
             client.send_packet("ABCDEF")
 
-    # Windows and MacOS do not raise error
-    @PlatformMarkers.skipif_platform_win32
-    @PlatformMarkers.skipif_platform_macOS
+    @PlatformMarkers.runs_only_on_platform("linux", "Windows and MacOS do not raise error")
     def test____send_packet____connection_refused____after_previous_successful_try(
         self,
         client: UDPNetworkClient[str, str],
