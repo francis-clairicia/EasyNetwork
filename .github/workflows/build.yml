@@ -60,7 +60,7 @@ concurrency:
 jobs:
   build:
     if: github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'Bump version:')
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     env:
       SOURCE_DATE_EPOCH: ${{ inputs.SOURCE_DATE_EPOCH }}
     steps:
