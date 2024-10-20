@@ -11,9 +11,11 @@ on:
     branches:
       - main
     paths:
+      - 'benchmark_server/**.py'
+      - 'docs/**.py'
+      - 'micro_benchmarks/**.py'
       - 'src/**.pyi?'
       - 'tests/**.pyi?'
-      - 'benchmark/**'
       - 'tox.ini'
       - 'pyproject.toml'
       - 'pdm.lock'
@@ -25,9 +27,11 @@ on:
     tags-ignore:
       - '*'
     paths:
+      - 'benchmark_server/**.py'
+      - 'docs/**.py'
+      - 'micro_benchmarks/**.py'
       - 'src/**.pyi?'
       - 'tests/**.pyi?'
-      - 'benchmark/**'
       - 'tox.ini'
       - 'pyproject.toml'
       - 'pdm.lock'
