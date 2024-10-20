@@ -326,9 +326,12 @@ class TestSSLOverTCPNetworkClient:
         cls,
         localhost_ip: str,
         socket_family: int,
-        server_ssl_context: ssl.SSLContext,
+        server_ssl_context: ssl.SSLContext | None,
     ) -> Iterator[socketserver.TCPServer]:
         from threading import Thread
+
+        if server_ssl_context is None:
+            pytest.skip("trustme is not installed")
 
         with TCPServer((localhost_ip, 0), socket_family, ssl_context=server_ssl_context) as server:
             server_thread = Thread(target=server.serve_forever, daemon=True)

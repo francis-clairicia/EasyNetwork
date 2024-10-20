@@ -440,7 +440,14 @@ class TestAsyncTCPNetworkClientConnection:
 class TestAsyncSSLOverTCPNetworkClient:
     @pytest_asyncio.fixture(autouse=True)
     @staticmethod
-    async def server(localhost_ip: str, socket_family: int, server_ssl_context: ssl.SSLContext) -> AsyncIterator[asyncio.Server]:
+    async def server(
+        localhost_ip: str,
+        socket_family: int,
+        server_ssl_context: ssl.SSLContext | None,
+    ) -> AsyncIterator[asyncio.Server]:
+        if server_ssl_context is None:
+            pytest.skip("trustme is not installed")
+
         async def client_connected_cb(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
             try:
                 data: bytes = await reader.readline()
