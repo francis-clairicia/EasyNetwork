@@ -97,9 +97,7 @@ jobs:
           files: >-
             coverage.unit.xml
           flags: >-
-            test-unit,
-            OS-${{ runner.os }},
-            Py-${{ matrix.python_version }}
+            test-unit
       - name: Upload (functional tests) coverage to codecov
         if: hashFiles('coverage.functional.xml') != ''  # Rudimentary `file.exists()`
         uses: codecov/codecov-action@v4
@@ -171,9 +169,7 @@ jobs:
           files: >-
             coverage.unit.xml
           flags: >-
-            test-unit,
-            OS-FreeBSD,
-            Py-${{ matrix.python_version }}
+            test-unit
       - name: Upload (functional tests) coverage to codecov
         if: hashFiles('coverage.functional.xml') != ''  # Rudimentary `file.exists()`
         uses: codecov/codecov-action@v4
