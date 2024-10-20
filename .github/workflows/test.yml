@@ -131,7 +131,7 @@ jobs:
               py311-sqlite3
             tox_py: py311
 
-    name: test (FreeBSD, ${{ matrix.python_version }})
+    name: test (freebsd-14, ${{ matrix.python_version }})
     steps:
       - uses: actions/checkout@v4
         with:
