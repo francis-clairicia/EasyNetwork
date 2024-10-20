@@ -17,7 +17,7 @@ runs:
       shell: bash
     - name: Create cache key from workflow
       run: |
-        echo "Runner=${{ runner.os }}-${{ runner.arch }}; Workflow=${{ github.workflow }}" > $WORKFLOW_CACHE_KEY_FILE
+        echo "Runner=${{ runner.os }}-${{ runner.arch }}; Workflow=${{ github.workflow }}/${{ github.job }}" > $WORKFLOW_CACHE_KEY_FILE
         echo "Workflow Cache Version: $CACHE_CONFIGURATION_VERSION" >> $WORKFLOW_CACHE_KEY_FILE
       env:
         # Increment the version each time the uploaded cache must be invalidated
