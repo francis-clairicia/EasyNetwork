@@ -2,10 +2,10 @@
 # It is not intended for manual editing.
 
 [metadata]
-groups = ["default", "bandit", "benchmark-servers", "benchmark-servers-deps", "build", "cbor", "coverage", "dev", "doc", "flake8", "format", "micro-benchmark", "msgpack", "mypy", "pre-commit", "test", "test-trio", "tox", "trio", "types-msgpack", "uvloop"]
+groups = ["default", "bandit", "benchmark-servers", "benchmark-servers-deps", "build", "cbor", "coverage", "dev", "doc", "flake8", "format", "micro-benchmark", "msgpack", "mypy", "pre-commit", "test", "test-ssl", "test-trio", "tox", "trio", "types-msgpack", "uvloop"]
 strategy = ["inherit_metadata"]
 lock_version = "4.5.0"
-content_hash = "sha256:eb460b604f68d10abee577441ab768d16ae2aa47c4569b5c9daef982b27a4c4f"
+content_hash = "sha256:7838a09608f8525cc33ede511d78e3065055c3ab0a035b0f4f7ce53635d6d485"
 
 [[metadata.targets]]
 requires_python = ">=3.11"
@@ -317,7 +317,7 @@ name = "cffi"
 version = "1.17.1"
 requires_python = ">=3.8"
 summary = "Foreign Function Interface for Python calling C code."
-groups = ["benchmark-servers-deps", "dev", "test", "test-trio", "trio"]
+groups = ["benchmark-servers-deps", "dev", "test-ssl", "test-trio", "trio"]
 dependencies = [
     "pycparser",
 ]
@@ -573,7 +573,7 @@ name = "cryptography"
 version = "43.0.1"
 requires_python = ">=3.7"
 summary = "cryptography is a package which provides cryptographic recipes and primitives to Python developers."
-groups = ["dev", "test"]
+groups = ["dev", "test-ssl"]
 dependencies = [
     "cffi>=1.12; platform_python_implementation != \"PyPy\"",
 ]
@@ -906,7 +906,7 @@ name = "idna"
 version = "3.10"
 requires_python = ">=3.6"
 summary = "Internationalized Domain Names in Applications (IDNA)"
-groups = ["benchmark-servers", "benchmark-servers-deps", "dev", "doc", "test", "test-trio", "trio"]
+groups = ["benchmark-servers", "benchmark-servers-deps", "dev", "doc", "test-ssl", "test-trio", "trio"]
 files = [
     {file = "idna-3.10-py3-none-any.whl", hash = "sha256:946d195a0d259cbba61165e88e65941f16e9b36ea6ddb97f00452bae8b1287d3"},
     {file = "idna-3.10.tar.gz", hash = "sha256:12f65c9b470abda6dc35cf8e63cc574b1c52b11df2c86030af0ac09b01b13ea9"},
@@ -1414,7 +1414,7 @@ name = "pycparser"
 version = "2.22"
 requires_python = ">=3.8"
 summary = "C parser in Python"
-groups = ["benchmark-servers-deps", "dev", "test", "test-trio", "trio"]
+groups = ["benchmark-servers-deps", "dev", "test-ssl", "test-trio", "trio"]
 files = [
     {file = "pycparser-2.22-py3-none-any.whl", hash = "sha256:c3702b6d3dd8c7abc1afa565d7e63d53a1d0bd86cdc24edd75470f4de499cfcc"},
     {file = "pycparser-2.22.tar.gz", hash = "sha256:491c8be9c040f5390f5bf44a5b07752bd07f56edf992381b05c701439eec10f6"},
@@ -2218,7 +2218,7 @@ name = "trustme"
 version = "1.2.0"
 requires_python = ">=3.9"
 summary = "#1 quality TLS certs while you wait, for the discerning tester"
-groups = ["test"]
+groups = ["test-ssl"]
 dependencies = [
     "cryptography>=3.1",
     "idna>=2.0",

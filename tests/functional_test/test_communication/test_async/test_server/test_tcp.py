@@ -638,6 +638,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         await asyncio.sleep(0.1)
 
         # On Linux: ENOTCONN error should not create a big Traceback error
+        # On BSD: ECONNABORTED error on accept() should not create a big Traceback error
         assert len(caplog.records) == 0
 
     async def test____serve_forever____client_extra_attributes(

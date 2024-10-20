@@ -52,9 +52,14 @@ class PlatformMarkers:
     def skipif_platform_linux_because(reason: str, *, skip_only_on_ci: bool = False) -> pytest.MarkDecorator:
         return _make_skipif_platform("linux", reason, skip_only_on_ci=skip_only_on_ci)
 
+    @staticmethod
+    def skipif_platform_bsd_because(reason: str, *, skip_only_on_ci: bool = False) -> pytest.MarkDecorator:
+        return _make_skipif_platform(("freebsd", "openbsd", "netbsd"), reason, skip_only_on_ci=skip_only_on_ci)
+
     skipif_platform_win32 = skipif_platform_win32_because("cannot run on Windows")
     skipif_platform_macOS = skipif_platform_macOS_because("cannot run on MacOS")
     skipif_platform_linux = skipif_platform_linux_because("cannot run on Linux")
+    skipif_platform_bsd = skipif_platform_bsd_because("Cannot run on BSD-related platforms (e.g. FreeBSD)")
 
     ###### RESTRICT TESTS FOR PLATFORMS ######
 

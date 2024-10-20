@@ -5,14 +5,17 @@ from collections.abc import Callable, Iterator
 from contextlib import ExitStack
 from functools import partial
 from socket import AF_INET, AF_INET6, SOCK_DGRAM, SOCK_STREAM, has_ipv6 as HAS_IPV6, socket as Socket
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from easynetwork.protocol import AnyStreamProtocolType, BufferedStreamProtocol, DatagramProtocol, StreamProtocol
 
 import pytest
-import trustme
 
 from .serializer import BadSerializeStringSerializer, NotGoodStringSerializer, StringSerializer
+
+if TYPE_CHECKING:
+    import trustme
+
 
 _FAMILY_TO_LOCALHOST: dict[int, str] = {
     AF_INET: "127.0.0.1",
@@ -123,6 +126,11 @@ def socket_pair(localhost_ip: str, tcp_socket_factory: Callable[[], Socket]) -> 
 
 @pytest.fixture(scope="session")
 def ssl_certificate_authority() -> trustme.CA:
+    try:
+        import trustme
+    except ModuleNotFoundError:
+        pytest.skip("trustme is not installed")
+
     return trustme.CA()
 
 
