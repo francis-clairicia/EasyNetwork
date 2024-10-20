@@ -125,27 +125,37 @@ def socket_pair(localhost_ip: str, tcp_socket_factory: Callable[[], Socket]) -> 
 
 
 @pytest.fixture(scope="session")
-def ssl_certificate_authority() -> trustme.CA:
+def ssl_certificate_authority() -> trustme.CA | None:
     try:
         import trustme
     except ModuleNotFoundError:
-        pytest.skip("trustme is not installed")
-
-    return trustme.CA()
+        return None
+    else:
+        return trustme.CA()
 
 
 @pytest.fixture(scope="session")
-def server_certificate(ssl_certificate_authority: trustme.CA) -> trustme.LeafCert:
+def server_certificate(ssl_certificate_authority: trustme.CA | None) -> trustme.LeafCert | None:
+    if ssl_certificate_authority is None:
+        return None
     return ssl_certificate_authority.issue_cert("*.example.com")
 
 
 @pytest.fixture(scope="session")
-def client_certificate(ssl_certificate_authority: trustme.CA) -> trustme.LeafCert:
+def client_certificate(ssl_certificate_authority: trustme.CA | None) -> trustme.LeafCert | None:
+    if ssl_certificate_authority is None:
+        return None
     return ssl_certificate_authority.issue_cert("client@example.com")
 
 
 @pytest.fixture
-def server_ssl_context(ssl_certificate_authority: trustme.CA, server_certificate: trustme.LeafCert) -> ssl.SSLContext:
+def server_ssl_context(
+    ssl_certificate_authority: trustme.CA | None,
+    server_certificate: trustme.LeafCert | None,
+) -> ssl.SSLContext | None:
+    if ssl_certificate_authority is None or server_certificate is None:
+        return None
+
     server_ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
 
     server_certificate.configure_cert(server_ssl_context)
@@ -157,7 +167,13 @@ def server_ssl_context(ssl_certificate_authority: trustme.CA, server_certificate
 
 
 @pytest.fixture
-def client_ssl_context(ssl_certificate_authority: trustme.CA, client_certificate: trustme.LeafCert) -> ssl.SSLContext:
+def client_ssl_context(
+    ssl_certificate_authority: trustme.CA | None,
+    client_certificate: trustme.LeafCert | None,
+) -> ssl.SSLContext | None:
+    if ssl_certificate_authority is None or client_certificate is None:
+        return None
+
     client_ssl_context = ssl.create_default_context()
 
     client_certificate.configure_cert(client_ssl_context)

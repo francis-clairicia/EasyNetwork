@@ -400,14 +400,18 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         localhost_ip: str,
         stream_protocol: AnyStreamProtocolType[str, str],
         use_ssl: bool,
-        server_ssl_context: ssl.SSLContext,
+        server_ssl_context: ssl.SSLContext | None,
         ssl_handshake_timeout: float | None,
         ssl_standard_compatible: bool | None,
         caplog: pytest.LogCaptureFixture,
         logger_crash_threshold_level: dict[str, int],
     ) -> AsyncIterator[MyAsyncTCPServer]:
-        # Remove this option for non-regression
-        server_ssl_context.options &= ~ssl.OP_IGNORE_UNEXPECTED_EOF
+        if server_ssl_context is None:
+            if use_ssl:
+                pytest.skip("trustme is not installed")
+        else:
+            # Remove this option for non-regression
+            server_ssl_context.options &= ~ssl.OP_IGNORE_UNEXPECTED_EOF
 
         async with MyAsyncTCPServer(
             localhost_ip,
@@ -449,8 +453,11 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         asyncio_backend: AsyncIOBackend,
         server_address: tuple[str, int],
         use_ssl: bool,
-        client_ssl_context: ssl.SSLContext,
+        client_ssl_context: ssl.SSLContext | None,
     ) -> AsyncIterator[Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]]]:
+        if client_ssl_context is None and use_ssl:
+            pytest.skip("trustme is not installed")
+
         async with contextlib.AsyncExitStack() as stack:
             stack.enter_context(contextlib.suppress(OSError))
 
