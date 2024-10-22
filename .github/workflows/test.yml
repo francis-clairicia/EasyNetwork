@@ -148,12 +148,11 @@ jobs:
             pdm config check_update false
             pdm config install.cache true
           run: |
+            set -e
             pdm install --frozen-lockfile --global --project=. --no-self --no-default --dev --group=tox
             tox --version
-            tox run -f ${{ matrix.tox_py }} -- ${{ env.PYTEST_VERBOSE_FLAG }}
-            tox run -f coverage
-            rm -rf .tox
-            find . -name '__pycache__' | xargs rm -rf
+            tox --workdir /tmp/.tox run -f ${{ matrix.tox_py }} -- ${{ env.PYTEST_VERBOSE_FLAG }}
+            tox --workdir /tmp/.tox run -f coverage
       - name: Check files in workspace
         if: always()
         run: ls -lA

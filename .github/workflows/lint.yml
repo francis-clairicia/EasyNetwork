@@ -42,6 +42,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 
+env:
+  PDM_VERSION: '2.19.3'  # Used by FreeBSD VM
+
 jobs:
   type-hinting:
     if: |
@@ -63,3 +66,31 @@ jobs:
           python-version: '3.11'
       - name: Launch checks
         run: tox run -f mypy
+
+  type-hinting-freebsd:
+    if: |
+      (github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'Bump version:'))
+      && (github.event_name != 'pull_request' || github.event.pull_request.draft != true)
+    runs-on: ubuntu-24.04
+
+    name: type-hinting (freebsd-14)
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Launch checks
+        uses: vmactions/freebsd-vm@v1
+        with:
+          release: '14.1'
+          usesh: true
+          prepare: |
+            set -e
+            pkg install -y curl git python311 py311-sqlite3
+            curl -sSL https://pdm-project.org/install-pdm.py | python3.11 - --version=${{ env.PDM_VERSION }} --path=/usr/local
+            pdm config check_update false
+            pdm config install.cache true
+          run: |
+            set -e
+            pdm install --frozen-lockfile --global --project=. --no-self --no-default --dev --group=tox
+            tox --version
+            tox --workdir /tmp/.tox run -e mypy-full
