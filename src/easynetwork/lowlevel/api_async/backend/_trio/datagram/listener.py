@@ -20,6 +20,7 @@ from __future__ import annotations
 __all__ = ["TrioDatagramListenerSocketAdapter"]
 
 import contextlib
+import logging
 import socket as _socket
 import warnings
 from collections.abc import Awaitable, Callable, Coroutine, Mapping
@@ -102,14 +103,20 @@ class TrioDatagramListenerSocketAdapter(AsyncDatagramListener[tuple[Any, ...]]):
             MAX_DATAGRAM_BUFSIZE = self.MAX_DATAGRAM_BUFSIZE
             listener = self.__listener
             wait_readable = self.__wait_readable
+            logger = logging.getLogger(__name__)
 
             while True:
-                datagram, client_address = await _retry_socket_method(
-                    wait_readable,
-                    listener,
-                    lambda: listener.recvfrom(MAX_DATAGRAM_BUFSIZE),
-                    always_yield=True,
-                )
+                try:
+                    datagram, client_address = await _retry_socket_method(
+                        wait_readable,
+                        listener,
+                        lambda: listener.recvfrom(MAX_DATAGRAM_BUFSIZE),
+                        always_yield=True,
+                    )
+                except OSError as exc:
+                    message = "Unrelated error occurred on datagram reception: %s: %s"
+                    logger.warning(message, type(exc).__name__, exc, exc_info=exc)
+                    continue
 
                 task_group.start_soon(handler, datagram, client_address)
                 # Always drop references on loop end

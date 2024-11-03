@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import logging
 from collections.abc import AsyncIterator, Callable
 from typing import TYPE_CHECKING, Any
 
@@ -295,8 +296,10 @@ class TestTrioDatagramListenerSocketAdapter(BaseTestSocket):
         mock_udp_listener_socket: MagicMock,
         mock_trio_lowlevel_wait_readable: AsyncMock,
         mocker: MockerFixture,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         # Arrange
+        caplog.set_level("INFO", listener.__class__.__module__)
 
         import trio
 
@@ -304,6 +307,9 @@ class TestTrioDatagramListenerSocketAdapter(BaseTestSocket):
             BlockingIOError,
             (b"received_datagram", ("127.0.0.1", 12345)),
             (b"received_datagram_2", ("127.0.0.1", 54321)),
+            BlockingIOError,
+            OSError("Unrelated OS Error"),
+            (b"received_datagram_3", ("127.0.0.1", 11111)),
             BlockingIOError,
             (await self._get_cancelled_exc()),
         ]
@@ -318,8 +324,13 @@ class TestTrioDatagramListenerSocketAdapter(BaseTestSocket):
         assert handler.await_args_list == [
             mocker.call(b"received_datagram", ("127.0.0.1", 12345)),
             mocker.call(b"received_datagram_2", ("127.0.0.1", 54321)),
+            mocker.call(b"received_datagram_3", ("127.0.0.1", 11111)),
         ]
-        assert mock_trio_lowlevel_wait_readable.await_args_list == [mocker.call(mock_udp_listener_socket) for _ in range(2)]
+        assert mock_trio_lowlevel_wait_readable.await_args_list == [mocker.call(mock_udp_listener_socket) for _ in range(3)]
+        assert len(caplog.records) == 1
+        assert caplog.records[0].levelno == logging.WARNING
+        assert caplog.records[0].getMessage() == "Unrelated error occurred on datagram reception: OSError: Unrelated OS Error"
+        assert caplog.records[0].exc_info is not None and isinstance(caplog.records[0].exc_info[1], OSError)
 
     @pytest.mark.parametrize("block_count", [2, 1, 0], ids=lambda count: f"block_count=={count}")
     async def test____send_to____write_on_socket(
