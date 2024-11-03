@@ -267,8 +267,9 @@ disable_warnings = [
 [tool.coverage.paths]
 source = [
     "src/",
-    ".tox/*/lib/python*/site-packages",
-    '.tox\*\Lib\site-packages',  # Keep single quote here (TOML raw string syntax, useful for '\')
+    # Leading '*/' is necessary because .tox folder could be in other directory than the current working directory.
+    "*/.tox/*/lib/python*/site-packages",
+    '*\.tox\*\Lib\site-packages',  # Keep single quote here (TOML raw string syntax, useful for '\')
 ]
 
 [tool.coverage.report]
