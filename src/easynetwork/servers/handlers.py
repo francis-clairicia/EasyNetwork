@@ -38,6 +38,10 @@ if TYPE_CHECKING:
 
 
 class INETClientAttribute(typed_attr.TypedAttributeSet):
+    """
+    Typed attributes which can be used on an :class:`AsyncBaseClientInterface`.
+    """
+
     __slots__ = ()
 
     socket: socket_tools.ISocket = socket_tools.SocketAttribute.socket

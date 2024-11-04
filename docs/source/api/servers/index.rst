@@ -78,6 +78,13 @@ Client API
    :special-members: __eq__, __hash__
 
 
+Client Attributes
+-----------------
+
+.. autoclass:: INETClientAttribute
+   :members:
+
+
 ------
 
 Server implementation tools

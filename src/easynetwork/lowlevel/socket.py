@@ -21,6 +21,7 @@ __all__ = [
     "IPv4SocketAddress",
     "IPv6SocketAddress",
     "ISocket",
+    "SocketAddress",
     "SocketAttribute",
     "SocketProxy",
     "SupportsSocketOptions",
@@ -130,6 +131,8 @@ class TLSAttribute(typed_attr.TypedAttributeSet):
 
 
 class IPv4SocketAddress(NamedTuple):
+    """An internet (IPv4) socket address."""
+
     host: str
     port: int
 
@@ -145,6 +148,8 @@ class IPv4SocketAddress(NamedTuple):
 
 
 class IPv6SocketAddress(NamedTuple):
+    """An internet (IPv6) socket address."""
+
     host: str
     port: int
     flowinfo: int = 0
@@ -162,6 +167,7 @@ class IPv6SocketAddress(NamedTuple):
 
 
 SocketAddress: TypeAlias = IPv4SocketAddress | IPv6SocketAddress
+"""An internet socket address, either IPv4 or IPv6."""
 
 
 @overload
