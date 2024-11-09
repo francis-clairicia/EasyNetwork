@@ -56,7 +56,6 @@ class UDPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
         *,
         local_address: tuple[str, int] | None = ...,
         family: int = ...,
-        reuse_port: bool = ...,
         retry_interval: float = ...,
     ) -> None: ...
 
@@ -86,14 +85,11 @@ class UDPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
         Connection Parameters:
             address: A pair of ``(host, port)`` for connection.
             local_address: If given, is a ``(local_host, local_port)`` tuple used to bind the socket locally.
-            reuse_port: Tells the kernel to allow this endpoint to be bound to the same port as other existing
-                        endpoints are bound to, so long as they all set this flag when being created.
-                        This option is not supported on Windows and some Unixes.
-                        If the SO_REUSEPORT constant is not defined then this capability is unsupported.
+            family: The address family. Should be any of ``AF_UNSPEC``, ``AF_INET`` or ``AF_INET6``.
 
         Socket Parameters:
             socket: An already connected UDP :class:`socket.socket`. If `socket` is given,
-                    none of and `local_address` and `reuse_port` should be specified.
+                    none of `family` and `local_address` should be specified.
 
         Keyword Arguments:
             retry_interval: The maximum wait time to wait for a blocking operation before retrying.
@@ -309,7 +305,6 @@ def _create_udp_socket(
     *,
     local_address: tuple[str, int] | None = None,
     family: int = _socket.AF_UNSPEC,
-    reuse_port: bool = False,
 ) -> _socket.socket:
 
     errors: list[OSError] = []
@@ -324,9 +319,6 @@ def _create_udp_socket(
             errors.clear()
             raise
         try:
-            if reuse_port:
-                _utils.set_reuseport(socket)
-
             if local_address is not None:
                 socket.bind(local_address)
 

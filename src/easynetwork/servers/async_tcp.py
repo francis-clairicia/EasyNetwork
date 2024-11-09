@@ -114,9 +114,10 @@ class AsyncTCPNetworkServer(
             ssl_standard_compatible: if :data:`False`, skip the closing handshake when closing the connection,
                                      and don't raise an exception if the peer does the same.
             backlog: is the maximum number of queued connections passed to :class:`~socket.socket.listen` (defaults to ``100``).
-            reuse_port: tells the kernel to allow this endpoint to be bound to the same port as other existing endpoints
-                        are bound to, so long as they all set this flag when being created.
-                        This option is not supported on Windows.
+            reuse_port: Tells the kernel to allow this endpoint to be bound to the same port as other existing
+                        endpoints are bound to, so long as they all set this flag when being created.
+                        This option is not supported on Windows and some Unixes.
+                        If the SO_REUSEPORT constant is not defined then this capability is unsupported.
             max_recv_size: Read buffer size. If not given, a default reasonable value is used.
             log_client_connection: If :data:`True`, log clients connection/disconnection in :data:`logging.INFO` level.
                                    (This log will always be available in :data:`logging.DEBUG` level.)

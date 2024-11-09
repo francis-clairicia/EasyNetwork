@@ -80,9 +80,10 @@ class AsyncUDPNetworkServer(
             backend: The :term:`asynchronous backend interface` to use.
 
         Keyword Arguments:
-            reuse_port: tells the kernel to allow this endpoint to be bound to the same port as other existing endpoints
-                        are bound to, so long as they all set this flag when being created.
-                        This option is not supported on Windows.
+            reuse_port: Tells the kernel to allow this endpoint to be bound to the same port as other existing
+                        endpoints are bound to, so long as they all set this flag when being created.
+                        This option is not supported on Windows and some Unixes.
+                        If the SO_REUSEPORT constant is not defined then this capability is unsupported.
             logger: If given, the logger instance to use.
         """
         super().__init__(

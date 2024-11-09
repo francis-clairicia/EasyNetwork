@@ -186,11 +186,9 @@ class TestUDPNetworkClient(BaseTestClient, BaseTestWithDatagramProtocol):
     @pytest.mark.parametrize(
         "local_address", [None, ("local_address", 12345)], ids=lambda p: f"local_address=={p}", indirect=True
     )
-    @pytest.mark.parametrize("reuse_port", [False, True], ids=lambda p: f"reuse_port=={p}")
     def test____dunder_init____create_datagram_endpoint____with_parameters(
         self,
         request: pytest.FixtureRequest,
-        reuse_port: bool,
         socket_family: int,
         local_address: tuple[str, int] | None,
         remote_address: tuple[str, int],
@@ -207,7 +205,6 @@ class TestUDPNetworkClient(BaseTestClient, BaseTestWithDatagramProtocol):
             mock_datagram_protocol,
             family=socket_family,
             local_address=local_address,
-            reuse_port=reuse_port,
         )
         request.addfinalizer(client.close)
 
@@ -216,7 +213,6 @@ class TestUDPNetworkClient(BaseTestClient, BaseTestWithDatagramProtocol):
             family=socket_family,
             local_address=local_address,
             remote_address=remote_address,
-            reuse_port=reuse_port,
         )
         assert mock_udp_socket.mock_calls == [
             mocker.call.getpeername(),
@@ -227,11 +223,9 @@ class TestUDPNetworkClient(BaseTestClient, BaseTestWithDatagramProtocol):
     @pytest.mark.parametrize(
         "local_address", [None, ("local_address", 12345)], ids=lambda p: f"local_address=={p}", indirect=True
     )
-    @pytest.mark.parametrize("reuse_port", [False, True], ids=lambda p: f"reuse_port=={p}")
     def test____dunder_init____create_datagram_endpoint____with_parameters____explicit_AF_UNSPEC(
         self,
         request: pytest.FixtureRequest,
-        reuse_port: bool,
         local_address: tuple[str, int] | None,
         remote_address: tuple[str, int],
         mock_datagram_protocol: MagicMock,
@@ -245,7 +239,6 @@ class TestUDPNetworkClient(BaseTestClient, BaseTestWithDatagramProtocol):
             mock_datagram_protocol,
             family=AF_UNSPEC,
             local_address=local_address,
-            reuse_port=reuse_port,
         )
         request.addfinalizer(client.close)
 
@@ -254,7 +247,6 @@ class TestUDPNetworkClient(BaseTestClient, BaseTestWithDatagramProtocol):
             family=AF_UNSPEC,
             local_address=local_address,
             remote_address=remote_address,
-            reuse_port=reuse_port,
         )
 
     @pytest.mark.parametrize("socket_family", list(UNSUPPORTED_FAMILIES), indirect=True)
@@ -917,7 +909,6 @@ class TestUDPSocketFactory:
         mock_socket_ipv4.close.assert_not_called()
 
     @pytest.mark.parametrize("with_local_address", [False, True], ids=lambda boolean: f"with_local_address=={boolean}")
-    @pytest.mark.parametrize("set_reuse_port", [False, True], ids=lambda boolean: f"set_reuse_port=={boolean}")
     @pytest.mark.parametrize(
         ["family", "socket_families"],
         [
@@ -930,14 +921,12 @@ class TestUDPSocketFactory:
     def test____create_udp_socket____with_parameters(
         self,
         with_local_address: bool,
-        set_reuse_port: bool,
         family: int,
         socket_families: tuple[int, ...],
         mock_socket_cls: MagicMock,
         mock_getaddrinfo: MagicMock,
         mock_socket_ipv4: MagicMock,
         mock_socket_ipv6: MagicMock,
-        SO_REUSEPORT: int,
     ) -> None:
         # Arrange
         remote_address: tuple[str, int] = ("remote_address", 12345)
@@ -948,7 +937,6 @@ class TestUDPSocketFactory:
             local_address=local_address,
             remote_address=remote_address,
             family=family,
-            reuse_port=set_reuse_port,
         )
 
         # Assert
@@ -967,10 +955,7 @@ class TestUDPSocketFactory:
             mock_socket_cls.assert_called_once_with(AF_INET6, SOCK_DGRAM, IPPROTO_UDP)
             used_socket = mock_socket_ipv6
             not_used_socket = mock_socket_ipv4
-        if set_reuse_port:
-            used_socket.setsockopt.assert_called_once_with(SOL_SOCKET, SO_REUSEPORT, True)
-        else:
-            used_socket.setsockopt.assert_not_called()
+        used_socket.setsockopt.assert_not_called()
         if local_address is None:
             used_socket.bind.assert_not_called()
         else:
@@ -1103,22 +1088,6 @@ class TestUDPSocketFactory:
             mock_socket_ipv6.bind.assert_not_called()
             mock_socket_ipv6.connect.assert_not_called()
             mock_socket_ipv6.close.assert_not_called()
-
-    @pytest.mark.usefixtures("remove_SO_REUSEPORT_support")
-    def test____create_udp_socket____SO_REUSEPORT_not_supported(
-        self,
-        mock_socket_ipv4: MagicMock,
-    ) -> None:
-        # Arrange
-        remote_address: tuple[str, int] = ("remote_address", 12345)
-        local_address: tuple[str, int] = ("local_address", 11111)
-
-        # Act
-        with pytest.raises(ValueError):
-            _ = create_udp_socket(local_address=local_address, remote_address=remote_address, reuse_port=True)
-
-        # Assert
-        mock_socket_ipv4.close.assert_called_once_with()
 
     @pytest.mark.parametrize("fail_on", ["socket", "bind"], ids=lambda fail_on: f"fail_on=={fail_on}")
     def test____create_udp_socket____unrelated_exception(

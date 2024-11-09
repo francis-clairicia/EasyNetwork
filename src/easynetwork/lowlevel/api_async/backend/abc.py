@@ -1070,7 +1070,7 @@ class AsyncBackend(metaclass=ABCMeta):
             remote_host: The host IP/domain name.
             remote_port: Port of connection.
             local_address: If given, is a ``(local_host, local_port)`` tuple used to bind the socket locally.
-            family: The address family
+            family: The address family. Should be any of ``AF_UNSPEC``, ``AF_INET`` or ``AF_INET6``.
 
         Raises:
             OSError: unrelated OS error occurred.
