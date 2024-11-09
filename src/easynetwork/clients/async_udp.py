@@ -103,14 +103,11 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         Connection Parameters:
             address: A pair of ``(host, port)`` for connection.
             local_address: If given, is a ``(local_host, local_port)`` tuple used to bind the socket locally.
-            reuse_port: Tells the kernel to allow this endpoint to be bound to the same port as other existing
-                        endpoints are bound to, so long as they all set this flag when being created.
-                        This option is not supported on Windows and some Unixes.
-                        If the SO_REUSEPORT constant is not defined then this capability is unsupported.
+            family: The address family. Should be any of ``AF_UNSPEC``, ``AF_INET`` or ``AF_INET6``.
 
         Socket Parameters:
             socket: An already connected UDP :class:`socket.socket`. If `socket` is given,
-                    none of and `local_address` and `reuse_port` should be specified.
+                    none of `family` and `local_address` should be specified.
         """
         super().__init__()
 
