@@ -260,10 +260,13 @@ class TrioBackend(AbstractAsyncBackend):
         return self.__trio.Event()
 
     def create_condition_var(self, lock: ILock | None = None) -> ICondition:
-        if lock is not None:
-            assert isinstance(lock, self.__trio.Lock)  # nosec assert_used
-
-        return self.__trio.Condition(lock)
+        match lock:
+            case None:
+                return self.__trio.Condition()
+            case self.__trio.Lock():
+                return self.__trio.Condition(lock)
+            case _:
+                raise TypeError("lock must be a trio.Lock")
 
     async def run_in_thread(
         self,
