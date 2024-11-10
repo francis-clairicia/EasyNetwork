@@ -64,7 +64,7 @@ class TestTrioStreamSocketAdapter(BaseTestTransportStreamSocket, MixinTestSocket
         # therefore the mocker's autospec will consider sendmsg() unknown on these ones.
         mock_trio_tcp_socket.sendmsg = mocker.AsyncMock(
             spec=lambda *args: None,
-            side_effect=lambda buffers, *args: sum(map(len, map(memoryview, buffers))),
+            side_effect=lambda buffers, *args: sum(map(len, map(lambda v: memoryview(v), buffers))),
         )
         return mock_trio_tcp_socket
 
@@ -297,7 +297,7 @@ class TestTrioStreamSocketAdapter(BaseTestTransportStreamSocket, MixinTestSocket
 
             buffers = list(buffers)
             chunks.append(list(map(bytes, buffers)))
-            return sum(map(len, map(memoryview, buffers)))
+            return sum(map(len, map(lambda v: memoryview(v), buffers)))
 
         mock_trio_socket_stream.socket.sendmsg.side_effect = sendmsg_side_effect
 
@@ -321,7 +321,7 @@ class TestTrioStreamSocketAdapter(BaseTestTransportStreamSocket, MixinTestSocket
         def sendmsg_side_effect(buffers: Iterable[ReadableBuffer]) -> int:
             buffers = list(buffers)
             chunks.append(list(map(bytes, buffers)))
-            return sum(map(len, map(memoryview, buffers)))
+            return sum(map(len, map(lambda v: memoryview(v), buffers)))
 
         mock_trio_socket_stream.socket.sendmsg.side_effect = sendmsg_side_effect
 
@@ -347,7 +347,7 @@ class TestTrioStreamSocketAdapter(BaseTestTransportStreamSocket, MixinTestSocket
         def sendmsg_side_effect(buffers: Iterable[ReadableBuffer]) -> int:
             buffers = list(buffers)
             chunks.append(list(map(bytes, buffers)))
-            return min(sum(map(len, map(memoryview, buffers))), 3)
+            return min(sum(map(len, map(lambda v: memoryview(v), buffers))), 3)
 
         mock_trio_socket_stream.socket.sendmsg.side_effect = sendmsg_side_effect
 
@@ -626,7 +626,7 @@ class TestTrioListenerSocketAdapter(BaseTestTransportStreamSocket):
 
         # Act
         task_group: TaskGroup | None
-        async with trio_backend.create_task_group() if external_group else contextlib.nullcontext() as task_group:  # type: ignore[attr-defined]
+        async with trio_backend.create_task_group() if external_group else contextlib.nullcontext() as task_group:
             with pytest.raises(trio.Cancelled):
                 await listener.serve(handler, task_group)
 

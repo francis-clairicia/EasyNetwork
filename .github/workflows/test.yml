@@ -48,7 +48,7 @@ concurrency:
 
 env:
   PYTEST_VERBOSE_FLAG: ${{ inputs.verbose && '-v' || '' }}
-  PDM_VERSION: '2.19.3'  # Used by FreeBSD VM
+  PDM_VERSION: '2.20.1'  # Used by FreeBSD VM
 
 jobs:
   tests:

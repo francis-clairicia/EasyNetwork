@@ -397,7 +397,7 @@ def test____supports_socket_sendmsg____have_sendmsg_method(
     mock_socket = mock_socket_factory()
     mock_socket.sendmsg = mocker.MagicMock(
         spec=lambda *args: None,
-        side_effect=lambda buffers, *args: sum(map(len, map(memoryview, buffers))),
+        side_effect=lambda buffers, *args: sum(map(len, map(lambda v: memoryview(v), buffers))),
     )
 
     # Act & Assert
@@ -539,7 +539,7 @@ def test____iter_bytes____iterate_over_bytes_returning_one_byte() -> None:
 
 def test____adjust_leftover_buffer____consume_whole_buffer() -> None:
     # Arrange
-    buffers: deque[memoryview] = deque(map(memoryview, [b"abc", b"de", b"fgh"]))
+    buffers: deque[memoryview] = deque(map(lambda v: memoryview(v), [b"abc", b"de", b"fgh"]))
 
     # Act
     adjust_leftover_buffer(buffers, 8)
@@ -550,24 +550,24 @@ def test____adjust_leftover_buffer____consume_whole_buffer() -> None:
 
 def test____adjust_leftover_buffer____remove_some_buffers() -> None:
     # Arrange
-    buffers: deque[memoryview] = deque(map(memoryview, [b"abc", b"de", b"fgh"]))
+    buffers: deque[memoryview] = deque(map(lambda v: memoryview(v), [b"abc", b"de", b"fgh"]))
 
     # Act
     adjust_leftover_buffer(buffers, 5)
 
     # Assert
-    assert list(buffers) == list(map(memoryview, [b"fgh"]))
+    assert list(buffers) == [b"fgh"]
 
 
 def test____adjust_leftover_buffer____partial_buffer_remove() -> None:
     # Arrange
-    buffers: deque[memoryview] = deque(map(memoryview, [b"abc", b"de", b"fgh"]))
+    buffers: deque[memoryview] = deque(map(lambda v: memoryview(v), [b"abc", b"de", b"fgh"]))
 
     # Act
     adjust_leftover_buffer(buffers, 4)
 
     # Assert
-    assert list(buffers) == list(map(memoryview, [b"e", b"fgh"]))
+    assert list(buffers) == [b"e", b"fgh"]
 
 
 def test____adjust_leftover_buffer____handle_view_with_different_item_sizes() -> None:
@@ -576,13 +576,13 @@ def test____adjust_leftover_buffer____handle_view_with_different_item_sizes() ->
 
     item = array.array("i", [56, 23, 45, -4])
 
-    buffers: deque[memoryview] = deque(map(memoryview, [item]))
+    buffers: deque[memoryview] = deque([memoryview(item)])
 
     # Act
     adjust_leftover_buffer(buffers, item.itemsize * 2)
 
     # Assert
-    assert list(buffers) == list(map(memoryview, [bytes(item[2:])]))
+    assert list(buffers) == [bytes(item[2:])]
 
 
 def test____is_socket_connected____getpeername_returns(mock_tcp_socket: MagicMock) -> None:

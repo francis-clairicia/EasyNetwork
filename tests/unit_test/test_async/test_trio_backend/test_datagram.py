@@ -316,7 +316,7 @@ class TestTrioDatagramListenerSocketAdapter(BaseTestSocket):
 
         # Act
         task_group: TaskGroup | None
-        async with trio_backend.create_task_group() if external_group else contextlib.nullcontext() as task_group:  # type: ignore[attr-defined]
+        async with trio_backend.create_task_group() if external_group else contextlib.nullcontext() as task_group:
             with pytest.raises(trio.Cancelled):
                 await listener.serve(handler, task_group)
 
