@@ -71,7 +71,7 @@ class TestSocketStreamTransport(MixinTestSocketSendMSG):
         # therefore the mocker's autospec will consider sendmsg() unknown on these ones.
         mock_tcp_socket.sendmsg = mocker.MagicMock(
             spec=lambda *args: None,
-            side_effect=lambda buffers, *args: sum(map(len, map(memoryview, buffers))),
+            side_effect=lambda buffers, *args: sum(map(len, map(lambda v: memoryview(v), buffers))),
         )
         return mock_tcp_socket
 
@@ -307,7 +307,7 @@ class TestSocketStreamTransport(MixinTestSocketSendMSG):
         def sendmsg_side_effect(buffers: Iterable[ReadableBuffer]) -> int:
             buffers = list(buffers)
             chunks.append(list(map(bytes, buffers)))
-            return sum(map(len, map(memoryview, buffers)))
+            return sum(map(len, map(lambda v: memoryview(v), buffers)))
 
         mock_tcp_socket.sendmsg.side_effect = sendmsg_side_effect
 
@@ -332,7 +332,7 @@ class TestSocketStreamTransport(MixinTestSocketSendMSG):
         def sendmsg_side_effect(buffers: Iterable[ReadableBuffer]) -> int:
             buffers = list(buffers)
             chunks.append(list(map(bytes, buffers)))
-            return sum(map(len, map(memoryview, buffers)))
+            return sum(map(len, map(lambda v: memoryview(v), buffers)))
 
         mock_tcp_socket.sendmsg.side_effect = sendmsg_side_effect
 
@@ -358,7 +358,7 @@ class TestSocketStreamTransport(MixinTestSocketSendMSG):
         def sendmsg_side_effect(buffers: Iterable[ReadableBuffer]) -> int:
             buffers = list(buffers)
             chunks.append(list(map(bytes, buffers)))
-            return min(sum(map(len, map(memoryview, buffers))), 3)
+            return min(sum(map(len, map(lambda v: memoryview(v), buffers))), 3)
 
         mock_tcp_socket.sendmsg.side_effect = sendmsg_side_effect
 
@@ -395,7 +395,7 @@ class TestSocketStreamTransport(MixinTestSocketSendMSG):
                 raise to_raise.pop(0)
             buffers = list(buffers)
             chunks.append(list(map(bytes, buffers)))
-            return sum(map(len, map(memoryview, buffers)))
+            return sum(map(len, map(lambda v: memoryview(v), buffers)))
 
         mock_tcp_socket.sendmsg.side_effect = sendmsg_side_effect
 

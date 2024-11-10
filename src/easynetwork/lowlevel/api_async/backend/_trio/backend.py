@@ -95,7 +95,6 @@ class TrioBackend(AbstractAsyncBackend):
 
     async def sleep_forever(self) -> NoReturn:
         await self.__trio.sleep_forever()
-        raise AssertionError("Expected code to be unreachable")
 
     def create_task_group(self) -> TaskGroup:
         from .tasks import TaskGroup

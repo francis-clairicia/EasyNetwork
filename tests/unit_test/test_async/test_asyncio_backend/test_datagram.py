@@ -986,7 +986,7 @@ class TestDatagramListenerSocketAdapter(BaseTestAsyncioDatagramTransport):
 
         # Act
         task_group: AsyncIOTaskGroup | None
-        async with AsyncIOTaskGroup() if external_group else contextlib.nullcontext() as task_group:  # type: ignore[attr-defined]
+        async with AsyncIOTaskGroup() if external_group else contextlib.nullcontext() as task_group:
             with pytest.raises(asyncio.CancelledError):
                 await socket.serve(datagram_received_cb, task_group)
 

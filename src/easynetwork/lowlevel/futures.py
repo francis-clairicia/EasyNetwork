@@ -213,7 +213,7 @@ class AsyncExecutor(Generic[_T_Executor]):
         if self.__handle_contexts:
             ctx = contextvars.copy_context()
             ctx.run(sniffio.current_async_library_cvar.set, None)
-            func = functools.partial(ctx.run, func)
+            func = functools.partial(ctx.run, func)  # type: ignore[call-arg]
         return func
 
     @property

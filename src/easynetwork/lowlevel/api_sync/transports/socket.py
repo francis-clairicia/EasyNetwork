@@ -141,7 +141,7 @@ class SocketStreamTransport(base_selector.SelectorStreamTransport):
         if not _utils.supports_socket_sendmsg(socket):
             return super().send_all_from_iterable(iterable_of_data, timeout)
 
-        buffers: deque[memoryview] = deque(map(memoryview, iterable_of_data))
+        buffers: deque[memoryview] = deque(map(memoryview, iterable_of_data))  # type: ignore[arg-type]
         del iterable_of_data
 
         def try_sendmsg() -> int:

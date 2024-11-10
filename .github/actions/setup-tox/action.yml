@@ -34,7 +34,7 @@ runs:
     - uses: pdm-project/setup-pdm@2f3a9be7ac56a6e5c1ea605f8e9d0f0500363705  # v4
       id: pdm
       with:
-        version: '2.19.3'
+        version: '2.20.1'
         python-version: ${{ inputs.python-version }}
         cache: true
         cache-restore-exact-match: true

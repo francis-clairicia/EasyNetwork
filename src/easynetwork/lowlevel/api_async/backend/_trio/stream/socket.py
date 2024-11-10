@@ -89,7 +89,7 @@ class TrioStreamSocketAdapter(AsyncStreamTransport):
         if not supports_async_socket_sendmsg(socket):
             return await super().send_all_from_iterable(iterable_of_data)
 
-        buffers: deque[memoryview] = deque(map(memoryview, iterable_of_data))
+        buffers: deque[memoryview] = deque(map(memoryview, iterable_of_data))  # type: ignore[arg-type]
         del iterable_of_data
 
         if not buffers:
