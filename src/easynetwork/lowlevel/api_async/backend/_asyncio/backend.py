@@ -281,10 +281,13 @@ class AsyncIOBackend(AbstractAsyncBackend):
         return self.__asyncio.Event()
 
     def create_condition_var(self, lock: ILock | None = None) -> ICondition:
-        if lock is not None:
-            assert isinstance(lock, self.__asyncio.Lock)  # nosec assert_used
-
-        return self.__asyncio.Condition(lock)
+        match lock:
+            case None:
+                return self.__asyncio.Condition()
+            case self.__asyncio.Lock():
+                return self.__asyncio.Condition(lock)
+            case _:
+                raise TypeError("lock must be a asyncio.Lock")
 
     async def run_in_thread(
         self,

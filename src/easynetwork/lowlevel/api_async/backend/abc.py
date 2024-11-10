@@ -1175,8 +1175,23 @@ class AsyncBackend(metaclass=ABCMeta):
         """
         Creates a Condition variable object for inter-task synchronization.
 
+        If `lock` is given and not :data:`None`, it should be a lock created by :meth:`create_lock`.
+        While it is guaranteed to work with a lock from :meth:`create_lock`, it can be any other implementation
+        (such as the lock returned by :meth:`create_fair_lock`), but it can also refuse other implementations.
+
+        Generic code should expect the function to fail::
+
+            try:
+                cond = backend.create_condition_var(backend.create_fair_lock())
+            except TypeError:
+                # Cannot use a fair lock. Use the default implementation instead.
+                cond = backend.create_condition_var()
+
         Parameters:
-            lock: If given, it must be a lock created by :meth:`create_lock`. Otherwise a new Lock object is created automatically.
+            lock: The lock instance to use under the hood.
+
+        Raises:
+            TypeError: `lock` type is not supported.
 
         Returns:
             A new Condition.

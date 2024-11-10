@@ -11,6 +11,7 @@ from easynetwork.lowlevel.api_async.backend._asyncio.datagram.listener import Da
 from easynetwork.lowlevel.api_async.backend._asyncio.dns_resolver import AsyncIODNSResolver
 from easynetwork.lowlevel.api_async.backend._asyncio.stream.listener import AbstractAcceptedSocketFactory, AcceptedSocketFactory
 from easynetwork.lowlevel.api_async.backend._asyncio.stream.socket import StreamReaderBufferedProtocol
+from easynetwork.lowlevel.api_async.backend.abc import ILock
 
 import pytest
 
@@ -805,8 +806,27 @@ class TestAsyncIOBackend:
         condition = backend.create_condition_var(mock_lock)
 
         # Assert
-        mock_Condition.assert_called_once_with(mock_lock)
+        if mock_lock is None:
+            mock_Condition.assert_called_once_with()
+        else:
+            mock_Condition.assert_called_once_with(mock_lock)
         assert condition is mocker.sentinel.condition_var
+
+    async def test____create_condition_var____invalid_Lock_type(
+        self,
+        backend: AsyncIOBackend,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_lock: MagicMock = mocker.NonCallableMagicMock(spec=ILock)
+        mock_Condition = mocker.patch("asyncio.Condition", return_value=mocker.sentinel.condition_var)
+
+        # Act
+        with pytest.raises(TypeError, match=r"^lock must be a asyncio\.Lock$"):
+            _ = backend.create_condition_var(mock_lock)
+
+        # Assert
+        mock_Condition.assert_not_called()
 
     @pytest.mark.parametrize("abandon_on_cancel", [False, True], ids=lambda p: f"abandon_on_cancel=={p}")
     async def test____run_in_thread____use_loop_run_in_executor(
