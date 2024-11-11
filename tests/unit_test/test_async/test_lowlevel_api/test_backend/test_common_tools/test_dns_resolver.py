@@ -30,6 +30,7 @@ from easynetwork.lowlevel.api_async.backend.abc import AsyncBackend
 
 import pytest
 
+from ......tools import PlatformMarkers
 from ....._utils import datagram_addrinfo_list, stream_addrinfo_list
 
 if TYPE_CHECKING:
@@ -773,6 +774,7 @@ async def test____create_connection____getaddrinfo_return_mismatch(
     dns_resolver.mock_sock_connect.assert_not_called()
 
 
+@PlatformMarkers.skipif_platform_bsd_because("test failures are all too frequent on CI", skip_only_on_ci=True)
 @pytest.mark.asyncio
 @pytest.mark.parametrize("connection_socktype", [SOCK_STREAM], indirect=True, ids=repr)
 @pytest.mark.flaky(retries=3)

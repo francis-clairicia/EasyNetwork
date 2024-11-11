@@ -47,7 +47,7 @@ runs:
       shell: bash
     - name: Install dependencies
       run: |
-        pdm install --frozen-lockfile --global --project=. --no-self --no-default --dev --group=tox
+        pdm install --verbose --frozen-lockfile --global --project=. --no-self --no-default --dev --group=tox
         tox --version
         ls -lA
       env:

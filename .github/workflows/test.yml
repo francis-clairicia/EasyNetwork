@@ -25,6 +25,8 @@ on:
       - 'pdm.lock'
       - '.github/codecov.yml'
       - '.github/actions/setup-tox/**'
+      - '.github/actions/freebsd-vm/**'
+      - '.github/actions/pdm.conf'
       - '.github/workflows/test.yml'
   push:
     branches:
@@ -40,6 +42,8 @@ on:
       - 'pdm.lock'
       - '.github/codecov.yml'
       - '.github/actions/setup-tox/**'
+      - '.github/actions/freebsd-vm/**'
+      - '.github/actions/pdm.conf'
       - '.github/workflows/test.yml'
 
 concurrency:
@@ -124,7 +128,7 @@ jobs:
           - python_version: '3.11'
             tox_py: py311
 
-    name: test (freebsd-14, ${{ matrix.python_version }})
+    name: test (freebsd-14.1, ${{ matrix.python_version }})
     steps:
       - uses: actions/checkout@v4
         with:

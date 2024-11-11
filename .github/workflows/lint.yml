@@ -20,6 +20,8 @@ on:
       - 'pyproject.toml'
       - 'pdm.lock'
       - '.github/actions/setup-tox/**'
+      - '.github/actions/freebsd-vm/**'
+      - '.github/actions/pdm.conf'
       - '.github/workflows/lint.yml'
   push:
     branches:
@@ -36,6 +38,8 @@ on:
       - 'pyproject.toml'
       - 'pdm.lock'
       - '.github/actions/setup-tox/**'
+      - '.github/actions/freebsd-vm/**'
+      - '.github/actions/pdm.conf'
       - '.github/workflows/lint.yml'
 
 concurrency:
