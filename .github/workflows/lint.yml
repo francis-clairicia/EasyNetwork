@@ -42,9 +42,6 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 
-env:
-  PDM_VERSION: '2.20.1'  # Used by FreeBSD VM
-
 jobs:
   type-hinting:
     if: |
@@ -79,18 +76,9 @@ jobs:
         with:
           fetch-depth: 0
       - name: Launch checks
-        uses: vmactions/freebsd-vm@v1
+        uses: ./.github/actions/freebsd-vm
         with:
           release: '14.1'
-          usesh: true
-          prepare: |
-            set -e
-            pkg install -y curl git python311 py311-sqlite3
-            curl -sSL https://pdm-project.org/install-pdm.py | python3.11 - --version=${{ env.PDM_VERSION }} --path=/usr/local
-            pdm config check_update false
-            pdm config install.cache true
+          python-version: '3.11'
           run: |
-            set -e
-            pdm install --frozen-lockfile --global --project=. --no-self --no-default --dev --group=tox
-            tox --version
             tox --workdir /tmp/.tox run -e mypy-full
