@@ -80,9 +80,9 @@ jobs:
         with:
           fetch-depth: 0
       - name: Launch checks
+        timeout-minutes: 10
         uses: ./.github/actions/freebsd-vm
         with:
-          timeout-minutes: 10
           release: '14.1'
           python-version: '3.11'
           run: |
