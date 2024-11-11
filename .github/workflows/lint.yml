@@ -68,9 +68,10 @@ jobs:
         run: tox run -f mypy
 
   type-hinting-freebsd:
-    if: |
-      (github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'Bump version:'))
-      && (github.event_name != 'pull_request' || github.event.pull_request.draft != true)
+    # TODO: Add this when the workflow is stable.
+    # if: |
+    #   (github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'Bump version:'))
+    #   && (github.event_name != 'pull_request' || github.event.pull_request.draft != true)
     runs-on: ubuntu-24.04
 
     name: type-hinting (freebsd-14)
@@ -79,18 +80,9 @@ jobs:
         with:
           fetch-depth: 0
       - name: Launch checks
-        uses: vmactions/freebsd-vm@v1
+        uses: ./.github/actions/freebsd-vm
         with:
           release: '14.1'
-          usesh: true
-          prepare: |
-            set -e
-            pkg install -y curl git python311 py311-sqlite3
-            curl -sSL https://pdm-project.org/install-pdm.py | python3.11 - --version=${{ env.PDM_VERSION }} --path=/usr/local
-            pdm config check_update false
-            pdm config install.cache true
+          python-version: '3.11'
           run: |
-            set -e
-            pdm install --frozen-lockfile --global --project=. --no-self --no-default --dev --group=tox
-            tox --version
             tox --workdir /tmp/.tox run -e mypy-full
