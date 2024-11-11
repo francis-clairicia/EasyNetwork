@@ -88,9 +88,6 @@ jobs:
         if: hashFiles('.coverage.*') != ''  # Rudimentary `file.exists()`
         continue-on-error: true
         run: tox run -f coverage
-      # Currently, it is not possible to send several files with per-file tags.
-      # This is why the step is copy-paste twice.
-      # Issue: https://github.com/codecov/codecov-action/issues/1522
       - name: Upload (unit tests) coverage to codecov
         if: hashFiles('coverage.unit.xml') != ''  # Rudimentary `file.exists()`
         uses: codecov/codecov-action@v4
@@ -122,8 +119,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # TODO: Add test with other python version
+        # TODO: Add test with other python versions
         # c.f. https://bugs.freebsd.org/bugzilla/show_bug.cgi?id=271673
+        python_version: ['3.11']
         include:
           - python_version: '3.11'
             tox_py: py311
@@ -146,9 +144,6 @@ jobs:
       - name: Check files in workspace
         if: always()
         run: ls -lA
-      # Currently, it is not possible to send several files with per-file tags.
-      # This is why the step is copy-paste twice.
-      # Issue: https://github.com/codecov/codecov-action/issues/1522
       - name: Upload (unit tests) coverage to codecov
         if: hashFiles('coverage.unit.xml') != ''  # Rudimentary `file.exists()`
         uses: codecov/codecov-action@v4

@@ -409,7 +409,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         if server_ssl_context is None:
             if use_ssl:
                 pytest.skip("trustme is not installed")
-        else:
+        elif hasattr(ssl, "OP_IGNORE_UNEXPECTED_EOF"):
             # Remove this option for non-regression
             server_ssl_context.options &= ~ssl.OP_IGNORE_UNEXPECTED_EOF
 
@@ -1214,8 +1214,9 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     ) -> None:
         caplog.set_level(logging.WARNING, LOGGER.name)
 
-        # This test must fail if this option was not unset when creating the server
-        assert (server_ssl_context.options & ssl.OP_IGNORE_UNEXPECTED_EOF) == 0
+        if hasattr(ssl, "OP_IGNORE_UNEXPECTED_EOF"):
+            # This test must fail if this option was not unset when creating the server
+            assert (server_ssl_context.options & ssl.OP_IGNORE_UNEXPECTED_EOF) == 0
 
         from easynetwork.lowlevel.api_async.transports.tls import AsyncTLSStreamTransport
 

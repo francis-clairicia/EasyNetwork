@@ -195,7 +195,8 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
                 assert isinstance(ssl, _ssl_module.SSLContext)  # nosec assert_used
                 if server_hostname is not None and not server_hostname:
                     ssl.check_hostname = False
-                ssl.options &= ~_ssl_module.OP_IGNORE_UNEXPECTED_EOF
+                with contextlib.suppress(AttributeError):
+                    ssl.options &= ~_ssl_module.OP_IGNORE_UNEXPECTED_EOF
         else:
             if server_hostname is not None:
                 raise ValueError("server_hostname is only meaningful with ssl")

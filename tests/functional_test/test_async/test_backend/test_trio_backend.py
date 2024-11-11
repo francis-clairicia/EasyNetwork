@@ -42,7 +42,7 @@ class TestTrioBackendBootstrap:
 
 
 @pytest.mark.feature_trio(async_test_auto_mark=True)
-@pytest.mark.flaky(retries=3, delay=0)
+@pytest.mark.flaky(retries=3, delay=0.1)
 class TestTrioBackend:
 
     @pytest.fixture(scope="class")

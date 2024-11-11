@@ -216,7 +216,8 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
                     assert isinstance(ssl, _ssl_module.SSLContext)  # nosec assert_used
                     if not server_hostname:
                         ssl.check_hostname = False
-                    ssl.options &= ~_ssl_module.OP_IGNORE_UNEXPECTED_EOF
+                    with contextlib.suppress(AttributeError):
+                        ssl.options &= ~_ssl_module.OP_IGNORE_UNEXPECTED_EOF
                 if not server_hostname:
                     server_hostname = None
 

@@ -54,7 +54,7 @@ class TestAsyncioBackendBootstrap:
 
 
 @pytest.mark.asyncio
-@pytest.mark.flaky(retries=3, delay=0)
+@pytest.mark.flaky(retries=3, delay=0.1)
 class TestAsyncioBackend:
     @pytest.fixture
     @staticmethod

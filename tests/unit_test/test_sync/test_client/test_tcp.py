@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import errno
 import os
+import ssl
 from collections.abc import Iterator
 from selectors import EVENT_READ, EVENT_WRITE
 from socket import AF_INET6, IPPROTO_TCP, SHUT_RDWR, SHUT_WR, SO_KEEPALIVE, SOL_SOCKET, TCP_NODELAY
@@ -760,18 +761,25 @@ class TestTCPNetworkClient(BaseTestClient, BaseTestWithStreamProtocol, MixinTest
 
     @pytest.mark.parametrize("use_ssl", ["USE_SSL"], indirect=True)
     @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+    @pytest.mark.parametrize("OP_IGNORE_UNEXPECTED_EOF", [False, True], ids=lambda p: f"OP_IGNORE_UNEXPECTED_EOF=={p}")
     def test____dunder_init____ssl____create_default_context(
         self,
         request: pytest.FixtureRequest,
         use_socket: bool,
+        OP_IGNORE_UNEXPECTED_EOF: bool,
         remote_address: tuple[str, int],
         mock_ssl_context: MagicMock,
         mock_tcp_socket: MagicMock,
         mock_ssl_create_default_context: MagicMock,
         mock_stream_protocol: MagicMock,
         server_hostname: Any,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         # Arrange
+        if not OP_IGNORE_UNEXPECTED_EOF:
+            monkeypatch.delattr("ssl.OP_IGNORE_UNEXPECTED_EOF", raising=False)
+        elif not hasattr(ssl, "OP_IGNORE_UNEXPECTED_EOF"):
+            pytest.skip("ssl.OP_IGNORE_UNEXPECTED_EOF not defined")
 
         # Act
         client: TCPNetworkClient[Any, Any]

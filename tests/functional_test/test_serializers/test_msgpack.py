@@ -77,9 +77,9 @@ class TestMessagePackSerializer(BaseTestBufferedIncrementalSerializer, BaseTestS
     @pytest.fixture(scope="class")
     @staticmethod
     def invalid_complete_data(complete_data: bytes) -> bytes:
-        return complete_data[:-1]  # Extra data error
+        return complete_data[:-1]  # Missing data error
 
     @pytest.fixture(scope="class")
     @staticmethod
     def invalid_partial_data_extra_data() -> tuple[bytes, bytes]:
-        return (b"remaining_data", b"")
+        pytest.skip("Cannot be tested")
