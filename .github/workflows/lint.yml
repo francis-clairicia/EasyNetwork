@@ -42,9 +42,6 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 
-env:
-  PDM_VERSION: '2.20.1'  # Used by FreeBSD VM
-
 jobs:
   type-hinting:
     if: |
