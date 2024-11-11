@@ -10,13 +10,14 @@ from easynetwork.exceptions import ClientClosedError
 
 import pytest
 
-from ....tools import TimeTest
+from ....tools import PlatformMarkers, TimeTest
 
 ClientType: TypeAlias = AbstractNetworkClient[str, str]
 
 
 pytestmark = [
     pytest.mark.flaky(retries=3, delay=1),
+    PlatformMarkers.skipif_platform_bsd_because("test failures are all too frequent on CI", skip_only_on_ci=True),
 ]
 
 

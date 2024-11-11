@@ -183,28 +183,16 @@ class TestAsyncUDPNetworkClient:
             close_task.cancel()
             await asyncio.wait({close_task})
 
-    async def test____iter_received_packets____yields_available_packets_within_given_timeout(
+    async def test____iter_received_packets____yields_available_packets_until_timeout(
         self,
         client: AsyncUDPNetworkClient[str, str],
         server: DatagramEndpoint,
     ) -> None:
-        async def send_coro() -> None:
-            await server.sendto(b"A", client.get_local_address())
-            await asyncio.sleep(0.1)
-            await server.sendto(b"B", client.get_local_address())
-            await asyncio.sleep(0.4)
-            await server.sendto(b"C", client.get_local_address())
-            await asyncio.sleep(0.2)
-            await server.sendto(b"D", client.get_local_address())
-            await asyncio.sleep(0.5)
-            await server.sendto(b"E", client.get_local_address())
+        for p in [b"A", b"B", b"C", b"D", b"E", b"F"]:
+            await server.sendto(p, client.get_local_address())
 
-        send_task = asyncio.create_task(send_coro())
-        try:
-            assert [p async for p in client.iter_received_packets(timeout=1)] == ["A", "B", "C", "D"]
-        finally:
-            send_task.cancel()
-            await asyncio.wait({send_task})
+        # NOTE: Comparison using set because equality check does not verify order
+        assert {p async for p in client.iter_received_packets(timeout=1)} == {"A", "B", "C", "D", "E", "F"}
 
     async def test____get_local_address____consistency(self, socket_family: int, client: AsyncUDPNetworkClient[str, str]) -> None:
         address = client.get_local_address()

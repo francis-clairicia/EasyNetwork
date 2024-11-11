@@ -637,10 +637,12 @@ class TestAsyncTCPNetworkClient(BaseTestClient, BaseTestWithStreamProtocol):
             )
 
     @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+    @pytest.mark.parametrize("OP_IGNORE_UNEXPECTED_EOF", [False, True], ids=lambda p: f"OP_IGNORE_UNEXPECTED_EOF=={p}")
     async def test____dunder_init____ssl____create_default_context(
         self,
         async_finalizer: AsyncFinalizer,
         use_socket: bool,
+        OP_IGNORE_UNEXPECTED_EOF: bool,
         remote_address: tuple[str, int],
         mock_backend: MagicMock,
         mock_tcp_socket: MagicMock,
@@ -649,9 +651,14 @@ class TestAsyncTCPNetworkClient(BaseTestClient, BaseTestWithStreamProtocol):
         mock_ssl_create_default_context: MagicMock,
         mock_tls_wrap_transport: AsyncMock,
         mock_stream_socket_adapter: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
+        if not OP_IGNORE_UNEXPECTED_EOF:
+            monkeypatch.delattr("ssl.OP_IGNORE_UNEXPECTED_EOF", raising=False)
+        elif not hasattr(ssl, "OP_IGNORE_UNEXPECTED_EOF"):
+            pytest.skip("ssl.OP_IGNORE_UNEXPECTED_EOF not defined")
 
         # Act
         client: AsyncTCPNetworkClient[Any, Any]

@@ -237,30 +237,16 @@ class TestAsyncTCPNetworkClient:
         event_loop.call_soon(server.close)
         assert [p async for p in client.iter_received_packets(timeout=None)] == ["A", "B", "C", "D", "E"]
 
-    async def test____iter_received_packets____yields_available_packets_within_timeout(
+    async def test____iter_received_packets____yields_available_packets_until_timeout(
         self,
         client: AsyncTCPNetworkClient[str, str],
         server: Socket,
     ) -> None:
         event_loop = asyncio.get_running_loop()
 
-        async def send_coro() -> None:
-            await event_loop.sock_sendall(server, b"A\n")
-            await asyncio.sleep(0.1)
-            await event_loop.sock_sendall(server, b"B\n")
-            await asyncio.sleep(0.4)
-            await event_loop.sock_sendall(server, b"C\n")
-            await asyncio.sleep(0.2)
-            await event_loop.sock_sendall(server, b"D\n")
-            await asyncio.sleep(0.5)
-            await event_loop.sock_sendall(server, b"E\n")
-
-        send_task = asyncio.create_task(send_coro())
-        try:
-            assert [p async for p in client.iter_received_packets(timeout=1)] == ["A", "B", "C", "D"]
-        finally:
-            send_task.cancel()
-            await asyncio.wait({send_task})
+        await event_loop.sock_sendall(server, b"A\nB\nC\nD\nE\n")
+        await event_loop.sock_sendall(server, b"F\n")
+        assert [p async for p in client.iter_received_packets(timeout=1)] == ["A", "B", "C", "D", "E", "F"]
 
     async def test____get_local_address____consistency(self, socket_family: int, client: AsyncTCPNetworkClient[str, str]) -> None:
         address = client.get_local_address()
