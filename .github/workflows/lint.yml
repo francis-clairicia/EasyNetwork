@@ -68,10 +68,9 @@ jobs:
         run: tox run -f mypy
 
   type-hinting-freebsd:
-    # TODO: Add this when the workflow is stable.
-    # if: |
-    #   (github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'Bump version:'))
-    #   && (github.event_name != 'pull_request' || github.event.pull_request.draft != true)
+    if: |
+      (github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'Bump version:'))
+      && (github.event_name != 'pull_request' || github.event.pull_request.draft != true)
     runs-on: ubuntu-24.04
 
     name: type-hinting (freebsd-14)

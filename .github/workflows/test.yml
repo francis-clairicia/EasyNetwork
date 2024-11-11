@@ -111,10 +111,9 @@ jobs:
             Py-${{ matrix.python_version }}
 
   test-freebsd:
-    # TODO: Add this when the workflow is stable.
-    # if: |
-    #   (github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'Bump version:'))
-    #   && (github.event_name != 'pull_request' || (github.event.pull_request.draft != true && !contains(github.event.pull_request.labels.*.name, 'pr-skip-test')))
+    if: |
+      (github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'Bump version:'))
+      && (github.event_name != 'pull_request' || (github.event.pull_request.draft != true && !contains(github.event.pull_request.labels.*.name, 'pr-skip-test')))
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -146,25 +145,25 @@ jobs:
       # Currently, it is not possible to send several files with per-file tags.
       # This is why the step is copy-paste twice.
       # Issue: https://github.com/codecov/codecov-action/issues/1522
-      # - name: Upload (unit tests) coverage to codecov
-      #   if: hashFiles('coverage.unit.xml') != ''  # Rudimentary `file.exists()`
-      #   uses: codecov/codecov-action@v4
-      #   with:
-      #     token: ${{ secrets.CODECOV_TOKEN }}
-      #     disable_search: true
-      #     files: >-
-      #       coverage.unit.xml
-      #     flags: >-
-      #       test-unit
-      # - name: Upload (functional tests) coverage to codecov
-      #   if: hashFiles('coverage.functional.xml') != ''  # Rudimentary `file.exists()`
-      #   uses: codecov/codecov-action@v4
-      #   with:
-      #     token: ${{ secrets.CODECOV_TOKEN }}
-      #     disable_search: true
-      #     files: >-
-      #       coverage.functional.xml
-      #     flags: >-
-      #       test-functional,
-      #       OS-FreeBSD,
-      #       Py-${{ matrix.python_version }}
+      - name: Upload (unit tests) coverage to codecov
+        if: hashFiles('coverage.unit.xml') != ''  # Rudimentary `file.exists()`
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          disable_search: true
+          files: >-
+            coverage.unit.xml
+          flags: >-
+            test-unit
+      - name: Upload (functional tests) coverage to codecov
+        if: hashFiles('coverage.functional.xml') != ''  # Rudimentary `file.exists()`
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          disable_search: true
+          files: >-
+            coverage.functional.xml
+          flags: >-
+            test-functional,
+            OS-FreeBSD,
+            Py-${{ matrix.python_version }}
