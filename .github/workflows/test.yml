@@ -119,9 +119,6 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # TODO: Add test with other python versions
-        # c.f. https://bugs.freebsd.org/bugzilla/show_bug.cgi?id=271673
-        python_version: ['3.11']
         include:
           - python_version: '3.11'
             tox_py: py311
@@ -139,8 +136,9 @@ jobs:
           release: '14.1'
           python-version: ${{ matrix.python_version }}
           run: |
-            tox --workdir /tmp/.tox run -f ${{ matrix.tox_py }} -- ${{ env.PYTEST_VERBOSE_FLAG }}
-            tox --workdir /tmp/.tox run -f coverage
+            export TOX_WORK_DIR=/tmp/.tox
+            tox run -f ${{ matrix.tox_py }} -- ${{ env.PYTEST_VERBOSE_FLAG }}
+            tox run -f coverage
       - name: Check files in workspace
         if: always()
         run: ls -lA
@@ -165,4 +163,132 @@ jobs:
           flags: >-
             test-functional,
             OS-FreeBSD,
+            Py-${{ matrix.python_version }}
+
+  test-openbsd:
+    if: |
+      (github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'Bump version:'))
+      && (github.event_name != 'pull_request' || (github.event.pull_request.draft != true && !contains(github.event.pull_request.labels.*.name, 'pr-skip-test')))
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python_version: '3.11'
+            tox_py: py311
+
+    name: test (openbsd-7.6, ${{ matrix.python_version }})
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Launch tests
+        # Add 5 minutes to let the VM boot and install dependencies
+        timeout-minutes: 25
+        uses: ./.github/actions/openbsd-vm
+        with:
+          release: '7.6'
+          python-version: ${{ matrix.python_version }}
+          # FIXME: Cannot run tox (which uses tox-pdm) on OpenBSD: PDM crashes when installing packages
+          # c.f. https://github.com/pdm-project/dep-logic/issues/7
+          run: |
+            export PYTHON=python${{ matrix.python_version }}
+            export PYTHONUNBUFFERED=1
+            export PYTHONHASHSEED=100
+            export PYTEST_ADDOPTS="-p "no:cacheprovider""
+
+            $PYTHON -m venv /tmp/.venv
+            . /tmp/.venv/bin/activate
+            pip install -r .github/requirements-test.txt -e .
+
+            # Launch common checks
+            pytest -m "not unit and not functional" --no-cov ${{ env.PYTEST_VERBOSE_FLAG }}
+
+            # Launch unit tests
+            export COVERAGE_FILE=.coverage.unit
+            pytest -n auto --cov --cov-report=term-missing ${{ env.PYTEST_VERBOSE_FLAG }} tests/unit_test
+            coverage xml -o coverage.unit.xml
+
+            # Launch functional tests
+            export COVERAGE_FILE=.coverage.functional
+            pytest -n auto --cov --cov-report=term-missing ${{ env.PYTEST_VERBOSE_FLAG }} tests/functional_test
+            coverage xml -o coverage.functional.xml
+      - name: Check files in workspace
+        if: always()
+        run: ls -lA
+      - name: Upload (unit tests) coverage to codecov
+        if: hashFiles('coverage.unit.xml') != ''  # Rudimentary `file.exists()`
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          disable_search: true
+          files: >-
+            coverage.unit.xml
+          flags: >-
+            test-unit
+      - name: Upload (functional tests) coverage to codecov
+        if: hashFiles('coverage.functional.xml') != ''  # Rudimentary `file.exists()`
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          disable_search: true
+          files: >-
+            coverage.functional.xml
+          flags: >-
+            test-functional,
+            OS-OpenBSD,
+            Py-${{ matrix.python_version }}
+
+  test-netbsd:
+    if: |
+      (github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'Bump version:'))
+      && (github.event_name != 'pull_request' || (github.event.pull_request.draft != true && !contains(github.event.pull_request.labels.*.name, 'pr-skip-test')))
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python_version: '3.11'
+            tox_py: py311
+
+    name: test (netbsd-10.0, ${{ matrix.python_version }})
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Launch tests
+        # Add 5 minutes to let the VM boot and install dependencies
+        timeout-minutes: 25
+        uses: ./.github/actions/netbsd-vm
+        with:
+          release: '10.0'
+          python-version: ${{ matrix.python_version }}
+          run: |
+            export TOX_WORK_DIR=/tmp/.tox
+            tox run -f ${{ matrix.tox_py }} -- ${{ env.PYTEST_VERBOSE_FLAG }}
+            tox run -f coverage
+      - name: Check files in workspace
+        if: always()
+        run: ls -lA
+      - name: Upload (unit tests) coverage to codecov
+        if: hashFiles('coverage.unit.xml') != ''  # Rudimentary `file.exists()`
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          disable_search: true
+          files: >-
+            coverage.unit.xml
+          flags: >-
+            test-unit
+      - name: Upload (functional tests) coverage to codecov
+        if: hashFiles('coverage.functional.xml') != ''  # Rudimentary `file.exists()`
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          disable_search: true
+          files: >-
+            coverage.functional.xml
+          flags: >-
+            test-functional,
+            OS-NetBSD,
             Py-${{ matrix.python_version }}

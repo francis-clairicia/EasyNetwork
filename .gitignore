@@ -13,6 +13,7 @@ benchmark*.svg
 
 # Github Actions
 .github/.*.key
+.github/requirements*.txt
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

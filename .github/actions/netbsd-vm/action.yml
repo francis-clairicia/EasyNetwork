@@ -1,0 +1,50 @@
+name: 'NetBSD VM'
+description: 'Install NetBSD VM with python3, PDM and tox pre-installed'
+inputs:
+  python-version:
+    description: "Version range or exact version of Python to use, using SemVer's version range syntax."
+    required: true
+  run:
+    description: 'The CI command to run'
+    required: true
+  release:
+    description: 'The release version of NetBSD vm'
+    required: false
+  envs:
+    description: 'The envs to pass into NetBSD vm'
+    required: false
+  sync:
+    description: 'How to synchronize the source code to/from the VM, Values can be:  rsync(default), and sshfs'
+    required: false
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Load PDM configuration from pdm.conf
+      uses: cardinalby/export-env-action@v2
+      with:
+        envFile: .github/actions/pdm.conf
+    - name: Load Python configuration
+      uses: cardinalby/export-env-action@v2
+      with:
+        envFile: ${{ github.action_path }}/python/${{ inputs.python-version }}.conf
+    - name: Run on VM
+      uses: vmactions/netbsd-vm@v1
+      with:
+        release: ${{ inputs.release }}
+        usesh: true
+        envs: ${{ inputs.envs }}
+        sync: ${{ inputs.sync }}
+        prepare: |
+          set -e
+          /usr/sbin/pkg_add -v pkgin
+          pkgin update
+          pkgin -y install curl git ${{ env.NETBSD_PORTS_FOR_PYTHON }}
+          curl -sSL https://pdm-project.org/install-pdm.py | ${{ env.NETBSD_PYTHON_BIN }} - --version=${{ env.PDM_VERSION }} --path=/usr/local
+          pdm config check_update false
+          pdm config install.cache true
+        run: |
+          set -e
+          pdm install --verbose --frozen-lockfile --global --project=. --no-self --no-default --dev --group=tox
+          tox --version
+          ${{ inputs.run }}
