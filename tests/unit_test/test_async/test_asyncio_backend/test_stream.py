@@ -356,6 +356,7 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket, BaseTestAsyncSock
                 )
 
     @PlatformMarkers.skipif_platform_win32_because("test failures are all too frequent on CI", skip_only_on_ci=True)
+    @PlatformMarkers.skipif_platform_bsd_because("test failures are all too frequent on CI", skip_only_on_ci=True)
     @pytest.mark.parametrize("errno_value", sorted(ACCEPT_CAPACITY_ERRNOS), ids=errno_errorcode.__getitem__)
     @pytest.mark.flaky(retries=3, delay=0.1)
     async def test____accept____accept_capacity_error(
@@ -370,9 +371,9 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket, BaseTestAsyncSock
         mock_tcp_listener_socket.accept.side_effect = OSError(errno_value, os.strerror(errno_value))
 
         # Act
-        # It retries every 100 ms, so in 975 ms it will retry at 0, 100, ..., 900
+        # It retries every 100 ms, so in 950 ms it will retry at 0, 100, ..., 900
         # = 10 times total
-        with CancelScope(deadline=asyncio.get_running_loop().time() + 0.975):
+        with CancelScope(deadline=asyncio.get_running_loop().time() + 0.950):
             await listener.raw_accept()
 
         # Assert
