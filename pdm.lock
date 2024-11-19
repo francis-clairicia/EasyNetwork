@@ -5,7 +5,7 @@
 groups = ["default", "bandit", "benchmark-servers", "benchmark-servers-deps", "build", "cbor", "coverage", "dev", "doc", "flake8", "format", "micro-benchmark", "msgpack", "mypy", "pre-commit", "test", "test-ssl", "test-trio", "tox", "trio", "types-msgpack", "uvloop"]
 strategy = ["inherit_metadata"]
 lock_version = "4.5.0"
-content_hash = "sha256:5ca8f575611fafae82e8ceda7461fc63a58798513e8b3c227c213a376e16a42b"
+content_hash = "sha256:2f840b9d971e7244ee1a1d5c6345f67489a76fc3099b3f28d357b1ff90a78576"
 
 [[metadata.targets]]
 requires_python = ">=3.11"
@@ -811,7 +811,7 @@ files = [
 
 [[package]]
 name = "hatchling"
-version = "1.26.1"
+version = "1.26.3"
 requires_python = ">=3.8"
 summary = "Modern, extensible Python build backend"
 groups = ["dev"]
@@ -823,8 +823,8 @@ dependencies = [
     "trove-classifiers",
 ]
 files = [
-    {file = "hatchling-1.26.1-py3-none-any.whl", hash = "sha256:3e8265ba6b7e86b71b5843e6e14b8a06a76d328ff1dda146e4e5aa8e5cd189a2"},
-    {file = "hatchling-1.26.1.tar.gz", hash = "sha256:8d956592e6c5d5df1f591be1e97a941c7b9ec6fd039f4c8624c29557bac034e9"},
+    {file = "hatchling-1.26.3-py3-none-any.whl", hash = "sha256:c407e1c6c17b574584a66ae60e8e9a01235ecb6dc61d01559bb936577aaf5846"},
+    {file = "hatchling-1.26.3.tar.gz", hash = "sha256:b672a9c36a601a06c4e88a1abb1330639ee8e721e0535a37536e546a667efc7a"},
 ]
 
 [[package]]
