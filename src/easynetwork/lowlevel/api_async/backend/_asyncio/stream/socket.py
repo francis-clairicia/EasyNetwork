@@ -22,6 +22,7 @@ __all__ = ["AsyncioTransportStreamSocketAdapter"]
 import asyncio
 import asyncio.trsock
 import errno as _errno
+import traceback
 import warnings
 from collections.abc import Callable, Iterable, Mapping
 from types import MappingProxyType, TracebackType
@@ -203,6 +204,7 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
             self.__eof_reached = True
         else:
             self.__connection_lost_exception_tb = exc.__traceback__
+            self.__loop.call_soon(traceback.clear_frames, exc.__traceback__)
 
         self.__buffer_nbytes_written = 0
         self.__buffer = None
@@ -271,7 +273,7 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
     async def receive_data_into(self, buffer: WriteableBuffer, /) -> int:
         if self.__connection_lost_exception is not None:
             raise self.__connection_lost_exception.with_traceback(self.__connection_lost_exception_tb)
-        with memoryview(buffer).cast("B") as buffer:
+        with memoryview(buffer) as buffer, buffer.cast("B") as buffer:
             if not buffer:
                 return 0
 
