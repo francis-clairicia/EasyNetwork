@@ -22,6 +22,7 @@ __all__ = ["WriteFlowControl"]
 import asyncio
 import collections
 import errno as _errno
+import traceback
 import types
 from collections.abc import Callable
 
@@ -95,6 +96,7 @@ class WriteFlowControl:
         self.__connection_lost_exception = exc
         if exc is not None:
             self.__connection_lost_exception_tb = exc.__traceback__
+            self.__loop.call_soon(traceback.clear_frames, exc.__traceback__)
 
         for waiter in self.__drain_waiters:
             if not waiter.done():

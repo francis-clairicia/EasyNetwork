@@ -28,6 +28,7 @@ import asyncio.base_events
 import asyncio.trsock
 import errno as _errno
 import socket as _socket
+import traceback
 import warnings
 from typing import Any, final
 
@@ -136,15 +137,15 @@ class DatagramEndpoint:
         return self.__transport.get_extra_info(name, default)
 
     def __check_exceptions(self) -> None:
+        exc: BaseException | None = None
         try:
             exc = self.__exception_queue.get_nowait()
         except asyncio.QueueEmpty:
             pass
         else:
-            try:
-                raise exc
-            finally:
-                del exc
+            raise exc
+        finally:
+            del exc
 
 
 class DatagramEndpointProtocol(asyncio.DatagramProtocol):
@@ -203,6 +204,7 @@ class DatagramEndpointProtocol(asyncio.DatagramProtocol):
 
     def error_received(self, exc: Exception) -> None:
         if self.__transport is not None:
+            self.__loop.call_soon(traceback.clear_frames, exc.__traceback__)
             self.__exception_queue.put_nowait(exc)
             self.__recv_queue.put_nowait(None)  # Wake up endpoint
 
