@@ -1118,7 +1118,8 @@ class TestStreamReaderBufferedProtocol(BaseTestTransportWithSSL):
             self.write_in_protocol_buffer(protocol, b"abcdef")
 
         # Act
-        data = await data_receiver(protocol, 1024)
+        async with asyncio.timeout(5):
+            data = await data_receiver(protocol, 1024)
 
         # Assert
         assert data == b"abcdef"
@@ -1135,8 +1136,9 @@ class TestStreamReaderBufferedProtocol(BaseTestTransportWithSSL):
         self.write_in_protocol_buffer(protocol, b"abcdef")
 
         # Act
-        first = await data_receiver(protocol, 3)
-        second = await data_receiver(protocol, 3)
+        async with asyncio.timeout(5):
+            first = await data_receiver(protocol, 3)
+            second = await data_receiver(protocol, 3)
 
         # Assert
         assert first == b"abc"
@@ -1144,22 +1146,64 @@ class TestStreamReaderBufferedProtocol(BaseTestTransportWithSSL):
         mock_asyncio_transport.resume_reading.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test____receive_data____buffer_updated_several_times(
+    @pytest.mark.parametrize("blocking", [False, True], ids=lambda p: f"blocking=={p}")
+    @pytest.mark.parametrize("data_receiver", ["data"], indirect=True)
+    async def test____receive_data____owned_data____buffer_updated_several_times(
         self,
+        blocking: bool,
         protocol: StreamReaderBufferedProtocol,
         mock_asyncio_transport: MagicMock,
         data_receiver: _ProtocolDataReceiver,
     ) -> None:
         # Arrange
         event_loop = asyncio.get_running_loop()
-        event_loop.call_soon(self.write_in_protocol_buffer, protocol, b"abc")
-        event_loop.call_soon(self.write_in_protocol_buffer, protocol, b"def")
+        if blocking:
+            event_loop.call_soon(self.write_in_protocol_buffer, protocol, b"abc")
+            event_loop.call_soon(self.write_in_protocol_buffer, protocol, b"def")
+        else:
+            self.write_in_protocol_buffer(protocol, b"abc")
+            self.write_in_protocol_buffer(protocol, b"def")
 
         # Act
-        data = await data_receiver(protocol, 1024)
+        async with asyncio.timeout(5):
+            data = await data_receiver(protocol, 1024)
 
         # Assert
         assert data == b"abcdef"
+        assert protocol._get_read_buffer_size() == 0
+        mock_asyncio_transport.resume_reading.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("blocking", [False, True], ids=lambda p: f"blocking=={p}")
+    @pytest.mark.parametrize("data_receiver", ["buffer"], indirect=True)
+    async def test____receive_data____into_buffer____buffer_updated_several_times(
+        self,
+        blocking: bool,
+        protocol: StreamReaderBufferedProtocol,
+        mock_asyncio_transport: MagicMock,
+        data_receiver: _ProtocolDataReceiver,
+    ) -> None:
+        # Arrange
+        event_loop = asyncio.get_running_loop()
+        if blocking:
+            event_loop.call_soon(self.write_in_protocol_buffer, protocol, b"abc")
+            event_loop.call_soon(self.write_in_protocol_buffer, protocol, b"def")
+        else:
+            self.write_in_protocol_buffer(protocol, b"abc")
+            self.write_in_protocol_buffer(protocol, b"def")
+
+        # Act
+        async with asyncio.timeout(5):
+            data = await data_receiver(protocol, 1024)
+
+        # Assert
+        if blocking:
+            assert data == b"abc"
+            assert protocol._get_read_buffer_size() == 3  # should be b"def"
+            assert (await data_receiver(protocol, 1024)) == b"def"
+        else:
+            assert data == b"abcdef"
+            assert protocol._get_read_buffer_size() == 0
         mock_asyncio_transport.resume_reading.assert_not_called()
 
     @pytest.mark.asyncio
@@ -1172,7 +1216,8 @@ class TestStreamReaderBufferedProtocol(BaseTestTransportWithSSL):
         # Arrange
 
         # Act
-        data = await data_receiver(protocol, 0)
+        async with asyncio.timeout(5):
+            data = await data_receiver(protocol, 0)
 
         # Assert
         assert data == b""
@@ -1208,7 +1253,8 @@ class TestStreamReaderBufferedProtocol(BaseTestTransportWithSSL):
             protocol_eof_handler()
 
         # Act
-        data = await data_receiver(protocol, 1024)
+        async with asyncio.timeout(5):
+            data = await data_receiver(protocol, 1024)
 
         # Assert
         assert data == b""
@@ -1243,14 +1289,14 @@ class TestStreamReaderBufferedProtocol(BaseTestTransportWithSSL):
         data_receiver: _ProtocolDataReceiver,
     ) -> None:
         # Arrange
-        event_loop = asyncio.get_running_loop()
-        event_loop.call_soon(self.write_in_protocol_buffer, protocol, b"abc")
-        event_loop.call_soon(protocol.connection_lost, None)
+        self.write_in_protocol_buffer(protocol, b"abc")
+        protocol.connection_lost(None)
 
         # Act & Assert
         for _ in range(3):
             with pytest.raises(ConnectionResetError):
-                _ = await data_receiver(protocol, 1024)
+                async with asyncio.timeout(5):
+                    _ = await data_receiver(protocol, 1024)
 
     @pytest.mark.asyncio
     async def test____receive_data____invalid_bufsize(
