@@ -220,6 +220,8 @@ class AsyncStreamServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T_R
                 case _:  # pragma: no cover
                     assert_never(self.__protocol)
 
+            # NOTE: It is safe to clear the consumer before the transport here.
+            #       There is no task reading the transport at this point.
             task_exit_stack.callback(consumer.clear)
 
             request_handler_generator = client_connected_cb(

@@ -94,8 +94,10 @@ class AsyncStreamReceiverEndpoint(_transports.AsyncBaseTransport, Generic[_T_Rec
         """
         Closes the endpoint.
         """
-        await self.__transport.aclose()
-        self.__receiver.clear()
+        try:
+            await self.__transport.aclose()
+        finally:
+            self.__receiver.clear()
 
     async def recv_packet(self) -> _T_ReceivedPacket:
         """
@@ -269,8 +271,10 @@ class AsyncStreamEndpoint(_transports.AsyncBaseTransport, Generic[_T_SentPacket,
         Closes the endpoint.
         """
         with self.__send_guard:
-            await self.__transport.aclose()
-            self.__receiver.clear()
+            try:
+                await self.__transport.aclose()
+            finally:
+                self.__receiver.clear()
 
     async def send_packet(self, packet: _T_SentPacket) -> None:
         """

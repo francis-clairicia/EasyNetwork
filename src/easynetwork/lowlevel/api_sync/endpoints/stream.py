@@ -92,8 +92,10 @@ class StreamReceiverEndpoint(_transports.BaseTransport, Generic[_T_ReceivedPacke
         """
         Closes the endpoint.
         """
-        self.__transport.close()
-        self.__receiver.clear()
+        try:
+            self.__transport.close()
+        finally:
+            self.__receiver.clear()
 
     def recv_packet(self, *, timeout: float | None = None) -> _T_ReceivedPacket:
         """
@@ -270,8 +272,10 @@ class StreamEndpoint(_transports.BaseTransport, Generic[_T_SentPacket, _T_Receiv
         """
         Closes the endpoint.
         """
-        self.__transport.close()
-        self.__receiver.clear()
+        try:
+            self.__transport.close()
+        finally:
+            self.__receiver.clear()
 
     def send_packet(self, packet: _T_SentPacket, *, timeout: float | None = None) -> None:
         """
