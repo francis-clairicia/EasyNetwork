@@ -1,0 +1,74 @@
+name: 'OpenBSD VM'
+description: 'Install OpenBSD VM with python3, PDM and tox pre-installed'
+inputs:
+  python-version:
+    description: "Version range or exact version of Python to use, using SemVer's version range syntax."
+    required: true
+  run:
+    description: 'The CI command to run'
+    required: true
+  release:
+    description: 'The release version of OpenBSD vm'
+    required: false
+  envs:
+    description: 'The envs to pass into OpenBSD vm'
+    required: false
+  sync:
+    description: 'How to synchronize the source code to/from the VM, Values can be:  rsync(default), and sshfs'
+    required: false
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Load PDM configuration from pdm.conf
+      uses: cardinalby/export-env-action@v2
+      with:
+        envFile: .github/actions/pdm.conf
+    - name: Load Python configuration
+      uses: cardinalby/export-env-action@v2
+      with:
+        envFile: ${{ github.action_path }}/python/${{ inputs.python-version }}.conf
+    - name: Install PDM
+      uses: pdm-project/setup-pdm@2f3a9be7ac56a6e5c1ea605f8e9d0f0500363705  # v4
+      id: pdm
+      with:
+        version: ${{ env.PDM_VERSION }}
+        python-version: '3.11'
+    - name: Create requirements.txt files in .github
+      shell: bash
+      run: |
+        set -x
+        pdm export --no-default --format=requirements --without-hashes --output=.github/requirements-mypy.txt \
+          --group=mypy \
+          --group=cbor \
+          --group=msgpack \
+          --group=types-msgpack \
+          --group=trio
+
+        pdm export --no-default --format=requirements --without-hashes --output=.github/requirements-test.txt \
+          --group=test \
+          --group=coverage \
+          --group=cbor \
+          --group=msgpack \
+          --group=trio \
+          --group=test-trio
+
+        cat .github/requirements-mypy.txt
+        cat .github/requirements-test.txt
+      env:
+        PDM_USE_VENV: False
+    - name: Run on VM
+      uses: vmactions/openbsd-vm@v1
+      with:
+        release: ${{ inputs.release }}
+        usesh: true
+        envs: ${{ inputs.envs }}
+        sync: ${{ inputs.sync }}
+        # FIXME: Cannot install tox on OpenBSD: PDM crashes when installing packages
+        # c.f. https://github.com/pdm-project/dep-logic/issues/7
+        prepare: |
+          set -e
+          pkg_add -v -r curl git ${{ env.OPENBSD_PORTS_FOR_PYTHON }}
+        run: |
+          set -e
+          ${{ inputs.run }}
