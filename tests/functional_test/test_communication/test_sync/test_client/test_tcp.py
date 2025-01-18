@@ -245,7 +245,8 @@ class TCPServer(socketserver.TCPServer):
     class RequestHandler(socketserver.StreamRequestHandler):
         def handle(self) -> None:
             data: bytes = self.rfile.readline()
-            self.wfile.write(data)
+            if data:
+                self.wfile.write(data)
 
     allow_reuse_address = True
 

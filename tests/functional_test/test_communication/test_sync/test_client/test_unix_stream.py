@@ -207,7 +207,8 @@ class TestUnixStreamClient:
 class EchoRequestHandler(socketserver.StreamRequestHandler):
     def handle(self) -> None:
         data: bytes = self.rfile.readline()
-        self.wfile.write(data)
+        if data:
+            self.wfile.write(data)
 
 
 @PlatformMarkers.skipif_platform_win32
