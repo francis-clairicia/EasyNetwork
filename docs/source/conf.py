@@ -14,7 +14,7 @@ from easynetwork import __version__
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 project = "EasyNetwork"
-copyright = "2024, Francis Clairicia-Rose-Claire-Josephine"
+copyright = "2021-2025, Francis Clairicia-Rose-Claire-Josephine"
 author = "FrankySnow9"
 release = __version__
 version = ".".join(release.split(".")[:3])
