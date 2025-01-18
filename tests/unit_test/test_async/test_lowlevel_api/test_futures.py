@@ -39,7 +39,6 @@ class TestAsyncExecutor:
     ) -> AsyncExecutor[concurrent.futures.Executor]:
         return AsyncExecutor(mock_stdlib_executor, mock_backend, handle_contexts=executor_handle_contexts)
 
-    @pytest.fixture(autouse=True)
     @staticmethod
     def mock_contextvars_copy_context(mocker: MockerFixture) -> MagicMock:
         return mocker.patch("contextvars.copy_context", autospec=True)
@@ -95,11 +94,11 @@ class TestAsyncExecutor:
         executor_handle_contexts: bool,
         mock_backend: MagicMock,
         mock_stdlib_executor: MagicMock,
-        mock_contextvars_copy_context: MagicMock,
         mock_unwrap_future: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
+        mock_contextvars_copy_context: MagicMock = self.mock_contextvars_copy_context(mocker)
         mock_context: MagicMock = mocker.NonCallableMagicMock(spec=contextvars.Context)
         mock_contextvars_copy_context.return_value = mock_context
         func = mocker.stub()
@@ -149,11 +148,11 @@ class TestAsyncExecutor:
         executor_handle_contexts: bool,
         future_exception: type[BaseException] | None,
         mock_stdlib_executor: MagicMock,
-        mock_contextvars_copy_context: MagicMock,
         mock_unwrap_future: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
+        mock_contextvars_copy_context: MagicMock = self.mock_contextvars_copy_context(mocker)
         mock_contexts: list[MagicMock] = [mocker.NonCallableMagicMock(spec=contextvars.Context) for _ in range(3)]
         mock_futures: list[MagicMock] = [
             mocker.NonCallableMagicMock(

@@ -29,7 +29,7 @@ from .._typevars import _T_ReceivedPacket, _T_SentPacket
 from ..exceptions import ClientClosedError
 from ..lowlevel import _lock, _utils, constants
 from ..lowlevel.api_sync.endpoints.datagram import DatagramEndpoint
-from ..lowlevel.api_sync.transports.socket import SocketDatagramTransport
+from ..lowlevel.api_sync.transports import socket as _transport_socket
 from ..lowlevel.socket import INETSocketAttribute, SocketAddress, SocketProxy, new_socket_address
 from ..protocol import DatagramProtocol
 from .abc import AbstractNetworkClient
@@ -103,18 +103,18 @@ class UDPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
                 pass
             case (str(host), int(port)):
                 if (family := kwargs.get("family", _socket.AF_UNSPEC)) != _socket.AF_UNSPEC:
-                    _utils.check_socket_family(family)
+                    _utils.check_inet_socket_family(family)
                 socket = _create_udp_socket(remote_address=(host, port), **kwargs)
             case _:
                 raise TypeError("Invalid arguments")
 
         try:
-            _utils.check_socket_family(socket.family)
+            _utils.check_inet_socket_family(socket.family)
             _utils.check_socket_is_connected(socket)
 
             local_address: tuple[Any, ...] = socket.getsockname()
 
-            transport = SocketDatagramTransport(
+            transport = _transport_socket.SocketDatagramTransport(
                 socket,
                 retry_interval=retry_interval,
                 max_datagram_size=constants.MAX_DATAGRAM_BUFSIZE,
@@ -146,9 +146,9 @@ class UDPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
 
     def __repr__(self) -> str:
         try:
-            return f"<{type(self).__name__} endpoint={self.__endpoint!r}>"
+            return f"<{self.__class__.__name__} endpoint={self.__endpoint!r}>"
         except AttributeError:
-            return f"<{type(self).__name__} (partially initialized)>"
+            return f"<{self.__class__.__name__} (partially initialized)>"
 
     def is_closed(self) -> bool:
         """
@@ -188,7 +188,7 @@ class UDPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
         with self.__send_lock.get():
             endpoint = self.__endpoint
             if endpoint.is_closed():
-                raise ClientClosedError("Closed client")
+                raise self.__closed()
             local_address = endpoint.extra(INETSocketAttribute.sockname)
             address_family = endpoint.extra(INETSocketAttribute.family)
             return new_socket_address(local_address, address_family)
@@ -207,7 +207,7 @@ class UDPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
         with self.__send_lock.get():
             endpoint = self.__endpoint
             if endpoint.is_closed():
-                raise ClientClosedError("Closed client")
+                raise self.__closed()
             remote_address = endpoint.extra(INETSocketAttribute.peername)
             address_family = endpoint.extra(INETSocketAttribute.family)
             return new_socket_address(remote_address, address_family)
@@ -240,8 +240,8 @@ class UDPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
         with _utils.lock_with_timeout(self.__send_lock.get(), timeout) as timeout:
             endpoint = self.__endpoint
             if endpoint.is_closed():
-                raise ClientClosedError("Closed client")
-            with self.__convert_socket_error():
+                raise self.__closed()
+            with self.__convert_socket_error(endpoint=endpoint):
                 endpoint.send_packet(packet, timeout=timeout)
                 _utils.check_real_socket_state(endpoint.extra(INETSocketAttribute.socket))
 
@@ -271,18 +271,27 @@ class UDPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
         with _utils.lock_with_timeout(self.__receive_lock.get(), timeout) as timeout:
             endpoint = self.__endpoint
             if endpoint.is_closed():
-                raise ClientClosedError("Closed client")
-            with self.__convert_socket_error():
+                raise self.__closed()
+            with self.__convert_socket_error(endpoint=endpoint):
                 return endpoint.recv_packet(timeout=timeout)
+            raise AssertionError("Expected code to be unreachable.")
 
+    @classmethod
     @contextlib.contextmanager
-    def __convert_socket_error(self) -> Iterator[None]:
+    def __convert_socket_error(cls, *, endpoint: DatagramEndpoint[Any, Any] | None) -> Iterator[None]:
         try:
             yield
         except OSError as exc:
             if exc.errno in constants.CLOSED_SOCKET_ERRNOS:
-                raise ClientClosedError("Closed client") from exc
+                if endpoint is not None and endpoint.is_closed():
+                    # close() called while recv_packet() is awaiting...
+                    raise cls.__closed() from exc
+                exc.add_note("The socket file descriptor was closed unexpectedly.")
             raise
+
+    @staticmethod
+    def __closed() -> ClientClosedError:
+        return ClientClosedError("Closed client")
 
     def fileno(self) -> int:
         """

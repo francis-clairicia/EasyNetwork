@@ -209,6 +209,20 @@ class TimeoutYieldedRequestHandler(AsyncDatagramRequestHandler[Request, Response
             await client.send_packet(Response())
 
 
+class ClientExtraAttributesRequestHandler(AsyncDatagramRequestHandler[Request, Response]):
+    async def handle(
+        self,
+        client: AsyncDatagramClient[Response],
+    ) -> AsyncGenerator[None, Request]:
+        client_address = client.extra(INETClientAttribute.remote_address)
+
+        request: Request = yield
+
+        print(f"{client_address.host} sent {request}")
+
+        await client.send_packet(Response())
+
+
 class ServiceInitializationHookRequestHandlerAsyncIO(AsyncDatagramRequestHandler[Request, Response]):
     async def service_init(
         self,

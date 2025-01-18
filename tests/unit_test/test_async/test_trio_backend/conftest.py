@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from socket import AF_INET, IPPROTO_TCP, IPPROTO_UDP, SOCK_DGRAM, SOCK_STREAM
+from socket import AF_INET, AF_INET6, IPPROTO_TCP, IPPROTO_UDP, SOCK_DGRAM, SOCK_STREAM
 from typing import TYPE_CHECKING
 
 from easynetwork.lowlevel.api_async.backend._trio.backend import TrioBackend
@@ -52,6 +52,8 @@ def mock_trio_socket_factory(mocker: MockerFixture) -> Callable[[], MagicMock]:
 
         mock_socket.close.side_effect = close_side_effect
         mock_socket.detach.side_effect = detached_side_effect
+        mock_socket.connect.return_value = None
+        mock_socket.bind.return_value = None
         for async_method in ("recv", "recv_into", "recvfrom", "recvfrom_into", "send", "sendto", "sendmsg"):
             if hasattr(mock_socket, async_method):
                 setattr(
@@ -65,9 +67,10 @@ def mock_trio_socket_factory(mocker: MockerFixture) -> Callable[[], MagicMock]:
 
 
 @pytest.fixture
-def mock_trio_tcp_socket_factory(mock_trio_socket_factory: Callable[[int, int, int], MagicMock]) -> Callable[[], MagicMock]:
-    def factory(family: int = -1) -> MagicMock:
-        return mock_trio_socket_factory(family, SOCK_STREAM, IPPROTO_TCP)
+def mock_trio_tcp_socket_factory(mock_trio_socket_factory: Callable[[int, int, int, int], MagicMock]) -> Callable[[], MagicMock]:
+    def factory(family: int = -1, fileno: int = 123) -> MagicMock:
+        assert family in {AF_INET, AF_INET6, -1}
+        return mock_trio_socket_factory(family, SOCK_STREAM, IPPROTO_TCP, fileno)
 
     return factory
 
@@ -78,9 +81,10 @@ def mock_trio_tcp_socket(mock_trio_tcp_socket_factory: Callable[[], MagicMock]) 
 
 
 @pytest.fixture
-def mock_trio_udp_socket_factory(mock_trio_socket_factory: Callable[[int, int, int], MagicMock]) -> Callable[[], MagicMock]:
-    def factory(family: int = -1) -> MagicMock:
-        return mock_trio_socket_factory(family, SOCK_DGRAM, IPPROTO_UDP)
+def mock_trio_udp_socket_factory(mock_trio_socket_factory: Callable[[int, int, int, int], MagicMock]) -> Callable[[], MagicMock]:
+    def factory(family: int = -1, fileno: int = 123) -> MagicMock:
+        assert family in {AF_INET, AF_INET6, -1}
+        return mock_trio_socket_factory(family, SOCK_DGRAM, IPPROTO_UDP, fileno)
 
     return factory
 
@@ -88,6 +92,40 @@ def mock_trio_udp_socket_factory(mock_trio_socket_factory: Callable[[int, int, i
 @pytest.fixture
 def mock_trio_udp_socket(mock_trio_udp_socket_factory: Callable[[], MagicMock]) -> MagicMock:
     return mock_trio_udp_socket_factory()
+
+
+@pytest.fixture
+def mock_trio_unix_stream_socket_factory(
+    mock_trio_socket_factory: Callable[[int, int, int, int], MagicMock],
+) -> Callable[[], MagicMock]:
+    from ....fixtures.socket import AF_UNIX_or_skip
+
+    def factory(fileno: int = 123) -> MagicMock:
+        return mock_trio_socket_factory(AF_UNIX_or_skip(), SOCK_STREAM, 0, fileno)
+
+    return factory
+
+
+@pytest.fixture
+def mock_trio_unix_stream_socket(mock_trio_unix_stream_socket_factory: Callable[[], MagicMock]) -> MagicMock:
+    return mock_trio_unix_stream_socket_factory()
+
+
+@pytest.fixture
+def mock_trio_unix_datagram_socket_factory(
+    mock_trio_socket_factory: Callable[[int, int, int, int], MagicMock]
+) -> Callable[[], MagicMock]:
+    from ....fixtures.socket import AF_UNIX_or_skip
+
+    def factory(fileno: int = 123) -> MagicMock:
+        return mock_trio_socket_factory(AF_UNIX_or_skip(), SOCK_DGRAM, 0, fileno)
+
+    return factory
+
+
+@pytest.fixture
+def mock_trio_unix_datagram_socket(mock_trio_unix_datagram_socket_factory: Callable[[], MagicMock]) -> MagicMock:
+    return mock_trio_unix_datagram_socket_factory()
 
 
 @pytest.fixture

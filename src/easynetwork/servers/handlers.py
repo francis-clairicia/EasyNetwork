@@ -23,6 +23,7 @@ __all__ = [
     "AsyncStreamClient",
     "AsyncStreamRequestHandler",
     "INETClientAttribute",
+    "UNIXClientAttribute",
 ]
 
 import contextlib
@@ -52,6 +53,28 @@ class INETClientAttribute(typed_attr.TypedAttributeSet):
 
     remote_address: socket_tools.SocketAddress = socket_tools.SocketAttribute.peername
     """the remote address to which the socket is connected, result of :meth:`socket.socket.getpeername`."""
+
+
+class UNIXClientAttribute(typed_attr.TypedAttributeSet):
+    """
+    Typed attributes which can be used on an :class:`AsyncBaseClientInterface`.
+
+    .. versionadded:: 1.1
+    """
+
+    __slots__ = ()
+
+    socket: socket_tools.ISocket = socket_tools.SocketAttribute.socket
+    """:class:`socket.socket` instance."""
+
+    local_name: socket_tools.UnixSocketAddress = typed_attr.typed_attribute()
+    """the socket's own address, result of :meth:`socket.socket.getsockname`."""
+
+    peer_name: socket_tools.UnixSocketAddress = typed_attr.typed_attribute()
+    """the remote address to which the socket is connected, result of :meth:`socket.socket.getpeername`."""
+
+    peer_credentials: socket_tools.UnixCredentials = typed_attr.typed_attribute()
+    """the credentials of the peer process connected to this socket."""
 
 
 class AsyncBaseClientInterface(typed_attr.TypedAttributeProvider, Generic[_T_Response], metaclass=ABCMeta):

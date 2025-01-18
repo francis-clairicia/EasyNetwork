@@ -64,40 +64,51 @@ impl<S: ConnectedDatagramEndpoint + ?Sized> ConnectedDatagramEndpoint for Box<S>
 
 pub struct DatagramClient {
     inner: Box<dyn ConnectedDatagramEndpoint + Send>,
+    cleanup: Option<Box<dyn FnOnce() + Send>>,
 }
 
 impl DatagramClient {
-    pub fn udp<A: ToSocketAddrs>(addr: A) -> io::Result<Self> {
+    pub fn udp(addr: impl ToSocketAddrs) -> io::Result<Self> {
         let socket = UdpSocket::bind("127.0.0.1:0")?;
 
         socket.connect(addr)?;
 
-        Ok(Self { inner: Box::new(socket) })
+        Ok(Self {
+            inner: Box::new(socket),
+            cleanup: None,
+        })
     }
 
-    pub fn unix<P: AsRef<Path>>(path: P) -> io::Result<Self> {
+    pub fn unix(path: impl AsRef<Path>, local_path: impl AsRef<Path>) -> io::Result<Self> {
         #[cfg(unix)]
         {
-            let socket = UnixDatagram::unbound()?;
+            let local_path = local_path.as_ref().to_path_buf();
+            let socket = UnixDatagram::bind(&local_path)?;
 
-            socket.connect(path)?;
+            socket.connect(path).inspect_err(|_| {
+                std::fs::remove_file(&local_path).ok();
+            })?;
 
-            Ok(Self { inner: Box::new(socket) })
+            Ok(Self {
+                inner: Box::new(socket),
+                cleanup: Some(Box::new(move || {
+                    std::fs::remove_file(local_path).ok();
+                })),
+            })
         }
 
         #[cfg(not(unix))]
         {
             drop(path);
+            drop(local_path);
             Err(io::Error::other("UNIX datagram not supported"))
         }
     }
 
     pub fn recv_owned(&mut self, max_size: usize) -> io::Result<Box<[u8]>> {
         let mut buffer: Vec<u8> = vec![0; max_size];
-        if !buffer.is_empty() {
-            let bufsize = self.recv(&mut buffer)?;
-            buffer.truncate(bufsize);
-        }
+        let bufsize = self.recv(&mut buffer)?;
+        buffer.truncate(bufsize);
         Ok(buffer.into_boxed_slice())
     }
 }
@@ -106,12 +117,20 @@ impl Deref for DatagramClient {
     type Target = dyn ConnectedDatagramEndpoint;
 
     fn deref(&self) -> &Self::Target {
-        self.inner.as_ref()
+        &*self.inner
     }
 }
 
 impl DerefMut for DatagramClient {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.inner.as_mut()
+        &mut *self.inner
+    }
+}
+
+impl Drop for DatagramClient {
+    fn drop(&mut self) {
+        if let Some(cleanup) = self.cleanup.take() {
+            (cleanup)();
+        }
     }
 }

@@ -19,6 +19,7 @@ from __future__ import annotations
 __all__ = [
     "ACCEPT_CAPACITY_ERRNOS",
     "ACCEPT_CAPACITY_ERROR_SLEEP_TIME",
+    "CLOSED_SOCKET_ERRNOS",
     "DEFAULT_SERIALIZER_LIMIT",
     "DEFAULT_STREAM_BUFSIZE",
     "IGNORABLE_ACCEPT_ERRNOS",
@@ -73,7 +74,7 @@ ACCEPT_CAPACITY_ERROR_SLEEP_TIME: Final[float] = 0.100
 
 # Taken from Trio project
 # Errors that accept(2) can return, and can be skipped
-IGNORABLE_ACCEPT_ERRNOS: frozenset[int] = frozenset(
+IGNORABLE_ACCEPT_ERRNOS: Final[frozenset[int]] = frozenset(
     {
         errno
         for name in (

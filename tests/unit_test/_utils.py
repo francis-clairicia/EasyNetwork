@@ -4,12 +4,14 @@ import contextlib
 import functools
 import inspect
 import threading
-from collections.abc import Awaitable, Callable, Coroutine, Iterator, Sequence
+from collections.abc import Awaitable, Callable, Coroutine, Iterable, Iterator, Sequence
 from socket import AF_INET, AF_INET6, IPPROTO_TCP, IPPROTO_UDP, SOCK_DGRAM, SOCK_STREAM
 from types import TracebackType
 from typing import TYPE_CHECKING, Any
 
 import pytest
+
+from ..fixtures.socket import ALL_SOCKET_FAMILIES
 
 if TYPE_CHECKING:
     from unittest.mock import AsyncMock, MagicMock
@@ -84,7 +86,7 @@ class DummyRLock(DummyLock):
 
 class AsyncDummyLock(_LockMixin):
     """
-    Helper class used to mock asyncio.Lock classes
+    Helper class used to mock asyncio.Lock class.
     """
 
     class AcquireFailed(Exception):
@@ -120,19 +122,10 @@ class partial_eq(functools.partial[Any]):
         return self.func == other.func and self.args == other.args and self.keywords == other.keywords
 
 
-def get_all_socket_families() -> frozenset[str]:
-    return _get_all_socket_families()
-
-
-@functools.cache
-def _get_all_socket_families() -> frozenset[str]:
-    import socket
-
-    to_exclude = {
-        "AF_UNSPEC",
-    }
-
-    return frozenset(v for v in dir(socket) if v.startswith("AF_") and v not in to_exclude)
+def unsupported_families(supported_families: Iterable[str]) -> tuple[str, ...]:
+    if isinstance(supported_families, str):
+        raise ValueError("does not expect a str directly")
+    return tuple(sorted(ALL_SOCKET_FAMILIES.difference(supported_families)))
 
 
 def __addrinfo_list(

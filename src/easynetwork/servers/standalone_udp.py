@@ -12,7 +12,7 @@
 # limitations under the License.
 #
 #
-"""UDP Network client implementation module."""
+"""UDP Network server implementation module."""
 
 from __future__ import annotations
 
@@ -57,7 +57,6 @@ class StandaloneUDPNetworkServer(
         runner_options: Mapping[str, Any] | None = None,
         reuse_port: bool = False,
         logger: logging.Logger | None = None,
-        **kwargs: Any,
     ) -> None:
         """
         For the other arguments, see :class:`.AsyncUDPNetworkServer` documentation.
@@ -76,7 +75,6 @@ class StandaloneUDPNetworkServer(
                 request_handler=request_handler,
                 reuse_port=reuse_port,
                 logger=logger,
-                **kwargs,
             ),
             runner_options=runner_options,
         )
@@ -86,7 +84,7 @@ class StandaloneUDPNetworkServer(
         Returns all interfaces to which the server is bound. Thread-safe.
 
         Returns:
-            A sequence of network socket address.
+            A sequence of socket address.
             If the server is not serving (:meth:`is_serving` returns :data:`False`), an empty sequence is returned.
         """
         return self._run_sync_or(lambda portal, server: portal.run_sync(server.get_addresses), ())

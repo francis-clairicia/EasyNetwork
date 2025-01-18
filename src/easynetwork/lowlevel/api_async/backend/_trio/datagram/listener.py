@@ -25,7 +25,7 @@ import socket as _socket
 import warnings
 from collections.abc import Awaitable, Callable, Coroutine, Mapping
 from types import MappingProxyType
-from typing import Any, NoReturn, final
+from typing import TYPE_CHECKING, Any, NoReturn, final
 
 import trio
 
@@ -34,9 +34,12 @@ from ....transports.abc import AsyncDatagramListener
 from ...abc import AsyncBackend, ILock, TaskGroup
 from .._trio_utils import FastFIFOLock, close_socket_and_notify, retry_socket_method as _retry_socket_method
 
+if TYPE_CHECKING:
+    from socket import _Address, _RetAddress
+
 
 @final
-class TrioDatagramListenerSocketAdapter(AsyncDatagramListener[tuple[Any, ...]]):
+class TrioDatagramListenerSocketAdapter(AsyncDatagramListener["_RetAddress"]):
     __slots__ = (
         "__backend",
         "__listener",
@@ -92,7 +95,7 @@ class TrioDatagramListenerSocketAdapter(AsyncDatagramListener[tuple[Any, ...]]):
 
     async def serve(
         self,
-        handler: Callable[[bytes, tuple[Any, ...]], Coroutine[Any, Any, None]],
+        handler: Callable[[bytes, _RetAddress], Coroutine[Any, Any, None]],
         task_group: TaskGroup | None = None,
     ) -> NoReturn:
         async with contextlib.AsyncExitStack() as stack:
@@ -114,8 +117,12 @@ class TrioDatagramListenerSocketAdapter(AsyncDatagramListener[tuple[Any, ...]]):
                         always_yield=True,
                     )
                 except OSError as exc:
-                    message = "Unrelated error occurred on datagram reception: %s: %s"
-                    logger.warning(message, type(exc).__name__, exc, exc_info=exc)
+                    logger.warning(
+                        "Unrelated error occurred on datagram reception: %s: %s",
+                        type(exc).__name__,
+                        exc,
+                        exc_info=exc,
+                    )
                     continue
 
                 task_group.start_soon(handler, datagram, client_address)
@@ -124,7 +131,7 @@ class TrioDatagramListenerSocketAdapter(AsyncDatagramListener[tuple[Any, ...]]):
 
         raise AssertionError("Expected code to be unreachable.")
 
-    async def send_to(self, data: bytes | bytearray | memoryview, address: tuple[Any, ...]) -> None:
+    async def send_to(self, data: bytes | bytearray | memoryview, address: _Address) -> None:
         async with self.__send_lock:
             await _retry_socket_method(
                 self.__wait_writable,

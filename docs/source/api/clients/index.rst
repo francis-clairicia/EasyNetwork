@@ -34,6 +34,20 @@ UDP Implementation
    :members:
    :inherited-members:
 
+UNIX Stream Implementation
+--------------------------
+
+.. automodule:: easynetwork.clients.async_unix_stream
+   :members:
+   :inherited-members:
+
+UNIX Datagram Implementation
+----------------------------
+
+.. automodule:: easynetwork.clients.async_unix_datagram
+   :members:
+   :inherited-members:
+
 
 Synchronous Client Objects
 ==========================
@@ -52,9 +66,32 @@ UDP Implementation
    :members:
    :inherited-members:
 
+UNIX Stream Implementation
+--------------------------
+
+.. automodule:: easynetwork.clients.unix_stream
+   :members:
+   :inherited-members:
+
+UNIX Datagram Implementation
+----------------------------
+
+.. automodule:: easynetwork.clients.unix_datagram
+   :members:
+   :inherited-members:
+
 -----
 
 .. seealso::
 
-   :doc:`/howto/tcp_clients` and :doc:`/howto/udp_clients`
+   :doc:`/howto/tcp_clients`
+      Describes what can be done with the clients.
+
+   :doc:`/howto/udp_clients`
+      Describes what can be done with the clients.
+
+   :doc:`/alternatives/unix_sockets/unix_stream_clients`
+      Describes what can be done with the clients.
+
+   :doc:`/alternatives/unix_sockets/unix_datagram_clients`
       Describes what can be done with the clients.

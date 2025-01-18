@@ -9,9 +9,12 @@ ENV PIP_NO_CACHE_DIR=true
 
 RUN pip install -U pip
 
-RUN mkdir -p /usr/src
-COPY servers /usr/src/servers
+# Install dependencies prior to copy scripts
+RUN mkdir -p /usr/src/servers
+COPY servers/requirements.txt /usr/src/servers/requirements.txt
 RUN pip install -r /usr/src/servers/requirements.txt
+
+COPY servers /usr/src/servers
 
 ARG EASYNETWORK_SDIST
 

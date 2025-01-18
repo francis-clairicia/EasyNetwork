@@ -1,4 +1,3 @@
-#![allow(clippy::assigning_clones)]
 #![forbid(unsafe_code)]
 
 pub mod datagram;

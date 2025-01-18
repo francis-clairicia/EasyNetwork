@@ -12,6 +12,9 @@ How-to — UDP Servers
 Introduction
 ============
 
+The :mod:`easynetwork.servers` module simplifies the task of writing network servers. The service creation model is inspired by
+the standard :mod:`socketserver` library, but is an enhanced version with even more abstraction.
+
 Creating a UDP server requires several steps:
 
 #. Derive a class from :class:`.AsyncDatagramRequestHandler` and redefine its :meth:`~.AsyncDatagramRequestHandler.handle` method;
@@ -21,6 +24,16 @@ Creating a UDP server requires several steps:
    and the request handler instance.
 
 #. Call :meth:`~.AsyncUDPNetworkServer.serve_forever` to process requests.
+
+Writing :term:`coroutine functions <coroutine function>` is mandatory to use this server.
+
+.. seealso::
+
+   :pep:`492` — Coroutines with async and await syntax
+      The proposal to introduce native coroutines in Python with :keyword:`async` and :keyword:`await` syntax.
+
+   :external+python:doc:`library/asyncio`
+      If you are not familiar with async/await syntax, you can use the standard library to get started with coroutines.
 
 
 Request Handler Objects
@@ -162,6 +175,18 @@ Cancellation And Timeouts
 
          This feature is available so that features like :class:`trio.CancelScope` can be used.
          However, it may be removed in a future release.
+
+
+Client Metadata
+---------------
+
+The client's metadata are available via :class:`.INETClientAttribute`:
+
+.. literalinclude:: ../_include/examples/howto/udp_servers/request_handler_explanation.py
+   :pyobject: ClientExtraAttributesRequestHandler.handle
+   :dedent:
+   :linenos:
+   :emphasize-lines: 5
 
 
 Service Initialization

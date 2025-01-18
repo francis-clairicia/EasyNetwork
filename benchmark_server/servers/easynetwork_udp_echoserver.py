@@ -58,7 +58,7 @@ class EchoRequestHandlerWithTTL(_BaseRequestHandler):
             try:
                 request = yield client_ttl
             except TimeoutError:
-                print(f"{client.extra(INETClientAttribute.local_address)}: timed out")
+                print(f"{client.extra(INETClientAttribute.remote_address)}: timed out")
                 return
             await client.send_packet(request)
 

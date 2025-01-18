@@ -39,6 +39,9 @@ _T_PosArgs = TypeVarTuple("_T_PosArgs")
 class TrioBackend(AbstractAsyncBackend):
     __slots__ = (
         "__trio",
+        "__trio_utils",
+        "__trio_lowlevel",
+        "__create_task_info",
         "__dns_resolver",
     )
 
@@ -48,9 +51,16 @@ class TrioBackend(AbstractAsyncBackend):
         except ModuleNotFoundError as exc:
             raise _utils.missing_extra_deps("trio") from exc
 
+        from . import _trio_utils
         from .dns_resolver import TrioDNSResolver
+        from .tasks import TaskUtils
 
         self.__trio = trio
+        self.__trio_utils = _trio_utils
+        self.__trio_lowlevel = trio.lowlevel
+
+        self.__create_task_info = TaskUtils.create_task_info
+
         self.__dns_resolver = TrioDNSResolver()
 
     def __repr__(self) -> str:
@@ -66,10 +76,10 @@ class TrioBackend(AbstractAsyncBackend):
         return self.__trio.run(coro_func, *args, **runner_options)
 
     async def coro_yield(self) -> None:
-        await self.__trio.lowlevel.checkpoint()
+        await self.__trio_lowlevel.checkpoint()
 
     async def cancel_shielded_coro_yield(self) -> None:
-        await self.__trio.lowlevel.cancel_shielded_checkpoint()
+        await self.__trio_lowlevel.cancel_shielded_checkpoint()
 
     def get_cancelled_exc_class(self) -> type[BaseException]:
         return self.__trio.Cancelled
@@ -102,10 +112,8 @@ class TrioBackend(AbstractAsyncBackend):
         return TaskGroup()
 
     def get_current_task(self) -> TaskInfo:
-        from .tasks import TaskUtils
-
-        current_task = self.__trio.lowlevel.current_task()
-        return TaskUtils.create_task_info(current_task)
+        current_task = self.__trio_lowlevel.current_task()
+        return self.__create_task_info(current_task)
 
     async def getaddrinfo(
         self,
@@ -149,6 +157,28 @@ class TrioBackend(AbstractAsyncBackend):
 
         return await self.wrap_stream_socket(socket)
 
+    async def create_unix_stream_connection(
+        self,
+        path: str | bytes,
+        *,
+        local_path: str | bytes | None = None,
+    ) -> AsyncStreamTransport:
+        from ._trio_utils import connect_sock_to_resolved_address
+
+        AF_UNIX: int = getattr(_socket, "AF_UNIX")
+
+        socket = _socket.socket(AF_UNIX, _socket.SOCK_STREAM, 0)
+        try:
+            if local_path is not None:
+                await self.__trio.to_thread.run_sync(self.__bind_unix_socket, socket, local_path, abandon_on_cancel=True)
+            socket.setblocking(False)
+            await connect_sock_to_resolved_address(socket, path)
+        except BaseException:
+            socket.close()
+            raise
+
+        return await self.wrap_stream_socket(socket)
+
     async def wrap_stream_socket(self, socket: _socket.socket) -> AsyncStreamTransport:
         from .stream.socket import TrioStreamSocketAdapter
 
@@ -182,16 +212,43 @@ class TrioBackend(AbstractAsyncBackend):
 
         sockets: list[_socket.socket] = _utils.open_listener_sockets_from_getaddrinfo_result(
             infos,
-            backlog=backlog,
             reuse_address=reuse_address,
             reuse_port=reuse_port,
         )
+        for sock in sockets:
+            sock.listen(backlog)
 
         listeners = [
             TrioListenerSocketAdapter(self, self.__trio.SocketListener(sock))
             for sock in map(self.__trio.socket.from_stdlib_socket, sockets)
         ]
         return listeners
+
+    async def create_unix_stream_listener(
+        self,
+        path: str | bytes,
+        backlog: int,
+        *,
+        mode: int | None = None,
+    ) -> AsyncListener[AsyncStreamTransport]:
+        from .stream.listener import TrioListenerSocketAdapter
+
+        AF_UNIX: int = getattr(_socket, "AF_UNIX")
+
+        socket = _socket.socket(AF_UNIX, _socket.SOCK_STREAM, 0)
+        try:
+            await self.__trio.to_thread.run_sync(self.__bind_unix_socket, socket, path, abandon_on_cancel=True)
+            if mode is not None:
+                await self.__trio.to_thread.run_sync(os.chmod, path, mode, abandon_on_cancel=True)
+            socket.setblocking(False)
+            socket.listen(backlog)
+        except BaseException:
+            socket.close()
+            raise
+
+        trio_socket = self.__trio.socket.from_stdlib_socket(socket)
+        listener = TrioListenerSocketAdapter(self, self.__trio.SocketListener(trio_socket))
+        return listener
 
     async def create_udp_endpoint(
         self,
@@ -208,6 +265,28 @@ class TrioBackend(AbstractAsyncBackend):
             local_address=local_address,
             family=family,
         )
+        return await self.wrap_connected_datagram_socket(socket)
+
+    async def create_unix_datagram_endpoint(
+        self,
+        path: str | bytes,
+        *,
+        local_path: str | bytes | None = None,
+    ) -> AsyncDatagramTransport:
+        from ._trio_utils import connect_sock_to_resolved_address
+
+        AF_UNIX: int = getattr(_socket, "AF_UNIX")
+
+        socket = _socket.socket(AF_UNIX, _socket.SOCK_DGRAM, 0)
+        try:
+            if local_path is not None:
+                await self.__trio.to_thread.run_sync(self.__bind_unix_socket, socket, local_path, abandon_on_cancel=True)
+            socket.setblocking(False)
+            await connect_sock_to_resolved_address(socket, path)
+        except BaseException:
+            socket.close()
+            raise
+
         return await self.wrap_connected_datagram_socket(socket)
 
     async def wrap_connected_datagram_socket(self, socket: _socket.socket) -> AsyncDatagramTransport:
@@ -240,7 +319,6 @@ class TrioBackend(AbstractAsyncBackend):
 
         sockets: list[_socket.socket] = _utils.open_listener_sockets_from_getaddrinfo_result(
             infos,
-            backlog=None,
             reuse_address=False,
             reuse_port=reuse_port,
         )
@@ -248,13 +326,34 @@ class TrioBackend(AbstractAsyncBackend):
         listeners = [TrioDatagramListenerSocketAdapter(self, sock) for sock in sockets]
         return listeners
 
+    async def create_unix_datagram_listener(
+        self,
+        path: str | bytes,
+        *,
+        mode: int | None = None,
+    ) -> AsyncDatagramListener[str | bytes]:
+        from .datagram.listener import TrioDatagramListenerSocketAdapter
+
+        AF_UNIX: int = getattr(_socket, "AF_UNIX")
+
+        socket = _socket.socket(AF_UNIX, _socket.SOCK_DGRAM, 0)
+        try:
+            await self.__trio.to_thread.run_sync(self.__bind_unix_socket, socket, path, abandon_on_cancel=True)
+            if mode is not None:
+                await self.__trio.to_thread.run_sync(os.chmod, path, mode, abandon_on_cancel=True)
+            socket.setblocking(False)
+        except BaseException:
+            socket.close()
+            raise
+
+        listener = TrioDatagramListenerSocketAdapter(self, socket)
+        return listener
+
     def create_lock(self) -> ILock:
         return self.__trio.Lock()
 
     def create_fair_lock(self) -> ILock:
-        from ._trio_utils import FastFIFOLock
-
-        return FastFIFOLock()
+        return self.__trio_utils.FastFIFOLock()
 
     def create_event(self) -> IEvent:
         return self.__trio.Event()
@@ -281,3 +380,9 @@ class TrioBackend(AbstractAsyncBackend):
         from .threads import ThreadsPortal
 
         return ThreadsPortal()
+
+    def __bind_unix_socket(self, socket: _socket.socket, local_path: str | bytes) -> None:
+        try:
+            socket.bind(local_path)
+        except OSError as exc:
+            raise _utils.convert_socket_bind_error(exc, local_path) from None

@@ -19,7 +19,6 @@ from __future__ import annotations
 __all__ = ["AsyncTCPNetworkClient"]
 
 import contextlib
-import dataclasses
 import errno as _errno
 import socket as _socket
 import warnings
@@ -37,10 +36,11 @@ else:
 from .._typevars import _T_ReceivedPacket, _T_SentPacket
 from ..exceptions import ClientClosedError
 from ..lowlevel import _utils, constants
-from ..lowlevel.api_async.backend.abc import AsyncBackend, CancelScope, ILock
+from ..lowlevel.api_async.backend.abc import AsyncBackend, ILock
 from ..lowlevel.api_async.backend.utils import BuiltinAsyncBackendLiteral, ensure_backend
 from ..lowlevel.api_async.endpoints.stream import AsyncStreamEndpoint
 from ..lowlevel.api_async.transports.abc import AsyncStreamTransport
+from ..lowlevel.api_async.transports.utils import aclose_forcefully
 from ..lowlevel.socket import (
     INETSocketAttribute,
     SocketAddress,
@@ -50,22 +50,11 @@ from ..lowlevel.socket import (
     set_tcp_nodelay,
 )
 from ..protocol import AnyStreamProtocolType
+from . import _base
 from .abc import AbstractAsyncNetworkClient
 
 if TYPE_CHECKING:
     from ssl import SSLContext
-
-
-@dataclasses.dataclass(kw_only=True, slots=True)
-class _SocketConnector:
-    factory: Callable[[], Awaitable[tuple[AsyncStreamTransport, SocketProxy]]]
-    scope: CancelScope
-
-    async def get(self) -> tuple[AsyncStreamTransport, SocketProxy] | None:
-        result: tuple[AsyncStreamTransport, SocketProxy] | None = None
-        with self.scope:
-            result = await self.factory()
-        return result
 
 
 class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
@@ -76,13 +65,9 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
     __slots__ = (
         "__backend",
         "__endpoint",
-        "__protocol",
-        "__socket_connector",
-        "__socket_connector_lock",
         "__socket_proxy",
         "__receive_lock",
         "__send_lock",
-        "__expected_recv_size",
     )
 
     @overload
@@ -183,9 +168,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
             raise ValueError("'max_recv_size' must be a strictly positive integer")
 
         self.__backend: AsyncBackend = backend
-        self.__endpoint: AsyncStreamEndpoint[_T_SentPacket, _T_ReceivedPacket] | None = None
         self.__socket_proxy: SocketProxy | None = None
-        self.__protocol: AnyStreamProtocolType[_T_SentPacket, _T_ReceivedPacket] = protocol
 
         if ssl:
             if _ssl_module is None:
@@ -216,9 +199,13 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         socket_factory: Callable[[], Awaitable[AsyncStreamTransport]]
         match __arg:
             case _socket.socket() as socket:
-                _utils.check_socket_no_ssl(socket)
-                _utils.check_socket_family(socket.family)
-                _utils.check_socket_is_connected(socket)
+                try:
+                    _utils.check_socket_no_ssl(socket)
+                    _utils.check_inet_socket_family(socket.family)
+                    _utils.check_socket_is_connected(socket)
+                except BaseException:
+                    socket.close()
+                    raise
                 if ssl:
                     if server_hostname is None:
                         raise ValueError("You must set server_hostname when using ssl without a host")
@@ -237,6 +224,20 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
                     socket_factory = _utils.make_callback(backend.wrap_stream_socket, socket, **kwargs)
             case (str(host), int(port)):
                 if ssl:
+                    if server_hostname is None:
+                        # Use host as default for server_hostname.  It is an error
+                        # if host is empty or not set, e.g. when an
+                        # already-connected socket was passed or when only a port
+                        # is given.  To avoid this error, you can pass
+                        # server_hostname='' -- this will bypass the hostname
+                        # check.  (This also means that if host is a numeric
+                        # IP/IPv6 address, we will attempt to verify that exact
+                        # address; this will probably fail, but it is possible to
+                        # create a certificate for a specific IP address, so we
+                        # don't judge it here.)
+                        if not host:
+                            raise ValueError("You must set server_hostname when using ssl without a host")
+                        server_hostname = host
                     socket_factory = _utils.make_callback(
                         self.__create_ssl_over_tcp_connection,
                         backend,
@@ -254,16 +255,18 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
             case _:
                 raise TypeError("Invalid arguments")
 
-        self.__socket_connector: _SocketConnector | None = _SocketConnector(
-            factory=_utils.make_callback(self.__create_socket, socket_factory),
-            scope=backend.open_cancel_scope(),
+        self.__endpoint = _base.DeferredAsyncEndpointInit(
+            backend=backend,
+            endpoint_factory=_utils.make_callback(
+                self.__create_endpoint,
+                socket_factory,
+                protocol=protocol,
+                max_recv_size=max_recv_size,
+            ),
         )
-        self.__socket_connector_lock: ILock = backend.create_lock()
 
         self.__receive_lock: ILock = backend.create_lock()
         self.__send_lock: ILock = backend.create_fair_lock()
-
-        self.__expected_recv_size: int = max_recv_size
 
     @staticmethod
     async def __create_ssl_over_tcp_connection(
@@ -324,24 +327,26 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         )
 
     @staticmethod
-    async def __create_socket(
-        socket_factory: Callable[[], Awaitable[AsyncStreamTransport]],
-    ) -> tuple[AsyncStreamTransport, SocketProxy]:
-        transport = await socket_factory()
+    async def __create_endpoint(
+        transport_factory: Callable[[], Awaitable[AsyncStreamTransport]],
+        *,
+        protocol: AnyStreamProtocolType[_T_SentPacket, _T_ReceivedPacket],
+        max_recv_size: int,
+    ) -> AsyncStreamEndpoint[_T_SentPacket, _T_ReceivedPacket]:
+        transport = await transport_factory()
+        socket = transport.extra(INETSocketAttribute.socket)
 
-        socket_proxy = SocketProxy(transport.extra(INETSocketAttribute.socket))
-
-        _utils.check_socket_family(socket_proxy.family)
+        _utils.check_inet_socket_family(socket.family)
 
         with contextlib.suppress(OSError):
-            set_tcp_nodelay(socket_proxy, True)
+            set_tcp_nodelay(socket, True)
         with contextlib.suppress(OSError):
-            set_tcp_keepalive(socket_proxy, True)
-        return transport, socket_proxy
+            set_tcp_keepalive(socket, True)
+        return AsyncStreamEndpoint(transport, protocol, max_recv_size=max_recv_size)
 
     def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
         try:
-            endpoint = self.__endpoint
+            endpoint = self.__endpoint.get_endpoint_unchecked()
         except AttributeError:
             return
         if endpoint is not None and not endpoint.is_closing():
@@ -350,12 +355,12 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
 
     def __repr__(self) -> str:
         try:
-            endpoint = self.__endpoint
+            endpoint = self.__endpoint.get_endpoint_unchecked()
         except AttributeError:
             endpoint = None
         if endpoint is None:
-            return f"<{type(self).__name__} (partially initialized)>"
-        return f"<{type(self).__name__} endpoint={endpoint!r}>"
+            return f"<{self.__class__.__name__} (partially initialized)>"
+        return f"<{self.__class__.__name__} endpoint={endpoint!r}>"
 
     def is_connected(self) -> bool:
         """
@@ -367,7 +372,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         Returns:
             the client connection state.
         """
-        return self.__endpoint is not None
+        return self.__endpoint.is_connected()
 
     async def wait_connected(self) -> None:
         """
@@ -393,7 +398,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
             ConnectionError: could not connect to remote.
             OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
         """
-        await self.__ensure_connected()
+        await self.__endpoint.connect()
 
     def is_closing(self) -> bool:
         """
@@ -407,10 +412,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         Returns:
             the client state.
         """
-        if self.__socket_connector is not None:
-            return False
-        endpoint = self.__endpoint
-        return endpoint is None or endpoint.is_closing()
+        return self.__endpoint.is_closing()
 
     async def aclose(self) -> None:
         """
@@ -426,13 +428,15 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
 
         Can be safely called multiple times.
         """
-        if self.__socket_connector is not None:
-            self.__socket_connector.scope.cancel()
-            self.__socket_connector = None
-        async with self.__send_lock:
-            if self.__endpoint is None:
-                return
-            await self.__endpoint.aclose()
+        async with contextlib.AsyncExitStack() as stack:
+            try:
+                await stack.enter_async_context(self.__send_lock)
+            except self.backend().get_cancelled_exc_class():
+                if not self.__endpoint.is_closing():
+                    await aclose_forcefully(self.__endpoint)
+                raise
+            else:
+                await self.__endpoint.aclose()
 
     async def send_packet(self, packet: _T_SentPacket) -> None:
         """
@@ -453,8 +457,8 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
             RuntimeError: :meth:`send_eof` has been called earlier.
         """
         async with self.__send_lock:
-            endpoint = await self.__ensure_connected()
-            with self.__convert_socket_error():
+            endpoint = await self.__endpoint.connect()
+            with self.__convert_socket_error(endpoint=endpoint):
                 await endpoint.send_packet(packet)
                 _utils.check_real_socket_state(endpoint.extra(INETSocketAttribute.socket))
 
@@ -469,10 +473,11 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         """
         async with self.__send_lock:
             try:
-                endpoint = await self.__ensure_connected()
+                endpoint = await self.__endpoint.connect()
             except ClientClosedError:
                 return
-            await endpoint.send_eof()
+            with self.__convert_socket_error(endpoint=endpoint):
+                await endpoint.send_eof()
 
     async def recv_packet(self) -> _T_ReceivedPacket:
         """
@@ -489,15 +494,16 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
             the received packet.
         """
         async with self.__receive_lock:
-            endpoint = await self.__ensure_connected()
-            with self.__convert_socket_error():
+            endpoint = await self.__endpoint.connect()
+            with self.__convert_socket_error(endpoint=endpoint):
                 return await endpoint.recv_packet()
+            raise AssertionError("Expected code to be unreachable.")
 
     def get_local_address(self) -> SocketAddress:
         """
         Returns the local socket IP address.
 
-        If :meth:`wait_connected` was not called, an :exc:`OSError` may occurr.
+        If :meth:`wait_connected` was not called, an :exc:`OSError` may occur.
 
         Raises:
             ClientClosedError: the client object is closed.
@@ -506,7 +512,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         Returns:
             the client's local address.
         """
-        endpoint = self.__get_endpoint_sync()
+        endpoint = self.__endpoint.get_sync()
         local_address = endpoint.extra(INETSocketAttribute.sockname)
         address_family = endpoint.extra(INETSocketAttribute.family)
         return new_socket_address(local_address, address_family)
@@ -515,7 +521,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         """
         Returns the remote socket IP address.
 
-        If :meth:`wait_connected` was not called, an :exc:`OSError` may occurr.
+        If :meth:`wait_connected` was not called, an :exc:`OSError` may occur.
 
         Raises:
             ClientClosedError: the client object is closed.
@@ -524,7 +530,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         Returns:
             the client's remote address.
         """
-        endpoint = self.__get_endpoint_sync()
+        endpoint = self.__endpoint.get_sync()
         remote_address = endpoint.extra(INETSocketAttribute.peername)
         address_family = endpoint.extra(INETSocketAttribute.family)
         return new_socket_address(remote_address, address_family)
@@ -533,52 +539,23 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
     def backend(self) -> AsyncBackend:
         return self.__backend
 
-    async def __ensure_connected(self) -> AsyncStreamEndpoint[_T_SentPacket, _T_ReceivedPacket]:
-        async with self.__socket_connector_lock:
-            if self.__endpoint is None:
-                endpoint_and_proxy = None
-                if (socket_connector := self.__socket_connector) is not None:
-                    endpoint_and_proxy = await socket_connector.get()
-                self.__socket_connector = None
-                if endpoint_and_proxy is None:
-                    raise self.__closed()
-                transport, self.__socket_proxy = endpoint_and_proxy
-                self.__endpoint = AsyncStreamEndpoint(
-                    transport,
-                    self.__protocol,
-                    max_recv_size=self.__expected_recv_size,
-                )
-
-            # If you want coverage.py to work properly, keep this "pass" :)
-            pass
-
-        if self.__endpoint.is_closing():
-            raise self.__closed()
-        return self.__endpoint
-
-    def __get_endpoint_sync(self) -> AsyncStreamEndpoint[_T_SentPacket, _T_ReceivedPacket]:
-        if self.__endpoint is None:
-            if self.__socket_connector is not None:
-                raise _utils.error_from_errno(_errno.ENOTSOCK)
-            else:
-                raise self.__closed()
-        if self.__endpoint.is_closing():
-            raise self.__closed()
-        return self.__endpoint
-
+    @classmethod
     @contextlib.contextmanager
-    def __convert_socket_error(self) -> Iterator[None]:
+    def __convert_socket_error(cls, *, endpoint: AsyncStreamEndpoint[Any, Any] | None) -> Iterator[None]:
         try:
             yield
         except ConnectionError as exc:
-            raise self.__abort() from exc
+            raise cls.__abort() from exc
         except _ssl_module.SSLError if _ssl_module else () as exc:
             if _utils.is_ssl_eof_error(exc):
-                raise self.__abort() from exc
+                raise cls.__abort() from exc
             raise
         except OSError as exc:
             if exc.errno in constants.CLOSED_SOCKET_ERRNOS:
-                raise self.__closed()
+                if endpoint is not None and endpoint.is_closing():
+                    # aclose() called while recv_packet() is awaiting...
+                    raise cls.__closed() from exc
+                exc.add_note("The socket file descriptor was closed unexpectedly.")
             raise
 
     @staticmethod
@@ -596,6 +573,15 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
 
         May raise :exc:`AttributeError` if :meth:`wait_connected` was not called.
         """
-        if self.__socket_proxy is None:
-            raise AttributeError("Socket not connected")
-        return self.__socket_proxy
+        if (socket_proxy := self.__socket_proxy) is not None:
+            return socket_proxy
+
+        try:
+            endpoint = self.__endpoint.get_sync()
+        except OSError:
+            pass
+        else:
+            self.__socket_proxy = socket_proxy = SocketProxy(endpoint.extra(INETSocketAttribute.socket))
+            return socket_proxy
+
+        raise AttributeError("Socket not connected")

@@ -284,6 +284,20 @@ class ClientConnectionAsyncGenRequestHandler(AsyncStreamRequestHandler[Request, 
         await client.send_packet(Response())
 
 
+class ClientExtraAttributesRequestHandler(AsyncStreamRequestHandler[Request, Response]):
+    async def handle(
+        self,
+        client: AsyncStreamClient[Response],
+    ) -> AsyncGenerator[None, Request]:
+        client_address = client.extra(INETClientAttribute.remote_address)
+
+        request: Request = yield
+
+        print(f"{client_address.host} sent {request}")
+
+        await client.send_packet(Response())
+
+
 class ServiceInitializationHookRequestHandlerAsyncIO(AsyncStreamRequestHandler[Request, Response]):
     async def service_init(
         self,
