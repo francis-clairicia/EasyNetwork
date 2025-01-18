@@ -233,7 +233,7 @@ class EchoRequestHandler(socketserver.StreamRequestHandler):
 class TestUnixStreamClientConnection:
     @pytest.fixture(autouse=True)
     @classmethod
-    def server(cls, unix_socket_path_factory: UnixSocketPathFactory) -> Iterator[socketserver.UnixStreamServer]:  # type: ignore[attr-defined,unused-ignore]
+    def server(cls, unix_socket_path_factory: UnixSocketPathFactory) -> Iterator[socketserver.UnixStreamServer]:  # type: ignore[name-defined,unused-ignore]
         from threading import Thread
 
         with socketserver.UnixStreamServer(unix_socket_path_factory(), EchoRequestHandler) as server:  # type: ignore[attr-defined,unused-ignore]
@@ -245,7 +245,7 @@ class TestUnixStreamClientConnection:
 
     @pytest.fixture
     @staticmethod
-    def remote_address(server: socketserver.UnixStreamServer) -> str | bytes:  # type: ignore[attr-defined,unused-ignore]
+    def remote_address(server: socketserver.UnixStreamServer) -> str | bytes:  # type: ignore[name-defined,unused-ignore]
         return cast(str | bytes, server.server_address)
 
     def test____dunder_init____connect_to_server(

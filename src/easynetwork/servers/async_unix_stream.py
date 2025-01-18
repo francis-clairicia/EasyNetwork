@@ -215,8 +215,13 @@ class AsyncUnixStreamServer(
         async with contextlib.AsyncExitStack() as client_exit_stack:
             client_exit_stack.enter_context(self._bind_server())
 
-            client = _ConnectedClientAPI(lowlevel_client)
-            del lowlevel_client
+            client_address_raw = lowlevel_client.extra(UNIXSocketAttribute.peername, None)
+            if client_address_raw is None:
+                yield None
+                return
+
+            client = _ConnectedClientAPI(UnixSocketAddress.from_raw(client_address_raw), lowlevel_client)
+            del lowlevel_client, client_address_raw
 
             client_exit_stack.enter_context(
                 _base.ClientErrorHandler(
@@ -285,17 +290,15 @@ class _ConnectedClientAPI(AsyncStreamClient[_T_Response]):
 
     def __init__(
         self,
+        initial_peer_name: UnixSocketAddress,
         client: _stream_server.ConnectedStreamClient[_T_Response],
     ) -> None:
         self.__client: _stream_server.ConnectedStreamClient[_T_Response] = client
         self.__closing: bool = False
         self.__send_lock = client.backend().create_fair_lock()
         self.__proxy: SocketProxy = SocketProxy(client.extra(UNIXSocketAttribute.socket))
-        self.__peer_name_cache = UnixSocketAddress()
+        self.__peer_name_cache = initial_peer_name
         self.__peer_creds_cache = _unix_utils.UnixCredsContainer(self.__proxy)
-        # Try to resolve peer name at initialization.
-        with contextlib.suppress(Exception):
-            self.__get_peer_name()
 
         local_name = UnixSocketAddress.from_raw(client.extra(UNIXSocketAttribute.sockname, ""))
 

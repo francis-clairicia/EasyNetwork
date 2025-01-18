@@ -683,6 +683,7 @@ class TestAsyncUnixStreamServer(BaseTestAsyncServer):
         socket.connect(server_address.as_raw())
         socket.close()
 
+        # *This does not happen on all OS*
         # The server will accept a socket which is already in a "Not connected" state
         # and will fail at client initialization when calling socket.getpeername() (errno.ENOTCONN will be raised)
         await asyncio.sleep(0.1)

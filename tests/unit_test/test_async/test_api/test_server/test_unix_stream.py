@@ -192,7 +192,8 @@ class TestConnectedClientAPI(BaseTestSocket):
         mock_unix_stream_socket: MagicMock,
         mock_connected_stream_client: MagicMock,
     ) -> _ConnectedClientAPI[Any]:
-        client: _ConnectedClientAPI[Any] = _ConnectedClientAPI(mock_connected_stream_client)
+        peer_name = UnixSocketAddress.from_raw(mock_connected_stream_client.extra(UNIXSocketAttribute.peername))
+        client: _ConnectedClientAPI[Any] = _ConnectedClientAPI(peer_name, mock_connected_stream_client)
         mock_unix_stream_socket.reset_mock()
         return client
 
@@ -209,7 +210,10 @@ class TestConnectedClientAPI(BaseTestSocket):
         # Arrange
 
         # Act
-        client: _ConnectedClientAPI[Any] = _ConnectedClientAPI(mock_connected_stream_client)
+        client: _ConnectedClientAPI[Any] = _ConnectedClientAPI(
+            UnixSocketAddress.from_raw(remote_address),
+            mock_connected_stream_client,
+        )
 
         # Assert
         assert mock_unix_stream_socket.setsockopt.mock_calls == []
@@ -231,18 +235,19 @@ class TestConnectedClientAPI(BaseTestSocket):
         # Arrange
 
         # Act
-        client: _ConnectedClientAPI[Any] = _ConnectedClientAPI(mock_connected_stream_client)
+        client: _ConnectedClientAPI[Any] = _ConnectedClientAPI(UnixSocketAddress(), mock_connected_stream_client)
 
         # Assert
-        mock_unix_stream_socket.getpeername.assert_called_once_with()
+        mock_unix_stream_socket.getpeername.assert_not_called()
         assert client.extra(UNIXClientAttribute.peer_name).as_raw() == remote_address
+        mock_unix_stream_socket.getpeername.assert_called_once()
         ## Should have cached the result
         mock_unix_stream_socket.reset_mock()
         for _ in range(3):
             assert client.extra(UNIXClientAttribute.peer_name) is client.extra(UNIXClientAttribute.peer_name)
         mock_unix_stream_socket.getpeername.assert_not_called()
 
-    async def test____dunder_init____initialize_inner_client____cache_peer_name_if_named____erase_eager_close_errors(
+    async def test____dunder_init____initialize_inner_client____cache_peer_name_if_named____eager_close_error(
         self,
         mock_unix_stream_socket: MagicMock,
         mock_connected_stream_client: MagicMock,
@@ -251,10 +256,10 @@ class TestConnectedClientAPI(BaseTestSocket):
         self.configure_socket_mock_to_raise_ENOTCONN(mock_unix_stream_socket)
 
         # Act
-        _ = _ConnectedClientAPI(mock_connected_stream_client)
+        _ = _ConnectedClientAPI(UnixSocketAddress(), mock_connected_stream_client)
 
         # Assert
-        mock_unix_stream_socket.getpeername.assert_called_once_with()
+        mock_unix_stream_socket.getpeername.assert_not_called()
 
     @pytest.mark.parametrize("remote_address", ["UNNAMED"], indirect=True)
     async def test____dunder_init____initialize_inner_client____cache_peer_name_if_named____retry_until_named(
@@ -265,10 +270,10 @@ class TestConnectedClientAPI(BaseTestSocket):
         # Arrange
 
         # Act
-        client: _ConnectedClientAPI[Any] = _ConnectedClientAPI(mock_connected_stream_client)
+        client: _ConnectedClientAPI[Any] = _ConnectedClientAPI(UnixSocketAddress(), mock_connected_stream_client)
 
         # Assert
-        mock_unix_stream_socket.getpeername.assert_called_once_with()
+        mock_unix_stream_socket.getpeername.assert_not_called()
         assert client.extra(UNIXClientAttribute.peer_name).is_unnamed()
 
         ## It is possible to bind a Unix socket AFTER a call to connect(2), therefore retry to call getpeername() each time
@@ -296,7 +301,7 @@ class TestConnectedClientAPI(BaseTestSocket):
         # Arrange
 
         # Act
-        client: _ConnectedClientAPI[Any] = _ConnectedClientAPI(mock_connected_stream_client)
+        client: _ConnectedClientAPI[Any] = _ConnectedClientAPI(UnixSocketAddress(), mock_connected_stream_client)
 
         # Assert
         mock_get_peer_credentials.assert_not_called()
