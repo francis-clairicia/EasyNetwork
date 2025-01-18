@@ -203,25 +203,6 @@ class TestUnixStreamClient:
         assert isinstance(address, UnixSocketAddress)
         assert address.as_raw() == client.socket.getpeername()
 
-    def test____get_peer_credentials____consistency(
-        self,
-        client: UnixStreamClient[str, str],
-    ) -> None:
-        peer_credentials = client.get_peer_credentials()
-
-        if sys.platform.startswith(("darwin", "linux", "openbsd", "netbsd")):
-            assert peer_credentials.pid == os.getpid()
-        else:
-            assert peer_credentials.pid is None
-        assert peer_credentials.uid == os.geteuid()  # type: ignore[attr-defined, unused-ignore]
-        assert peer_credentials.gid == os.getegid()  # type: ignore[attr-defined, unused-ignore]
-
-    def test____get_peer_credentials____cached_result(
-        self,
-        client: UnixStreamClient[str, str],
-    ) -> None:
-        assert client.get_peer_credentials() is client.get_peer_credentials()
-
 
 class EchoRequestHandler(socketserver.StreamRequestHandler):
     def handle(self) -> None:
@@ -266,3 +247,26 @@ class TestUnixStreamClientConnection:
         with UnixStreamClient(remote_address, stream_protocol, local_path=unix_socket_path_factory()) as client:
             client.send_packet("Test")
             assert client.recv_packet() == "Test"
+
+    def test____get_peer_credentials____consistency(
+        self,
+        remote_address: str | bytes,
+        stream_protocol: AnyStreamProtocolType[str, str],
+    ) -> None:
+        with UnixStreamClient(remote_address, stream_protocol) as client:
+            peer_credentials = client.get_peer_credentials()
+
+            if sys.platform.startswith(("darwin", "linux", "openbsd", "netbsd")):
+                assert peer_credentials.pid == os.getpid()
+            else:
+                assert peer_credentials.pid is None
+            assert peer_credentials.uid == os.geteuid()  # type: ignore[attr-defined, unused-ignore]
+            assert peer_credentials.gid == os.getegid()  # type: ignore[attr-defined, unused-ignore]
+
+    def test____get_peer_credentials____cached_result(
+        self,
+        remote_address: str | bytes,
+        stream_protocol: AnyStreamProtocolType[str, str],
+    ) -> None:
+        with UnixStreamClient(remote_address, stream_protocol) as client:
+            assert client.get_peer_credentials() is client.get_peer_credentials()

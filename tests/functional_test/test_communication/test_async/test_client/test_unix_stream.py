@@ -256,25 +256,6 @@ class TestAsyncUnixStreamClient:
         assert isinstance(address, UnixSocketAddress)
         assert address.as_raw() == client.socket.getpeername()
 
-    async def test____get_peer_credentials____consistency(
-        self,
-        client: AsyncUnixStreamClient[str, str],
-    ) -> None:
-        peer_credentials = client.get_peer_credentials()
-
-        if sys.platform.startswith(("darwin", "linux", "openbsd", "netbsd")):
-            assert peer_credentials.pid == os.getpid()
-        else:
-            assert peer_credentials.pid is None
-        assert peer_credentials.uid == os.geteuid()  # type: ignore[attr-defined, unused-ignore]
-        assert peer_credentials.gid == os.getegid()  # type: ignore[attr-defined, unused-ignore]
-
-    async def test____get_peer_credentials____cached_result(
-        self,
-        client: AsyncUnixStreamClient[str, str],
-    ) -> None:
-        assert client.get_peer_credentials() is client.get_peer_credentials()
-
 
 @pytest.mark.asyncio
 @PlatformMarkers.skipif_platform_win32
@@ -394,6 +375,31 @@ class TestAsyncUnixStreamClientConnection:
             await client.wait_connected()
 
             assert client.get_peer_name().as_raw() == remote_address
+
+    async def test____get_peer_credentials____consistency(
+        self,
+        remote_address: str,
+        stream_protocol: AnyStreamProtocolType[str, str],
+    ) -> None:
+        async with AsyncUnixStreamClient(remote_address, stream_protocol, "asyncio") as client:
+            assert client.is_connected()
+            peer_credentials = client.get_peer_credentials()
+
+            if sys.platform.startswith(("darwin", "linux", "openbsd", "netbsd")):
+                assert peer_credentials.pid == os.getpid()
+            else:
+                assert peer_credentials.pid is None
+            assert peer_credentials.uid == os.geteuid()  # type: ignore[attr-defined, unused-ignore]
+            assert peer_credentials.gid == os.getegid()  # type: ignore[attr-defined, unused-ignore]
+
+    async def test____get_peer_credentials____cached_result(
+        self,
+        remote_address: str,
+        stream_protocol: AnyStreamProtocolType[str, str],
+    ) -> None:
+        async with AsyncUnixStreamClient(remote_address, stream_protocol, "asyncio") as client:
+            assert client.is_connected()
+            assert client.get_peer_credentials() is client.get_peer_credentials()
 
     async def test____get_peer_credentials____connection_not_performed_yet(
         self,
