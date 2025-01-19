@@ -29,7 +29,7 @@ runs:
       with:
         envFile: ${{ github.action_path }}/python/${{ inputs.python-version }}.conf
     - name: Install PDM
-      uses: pdm-project/setup-pdm@2f3a9be7ac56a6e5c1ea605f8e9d0f0500363705  # v4
+      uses: pdm-project/setup-pdm@v4.2
       id: pdm
       with:
         version: ${{ env.PDM_VERSION }}

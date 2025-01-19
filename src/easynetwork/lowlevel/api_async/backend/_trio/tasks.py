@@ -157,7 +157,7 @@ class TaskGroup(AbstractTaskGroup):
         if name is None:
             name = TaskUtils.compute_task_name_from_func(coro_func)
 
-        return await nursery.start(self.__task_coroutine, coro_func, args, name=name)
+        return await nursery.start(self.__task_coroutine, coro_func, args, name=name)  # type: ignore[return-value]
 
     def __check_nursery_started(self) -> trio.Nursery:
         if (n := self.__nursery) is None:

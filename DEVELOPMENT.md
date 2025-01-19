@@ -5,7 +5,7 @@
 ### System Requirements
 
 - CPython >= 3.11.0
-- [PDM](https://pdm-project.org/latest/#installation) >= 2.20
+- [PDM](https://pdm-project.org/latest/#installation) >= 2.22
 - The [Rust Toolchain](https://rustup.rs/)
 
 ### Virtual environment
