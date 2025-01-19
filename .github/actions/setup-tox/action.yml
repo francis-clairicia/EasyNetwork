@@ -27,10 +27,8 @@ runs:
     - name: Show cache key
       run: cat ${{ env.WORKFLOW_CACHE_KEY_FILE }}
       shell: bash
-    # Use a pinned commit to use the new feature added (and which is not currently added to v4)
-    # c.f. https://github.com/pdm-project/setup-pdm/pull/60
     - name: Install PDM
-      uses: pdm-project/setup-pdm@2f3a9be7ac56a6e5c1ea605f8e9d0f0500363705  # v4
+      uses: pdm-project/setup-pdm@v4.2
       id: pdm
       with:
         version: ${{ env.PDM_VERSION }}

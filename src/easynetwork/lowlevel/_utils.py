@@ -141,7 +141,7 @@ def prepend_argument(
     func: Callable[Concatenate[_T_Arg, _P], _T_Return] | None = None,
 ) -> Callable[[Callable[Concatenate[_T_Arg, _P], _T_Return]], Callable[_P, _T_Return]] | Callable[_P, _T_Return]:
     def decorator(func: Callable[Concatenate[_T_Arg, _P], _T_Return], /) -> Callable[_P, _T_Return]:
-        return functools.partial(func, arg)  # type: ignore[call-arg]
+        return functools.partial(func, arg)
 
     if func is not None:
         return decorator(func)
