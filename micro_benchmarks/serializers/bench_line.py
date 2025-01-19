@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from collections import deque
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.serializers.line import StringLineSerializer
 
 import pytest
+
+from .groups import SerializerGroup
 
 if TYPE_CHECKING:
     from pytest_benchmark.fixture import BenchmarkFixture
@@ -23,6 +26,7 @@ def line_bytes(line_str: str) -> bytes:
     return bytes(line_str, "utf-8")
 
 
+@pytest.mark.benchmark(group=SerializerGroup.LINE_SERIALIZE)
 def bench_StringLineSerializer_serialize(
     benchmark: BenchmarkFixture,
     line_str: str,
@@ -35,6 +39,7 @@ def bench_StringLineSerializer_serialize(
     assert result == line_bytes
 
 
+@pytest.mark.benchmark(group=SerializerGroup.LINE_DESERIALIZE)
 @pytest.mark.parametrize("keep_end", [False, True], ids=lambda p: f"keep_end=={p}")
 def bench_StringLineSerializer_deserialize(
     keep_end: bool,
@@ -52,6 +57,7 @@ def bench_StringLineSerializer_deserialize(
         assert result == line_str.removesuffix("\n")
 
 
+@pytest.mark.benchmark(group=SerializerGroup.LINE_INCREMENTAL_SERIALIZE)
 def bench_StringLineSerializer_incremental_serialize(
     benchmark: BenchmarkFixture,
     line_str: str,
@@ -59,11 +65,12 @@ def bench_StringLineSerializer_incremental_serialize(
 ) -> None:
     serializer = StringLineSerializer()
 
-    result = benchmark(lambda: b"".join(serializer.incremental_serialize(line_str)))
+    result = b"".join(benchmark(lambda: deque(serializer.incremental_serialize(line_str))))
 
     assert result == line_bytes
 
 
+@pytest.mark.benchmark(group=SerializerGroup.LINE_INCREMENTAL_DESERIALIZE)
 @pytest.mark.parametrize("keep_end", [False, True], ids=lambda p: f"keep_end=={p}")
 @pytest.mark.parametrize("buffered", [False, True], ids=lambda p: f"buffered=={p}")
 def bench_StringLineSerializer_incremental_deserialize(

@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
+from collections import deque
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.serializers.json import JSONSerializer
 
 import pytest
 
+from .groups import SerializerGroup
+
 if TYPE_CHECKING:
     from pytest_benchmark.fixture import BenchmarkFixture
 
 
+@pytest.mark.benchmark(group=SerializerGroup.JSON_SERIALIZE)
 def bench_JSONSerializer_serialize(
     benchmark: BenchmarkFixture,
     json_object: Any,
@@ -21,6 +25,7 @@ def bench_JSONSerializer_serialize(
     benchmark(serializer.serialize, json_object)
 
 
+@pytest.mark.benchmark(group=SerializerGroup.JSON_DESERIALIZE)
 def bench_JSONSerializer_deserialize(
     benchmark: BenchmarkFixture,
     json_object: Any,
@@ -33,6 +38,7 @@ def bench_JSONSerializer_deserialize(
     assert result == json_object
 
 
+@pytest.mark.benchmark(group=SerializerGroup.JSON_INCREMENTAL_SERIALIZE)
 @pytest.mark.parametrize("use_lines", [False, True], ids=lambda p: f"use_lines=={p}")
 def bench_JSONSerializer_incremental_serialize(
     use_lines: bool,
@@ -41,9 +47,10 @@ def bench_JSONSerializer_incremental_serialize(
 ) -> None:
     serializer = JSONSerializer(use_lines=use_lines)
 
-    benchmark(lambda: b"".join(serializer.incremental_serialize(json_object)))
+    benchmark(lambda: deque(serializer.incremental_serialize(json_object)))
 
 
+@pytest.mark.benchmark(group=SerializerGroup.JSON_INCREMENTAL_DESERIALIZE)
 @pytest.mark.parametrize("use_lines", [False, True], ids=lambda p: f"use_lines=={p}")
 def bench_JSONSerializer_incremental_deserialize(
     use_lines: bool,

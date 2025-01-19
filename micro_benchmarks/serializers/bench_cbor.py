@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
+from collections import deque
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.serializers.cbor import CBORSerializer
 
 import pytest
 
+from .groups import SerializerGroup
+
 if TYPE_CHECKING:
     from pytest_benchmark.fixture import BenchmarkFixture
 
 
+@pytest.mark.benchmark(group=SerializerGroup.JSON_SERIALIZE)
 def bench_CBORSerializer_serialize(
     benchmark: BenchmarkFixture,
     json_object: Any,
@@ -21,6 +25,7 @@ def bench_CBORSerializer_serialize(
     benchmark(serializer.serialize, json_object)
 
 
+@pytest.mark.benchmark(group=SerializerGroup.JSON_DESERIALIZE)
 def bench_CBORSerializer_deserialize(
     benchmark: BenchmarkFixture,
     json_object: Any,
@@ -33,15 +38,17 @@ def bench_CBORSerializer_deserialize(
     assert result == json_object
 
 
+@pytest.mark.benchmark(group=SerializerGroup.JSON_INCREMENTAL_SERIALIZE)
 def bench_CBORSerializer_incremental_serialize(
     benchmark: BenchmarkFixture,
     json_object: Any,
 ) -> None:
     serializer = CBORSerializer()
 
-    benchmark(lambda: b"".join(serializer.incremental_serialize(json_object)))
+    benchmark(lambda: deque(serializer.incremental_serialize(json_object)))
 
 
+@pytest.mark.benchmark(group=SerializerGroup.JSON_INCREMENTAL_DESERIALIZE)
 @pytest.mark.parametrize("buffered", [False, True], ids=lambda p: f"buffered=={p}")
 def bench_CBORSerializer_incremental_deserialize(
     buffered: bool,
@@ -57,7 +64,7 @@ def bench_CBORSerializer_incremental_deserialize(
 
         def deserialize() -> Any:
             consumer = serializer.buffered_incremental_deserialize(buffer)
-            next(consumer)
+            _: None = next(consumer)
             buffer[:nbytes] = cbor_data
             try:
                 consumer.send(nbytes)

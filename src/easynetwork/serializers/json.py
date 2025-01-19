@@ -36,6 +36,8 @@ from ..lowlevel.constants import DEFAULT_SERIALIZER_LIMIT
 from .abc import AbstractIncrementalPacketSerializer
 from .tools import GeneratorStreamReader
 
+_OBJECT_START = (b"{", b"[", b'"')
+
 
 @dataclass(kw_only=True)
 class JSONEncoderConfig:
@@ -161,7 +163,7 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[Any, Any]):
         Returns:
             a byte sequence.
         """
-        return self.__encoder.encode(packet).encode(self.__encoding, self.__unicode_errors)
+        return bytes(self.__encoder.encode(packet), self.__encoding, self.__unicode_errors)
 
     @final
     def incremental_serialize(self, packet: Any) -> Generator[bytes]:
@@ -179,8 +181,8 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[Any, Any]):
         Yields:
             all the parts of the JSON :term:`packet`.
         """
-        data = self.__encoder.encode(packet).encode(self.__encoding, self.__unicode_errors)
-        if self.__use_lines or not data.startswith((b"{", b"[", b'"')):
+        data = bytes(self.__encoder.encode(packet), self.__encoding, self.__unicode_errors)
+        if self.__use_lines or not data.startswith(_OBJECT_START):
             data += b"\n"
         yield data
 
