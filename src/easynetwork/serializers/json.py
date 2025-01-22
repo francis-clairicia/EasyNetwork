@@ -24,17 +24,17 @@ __all__ = [
 
 
 import re
-import string
-from collections import Counter
 from collections.abc import Callable, Generator
 from dataclasses import asdict as dataclass_asdict, dataclass
-from typing import Any, final
+from typing import TYPE_CHECKING, Any, final
 
 from ..exceptions import DeserializeError, IncrementalDeserializeError, LimitOverrunError
-from ..lowlevel._utils import iter_bytes
 from ..lowlevel.constants import DEFAULT_SERIALIZER_LIMIT
 from .abc import AbstractIncrementalPacketSerializer
 from .tools import GeneratorStreamReader
+
+if TYPE_CHECKING:
+    from _typeshed import ReadableBuffer
 
 _OBJECT_START = (b"{", b"[", b'"')
 
@@ -261,11 +261,11 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[Any, Any]):
         Returns:
             a tuple with the deserialized Python object and the unused trailing data.
         """
-        complete_document: bytes
-        remaining_data: bytes
+        complete_document: ReadableBuffer
+        remaining_data: ReadableBuffer
         if self.__use_lines:
             reader = GeneratorStreamReader()
-            complete_document = yield from reader.read_until(b"\n", limit=self.__limit)
+            complete_document = yield from reader.read_until(b"\n", limit=self.__limit, keep_end=False)
             remaining_data = reader.read_all()
             del reader
         else:
@@ -301,7 +301,7 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[Any, Any]):
                     },
                 ) from exc
             raise IncrementalDeserializeError(msg, remaining_data) from exc
-        return packet, remaining_data
+        return packet, bytes(remaining_data)
 
     @property
     @final
@@ -321,112 +321,126 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[Any, Any]):
 
 
 class _JSONParser:
-    _JSON_VALUE_BYTES: frozenset[int] = frozenset(bytes(string.digits + string.ascii_letters + string.punctuation, "ascii"))
-    _ESCAPE_BYTE: int = ord(b"\\")
+    _QUOTE_BYTE: int = ord('"')
+    _ESCAPE_BYTE: int = ord("\\")
+    _ENCLOSURE_BYTES: dict[int, int] = {
+        ord("{"): ord("}"),
+        ord("["): ord("]"),
+        ord('"'): ord('"'),
+    }
 
-    _whitespaces_match: Callable[[bytes, int], re.Match[bytes]] = re.compile(rb"[ \t\n\r]*", re.MULTILINE | re.DOTALL).match  # type: ignore[assignment]
+    _NON_PRINTABLE: re.Pattern[bytes] = re.compile(rb"[^\x20-\x7E]", re.MULTILINE | re.DOTALL)
+    _WHITESPACES: re.Pattern[bytes] = re.compile(rb"[ \t\n\r]*", re.MULTILINE | re.DOTALL)
+    _JSON_FRAMES: dict[int, re.Pattern[bytes]] = {
+        ord("{"): re.compile(rb'(?:\\.|[\{\}"])', re.MULTILINE | re.DOTALL),
+        ord("["): re.compile(rb'(?:\\.|[\[\]"])', re.MULTILINE | re.DOTALL),
+        ord('"'): re.compile(rb'(?:\\.|["])', re.MULTILINE | re.DOTALL),
+    }
 
-    class _PlainValueError(Exception):
-        pass
-
-    @staticmethod
-    def _escaped(partial_document_view: memoryview) -> bool:
-        escaped = False
-        _ESCAPE_BYTE = _JSONParser._ESCAPE_BYTE
-        for byte in reversed(partial_document_view):
-            if byte == _ESCAPE_BYTE:
-                escaped = not escaped
-            else:
-                break
-        return escaped
-
-    @staticmethod
-    def raw_parse(*, limit: int) -> Generator[None, bytes, tuple[bytes, bytes]]:
+    @classmethod
+    def raw_parse(
+        cls,
+        *,
+        limit: int,
+        _w: Callable[[bytes, int], re.Match[bytes]] = _WHITESPACES.match,  # type: ignore[assignment]
+        _np: Callable[[bytes, int], re.Match[bytes] | None] = _NON_PRINTABLE.search,
+    ) -> Generator[None, bytes, tuple[ReadableBuffer, ReadableBuffer]]:
         if limit <= 0:
             raise ValueError("limit must be a positive integer")
-        escaped = _JSONParser._escaped
-        split_partial_document = _JSONParser._split_partial_document
-        enclosure_counter: Counter[bytes] = Counter()
-        partial_document: bytes = yield
-        first_enclosure: bytes = b""
-        try:
-            offset: int = 0
+
+        append_to_buffer = cls.__append_to_buffer
+
+        partial_document: bytes | bytearray = bytes((yield))
+        start_idx: int
+        while (start_idx := _w(partial_document, 0).end()) == len(partial_document):
+            del partial_document
+            partial_document = bytes((yield))
+
+        end_idx: int = start_idx
+        if (open_enclosure := partial_document[start_idx]) not in cls._ENCLOSURE_BYTES:
+            while not (nprint_search := _np(partial_document, end_idx)):
+                partial_document, end_idx = yield from append_to_buffer(partial_document, limit)
+
+            end_idx = nprint_search.start()
+            complete_document, partial_document = cls.__split_final_buffer(
+                partial_document,
+                start_idx=start_idx,
+                end_idx=end_idx,
+                limit=limit,
+            )
+            if not complete_document:
+                # If this condition is verified, decoder.decode() will most likely raise JSONDecodeError
+                return partial_document, b""
+            return complete_document, partial_document
+
+        end_idx += 1
+        ESCAPE_BYTE = cls._ESCAPE_BYTE
+        QUOTE_BYTE = cls._QUOTE_BYTE
+        if open_enclosure == QUOTE_BYTE:
             while True:
-                with memoryview(partial_document) as partial_document_view:
-                    for offset, char in enumerate(iter_bytes(partial_document_view[offset:]), start=offset):
-                        match char:
-                            case b'"' if not escaped(partial_document_view[:offset]):
-                                enclosure_counter[b'"'] = 0 if enclosure_counter[b'"'] == 1 else 1
-                            case _ if enclosure_counter[b'"'] > 0:  # We are within a JSON string, move on.
-                                continue
-                            case b"{" | b"[":
-                                enclosure_counter[char] += 1
-                            case b"}":
-                                enclosure_counter[b"{"] -= 1
-                            case b"]":
-                                enclosure_counter[b"["] -= 1
-                            case b" " | b"\t" | b"\n" | b"\r":  # Optimization: Skip spaces
-                                continue
-                            case _ if len(enclosure_counter) == 0:  # No enclosure, only value
-                                partial_document = partial_document[offset:] if offset > 0 else partial_document
-                                del char, offset
-                                raise _JSONParser._PlainValueError
-                            case _:  # JSON character, quickly go to next character
-                                continue
-                        assert len(enclosure_counter) > 0  # nosec assert_used
-                        if not first_enclosure:
-                            first_enclosure = next(iter(enclosure_counter))
-                        if enclosure_counter[first_enclosure] <= 0:  # 1st found is closed
-                            return split_partial_document(partial_document, offset + 1, limit)
+                for enclosure_match in cls._JSON_FRAMES[open_enclosure].finditer(partial_document, end_idx):
+                    if enclosure_match[0][0] == QUOTE_BYTE:  # 1st found is closed
+                        end_idx = enclosure_match.end()
+                        return cls.__split_final_buffer(partial_document, start_idx=start_idx, end_idx=end_idx, limit=limit)
 
-                    # partial_document not complete
-                    offset = partial_document_view.nbytes
-                    if offset > limit:
-                        raise LimitOverrunError(
-                            "JSON object's end frame is not found, and chunk exceed the limit",
-                            partial_document,
-                            offset,
-                        )
+                partial_document, end_idx = yield from append_to_buffer(partial_document, limit)
+                while partial_document[end_idx - 1] == ESCAPE_BYTE:
+                    end_idx -= 1
+        else:
+            close_enclosure = cls._ENCLOSURE_BYTES[open_enclosure]
+            enclosure_count: int = 1
+            between_quotes: bool = False
+            while True:
+                for enclosure_match in cls._JSON_FRAMES[open_enclosure].finditer(partial_document, end_idx):
+                    byte = enclosure_match[0][0]
+                    if byte == QUOTE_BYTE:
+                        between_quotes = not between_quotes
+                        continue
+                    elif between_quotes:
+                        continue
 
-                # yield outside view scope
-                partial_document += yield
+                    if byte == open_enclosure:
+                        enclosure_count += 1
+                    elif byte == close_enclosure:  # pragma: no branch
+                        enclosure_count -= 1
 
-        except _JSONParser._PlainValueError:
-            pass
+                    if not enclosure_count:  # 1st found is closed
+                        end_idx = enclosure_match.end()
+                        return cls.__split_final_buffer(partial_document, start_idx=start_idx, end_idx=end_idx, limit=limit)
 
-        # The document is a plain value (null, true, false, or a number)
-
-        del enclosure_counter, first_enclosure
-
-        _JSON_VALUE_BYTES = _JSONParser._JSON_VALUE_BYTES
-
-        while (nprint_idx := next((idx for idx, byte in enumerate(partial_document) if byte not in _JSON_VALUE_BYTES), -1)) < 0:
-            if len(partial_document) > limit:
-                raise LimitOverrunError(
-                    "JSON object's end frame is not found, and chunk exceed the limit",
-                    partial_document,
-                    len(partial_document),
-                )
-            partial_document += yield
-
-        return split_partial_document(partial_document, nprint_idx, limit)
+                partial_document, end_idx = yield from append_to_buffer(partial_document, limit)
+                while partial_document[end_idx - 1] == ESCAPE_BYTE:
+                    end_idx -= 1
 
     @staticmethod
-    def _split_partial_document(partial_document: bytes, consumed: int, limit: int) -> tuple[bytes, bytes]:
-        if consumed > limit:
+    def __split_final_buffer(
+        partial_document: bytes | bytearray,
+        *,
+        start_idx: int,
+        end_idx: int,
+        limit: int,
+        _w: Callable[[bytes, int], re.Match[bytes]] = _WHITESPACES.match,  # type: ignore[assignment]
+    ) -> tuple[memoryview, memoryview]:
+        if end_idx > limit:
             raise LimitOverrunError(
                 "JSON object's end frame is found, but chunk is longer than limit",
                 partial_document,
-                consumed,
+                end_idx,
             )
-        consumed = _JSONParser._whitespaces_match(partial_document, consumed).end()
-        if consumed == len(partial_document):
-            # The following bytes are only spaces
-            # Do not slice the document, the trailing spaces will be ignored by JSONDecoder
-            return partial_document, b""
-        complete_document, partial_document = partial_document[:consumed], partial_document[consumed:]
-        if not complete_document:
-            # If this condition is verified, decoder.decode() will most likely raise JSONDecodeError
-            complete_document = partial_document
-            partial_document = b""
-        return complete_document, partial_document
+        end_idx = _w(partial_document, end_idx).end()
+        partial_document_view = memoryview(partial_document)
+        return partial_document_view[start_idx:end_idx], partial_document_view[end_idx:]
+
+    @staticmethod
+    def __append_to_buffer(partial_document: bytes | bytearray, limit: int) -> Generator[None, bytes, tuple[bytearray, int]]:
+        end_idx = len(partial_document)
+        if end_idx > limit:
+            raise LimitOverrunError(
+                "JSON object's end frame is not found, and chunk exceed the limit",
+                partial_document,
+                end_idx,
+            )
+        if not isinstance(partial_document, bytearray):
+            partial_document = bytearray(partial_document)
+        partial_document.extend((yield))
+        return partial_document, end_idx
