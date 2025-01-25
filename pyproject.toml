@@ -146,7 +146,7 @@ packages = ["src/easynetwork"]
 
 [tool.hatch.version]
 source = "vcs"
-fallback-version = "1.1.0"
+fallback-version = "1.1.1"
 
 [tool.hatch.version.raw-options]  # setuptools_scm options
 version_scheme = "no-guess-dev"
