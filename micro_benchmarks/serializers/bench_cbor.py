@@ -61,11 +61,11 @@ def bench_CBORSerializer_incremental_deserialize(
     if buffered:
         nbytes = len(cbor_data)
         buffer: memoryview = serializer.create_deserializer_buffer(nbytes)
+        buffer[:nbytes] = cbor_data
 
         def deserialize() -> Any:
             consumer = serializer.buffered_incremental_deserialize(buffer)
-            _: None = next(consumer)
-            buffer[:nbytes] = cbor_data
+            next(consumer)
             try:
                 consumer.send(nbytes)
             except StopIteration as exc:

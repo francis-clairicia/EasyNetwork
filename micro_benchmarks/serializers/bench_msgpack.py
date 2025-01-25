@@ -61,11 +61,11 @@ def bench_MessagePackSerializer_incremental_deserialize(
     if buffered:
         nbytes = len(msgpack_data)
         buffer: memoryview = serializer.create_deserializer_buffer(nbytes)
+        buffer[:nbytes] = msgpack_data
 
         def deserialize() -> Any:
             consumer = serializer.buffered_incremental_deserialize(buffer)
-            _: None = next(consumer)
-            buffer[:nbytes] = msgpack_data
+            next(consumer)
             try:
                 consumer.send(nbytes)
             except StopIteration as exc:
