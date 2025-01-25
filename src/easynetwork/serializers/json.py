@@ -373,44 +373,34 @@ class _JSONParser:
                 return partial_document, b""
             return complete_document, partial_document
 
-        end_idx += 1
         ESCAPE_BYTE = cls._ESCAPE_BYTE
         QUOTE_BYTE = cls._QUOTE_BYTE
-        if open_enclosure == QUOTE_BYTE:
-            while True:
-                for enclosure_match in cls._JSON_FRAMES[open_enclosure].finditer(partial_document, end_idx):
-                    if enclosure_match[0][0] == QUOTE_BYTE:  # 1st found is closed
-                        end_idx = enclosure_match.end()
-                        return cls.__split_final_buffer(partial_document, start_idx=start_idx, end_idx=end_idx, limit=limit)
+        close_enclosure = cls._ENCLOSURE_BYTES[open_enclosure]
+        token_finder = cls._JSON_FRAMES[open_enclosure].finditer
+        enclosure_count: int = 1
+        between_quotes: bool = open_enclosure == QUOTE_BYTE
+        end_idx += 1
+        while True:
+            for enclosure_match in token_finder(partial_document, end_idx):
+                byte = enclosure_match[0][0]
+                if byte == QUOTE_BYTE:
+                    between_quotes = not between_quotes
+                elif between_quotes:
+                    continue
 
-                partial_document, end_idx = yield from append_to_buffer(partial_document, limit)
-                while partial_document[end_idx - 1] == ESCAPE_BYTE:
-                    end_idx -= 1
-        else:
-            close_enclosure = cls._ENCLOSURE_BYTES[open_enclosure]
-            enclosure_count: int = 1
-            between_quotes: bool = False
-            while True:
-                for enclosure_match in cls._JSON_FRAMES[open_enclosure].finditer(partial_document, end_idx):
-                    byte = enclosure_match[0][0]
-                    if byte == QUOTE_BYTE:
-                        between_quotes = not between_quotes
-                        continue
-                    elif between_quotes:
-                        continue
+                # Try first to match close_enclosure for frames using the same character for opening and closing (e.g. strings)
+                if byte == close_enclosure:
+                    enclosure_count -= 1
+                elif byte == open_enclosure:  # pragma: no branch
+                    enclosure_count += 1
 
-                    if byte == open_enclosure:
-                        enclosure_count += 1
-                    elif byte == close_enclosure:  # pragma: no branch
-                        enclosure_count -= 1
+                if not enclosure_count:  # 1st found is closed
+                    end_idx = enclosure_match.end()
+                    return cls.__split_final_buffer(partial_document, start_idx=start_idx, end_idx=end_idx, limit=limit)
 
-                    if not enclosure_count:  # 1st found is closed
-                        end_idx = enclosure_match.end()
-                        return cls.__split_final_buffer(partial_document, start_idx=start_idx, end_idx=end_idx, limit=limit)
-
-                partial_document, end_idx = yield from append_to_buffer(partial_document, limit)
-                while partial_document[end_idx - 1] == ESCAPE_BYTE:
-                    end_idx -= 1
+            partial_document, end_idx = yield from append_to_buffer(partial_document, limit)
+            while partial_document[end_idx - 1] == ESCAPE_BYTE:
+                end_idx -= 1
 
     @staticmethod
     def __split_final_buffer(
