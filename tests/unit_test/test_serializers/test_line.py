@@ -153,7 +153,7 @@ class TestStringLineSerializer:
         # Arrange
 
         # Act & Assert
-        with pytest.raises(TypeError, match=r"^Expected a string, got 4$"):
+        with pytest.raises(TypeError, match=r"^encoding without a string argument$"):
             serializer.serialize(4)  # type: ignore[arg-type]
 
     def test____serialize____empty_string(
@@ -235,7 +235,7 @@ class TestStringLineSerializer:
         # Arrange
 
         # Act & Assert
-        with pytest.raises(TypeError, match=r"^Expected a string, got 4$"):
+        with pytest.raises(TypeError, match=r"^encoding without a string argument$"):
             list(serializer.incremental_serialize(4))  # type: ignore[arg-type]
 
     def test____incremental_serialize____append_separator(

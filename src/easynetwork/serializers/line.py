@@ -119,10 +119,7 @@ class StringLineSerializer(BufferedIncrementalPacketSerializer[str, str, bytearr
         Important:
             The output **does not** contain `newline`.
         """
-        if __debug__:
-            if not isinstance(packet, str):
-                raise TypeError(f"Expected a string, got {packet!r}")
-        return packet.encode(self.__encoding, self.__unicode_errors)
+        return bytes(packet, self.__encoding, self.__unicode_errors)
 
     @final
     def incremental_serialize(self, packet: str) -> Generator[bytes]:
@@ -135,10 +132,7 @@ class StringLineSerializer(BufferedIncrementalPacketSerializer[str, str, bytearr
             TypeError: `packet` is not a :class:`str`.
             UnicodeError: Invalid string.
         """
-        if __debug__:
-            if not isinstance(packet, str):
-                raise TypeError(f"Expected a string, got {packet!r}")
-        data: bytes = packet.encode(self.__encoding, self.__unicode_errors)
+        data = bytes(packet, self.__encoding, self.__unicode_errors)
         if not data:
             return
         separator: bytes = self.__separator
