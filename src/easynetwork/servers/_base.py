@@ -219,7 +219,7 @@ _T_LowLevelServer = TypeVar("_T_LowLevelServer", bound=_SupportsAclose)
 
 
 @dataclasses.dataclass(repr=False, eq=False, frozen=True, slots=True)
-class _BindServer(contextlib.AbstractContextManager[None]):
+class _BindServer(contextlib.AbstractContextManager[None, None]):
     attach: Callable[[], None]
     detach: Callable[[], None]
 

@@ -112,23 +112,20 @@ class ListenerSocketAdapter(AsyncListener[_T_Stream]):
         async def client_connection_task(client_socket: _socket.socket, task_group: TaskGroup) -> None:
             try:
                 stream = await connect(self.__backend, client_socket)
-            except asyncio.CancelledError:
+            except Exception as exc:
+                client_socket.close()
+                match exc:
+                    case OSError(errno=exc_errno) if exc_errno in constants.NOT_CONNECTED_SOCKET_ERRNOS:
+                        # The remote host closed the connection before starting the task.
+                        # See this test for details:
+                        # test____serve_forever____accept_client____client_sent_RST_packet_right_after_accept
+                        pass
+                    case _:
+                        self.__accepted_socket_factory.log_connection_error(logger, exc)
+            except BaseException:
+                # Only reraise base exceptions
                 client_socket.close()
                 raise
-            except BaseException as exc:
-                client_socket.close()
-
-                if isinstance(exc, OSError) and exc.errno in constants.NOT_CONNECTED_SOCKET_ERRNOS:
-                    # The remote host closed the connection before starting the task.
-                    # See this test for details:
-                    # test____serve_forever____accept_client____client_sent_RST_packet_right_after_accept
-                    pass
-                else:
-                    self.__accepted_socket_factory.log_connection_error(logger, exc)
-
-                # Only reraise base exceptions
-                if not isinstance(exc, Exception):
-                    raise
             else:
                 task_group.start_soon(handler, stream)
 
@@ -151,19 +148,15 @@ class ListenerSocketAdapter(AsyncListener[_T_Stream]):
         listener_sock = self.__socket
         if listener_sock is None:
             raise _utils.error_from_errno(_errno.EBADF)
-        client_sock: _socket.socket | None = None
         loop = asyncio.get_running_loop()
 
         while True:
+            client_sock: _socket.socket | None = None
             try:
                 with self.__backend.open_cancel_scope() as self.__accept_scope:
-                    try:
-                        client_sock, _ = await loop.sock_accept(listener_sock)
-                    finally:
-                        self.__accept_scope = None
+                    client_sock, _ = await loop.sock_accept(listener_sock)
                 if client_sock is None:
                     raise _utils.error_from_errno(_errno.EBADF)
-                return client_sock
             except OSError as exc:
                 if exc.errno in constants.ACCEPT_CAPACITY_ERRNOS:
                     logger = logging.getLogger(__name__)
@@ -174,15 +167,16 @@ class ListenerSocketAdapter(AsyncListener[_T_Stream]):
                         constants.ACCEPT_CAPACITY_ERROR_SLEEP_TIME,
                         exc_info=exc,
                     )
-                    try:
-                        with self.__backend.open_cancel_scope() as self.__accept_scope:
-                            await asyncio.sleep(constants.ACCEPT_CAPACITY_ERROR_SLEEP_TIME)
-                        if self.__accept_scope.cancelled_caught():
-                            raise _utils.error_from_errno(_errno.EBADF) from None
-                    finally:
-                        self.__accept_scope = None
+                    with self.__backend.open_cancel_scope() as self.__accept_scope:
+                        await asyncio.sleep(constants.ACCEPT_CAPACITY_ERROR_SLEEP_TIME)
+                    if self.__accept_scope.cancelled_caught():
+                        raise _utils.error_from_errno(_errno.EBADF)
                 elif exc.errno not in constants.IGNORABLE_ACCEPT_ERRNOS:
                     raise
+            else:
+                return client_sock
+            finally:
+                self.__accept_scope = None
 
     def backend(self) -> AsyncBackend:
         return self.__backend

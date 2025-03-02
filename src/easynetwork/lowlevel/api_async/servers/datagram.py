@@ -179,9 +179,7 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
 
             default_context = contextvars.copy_context()
 
-            async with contextlib.AsyncExitStack() as stack:
-                if task_group is None:
-                    task_group = await stack.enter_async_context(backend.create_task_group())
+            async with backend.create_task_group() if task_group is None else contextlib.nullcontext(task_group) as task_group:
 
                 # The responsibility for ordering datagram reception is shifted to the listener.
                 async def handler(datagram: bytes, address: _T_Address, /) -> None:
@@ -203,8 +201,6 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
                         await self.__client_coroutine(datagram_received_cb, client_ctx, client_data, task_group, default_context)
 
                 await listener.serve(handler, task_group)
-
-            raise AssertionError("Expected code to be unreachable.")
 
     async def __client_coroutine(
         self,
@@ -261,9 +257,10 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
                 try:
                     with null_timeout_ctx if timeout is None else backend.timeout(timeout):
                         datagram = await client_data.pop_datagram()
-                    action = self.__parse_datagram(datagram, self.__protocol)
                 except BaseException as exc:
                     action = ThrowAction(exc)
+                else:
+                    action = self.__parse_datagram(datagram, self.__protocol)
                 finally:
                     datagram = b""
                 try:

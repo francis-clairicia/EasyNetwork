@@ -1360,6 +1360,9 @@ class _timeout_scope:
         return self.scope.__enter__()
 
     def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None) -> None:
-        self.scope.__exit__(exc_type, exc_val, exc_tb)
-        if self.scope.cancelled_caught():
-            raise TimeoutError("timed out") from exc_val
+        try:
+            suppressed = self.scope.__exit__(exc_type, exc_val, exc_tb)
+            if suppressed and self.scope.cancelled_caught():
+                raise TimeoutError("timed out") from exc_val
+        finally:
+            del self, exc_val, exc_tb  # Prevent cyclic reference.

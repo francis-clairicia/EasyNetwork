@@ -43,7 +43,7 @@ _T_Socket = TypeVar("_T_Socket", bound=_socket.socket)
 _T_Return = TypeVar("_T_Return")
 
 
-class convert_trio_resource_errors(contextlib.AbstractContextManager[None]):
+class convert_trio_resource_errors(contextlib.AbstractContextManager[None, None]):
     def __init__(self, *, broken_resource_errno: int) -> None:
         self.__broken_resource_errno: int = broken_resource_errno
 
