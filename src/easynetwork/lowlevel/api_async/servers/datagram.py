@@ -32,7 +32,7 @@ from ...._typevars import _T_Request, _T_Response
 from ....exceptions import DatagramProtocolParseError
 from ....protocol import DatagramProtocol
 from ... import _utils
-from ..._asyncgen import AsyncGenAction, SendAction, ThrowAction, anext_without_asyncgen_hook
+from ..._asyncgen import AsyncGenAction, SendAction, ThrowAction
 from ..backend.abc import AsyncBackend, ICondition, TaskGroup
 from ..transports import abc as _transports
 
@@ -237,7 +237,7 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
         try:
             datagram: bytes = client_data.pop_datagram_no_wait()
             # Ignore sent timeout here, we already have the datagram.
-            await anext_without_asyncgen_hook(request_handler_generator)
+            await anext(request_handler_generator)
         except StopAsyncIteration:
             return
         else:

@@ -29,7 +29,6 @@ from typing import TypeVar, TypeVarTuple
 
 from .._typevars import _T_Request, _T_Response
 from ..lowlevel import _utils
-from ..lowlevel._asyncgen import AsyncGenAction
 from ..lowlevel.api_async.servers import datagram as _lowlevel_datagram_server, stream as _lowlevel_stream_server
 from .handlers import AsyncDatagramClient, AsyncDatagramRequestHandler, AsyncStreamClient, AsyncStreamRequestHandler
 
@@ -68,8 +67,6 @@ def build_lowlevel_stream_server_handler(
     if logger is None:
         logger = logging.getLogger(__name__)
 
-    from ..lowlevel._asyncgen import SendAction, ThrowAction, anext_without_asyncgen_hook
-
     async def handler(
         lowlevel_client: _lowlevel_stream_server.ConnectedStreamClient[_T_Response], /
     ) -> AsyncGenerator[float | None, _T_Request]:
@@ -81,31 +78,33 @@ def build_lowlevel_stream_server_handler(
                 return
 
             request_handler_generator: AsyncGenerator[float | None, _T_Request]
-            action: AsyncGenAction[_T_Request]
+            request: _T_Request | None
             timeout: float | None
 
             _on_connection_hook = request_handler.on_connection(client)
             if isinstance(_on_connection_hook, AsyncGenerator):
                 try:
-                    timeout = await anext_without_asyncgen_hook(_on_connection_hook)
+                    timeout = await anext(_on_connection_hook)
                 except StopAsyncIteration:
                     pass
                 else:
                     while True:
                         try:
-                            action = SendAction((yield timeout))
-                        except BaseException as exc:
-                            action = ThrowAction(_utils.remove_traceback_frames_in_place(exc, 1))
-                        try:
-                            timeout = await action.asend(_on_connection_hook)
+                            try:
+                                request = yield timeout
+                            except BaseException as exc:
+                                _utils.remove_traceback_frames_in_place(exc, 1)
+                                timeout = await _on_connection_hook.athrow(exc)
+                            else:
+                                timeout = await _on_connection_hook.asend(request)
+                            finally:
+                                request = None
                         except StopAsyncIteration:
                             break
                         except BaseException as exc:
-                            # Remove action.asend() frames
-                            _utils.remove_traceback_frames_in_place(exc, 2)
+                            # Remove asend()/athrow() frame
+                            _utils.remove_traceback_frames_in_place(exc, 1)
                             raise
-                        finally:
-                            del action
                 finally:
                     await _on_connection_hook.aclose()
             else:
@@ -129,25 +128,27 @@ def build_lowlevel_stream_server_handler(
             while not client_is_closing():
                 request_handler_generator = new_request_handler(client)
                 try:
-                    timeout = await anext_without_asyncgen_hook(request_handler_generator)
+                    timeout = await anext(request_handler_generator)
                 except StopAsyncIteration:
                     return
                 else:
                     while True:
                         try:
-                            action = SendAction((yield timeout))
-                        except BaseException as exc:
-                            action = ThrowAction(_utils.remove_traceback_frames_in_place(exc, 1))
-                        try:
-                            timeout = await action.asend(request_handler_generator)
+                            try:
+                                request = yield timeout
+                            except BaseException as exc:
+                                _utils.remove_traceback_frames_in_place(exc, 1)
+                                timeout = await request_handler_generator.athrow(exc)
+                            else:
+                                timeout = await request_handler_generator.asend(request)
+                            finally:
+                                request = None
                         except StopAsyncIteration:
                             break
                         except BaseException as exc:
-                            # Remove action.asend() frames
-                            _utils.remove_traceback_frames_in_place(exc, 2)
+                            # Remove asend()/athrow() frame
+                            _utils.remove_traceback_frames_in_place(exc, 1)
                             raise
-                        finally:
-                            del action
                 finally:
                     await request_handler_generator.aclose()
 
@@ -182,8 +183,6 @@ def build_lowlevel_datagram_server_handler(
         an :term:`asynchronous generator` function.
     """
 
-    from ..lowlevel._asyncgen import SendAction, ThrowAction, anext_without_asyncgen_hook
-
     async def handler(
         lowlevel_client: _lowlevel_datagram_server.DatagramClientContext[_T_Response, _T_Address], /
     ) -> AsyncGenerator[float | None, _T_Request]:
@@ -195,28 +194,30 @@ def build_lowlevel_datagram_server_handler(
                 return
 
             request_handler_generator = request_handler.handle(client)
+            request: _T_Request | None
             timeout: float | None
             try:
-                timeout = await anext_without_asyncgen_hook(request_handler_generator)
+                timeout = await anext(request_handler_generator)
             except StopAsyncIteration:
                 return
             else:
-                action: AsyncGenAction[_T_Request]
                 while True:
                     try:
-                        action = SendAction((yield timeout))
-                    except BaseException as exc:
-                        action = ThrowAction(_utils.remove_traceback_frames_in_place(exc, 1))
-                    try:
-                        timeout = await action.asend(request_handler_generator)
+                        try:
+                            request = yield timeout
+                        except BaseException as exc:
+                            _utils.remove_traceback_frames_in_place(exc, 1)
+                            timeout = await request_handler_generator.athrow(exc)
+                        else:
+                            timeout = await request_handler_generator.asend(request)
+                        finally:
+                            request = None
                     except StopAsyncIteration:
                         return
                     except BaseException as exc:
-                        # Remove action.asend() frames
-                        _utils.remove_traceback_frames_in_place(exc, 2)
+                        # Remove asend()/athrow() frame
+                        _utils.remove_traceback_frames_in_place(exc, 1)
                         raise
-                    finally:
-                        del action
             finally:
                 await request_handler_generator.aclose()
 

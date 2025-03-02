@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-import contextlib
 import sys
-from collections.abc import AsyncGenerator, AsyncIterator
+from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING, Any
 
-from easynetwork.lowlevel._asyncgen import SendAction, ThrowAction, anext_without_asyncgen_hook
+from easynetwork.lowlevel._asyncgen import SendAction, ThrowAction
 
 import pytest
-import pytest_asyncio
 
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
@@ -91,63 +89,3 @@ class TestAsyncGenAction:
         unwrap_frame = exc.__traceback__.tb_next.tb_frame
         assert unwrap_frame.f_code.co_name == "asend"
         assert unwrap_frame.f_locals == {}
-
-
-@pytest_asyncio.fixture
-async def current_asyncgen_hooks() -> AsyncIterator[sys._asyncgen_hooks]:
-    current_hooks = sys.get_asyncgen_hooks()
-    yield current_hooks
-    sys.set_asyncgen_hooks(*current_hooks)
-
-
-@pytest.mark.asyncio
-async def test____anext_without_asyncgen_hook____skips_firstiter_hook(
-    current_asyncgen_hooks: sys._asyncgen_hooks,
-    mocker: MockerFixture,
-) -> None:
-    # Arrange
-    firstiter_stub = mocker.stub("firstiter_hook")
-    firstiter_stub.side_effect = current_asyncgen_hooks.firstiter
-    firstiter_stub.return_value = None
-    sys.set_asyncgen_hooks(firstiter=firstiter_stub)
-
-    async def async_generator_function() -> AsyncGenerator[int]:
-        yield 42
-
-    async_generator = async_generator_function()
-
-    # Act
-    async with contextlib.aclosing(async_generator):
-        value = await anext_without_asyncgen_hook(async_generator)
-
-    # Assert
-    assert value == 42
-    firstiter_stub.assert_not_called()
-    assert sys.get_asyncgen_hooks() == (firstiter_stub, current_asyncgen_hooks.finalizer)
-
-
-@pytest.mark.asyncio
-async def test____anext_without_asyncgen_hook____remove_frame_on_error() -> None:
-    # Arrange
-    exc = ValueError("abc")
-
-    async def async_generator_function() -> AsyncGenerator[int]:
-        if False:
-            yield 42  # type: ignore[unreachable]
-        raise exc
-
-    async_generator = async_generator_function()
-
-    # Act
-    with pytest.raises(ValueError):
-        await anext_without_asyncgen_hook(async_generator)
-
-    # Assert
-    # Top frame in the traceback is the current test function; we don't care
-    # about its references
-    assert exc.__traceback__ is not None
-    assert exc.__traceback__.tb_frame is sys._getframe()
-    # The next frame down is the 'async_generator_function' frame
-    assert exc.__traceback__.tb_next is not None
-    generator_frame = exc.__traceback__.tb_next.tb_frame
-    assert generator_frame.f_code.co_name == "async_generator_function"
