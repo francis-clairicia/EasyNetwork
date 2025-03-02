@@ -393,19 +393,19 @@ class TestListenerSocketAdapter(BaseTestSocketTransport, BaseTestAsyncSocket):
         mock_accepted_stream_socket.close.assert_called_once_with()
 
         match exc:
-            case asyncio.CancelledError():
-                assert len(caplog.records) == 0
-                accepted_socket_factory.log_connection_error.assert_not_called()
             case OSError(errno=errno) if errno in NOT_CONNECTED_SOCKET_ERRNOS:
                 # ENOTCONN error should not create a big Traceback error
                 assert len(caplog.records) == 0
                 accepted_socket_factory.log_connection_error.assert_not_called()
-            case _:
+            case Exception():
                 assert len(caplog.records) == 0
                 accepted_socket_factory.log_connection_error.assert_called_once_with(
                     mocker.ANY,  # logger
                     exc,
                 )
+            case _:
+                assert len(caplog.records) == 0
+                accepted_socket_factory.log_connection_error.assert_not_called()
 
     @PlatformMarkers.skipif_platform_win32_because("test failures are all too frequent on CI", skip_only_on_ci=True)
     @PlatformMarkers.skipif_platform_bsd_because("test failures are all too frequent on CI", skip_only_on_ci=True)

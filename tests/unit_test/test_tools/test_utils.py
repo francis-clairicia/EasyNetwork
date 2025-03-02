@@ -577,6 +577,19 @@ def test____validate_timeout_delay____negative_value(delay: float, positive_chec
 
 
 @pytest.mark.parametrize("positive_check", [False, True], ids=lambda positive_check: f"{positive_check=}")
+def test____validate_timeout_delay____convert_integer_value(positive_check: bool) -> None:
+    # Arrange
+    delay: int = 32
+
+    # Act
+    new_delay = validate_timeout_delay(delay, positive_check=positive_check)
+
+    # Assert
+    assert type(new_delay) is float
+    assert new_delay == 32.0
+
+
+@pytest.mark.parametrize("positive_check", [False, True], ids=lambda positive_check: f"{positive_check=}")
 def test____validate_timeout_delay____not_a_number(positive_check: bool) -> None:
     # Arrange
     delay: float = math.nan
@@ -978,6 +991,18 @@ def test____lock_with_timeout____acquire_and_release_with_timeout_at_None() -> N
     assert not lock.locked()
     with lock_with_timeout(lock, None) as timeout:
         assert timeout is None
+        assert lock.locked()
+    assert not lock.locked()
+
+
+def test____lock_with_timeout____acquire_and_release_with_timeout_at_infinite() -> None:
+    # Arrange
+    lock = threading.Lock()
+
+    # Act & Assert
+    assert not lock.locked()
+    with lock_with_timeout(lock, math.inf) as timeout:
+        assert timeout is math.inf
         assert lock.locked()
     assert not lock.locked()
 

@@ -233,7 +233,7 @@ def validate_timeout_delay(delay: float, *, positive_check: bool) -> float:
         raise ValueError("Invalid delay: NaN (not a number)")
     if positive_check and delay < 0:
         raise ValueError("Invalid delay: negative value")
-    return delay
+    return float(delay)
 
 
 def is_ssl_eof_error(exc: BaseException) -> TypeGuard[_SSLError]:
@@ -474,27 +474,34 @@ class ElapsedTime:
         return new_timeout
 
 
-@contextlib.contextmanager
-def lock_with_timeout(
-    lock: threading.RLock | threading.Lock,
-    timeout: float | None,
-) -> Iterator[float | None]:
-    if timeout is None or timeout == math.inf:
-        with lock:
-            yield timeout
-        return
-    timeout = validate_timeout_delay(timeout, positive_check=True)
-    with contextlib.ExitStack() as stack:
-        # Try to acquire without blocking first
-        if lock.acquire(blocking=False):
-            stack.push(lock)
-        else:
-            with ElapsedTime() as elapsed:
-                if timeout == 0 or not lock.acquire(True, timeout):
-                    raise error_from_errno(_errno.ETIMEDOUT)
-            stack.push(lock)
-            timeout = elapsed.recompute_timeout(timeout)
-        yield timeout
+class lock_with_timeout(contextlib.AbstractContextManager[float | None, None]):
+    __slots__ = ("__lock", "__timeout")
+
+    def __init__(self, lock: threading.RLock | threading.Lock, timeout: float | None) -> None:
+        if timeout is not None:
+            timeout = validate_timeout_delay(timeout, positive_check=True)
+        self.__lock = lock
+        self.__timeout = timeout
+
+    def __enter__(self) -> float | None:
+        lock = self.__lock
+        match self.__timeout:
+            case None | math.inf as timeout:
+                lock.acquire()
+                return timeout
+            case timeout:
+                # Try to acquire without blocking first
+                if not lock.acquire(blocking=False):
+                    if timeout == 0.0:
+                        raise error_from_errno(_errno.ETIMEDOUT)
+                    with ElapsedTime() as elapsed:
+                        if not lock.acquire(blocking=True, timeout=timeout):
+                            raise error_from_errno(_errno.ETIMEDOUT)
+                    timeout = elapsed.recompute_timeout(timeout)
+                return timeout
+
+    def __exit__(self, *args: Any) -> None:
+        self.__lock.release()
 
 
 class ResourceGuard:
