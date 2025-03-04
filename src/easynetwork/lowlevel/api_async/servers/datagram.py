@@ -32,7 +32,6 @@ from ...._typevars import _T_Request, _T_Response
 from ....exceptions import DatagramProtocolParseError
 from ....protocol import DatagramProtocol
 from ... import _utils
-from ..._asyncgen import AsyncGenAction, SendAction, ThrowAction, anext_without_asyncgen_hook
 from ..backend.abc import AsyncBackend, ICondition, TaskGroup
 from ..transports import abc as _transports
 
@@ -237,38 +236,41 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
         try:
             datagram: bytes = client_data.pop_datagram_no_wait()
             # Ignore sent timeout here, we already have the datagram.
-            await anext_without_asyncgen_hook(request_handler_generator)
+            await anext(request_handler_generator)
         except StopAsyncIteration:
             return
         else:
-            action: AsyncGenAction[_T_Request] | None
-            action = self.__parse_datagram(datagram, self.__protocol)
+            request: _T_Request | None
             try:
-                timeout = await action.asend(request_handler_generator)
+                try:
+                    request = self.__parse_datagram(datagram, self.__protocol)
+                except BaseException as exc:
+                    timeout = await request_handler_generator.athrow(exc)
+                else:
+                    del datagram  # Drop datagram reference before proceeding.
+                    timeout = await request_handler_generator.asend(request)
+                finally:
+                    request = None
             except StopAsyncIteration:
                 return
-            finally:
-                action = None
 
-            del datagram
             null_timeout_ctx = contextlib.nullcontext()
             backend = client_data.backend
             while True:
                 try:
-                    with null_timeout_ctx if timeout is None else backend.timeout(timeout):
-                        datagram = await client_data.pop_datagram()
-                except BaseException as exc:
-                    action = ThrowAction(exc)
-                else:
-                    action = self.__parse_datagram(datagram, self.__protocol)
-                finally:
-                    datagram = b""
-                try:
-                    timeout = await action.asend(request_handler_generator)
+                    try:
+                        with null_timeout_ctx if timeout is None else backend.timeout(timeout):
+                            datagram = await client_data.pop_datagram()
+                        request = self.__parse_datagram(datagram, self.__protocol)
+                    except BaseException as exc:
+                        timeout = await request_handler_generator.athrow(exc)
+                    else:
+                        del datagram
+                        timeout = await request_handler_generator.asend(request)
+                    finally:
+                        request = None
                 except StopAsyncIteration:
                     break
-                finally:
-                    action = None
         finally:
             await request_handler_generator.aclose()
 
@@ -312,18 +314,13 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
     def __parse_datagram(
         datagram: bytes,
         protocol: DatagramProtocol[_T_Response, _T_Request],
-    ) -> AsyncGenAction[_T_Request]:
+    ) -> _T_Request:
         try:
-            try:
-                request = protocol.build_packet_from_datagram(datagram)
-            except DatagramProtocolParseError:
-                raise
-            except Exception as exc:
-                raise RuntimeError("protocol.build_packet_from_datagram() crashed") from exc
-        except BaseException as exc:
-            return ThrowAction(exc)
-        else:
-            return SendAction(request)
+            return protocol.build_packet_from_datagram(datagram)
+        except DatagramProtocolParseError:
+            raise
+        except Exception as exc:
+            raise RuntimeError("protocol.build_packet_from_datagram() crashed") from exc
 
     @property
     @_utils.inherit_doc(_transports.AsyncBaseTransport)
