@@ -28,7 +28,6 @@ from typing import Any, Generic, NoReturn, assert_never
 from ...._typevars import _T_Request, _T_Response
 from ....protocol import AnyStreamProtocolType
 from ... import _stream, _utils
-from ..._asyncgen import AsyncGenAction, SendAction, ThrowAction
 from ..backend.abc import AsyncBackend, TaskGroup
 from ..transports import abc as _transports, utils as _transports_utils
 
@@ -238,15 +237,21 @@ class AsyncStreamServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T_R
                 return
             else:
                 try:
-                    action: AsyncGenAction[_T_Request]
+                    request: _T_Request | None
                     _transport_is_closing = transport.is_closing
                     _next_packet = request_receiver.next
+                    _request_handler_generator_asend = request_handler_generator.asend
                     while not _transport_is_closing():
-                        action = await _next_packet(timeout)
                         try:
-                            timeout = await action.asend(request_handler_generator)
+                            request = await _next_packet(timeout)
+                        except StopAsyncIteration:
+                            raise
+                        except BaseException as exc:
+                            timeout = await request_handler_generator.athrow(exc)
+                        else:
+                            timeout = await _request_handler_generator_asend(request)
                         finally:
-                            del action
+                            request = None
                 except StopAsyncIteration:
                     return
             finally:
@@ -271,34 +276,31 @@ class _RequestReceiver(Generic[_T_Request]):
         assert self.max_recv_size > 0, f"{self.max_recv_size=}"  # nosec assert_used
         self.__backend = self.transport.backend()
 
-    async def next(self, timeout: float | None) -> AsyncGenAction[_T_Request]:
-        try:
-            consumer = self.consumer
-            with self.__null_timeout_ctx if timeout is None else self.__backend.timeout(timeout):
-                data: bytes | None = None
-                while True:
-                    try:
-                        request = consumer.next(data)
-                    except StopIteration:
-                        pass
-                    else:
-                        if data is None:
-                            await self.__backend.cancel_shielded_coro_yield()
-                        return SendAction(request)
-                    finally:
-                        data = None
-                    try:
-                        data = await self.transport.recv(self.max_recv_size)
-                    except Exception as exc:
-                        if self.disconnect_error_filter is not None and self.disconnect_error_filter(exc):
-                            break
-                        raise
-                    if not data:
+    async def next(self, timeout: float | None) -> _T_Request:
+        consumer = self.consumer
+        with self.__null_timeout_ctx if timeout is None else self.__backend.timeout(timeout):
+            data: bytes | None = None
+            while True:
+                try:
+                    request = consumer.next(data)
+                except StopIteration:
+                    pass
+                else:
+                    if data is None:
+                        await self.__backend.cancel_shielded_coro_yield()
+                    return request
+                finally:
+                    data = None
+                try:
+                    data = await self.transport.recv(self.max_recv_size)
+                except Exception as exc:
+                    if self.disconnect_error_filter is not None and self.disconnect_error_filter(exc):
                         break
-        except BaseException as exc:
-            return ThrowAction(exc)
-        else:
-            raise StopAsyncIteration
+                    raise
+                if not data:
+                    break
+
+        raise StopAsyncIteration
 
 
 @dataclasses.dataclass(kw_only=True, eq=False, slots=True)
@@ -312,29 +314,26 @@ class _BufferedRequestReceiver(Generic[_T_Request]):
     def __post_init__(self) -> None:
         self.__backend = self.transport.backend()
 
-    async def next(self, timeout: float | None) -> AsyncGenAction[_T_Request]:
-        try:
-            consumer = self.consumer
-            with self.__null_timeout_ctx if timeout is None else self.__backend.timeout(timeout):
-                nbytes: int | None = None
-                while True:
-                    try:
-                        request = consumer.next(nbytes)
-                    except StopIteration:
-                        pass
-                    else:
-                        if nbytes is None:
-                            await self.__backend.cancel_shielded_coro_yield()
-                        return SendAction(request)
-                    try:
-                        nbytes = await self.transport.recv_into(consumer.get_write_buffer())
-                    except Exception as exc:
-                        if self.disconnect_error_filter is not None and self.disconnect_error_filter(exc):
-                            break
-                        raise
-                    if not nbytes:
+    async def next(self, timeout: float | None) -> _T_Request:
+        consumer = self.consumer
+        with self.__null_timeout_ctx if timeout is None else self.__backend.timeout(timeout):
+            nbytes: int | None = None
+            while True:
+                try:
+                    request = consumer.next(nbytes)
+                except StopIteration:
+                    pass
+                else:
+                    if nbytes is None:
+                        await self.__backend.cancel_shielded_coro_yield()
+                    return request
+                try:
+                    nbytes = await self.transport.recv_into(consumer.get_write_buffer())
+                except Exception as exc:
+                    if self.disconnect_error_filter is not None and self.disconnect_error_filter(exc):
                         break
-        except BaseException as exc:
-            return ThrowAction(exc)
-        else:
-            raise StopAsyncIteration
+                    raise
+                if not nbytes:
+                    break
+
+        raise StopAsyncIteration

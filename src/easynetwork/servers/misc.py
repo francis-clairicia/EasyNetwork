@@ -92,8 +92,9 @@ def build_lowlevel_stream_server_handler(
                         try:
                             try:
                                 request = yield timeout
+                            except GeneratorExit:  # pragma: no cover
+                                raise
                             except BaseException as exc:
-                                _utils.remove_traceback_frames_in_place(exc, 1)
                                 timeout = await _on_connection_hook.athrow(exc)
                             else:
                                 timeout = await _on_connection_hook.asend(request)
@@ -136,8 +137,9 @@ def build_lowlevel_stream_server_handler(
                         try:
                             try:
                                 request = yield timeout
+                            except GeneratorExit:  # pragma: no cover
+                                raise
                             except BaseException as exc:
-                                _utils.remove_traceback_frames_in_place(exc, 1)
                                 timeout = await request_handler_generator.athrow(exc)
                             else:
                                 timeout = await request_handler_generator.asend(request)
@@ -205,8 +207,9 @@ def build_lowlevel_datagram_server_handler(
                     try:
                         try:
                             request = yield timeout
+                        except GeneratorExit:  # pragma: no cover
+                            raise
                         except BaseException as exc:
-                            _utils.remove_traceback_frames_in_place(exc, 1)
                             timeout = await request_handler_generator.athrow(exc)
                         else:
                             timeout = await request_handler_generator.asend(request)
