@@ -115,7 +115,8 @@ test-trio = [
     "pytest-trio~=0.8.0",
 ]
 coverage = [
-    "coverage~=7.0",
+    # CI keep failing with coverage >= 7.6.11 on BSD platforms.
+    "coverage==7.6.10",
 ]
 doc = [
     "sphinx>=8.2,<9",
