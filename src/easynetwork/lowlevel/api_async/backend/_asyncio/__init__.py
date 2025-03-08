@@ -12,8 +12,7 @@
 # limitations under the License.
 #
 #
-"""asyncio engine for easynetwork.api_async
-"""
+"""asyncio engine for easynetwork.api_async"""
 
 from __future__ import annotations
 

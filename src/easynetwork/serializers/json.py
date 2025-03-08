@@ -342,16 +342,18 @@ class _JSONParser:
         cls,
         *,
         limit: int,
-        _w: Callable[[bytes, int], re.Match[bytes]] = _WHITESPACES.match,  # type: ignore[assignment]
-        _np: Callable[[bytes, int], re.Match[bytes] | None] = _NON_PRINTABLE.search,
+        _w: Callable[[bytes | bytearray, int], re.Match[bytes]] = _WHITESPACES.match,  # type: ignore[assignment]
+        _np: Callable[[bytes | bytearray, int], re.Match[bytes] | None] = _NON_PRINTABLE.search,
     ) -> Generator[None, bytes, tuple[ReadableBuffer, ReadableBuffer]]:
         if limit <= 0:
             raise ValueError("limit must be a positive integer")
 
         append_to_buffer = cls.__append_to_buffer
 
-        partial_document: bytes | bytearray = bytes((yield))
+        partial_document: bytes | bytearray
         start_idx: int
+
+        partial_document = bytes((yield))
         while (start_idx := _w(partial_document, 0).end()) == len(partial_document):
             del partial_document
             partial_document = bytes((yield))
@@ -362,16 +364,17 @@ class _JSONParser:
                 partial_document, end_idx = yield from append_to_buffer(partial_document, limit)
 
             end_idx = nprint_search.start()
-            complete_document, partial_document = cls.__split_final_buffer(
+            complete_document, partial_document_view = cls.__split_final_buffer(
                 partial_document,
                 start_idx=start_idx,
                 end_idx=end_idx,
                 limit=limit,
             )
+            del partial_document
             if not complete_document:
                 # If this condition is verified, decoder.decode() will most likely raise JSONDecodeError
-                return partial_document, b""
-            return complete_document, partial_document
+                return partial_document_view, b""
+            return complete_document, partial_document_view
 
         ESCAPE_BYTE = cls._ESCAPE_BYTE
         QUOTE_BYTE = cls._QUOTE_BYTE
@@ -409,7 +412,7 @@ class _JSONParser:
         start_idx: int,
         end_idx: int,
         limit: int,
-        _w: Callable[[bytes, int], re.Match[bytes]] = _WHITESPACES.match,  # type: ignore[assignment]
+        _w: Callable[[bytes | bytearray, int], re.Match[bytes]] = _WHITESPACES.match,  # type: ignore[assignment]
     ) -> tuple[memoryview, memoryview]:
         if end_idx > limit:
             raise LimitOverrunError(

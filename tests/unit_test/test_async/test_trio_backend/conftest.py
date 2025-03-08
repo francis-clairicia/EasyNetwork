@@ -113,7 +113,7 @@ def mock_trio_unix_stream_socket(mock_trio_unix_stream_socket_factory: Callable[
 
 @pytest.fixture
 def mock_trio_unix_datagram_socket_factory(
-    mock_trio_socket_factory: Callable[[int, int, int, int], MagicMock]
+    mock_trio_socket_factory: Callable[[int, int, int, int], MagicMock],
 ) -> Callable[[], MagicMock]:
     from ....fixtures.socket import AF_UNIX_or_skip
 

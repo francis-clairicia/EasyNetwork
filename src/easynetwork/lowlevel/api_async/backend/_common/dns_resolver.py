@@ -46,8 +46,8 @@ class BaseAsyncDNSResolver(metaclass=ABCMeta):
         type: int,
         proto: int = 0,
         flags: int = 0,
-    ) -> Sequence[tuple[int, int, int, str, tuple[str, int] | tuple[str, int, int, int]]]:
-        info: Sequence[tuple[int, int, int, str, tuple[str, int] | tuple[str, int, int, int]]] | None
+    ) -> Sequence[tuple[int, int, int, str, tuple[str, int] | tuple[str, int, int, int] | tuple[int, bytes]]]:
+        info: Sequence[tuple[int, int, int, str, tuple[str, int] | tuple[str, int, int, int] | tuple[int, bytes]]] | None
         try:
             info = _socket.getaddrinfo(
                 host, port, family=family, type=type, proto=proto, flags=flags | _socket.AI_NUMERICHOST | _socket.AI_NUMERICSERV
@@ -68,7 +68,7 @@ class BaseAsyncDNSResolver(metaclass=ABCMeta):
         hosts: Sequence[str | None],
         port: int,
         socktype: int,
-    ) -> Sequence[tuple[int, int, int, str, tuple[str, int] | tuple[str, int, int, int]]]:
+    ) -> Sequence[tuple[int, int, int, str, tuple[str, int] | tuple[str, int, int, int] | tuple[int, bytes]]]:
         infos = set(
             itertools.chain.from_iterable(
                 await backend.gather(
@@ -265,7 +265,7 @@ class BaseAsyncDNSResolver(metaclass=ABCMeta):
 
 # Taken from asyncio library (https://github.com/python/cpython/tree/v3.12.0/Lib/asyncio)
 def _interleave_addrinfos(
-    addrinfos: Sequence[tuple[int, int, int, str, tuple[Any, ...]]]
+    addrinfos: Sequence[tuple[int, int, int, str, tuple[Any, ...]]],
 ) -> list[tuple[int, int, int, str, tuple[Any, ...]]]:
     """Interleave list of addrinfo tuples by family."""
     # Group addresses by family
@@ -281,7 +281,7 @@ def _interleave_addrinfos(
 
 # Taken from anyio project (https://github.com/agronholm/anyio/tree/4.2.0)
 def _prioritize_ipv6_over_ipv4(
-    addrinfos: Sequence[tuple[int, int, int, str, tuple[Any, ...]]]
+    addrinfos: Sequence[tuple[int, int, int, str, tuple[Any, ...]]],
 ) -> list[tuple[int, int, int, str, tuple[Any, ...]]]:
     # Organize the list so that the first address is an IPv6 address (if available)
     # and the second one is an IPv4 addresses. The rest can be in whatever order.

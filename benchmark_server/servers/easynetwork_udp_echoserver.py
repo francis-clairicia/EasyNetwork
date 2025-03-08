@@ -64,7 +64,7 @@ class EchoRequestHandlerWithTTL(_BaseRequestHandler):
 
 
 def _get_runner_and_options_from_arg(
-    runner: Literal["asyncio", "uvloop", "trio"]
+    runner: Literal["asyncio", "uvloop", "trio"],
 ) -> tuple[Literal["asyncio", "trio"], dict[str, Any]]:
     match runner:
         case "asyncio":

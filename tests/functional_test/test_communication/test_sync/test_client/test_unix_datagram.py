@@ -127,7 +127,7 @@ class TestUnixDatagramClient:
             client.recv_packet()
 
     def test____recv_packet____invalid_data(self, client: UnixDatagramClient[str, str], server: Socket) -> None:
-        server.sendto("\u00E9".encode("latin-1"), client.get_local_name().as_raw())
+        server.sendto("\u00e9".encode("latin-1"), client.get_local_name().as_raw())
         with pytest.raises(DatagramProtocolParseError):
             client.recv_packet()
 

@@ -29,7 +29,7 @@ def schedule_call_in_thread_with_future(
 
 @pytest.fixture
 def schedule_call_in_thread(
-    schedule_call_in_thread_with_future: Callable[[float, Callable[[], Any]], Future[Any]]
+    schedule_call_in_thread_with_future: Callable[[float, Callable[[], Any]], Future[Any]],
 ) -> Callable[[float, Callable[[], Any]], None]:
     def schedule_call_in_thread(*args: Any) -> None:
         schedule_call_in_thread_with_future(*args)

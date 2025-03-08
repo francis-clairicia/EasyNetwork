@@ -12,8 +12,7 @@
 # limitations under the License.
 #
 #
-"""trio engine for easynetwork.api_async
-"""
+"""trio engine for easynetwork.api_async"""
 
 from __future__ import annotations
 

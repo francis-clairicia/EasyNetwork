@@ -75,12 +75,16 @@ class StapledPacketSerializer(AbstractPacketSerializer[_T_SentDTOPacket, _T_Rece
             case (
                 AbstractIncrementalPacketSerializer(),
                 BufferedIncrementalPacketSerializer(),
-            ) if cls is StapledPacketSerializer or cls is StapledIncrementalPacketSerializer:
+            ) if (
+                cls is StapledPacketSerializer or cls is StapledIncrementalPacketSerializer
+            ):
                 self = super().__new__(StapledBufferedIncrementalPacketSerializer)
             case (
                 AbstractIncrementalPacketSerializer(),
                 AbstractIncrementalPacketSerializer(),
-            ) if cls is StapledPacketSerializer:
+            ) if (
+                cls is StapledPacketSerializer
+            ):
                 self = super().__new__(StapledIncrementalPacketSerializer)
             case _:
                 self = super().__new__(cls)

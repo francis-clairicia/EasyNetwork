@@ -53,7 +53,7 @@ class BaseTestBase64EncoderSerializer(BaseTestBufferedIncrementalSerializer):
     @pytest.fixture(scope="class")
     @staticmethod
     def serializer_for_deserialization(
-        serializer: Base64EncoderSerializer[bytes, bytes]
+        serializer: Base64EncoderSerializer[bytes, bytes],
     ) -> Base64EncoderSerializer[bytes, bytes]:
         return serializer
 
