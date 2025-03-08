@@ -140,6 +140,9 @@ benchmark-servers-deps = [
     "asyncio-dgram==2.1.2",
 ]
 
+[tool.pdm]
+distribution = true
+
 ############################ hatchling configuration ############################
 
 [tool.hatch.build.targets.wheel]
