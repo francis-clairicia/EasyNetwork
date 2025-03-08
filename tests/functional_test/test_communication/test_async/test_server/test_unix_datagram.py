@@ -686,7 +686,7 @@ class TestAsyncUnixDatagramServer(BaseTestAsyncServer):
         endpoint = await client_factory()
         client_address: str | bytes = endpoint.get_extra_info("sockname")
 
-        await endpoint.sendto("\u00E9".encode("latin-1"), None)  # StringSerializer does not accept unicode
+        await endpoint.sendto("\u00e9".encode("latin-1"), None)  # StringSerializer does not accept unicode
         await asyncio.sleep(0.1)
 
         assert (await endpoint.recvfrom())[0] == b"wrong encoding man."

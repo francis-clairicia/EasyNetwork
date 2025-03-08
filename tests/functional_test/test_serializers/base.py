@@ -287,7 +287,7 @@ class BaseTestBufferedIncrementalSerializer(BaseTestIncrementalSerializer):
         packet, remaining_data = send_return(consumer, nbytes)
 
         # Assert
-        assert memoryview(remaining_data) == b""
+        assert bytes(remaining_data) == b""
         assert type(packet) is type(packet_to_serialize)
         assert packet == packet_to_serialize
 
@@ -346,7 +346,7 @@ class BaseTestBufferedIncrementalSerializer(BaseTestIncrementalSerializer):
         packet, remaining_data = exc_info.value.value
 
         # Assert
-        assert memoryview(remaining_data) == b""
+        assert bytes(remaining_data) == b""
         assert type(packet) is type(packet_to_serialize)
         assert packet == packet_to_serialize
 

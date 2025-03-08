@@ -149,7 +149,7 @@ class TestStreamDataConsumer:
         # Assert
         mock_build_packet_from_chunks_func.assert_called_once_with()
         assert packet is mocker.sentinel.packet
-        assert consumer.get_buffer() == b"World"
+        assert consumer.get_buffer().tobytes() == b"World"
 
     def test____next____several_attempts(
         self,
@@ -172,13 +172,13 @@ class TestStreamDataConsumer:
         with pytest.raises(StopIteration):
             consumer.next(b"Hello")
         mock_build_packet_from_chunks_func.assert_called_once_with()
-        assert consumer.get_buffer() == b""
+        assert consumer.get_buffer().tobytes() == b""
 
         mock_build_packet_from_chunks_func.reset_mock()
         packet = consumer.next(b"World")
         mock_build_packet_from_chunks_func.assert_not_called()
         assert packet is mocker.sentinel.packet
-        assert consumer.get_buffer() == b"Bye"
+        assert consumer.get_buffer().tobytes() == b"Bye"
 
     @pytest.mark.parametrize("sent_buffer", [None, b"", b"Hello"], ids=repr)
     def test____next____reuse_previously_returned_buffer(
@@ -205,7 +205,7 @@ class TestStreamDataConsumer:
         mock_build_packet_from_chunks_func: MagicMock = mock_stream_protocol.build_packet_from_chunks
         mock_build_packet_from_chunks_func.side_effect = setup_side_effect
         assert consumer.next(b"Hello") is mocker.sentinel.packet
-        assert consumer.get_buffer() == b"World"
+        assert consumer.get_buffer().tobytes() == b"World"
         mock_build_packet_from_chunks_func.reset_mock()
         mock_build_packet_from_chunks_func.side_effect = test_side_effect
 
@@ -215,7 +215,7 @@ class TestStreamDataConsumer:
         # Assert
         mock_build_packet_from_chunks_func.assert_called_once_with()
         assert packet is mocker.sentinel.packet
-        assert consumer.get_buffer() == b"Bye"
+        assert consumer.get_buffer().tobytes() == b"Bye"
 
     @pytest.mark.parametrize("buffer", [None, b""], ids=repr)
     def test____next____ignore_empty_buffer(
@@ -239,7 +239,7 @@ class TestStreamDataConsumer:
         mock_build_packet_from_chunks_func.side_effect = side_effect
         with pytest.raises(StopIteration):
             consumer.next(b"Hello")
-        assert consumer.get_buffer() == b""
+        assert consumer.get_buffer().tobytes() == b""
         rest_checkpoint.assert_not_called()
 
         # Act
@@ -270,7 +270,7 @@ class TestStreamDataConsumer:
 
         # Assert
         mock_build_packet_from_chunks_func.assert_called_once_with()
-        assert consumer.get_buffer() == b"World"
+        assert consumer.get_buffer().tobytes() == b"World"
         assert bytes(exception.remaining_data) == b"World"
 
     def test____next____generator_did_not_yield(
@@ -293,7 +293,7 @@ class TestStreamDataConsumer:
 
         # Assert
         mock_build_packet_from_chunks_func.assert_called_once_with()
-        assert consumer.get_buffer() == b"Hello"
+        assert consumer.get_buffer().tobytes() == b"Hello"
 
     @pytest.mark.parametrize("before_yielding", [False, True], ids=lambda p: f"before_yielding=={p}")
     def test____next____generator_raised(
@@ -348,7 +348,7 @@ class TestStreamDataConsumer:
 
         # Assert
         generator_exit_checkpoint.assert_called_once_with()
-        assert consumer.get_buffer() == b""
+        assert consumer.get_buffer().tobytes() == b""
 
 
 class TestBufferedStreamDataConsumer:
@@ -543,7 +543,7 @@ class TestBufferedStreamDataConsumer:
         def side_effect(buffer: memoryview) -> Generator[int | None, int, tuple[Any, ReadableBuffer]]:
             nbytes = yield zero_or_none
             data = buffer[:nbytes]
-            assert data == b"Hello world"
+            assert data.tobytes() == b"Hello world"
             match remainder_type:
                 case "buffer_view":
                     return mocker.sentinel.packet, buffer[nbytes:nbytes]
@@ -581,7 +581,7 @@ class TestBufferedStreamDataConsumer:
         def side_effect(buffer: memoryview) -> Generator[int | None, int, tuple[Any, ReadableBuffer]]:
             nbytes = yield zero_or_none
             data = buffer[:nbytes]
-            assert data == b"Hello world"
+            assert data.tobytes() == b"Hello world"
             match remainder_type:
                 case "buffer_view":
                     return mocker.sentinel.packet, buffer[6:nbytes]

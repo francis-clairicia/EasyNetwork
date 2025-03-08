@@ -81,11 +81,11 @@ tox = [
     "tox-pdm~=0.7.2",
 ]
 format = [
-    "isort>=5.13.1,<6",
+    "isort>=6.0,<7",
     "black>=22.6.0",
 ]
 mypy = [
-    "mypy~=1.13",
+    "mypy~=1.15",
 ]
 types-msgpack = [
     "msgpack-types>=0.5.0",
@@ -118,7 +118,7 @@ coverage = [
     "coverage~=7.0",
 ]
 doc = [
-    "sphinx>=8.1,<9",
+    "sphinx>=8.2,<9",
     "sphinx-rtd-theme>=3.0,<4",
     "sphinx-tabs>=3.4.1,<4",
     "sphinx-toolbox>=3.5.0,<4",
@@ -131,7 +131,7 @@ micro-benchmark = [
 benchmark-servers = [
     "build~=1.0",
     "docker~=7.0",
-    "plotly~=5.18",
+    "plotly~=6.0",
 ]
 benchmark-servers-deps = [
     {include-group = "uvloop"},
@@ -221,6 +221,7 @@ warn_no_return = true
 warn_unreachable = true
 no_implicit_reexport = true
 strict_equality = true
+strict_bytes = true
 local_partial_types = true
 enable_error_code = ["truthy-bool", "ignore-without-code", "unused-awaitable"]
 

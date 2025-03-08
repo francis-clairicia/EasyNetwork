@@ -798,7 +798,7 @@ class TestAsyncUnixStreamServer(BaseTestAsyncServer):
         reader, writer = await client_factory()
         client_address: str | bytes = writer.get_extra_info("sockname")
 
-        writer.write("\u00E9\n".encode("latin-1"))  # StringSerializer does not accept unicode
+        writer.write("\u00e9\n".encode("latin-1"))  # StringSerializer does not accept unicode
 
         assert await reader.readline() == b"wrong encoding man.\n"
         assert request_handler.request_received[client_address] == []

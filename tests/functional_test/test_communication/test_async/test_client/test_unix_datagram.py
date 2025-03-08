@@ -150,7 +150,7 @@ class TestAsyncUnixDatagramClient:
     async def test____recv_packet____invalid_data(
         self, client: AsyncUnixDatagramClient[str, str], server: DatagramEndpoint
     ) -> None:
-        await server.sendto("\u00E9".encode("latin-1"), client.get_local_name().as_raw())
+        await server.sendto("\u00e9".encode("latin-1"), client.get_local_name().as_raw())
         with pytest.raises(DatagramProtocolParseError):
             async with asyncio.timeout(3):
                 await client.recv_packet()

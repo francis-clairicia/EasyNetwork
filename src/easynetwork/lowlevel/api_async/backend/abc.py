@@ -945,7 +945,7 @@ class AsyncBackend(metaclass=ABCMeta):
         type: int = 0,
         proto: int = 0,
         flags: int = 0,
-    ) -> Sequence[tuple[int, int, int, str, tuple[str, int] | tuple[str, int, int, int]]]:
+    ) -> Sequence[tuple[int, int, int, str, tuple[str, int] | tuple[str, int, int, int] | tuple[int, bytes]]]:
         """
         Asynchronous version of :func:`socket.getaddrinfo`.
         """

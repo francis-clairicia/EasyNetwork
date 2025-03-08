@@ -12,8 +12,7 @@
 # limitations under the License.
 #
 #
-"""trio engine for easynetwork.api_async
-"""
+"""trio engine for easynetwork.api_async"""
 
 from __future__ import annotations
 
@@ -123,7 +122,7 @@ class TrioBackend(AbstractAsyncBackend):
         type: int = 0,
         proto: int = 0,
         flags: int = 0,
-    ) -> Sequence[tuple[int, int, int, str, tuple[str, int] | tuple[str, int, int, int]]]:
+    ) -> Sequence[tuple[int, int, int, str, tuple[str, int] | tuple[str, int, int, int] | tuple[int, bytes]]]:
         return await self.__trio.socket.getaddrinfo(
             host,
             port,

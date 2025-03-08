@@ -148,7 +148,7 @@ class TestAsyncUDPNetworkClient:
     async def test____recv_packet____invalid_data(
         self, client: AsyncUDPNetworkClient[str, str], server: DatagramEndpoint
     ) -> None:
-        await server.sendto("\u00E9".encode("latin-1"), client.get_local_address())
+        await server.sendto("\u00e9".encode("latin-1"), client.get_local_address())
         with pytest.raises(DatagramProtocolParseError):
             async with asyncio.timeout(3):
                 await client.recv_packet()

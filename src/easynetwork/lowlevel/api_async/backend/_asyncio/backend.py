@@ -12,8 +12,7 @@
 # limitations under the License.
 #
 #
-"""asyncio engine for easynetwork.api_async
-"""
+"""asyncio engine for easynetwork.api_async"""
 
 from __future__ import annotations
 
@@ -51,7 +50,6 @@ class AsyncIOBackend(AbstractAsyncBackend):
 
     def __init__(self) -> None:
         import asyncio
-        import asyncio.log
 
         from .dns_resolver import AsyncIODNSResolver
         from .tasks import TaskUtils
@@ -130,7 +128,7 @@ class AsyncIOBackend(AbstractAsyncBackend):
         type: int = 0,
         proto: int = 0,
         flags: int = 0,
-    ) -> Sequence[tuple[int, int, int, str, tuple[str, int] | tuple[str, int, int, int]]]:
+    ) -> Sequence[tuple[int, int, int, str, tuple[str, int] | tuple[str, int, int, int] | tuple[int, bytes]]]:
         loop = self.__asyncio.get_running_loop()
 
         return await loop.getaddrinfo(

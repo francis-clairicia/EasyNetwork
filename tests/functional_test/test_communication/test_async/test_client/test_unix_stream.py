@@ -187,7 +187,7 @@ class TestAsyncUnixStreamClient:
     ) -> None:
         event_loop = asyncio.get_running_loop()
 
-        await event_loop.sock_sendall(server, "\u00E9\nvalid\n".encode("latin-1"))
+        await event_loop.sock_sendall(server, "\u00e9\nvalid\n".encode("latin-1"))
         with pytest.raises(StreamProtocolParseError):
             await client.recv_packet()
         assert await client.recv_packet() == "valid"

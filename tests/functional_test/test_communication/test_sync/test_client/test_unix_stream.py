@@ -157,7 +157,7 @@ class TestUnixStreamClient:
             client.recv_packet()
 
     def test____recv_packet____invalid_data(self, client: UnixStreamClient[str, str], server: Socket) -> None:
-        server.sendall("\u00E9\nvalid\n".encode("latin-1"))
+        server.sendall("\u00e9\nvalid\n".encode("latin-1"))
         with pytest.raises(StreamProtocolParseError):
             client.recv_packet()
         assert client.recv_packet() == "valid"
