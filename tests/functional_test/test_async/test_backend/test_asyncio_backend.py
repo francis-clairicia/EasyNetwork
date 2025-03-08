@@ -1631,3 +1631,115 @@ class TestAsyncioBackendShieldedCancellation:
         await asyncio.create_task(coroutine())
 
         assert checkpoints == ["cancel_erased", "ignore_cancellation_called", "parent_scope_cancelled_caught"]
+
+    async def test____cancel_scope____catch_and_reraise_cancellation(
+        self,
+        backend: AsyncBackend,
+    ) -> None:
+        # A function which could do that: asyncio.Condition.wait()
+
+        async def coroutine() -> None:
+            current_task = asyncio.current_task()
+            assert current_task is not None
+
+            with backend.open_cancel_scope() as outer_scope:
+                outer_scope.cancel()
+                try:
+                    await backend.sleep_forever()
+                finally:
+                    raise asyncio.CancelledError
+
+            assert outer_scope.cancelled_caught()
+            assert not current_task.cancelling()
+
+        await asyncio.create_task(coroutine())
+
+    async def test____cancel_scope____catch_and_reraise_cancellation___within_exception_group(
+        self,
+        backend: AsyncBackend,
+    ) -> None:
+        async def coroutine() -> None:
+            current_task = asyncio.current_task()
+            assert current_task is not None
+
+            with backend.open_cancel_scope() as outer_scope:
+                outer_scope.cancel()
+                exceptions: list[BaseException] = []
+                try:
+                    await backend.sleep_forever()
+                except asyncio.CancelledError as exc:
+                    exceptions.append(exc)
+
+                raise BaseExceptionGroup("group to swallow", exceptions)
+
+            assert outer_scope.cancelled_caught()
+            assert not current_task.cancelling()
+
+        await asyncio.create_task(coroutine())
+
+    async def test____cancel_scope____catch_and_reraise_cancellation___within_exception_group___not_alone(
+        self,
+        backend: AsyncBackend,
+    ) -> None:
+        async def coroutine() -> None:
+            current_task = asyncio.current_task()
+            assert current_task is not None
+
+            with pytest.raises(BaseExceptionGroup) as exc_info:
+                with backend.open_cancel_scope() as outer_scope:
+                    outer_scope.cancel()
+                    exceptions: list[BaseException] = [KeyError("key")]
+                    try:
+                        await backend.sleep_forever()
+                    except asyncio.CancelledError as exc:
+                        exceptions.append(exc)
+
+                    raise BaseExceptionGroup("group to skip", exceptions)
+
+            assert exc_info.group_contains(KeyError, match=r"key")
+            assert exc_info.group_contains(asyncio.CancelledError, match=r"Cancelled by cancel scope .+")
+            assert outer_scope.cancelled_caught(), "outer_scope should consider cancellation as caught even if not suppressed."
+            assert not current_task.cancelling()
+
+        await asyncio.create_task(coroutine())
+
+    async def test____cancel_scope____cancelled_scope_based_checkpoint(
+        self,
+        backend: AsyncBackend,
+    ) -> None:
+        # Origin: https://github.com/agronholm/anyio/pull/774#discussion_r1766604109
+
+        checkpoints: list[str] = []
+
+        async def coroutine() -> None:
+            current_task = asyncio.current_task()
+            assert current_task is not None
+
+            with backend.open_cancel_scope() as outer_scope:
+                outer_scope.cancel()
+
+                checkpoints.append("outer_scope_cancel")
+
+                try:
+                    # The following three lines are a way to implement a checkpoint
+                    # function. See also https://github.com/python-trio/trio/issues/860.
+                    with backend.open_cancel_scope() as inner_scope:
+                        inner_scope.cancel()
+                        checkpoints.append("inner_scope_cancel")
+                        await backend.sleep_forever()
+                finally:
+                    assert current_task.cancelling()
+                    checkpoints.append("current_task_cancelling_in_outer_scope")
+
+                pytest.fail("checkpoint should have raised")
+
+            assert not current_task.cancelling()
+            checkpoints.append("current_task_uncancelled")
+
+        await asyncio.create_task(coroutine())
+        assert checkpoints == [
+            "outer_scope_cancel",
+            "inner_scope_cancel",
+            "current_task_cancelling_in_outer_scope",
+            "current_task_uncancelled",
+        ]
