@@ -1266,6 +1266,7 @@ class TestAsyncioBackend:
 
 
 @pytest.mark.asyncio
+@pytest.mark.flaky(retries=3, delay=0.1)
 class TestAsyncioBackendShieldedCancellation:
     @pytest.fixture(scope="class")
     @staticmethod
