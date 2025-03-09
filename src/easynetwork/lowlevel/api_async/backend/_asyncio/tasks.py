@@ -280,13 +280,19 @@ class CancelScope(AbstractCancelScope):
         host_task, self.__host_task = self.__host_task, None
         self.__current_task_scope_dict[host_task].popleft()
 
+        should_suppress: bool = True
         if self.__cancel_called:
+            while self.__host_task_cancel_calls:
+                self.__host_task_cancel_calls -= 1
+                if host_task.uncancel() <= self.__host_task_cancelling:
+                    self.__host_task_cancel_calls = 0
+
             if exc_val is not None:
-                self.__cancelled_caught = any(
-                    self.__uncancel_task(host_task, exc)
-                    for exc in _utils.iterate_exceptions(exc_val)
-                    if isinstance(exc, asyncio.CancelledError)
-                )
+                is_my_cancellation: set[bool] = {
+                    self.__is_my_cancellation_exception(exc) for exc in _utils.iterate_exceptions(exc_val)
+                }
+                self.__cancelled_caught = any(is_my_cancellation)
+                should_suppress = all(is_my_cancellation)
 
             delayed_task_cancel: _DelayedCancel | None = self.__delayed_task_cancel_dict.get(host_task, None)
             if delayed_task_cancel is not None and delayed_task_cancel.message == self.__cancellation_id():
@@ -296,14 +302,20 @@ class CancelScope(AbstractCancelScope):
 
         self._check_pending_cancellation(host_task)
 
-        return self.__cancelled_caught
+        return self.__cancelled_caught and should_suppress
 
-    def __uncancel_task(self, host_task: asyncio.Task[Any], exc: asyncio.CancelledError) -> bool:
-        while self.__host_task_cancel_calls:
-            self.__host_task_cancel_calls -= 1
-            if host_task.uncancel() <= self.__host_task_cancelling:
-                return True
-        return self.__cancellation_id() in exc.args
+    def __is_my_cancellation_exception(self, exc: BaseException) -> bool:
+        # From https://github.com/agronholm/anyio/pull/790
+        # Look at the previous ones in __context__ too for a matching cancel message.
+        while True:
+            match exc:
+                case asyncio.CancelledError() if self.__cancellation_id() in exc.args:
+                    return True
+                case _ if isinstance(exc.__context__, asyncio.CancelledError):
+                    exc = exc.__context__
+                    continue
+                case _:
+                    return False
 
     def __deliver_cancellation(self) -> None:
         if self.__host_task is None:
