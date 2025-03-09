@@ -289,7 +289,8 @@ class CancelScope(AbstractCancelScope):
 
             if exc_val is not None:
                 is_my_cancellation: set[bool] = {
-                    self.__is_my_cancellation_exception(exc) for exc in _utils.iterate_exceptions(exc_val)
+                    self.__is_my_cancellation_exception(exc) if isinstance(exc, asyncio.CancelledError) else False
+                    for exc in _utils.iterate_exceptions(exc_val)
                 }
                 self.__cancelled_caught = any(is_my_cancellation)
                 should_suppress = all(is_my_cancellation)
@@ -304,18 +305,18 @@ class CancelScope(AbstractCancelScope):
 
         return self.__cancelled_caught and should_suppress
 
-    def __is_my_cancellation_exception(self, exc: BaseException) -> bool:
+    def __is_my_cancellation_exception(self, exc: asyncio.CancelledError) -> bool:
         # From https://github.com/agronholm/anyio/pull/790
         # Look at the previous ones in __context__ too for a matching cancel message.
         while True:
-            match exc:
-                case asyncio.CancelledError() if self.__cancellation_id() in exc.args:
-                    return True
-                case _ if isinstance(exc.__context__, asyncio.CancelledError):
-                    exc = exc.__context__
-                    continue
-                case _:
-                    return False
+            if self.__cancellation_id() in exc.args:
+                return True
+
+            if isinstance(exc.__context__, asyncio.CancelledError):
+                exc = exc.__context__
+                continue
+
+            return False
 
     def __deliver_cancellation(self) -> None:
         if self.__host_task is None:
