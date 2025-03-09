@@ -1654,6 +1654,28 @@ class TestAsyncioBackendShieldedCancellation:
 
         await asyncio.create_task(coroutine())
 
+    async def test____cancel_scope____catch_and_reraise_cancellation____skip_unrelated_exceptions(
+        self,
+        backend: AsyncBackend,
+    ) -> None:
+        async def coroutine() -> None:
+            current_task = asyncio.current_task()
+            assert current_task is not None
+
+            with pytest.raises(TimeoutError, match=r"while cancelling") as exc_info:
+                with backend.open_cancel_scope() as outer_scope:
+                    outer_scope.cancel()
+                    try:
+                        await backend.sleep_forever()
+                    finally:
+                        raise TimeoutError("while cancelling")
+
+            assert isinstance(exc_info.value.__context__, asyncio.CancelledError)
+            assert not outer_scope.cancelled_caught()
+            assert not current_task.cancelling()
+
+        await asyncio.create_task(coroutine())
+
     async def test____cancel_scope____catch_and_reraise_cancellation___within_exception_group(
         self,
         backend: AsyncBackend,
