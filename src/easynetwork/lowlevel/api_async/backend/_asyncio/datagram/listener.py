@@ -91,9 +91,7 @@ class DatagramListenerSocketAdapter(transports.AsyncDatagramListener["_RetAddres
         handler: Callable[[bytes, _RetAddress], Coroutine[Any, Any, None]],
         task_group: TaskGroup | None = None,
     ) -> NoReturn:
-        async with contextlib.AsyncExitStack() as stack:
-            if task_group is None:
-                task_group = await stack.enter_async_context(self.__backend.create_task_group())
+        async with self.__backend.create_task_group() if task_group is None else contextlib.nullcontext(task_group) as task_group:
             await self.__protocol.serve(handler, task_group)
 
         raise AssertionError("Expected code to be unreachable.")
@@ -166,6 +164,7 @@ class DatagramListenerProtocol(asyncio.DatagramProtocol):
         self.__write_flow.connection_lost(exc)
 
         self.__transport = None
+        self.__delayed_datagrams_queue.clear()
 
     def datagram_received(self, data: bytes, addr: _RetAddress) -> None:
         if (datagram_serve_ctx := self.__datagram_serve_ctx) is None:

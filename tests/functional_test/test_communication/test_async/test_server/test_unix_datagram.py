@@ -554,6 +554,21 @@ class TestAsyncUnixDatagramServer(BaseTestAsyncServer):
 
         assert request_handler.request_received[client_address] == ["hello, world."]
 
+    async def test____serve_forever____handle_request____server_shutdown(
+        self,
+        server: MyAsyncUnixDatagramServer,
+        client_factory: Callable[[], Awaitable[DatagramEndpoint]],
+        request_handler: MyDatagramRequestHandler,
+    ) -> None:
+        endpoint = await client_factory()
+        client_address: str | bytes = endpoint.get_extra_info("sockname")
+
+        await endpoint.sendto(b"hello, world.", None)
+        assert client_address not in request_handler.created_clients_map
+
+        async with asyncio.timeout(1):
+            await server.shutdown()
+
     @pytest.mark.parametrize("client_factory", ["CLIENT_UNBOUND"], indirect=True)
     @pytest.mark.parametrize(
         "unnamed_addresses_behavior",
@@ -677,6 +692,23 @@ class TestAsyncUnixDatagramServer(BaseTestAsyncServer):
         assert (await endpoint.recvfrom())[0] == b"After wait: hello, world."
 
         assert set(request_handler.request_received[client_address]) == {"hello, world.", "Test 2."}
+
+    async def test____serve_forever____save_request_handler_context____server_shutdown(
+        self,
+        server: MyAsyncUnixDatagramServer,
+        client_factory: Callable[[], Awaitable[DatagramEndpoint]],
+        request_handler: MyDatagramRequestHandler,
+    ) -> None:
+        endpoint = await client_factory()
+        client_address: str | bytes = endpoint.get_extra_info("sockname")
+
+        await endpoint.sendto(b"__wait__", None)
+        async with asyncio.timeout(1):
+            while client_address not in request_handler.created_clients_map:
+                await asyncio.sleep(0)
+
+        async with asyncio.timeout(1):
+            await server.shutdown()
 
     async def test____serve_forever____bad_request(
         self,

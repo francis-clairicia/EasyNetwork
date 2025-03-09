@@ -134,7 +134,14 @@ class TaskGroup(AbstractTaskGroup):
         *args: *_T_PosArgs,
         name: str | None = None,
     ) -> None:
-        _ = self.__asyncio_tg.create_task(coro_func(*args), name=name)
+        coroutine = coro_func(*args)
+        try:
+            _ = self.__asyncio_tg.create_task(coroutine, name=name)
+        except BaseException:
+            coroutine.close()
+            raise
+        finally:
+            del coroutine
 
     async def start(
         self,
@@ -146,7 +153,17 @@ class TaskGroup(AbstractTaskGroup):
         loop = asyncio.get_running_loop()
         waiter: asyncio.Future[None] = loop.create_future()
 
-        task = Task(self.__asyncio_tg.create_task(self.__task_coroutine(coro_func, args, waiter), name=name))
+        coroutine = self.__task_coroutine(coro_func, args, waiter)
+        try:
+            asyncio_task = self.__asyncio_tg.create_task(coroutine, name=name)
+        except BaseException:
+            coroutine.close()
+            raise
+        else:
+            task = Task(asyncio_task)
+            del asyncio_task
+        finally:
+            del coroutine
 
         try:
             await waiter
