@@ -299,7 +299,6 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
             assert not server.get_sockets()
             assert not server.get_addresses()
             caplog.set_level(logging.INFO, LOGGER.name)
-            caplog.set_level(logging.INFO, "easynetwork")
             logger_crash_threshold_level[LOGGER.name] = logging.WARNING
             yield server
         finally:

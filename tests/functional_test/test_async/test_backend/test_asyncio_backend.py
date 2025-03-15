@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import time
+import warnings
 from collections.abc import Awaitable, Callable, Iterator
 from concurrent.futures import CancelledError as FutureCancelledError, wait as wait_concurrent_futures
 from contextlib import ExitStack
@@ -614,6 +615,25 @@ class TestAsyncioBackend:
 
         assert sorted(t.name for t in tasks) == ["compute 42", "compute 54"]
 
+    async def test____create_task_group____start_soon____runtime_error(
+        self,
+        backend: AsyncBackend,
+    ) -> None:
+        tasks: list[TaskInfo] = []
+
+        async def coroutine(value: int) -> int:
+            tasks.append(backend.get_current_task())
+            return await asyncio.sleep(0.5, value)
+
+        async with backend.create_task_group() as tg:
+            await asyncio.sleep(0)
+
+        with warnings.catch_warnings(record=True, action="always", category=RuntimeWarning) as retrieved_warnings:
+            with pytest.raises(RuntimeError):
+                tg.start_soon(coroutine, 42)
+            assert len(tasks) == 0
+            assert not retrieved_warnings, list(map(str, retrieved_warnings))
+
     async def test____create_task_group____start_and_wait(
         self,
         backend: AsyncBackend,
@@ -680,6 +700,25 @@ class TestAsyncioBackend:
                 await tg.start(coroutine, 42, name="compute 42")
 
         awaited.assert_not_awaited()
+
+    async def test____create_task_group____start_and_wait____runtime_error(
+        self,
+        backend: AsyncBackend,
+    ) -> None:
+        tasks: list[TaskInfo] = []
+
+        async def coroutine(value: int) -> int:
+            tasks.append(backend.get_current_task())
+            return await asyncio.sleep(0.5, value)
+
+        async with backend.create_task_group() as tg:
+            await asyncio.sleep(0)
+
+        with warnings.catch_warnings(record=True, action="always", category=RuntimeWarning) as retrieved_warnings:
+            with pytest.raises(RuntimeError):
+                await tg.start(coroutine, 42)
+            assert len(tasks) == 0
+            assert not retrieved_warnings, list(map(str, retrieved_warnings))
 
     async def test____create_task_group____task_cancellation(
         self,
