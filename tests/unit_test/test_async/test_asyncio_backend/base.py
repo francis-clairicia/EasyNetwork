@@ -75,7 +75,7 @@ class BaseTestAsyncSocket:
             add_event_func_name,
             side_effect=lambda sock, cb, *args: event_loop.call_soon(cb, *args),
         )
-        mocker.patch.object(event_loop, remove_event_func_name, return_value=None)
+        mocker.patch.object(event_loop, remove_event_func_name, return_value=False)
 
     @staticmethod
     @contextlib.contextmanager
