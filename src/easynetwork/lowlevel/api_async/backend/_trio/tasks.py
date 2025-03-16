@@ -113,7 +113,7 @@ class TaskGroup(AbstractTaskGroup):
     def __init__(self) -> None:
         super().__init__()
 
-        self.__nursery_ctx: contextlib.AbstractAsyncContextManager[trio.Nursery] = trio.open_nursery(strict_exception_groups=True)
+        self.__nursery_ctx: contextlib.AbstractAsyncContextManager[trio.Nursery] = trio.open_nursery()
         self.__nursery: trio.Nursery | None = None
 
     async def __aenter__(self) -> Self:
@@ -130,6 +130,11 @@ class TaskGroup(AbstractTaskGroup):
         nursery_ctx = self.__nursery_ctx
         try:
             await nursery_ctx.__aexit__(exc_type, exc_val, exc_tb)
+        except BaseExceptionGroup as exc_grp:
+            if exc_val is not None and len(exc_grp.exceptions) == 1 and exc_grp.exceptions[0] is exc_val:
+                # Do not raise inner exception within a group.
+                return
+            raise
         finally:
             del exc_val, exc_tb, nursery_ctx, self
 

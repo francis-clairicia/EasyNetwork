@@ -698,9 +698,6 @@ class TestAsyncUnixStreamServer(BaseTestAsyncServer):
     ) -> None:
         from socket import socket as SocketType
 
-        if isinstance(asyncio.get_running_loop(), asyncio.SelectorEventLoop):
-            pytest.xfail("Race condition error in asyncio.SelectorEventLoop")
-
         with SocketType(AF_UNIX_or_skip()) as socket:
             socket.connect(server_address.as_raw())
             client_address: str | bytes = socket.getsockname()

@@ -54,14 +54,35 @@ class BaseTestAsyncSocket:
 
     @pytest.fixture(autouse=True)
     @classmethod
-    def event_loop_mock_event_handlers(cls, event_loop: asyncio.AbstractEventLoop, mocker: MockerFixture) -> None:
+    def event_loop_mock_event_handlers(cls, event_loop: asyncio.AbstractEventLoop, mocker: MockerFixture) -> dict[str, MagicMock]:
         to_patch = [
             ("add_reader", "remove_reader"),
             ("add_writer", "remove_writer"),
         ]
-
+        patched: dict[str, MagicMock] = {}
         for add_event_func_name, remove_event_func_name in to_patch:
-            cls.__patch_event_handler_method(event_loop, add_event_func_name, remove_event_func_name, mocker)
+            patched.update(cls.__patch_event_handler_method(event_loop, add_event_func_name, remove_event_func_name, mocker))
+        return patched
+
+    @pytest.fixture(autouse=True)
+    @staticmethod
+    def mock_event_loop_add_reader(event_loop_mock_event_handlers: dict[str, MagicMock]) -> MagicMock:
+        return event_loop_mock_event_handlers["add_reader"]
+
+    @pytest.fixture(autouse=True)
+    @staticmethod
+    def mock_event_loop_remove_reader(event_loop_mock_event_handlers: dict[str, MagicMock]) -> MagicMock:
+        return event_loop_mock_event_handlers["remove_reader"]
+
+    @pytest.fixture(autouse=True)
+    @staticmethod
+    def mock_event_loop_add_writer(event_loop_mock_event_handlers: dict[str, MagicMock]) -> MagicMock:
+        return event_loop_mock_event_handlers["add_writer"]
+
+    @pytest.fixture(autouse=True)
+    @staticmethod
+    def mock_event_loop_remove_writer(event_loop_mock_event_handlers: dict[str, MagicMock]) -> MagicMock:
+        return event_loop_mock_event_handlers["remove_writer"]
 
     @staticmethod
     def __patch_event_handler_method(
@@ -69,13 +90,38 @@ class BaseTestAsyncSocket:
         add_event_func_name: str,
         remove_event_func_name: str,
         mocker: MockerFixture,
-    ) -> None:
-        mocker.patch.object(
-            event_loop,
-            add_event_func_name,
-            side_effect=lambda sock, cb, *args: event_loop.call_soon(cb, *args),
-        )
-        mocker.patch.object(event_loop, remove_event_func_name, return_value=False)
+    ) -> dict[str, MagicMock]:
+        registered_fds: dict[int, asyncio.Handle] = {}
+
+        def ready_for_event(fileno: int, cb: Callable[..., Any], args: tuple[Any, ...]) -> None:
+            former_cb_handle = registered_fds.pop(fileno, None)
+            if former_cb_handle is None or not former_cb_handle.cancelled():
+                registered_fds[fileno] = event_loop.call_soon(ready_for_event, fileno, cb, args)
+            cb(*args)
+
+        def add_event_side_effect(sock: MagicMock, cb: Callable[..., Any], *args: Any) -> None:
+            fileno = sock.fileno()
+            try:
+                registered_fds[fileno].cancel()
+            except KeyError:
+                pass
+
+            registered_fds[fileno] = event_loop.call_soon(ready_for_event, fileno, cb, args)
+
+        def remove_event_side_effect(sock: MagicMock) -> bool:
+            fileno = sock.fileno()
+            try:
+                former_cb_handle = registered_fds.pop(fileno)
+            except KeyError:
+                return False
+            else:
+                former_cb_handle.cancel()
+                return True
+
+        return {
+            add_event_func_name: mocker.patch.object(event_loop, add_event_func_name, side_effect=add_event_side_effect),
+            remove_event_func_name: mocker.patch.object(event_loop, remove_event_func_name, side_effect=remove_event_side_effect),
+        }
 
     @staticmethod
     @contextlib.contextmanager
@@ -97,10 +143,10 @@ class BaseTestAsyncSocket:
         mock_socket_method: MagicMock,
     ) -> asyncio.Task[_T]:
         mock_socket_method.reset_mock()
-        accept_task = asyncio.create_task(coroutine)
+        task = asyncio.create_task(coroutine)
         await asyncio.sleep(0)
         async with asyncio.timeout(5):
-            while len(mock_socket_method.call_args_list) == 0:
+            while not task.done() and len(mock_socket_method.call_args_list) == 0:
                 await asyncio.sleep(0)
         mock_socket_method.reset_mock()
-        return accept_task
+        return task

@@ -648,6 +648,24 @@ class TestTrioBackend:
 
         assert not scope.cancelled_caught
 
+    async def test____create_task_group____do_not_wrap_exception_from_within_context(
+        self,
+        backend: AsyncBackend,
+    ) -> None:
+        import trio
+
+        async def coroutine(value: int) -> int:
+            with trio.CancelScope(shield=True):
+                await trio.sleep(0.5)
+            return value
+
+        with pytest.raises(ValueError, match=r"^unwrapped exception$"):
+            async with backend.create_task_group() as task_group:
+                task_group.start_soon(coroutine, 42)
+                task_group.start_soon(coroutine, 54)
+                await backend.coro_yield()
+                raise ValueError("unwrapped exception")
+
     async def test____run_in_thread____abandon_on_cancel(
         self,
         backend: AsyncBackend,

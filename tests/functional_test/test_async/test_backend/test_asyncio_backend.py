@@ -826,6 +826,20 @@ class TestAsyncioBackend:
         if exc_info is not None:
             assert exc_info.group_contains(FutureException, depth=1)
 
+    async def test____create_task_group____do_not_wrap_exception_from_within_context(
+        self,
+        backend: AsyncBackend,
+    ) -> None:
+        async def coroutine(value: int) -> int:
+            return await backend.ignore_cancellation(asyncio.sleep(0.5, value))
+
+        with pytest.raises(ValueError, match=r"^unwrapped exception$"):
+            async with backend.create_task_group() as task_group:
+                task_group.start_soon(coroutine, 42)
+                task_group.start_soon(coroutine, 54)
+                await backend.coro_yield()
+                raise ValueError("unwrapped exception")
+
     async def test____run_in_thread____cannot_be_cancelled_by_default(
         self,
         backend: AsyncBackend,

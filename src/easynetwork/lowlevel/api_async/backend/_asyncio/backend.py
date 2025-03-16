@@ -243,7 +243,7 @@ class AsyncIOBackend(AbstractAsyncBackend):
             sock.listen(backlog)
 
         factory = AcceptedSocketFactory()
-        listeners = [ListenerSocketAdapter(self, sock, factory) for sock in sockets]
+        listeners = [ListenerSocketAdapter(self, sock, factory, backlog=backlog) for sock in sockets]
         return listeners
 
     async def create_unix_stream_listener(
@@ -269,7 +269,7 @@ class AsyncIOBackend(AbstractAsyncBackend):
             socket.close()
             raise
 
-        listener = ListenerSocketAdapter(self, socket, AcceptedSocketFactory())
+        listener = ListenerSocketAdapter(self, socket, AcceptedSocketFactory(), backlog=backlog)
         return listener
 
     async def create_udp_endpoint(

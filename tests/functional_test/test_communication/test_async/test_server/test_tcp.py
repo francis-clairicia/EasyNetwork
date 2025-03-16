@@ -671,9 +671,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     ) -> None:
         from socket import socket as SocketType
 
-        if isinstance(asyncio.get_running_loop(), asyncio.SelectorEventLoop):
-            pytest.xfail("Race condition error in asyncio.SelectorEventLoop")
-
         with SocketType() as socket:
             socket.connect(server_address)
             client_address: tuple[Any, ...] = socket.getsockname()

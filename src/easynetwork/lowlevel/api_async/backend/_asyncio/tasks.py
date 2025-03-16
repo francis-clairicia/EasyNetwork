@@ -124,6 +124,11 @@ class TaskGroup(AbstractTaskGroup):
         asyncio_tg: asyncio.TaskGroup = self.__asyncio_tg
         try:
             await type(asyncio_tg).__aexit__(asyncio_tg, exc_type, exc_val, exc_tb)
+        except BaseExceptionGroup as exc_grp:
+            if exc_val is not None and len(exc_grp.exceptions) == 1 and exc_grp.exceptions[0] is exc_val:
+                # Do not raise inner exception within a group.
+                return
+            raise
         finally:
             del exc_val, exc_tb, asyncio_tg, self
 
