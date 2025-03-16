@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import warnings
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
 from typing import TYPE_CHECKING, Any, NoReturn
@@ -277,7 +278,7 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
         async def serve_side_effect(handler: Callable[[Any], Awaitable[None]], task_group: Any) -> NoReturn:
             mock_invalid_transport = mocker.NonCallableMagicMock(spec=object)
             await handler(mock_invalid_transport)
-            pytest.fail("handler() does not raise")
+            pytest.fail("handler() did not raise")
 
         mock_listener.serve.side_effect = serve_side_effect
 
@@ -375,6 +376,71 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
                 )
 
         exception_caught.assert_called_once_with(False)
+
+    async def test____serve____unhandled_exception____from_system(
+        self,
+        server: AsyncStreamServer[Any, Any],
+        mock_stream_transport: MagicMock,
+        mock_listener: MagicMock,
+        caplog: pytest.LogCaptureFixture,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        caplog.set_level(logging.ERROR)
+
+        async def serve_side_effect(handler: Callable[[Any], Awaitable[None]], task_group: Any) -> NoReturn:
+            await handler(mock_stream_transport)
+            raise asyncio.CancelledError("serve_side_effect")
+
+        mock_listener.serve.side_effect = serve_side_effect
+        mock_stream_transport.recv.side_effect = OSError("recv() error")
+        mock_stream_transport.recv_into.side_effect = OSError("recv() error")
+
+        @stub_decorator(mocker)
+        async def client_connected_cb(_: Any) -> AsyncGenerator[None, Any]:
+            yield
+
+        # Act & Assert
+        async with TaskGroup() as tg:
+            with pytest.raises(asyncio.CancelledError, match=r"^serve_side_effect$"):
+                await server.serve(client_connected_cb, tg)
+
+        assert len(caplog.records) == 1 and caplog.records[0].exc_info is not None
+        assert isinstance(caplog.records[0].exc_info[1], OSError)
+        assert caplog.records[0].getMessage() == "Unhandled exception: recv() error"
+
+    async def test____serve____unhandled_exception____from_request_handler(
+        self,
+        server: AsyncStreamServer[Any, Any],
+        mock_stream_transport: MagicMock,
+        mock_listener: MagicMock,
+        caplog: pytest.LogCaptureFixture,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        caplog.set_level(logging.ERROR)
+
+        async def serve_side_effect(handler: Callable[[Any], Awaitable[None]], task_group: Any) -> NoReturn:
+            await handler(mock_stream_transport)
+            raise asyncio.CancelledError("serve_side_effect")
+
+        mock_listener.serve.side_effect = serve_side_effect
+        mock_stream_transport.recv.side_effect = [b"packet\n"]
+        mock_stream_transport.recv_into.side_effect = make_recv_into_side_effect([b"packet\n"])
+
+        @stub_decorator(mocker)
+        async def client_connected_cb(_: Any) -> AsyncGenerator[None, Any]:
+            yield
+            raise ValueError("something bad happened")
+
+        # Act & Assert
+        async with TaskGroup() as tg:
+            with pytest.raises(asyncio.CancelledError, match=r"^serve_side_effect$"):
+                await server.serve(client_connected_cb, tg)
+
+        assert len(caplog.records) == 1 and caplog.records[0].exc_info is not None
+        assert isinstance(caplog.records[0].exc_info[1], ValueError)
+        assert caplog.records[0].getMessage() == "Unhandled exception: something bad happened"
 
     async def test____get_backend____returns_inner_listener_backend(
         self,
