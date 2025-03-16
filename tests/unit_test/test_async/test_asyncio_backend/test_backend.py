@@ -664,7 +664,12 @@ class TestAsyncIOBackend:
             reuse_port=mocker.sentinel.reuse_port,
         )
         mock_tcp_socket.listen.assert_called_once_with(mocker.sentinel.backlog)
-        mock_ListenerSocketAdapter.assert_called_once_with(backend, mock_tcp_socket, expected_factory)
+        mock_ListenerSocketAdapter.assert_called_once_with(
+            backend,
+            mock_tcp_socket,
+            expected_factory,
+            backlog=mocker.sentinel.backlog,
+        )
         assert listener_sockets == [mocker.sentinel.listener_socket]
 
     @pytest.mark.parametrize("remote_host", [None, "", ["::", "0.0.0.0"]], ids=repr)
@@ -742,7 +747,8 @@ class TestAsyncIOBackend:
         mock_tcp_socket_ipv4.listen.assert_called_once_with(mocker.sentinel.backlog)
         mock_tcp_socket_ipv6.listen.assert_called_once_with(mocker.sentinel.backlog)
         assert mock_ListenerSocketAdapter.call_args_list == [
-            mocker.call(backend, sock, expected_factory) for sock in [mock_tcp_socket_ipv6, mock_tcp_socket_ipv4]
+            mocker.call(backend, sock, expected_factory, backlog=mocker.sentinel.backlog)
+            for sock in [mock_tcp_socket_ipv6, mock_tcp_socket_ipv4]
         ]
         assert listener_sockets == [mocker.sentinel.listener_socket_ipv6, mocker.sentinel.listener_socket_ipv4]
 
@@ -795,7 +801,12 @@ class TestAsyncIOBackend:
             mock_os_chmod.assert_not_called()
         else:
             mock_os_chmod.assert_called_once_with(local_address, mode)
-        mock_ListenerSocketAdapter.assert_called_once_with(backend, mock_unix_stream_socket, expected_factory)
+        mock_ListenerSocketAdapter.assert_called_once_with(
+            backend,
+            mock_unix_stream_socket,
+            expected_factory,
+            backlog=mocker.sentinel.backlog,
+        )
         assert listener_socket is mocker.sentinel.listener_socket
 
     @pytest.mark.parametrize(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 import os
 from collections.abc import Callable
 from socket import AF_INET, AF_INET6, IPPROTO_TCP, IPPROTO_UDP, SOCK_DGRAM, SOCK_STREAM, socket as Socket
@@ -58,13 +59,17 @@ def mock_get_peer_credentials(mocker: MockerFixture) -> MagicMock:
 
 @pytest.fixture
 def mock_socket_factory(mocker: MockerFixture) -> Callable[[], MagicMock]:
-    def factory(family: int = -1, type: int = -1, proto: int = -1, fileno: int = 123) -> MagicMock:
+    fileno_counter = itertools.count()
+
+    def factory(family: int = -1, type: int = -1, proto: int = -1, fileno: int | None = None) -> MagicMock:
         if family == -1:
             family = AF_INET
         if type == -1:
             type = SOCK_STREAM
         if proto == -1:
             proto = 0
+        if fileno is None:
+            fileno = 123 + next(fileno_counter)
         mock_socket = mocker.NonCallableMagicMock(spec=Socket)
         mock_socket.family = family
         mock_socket.type = type
@@ -93,8 +98,8 @@ def original_socket_cls() -> type[Socket]:
 
 
 @pytest.fixture
-def mock_tcp_socket_factory(mock_socket_factory: Callable[[int, int, int, int], MagicMock]) -> Callable[[], MagicMock]:
-    def factory(family: int = -1, fileno: int = 123) -> MagicMock:
+def mock_tcp_socket_factory(mock_socket_factory: Callable[[int, int, int, int | None], MagicMock]) -> Callable[[], MagicMock]:
+    def factory(family: int = -1, fileno: int | None = None) -> MagicMock:
         assert family in {AF_INET, AF_INET6, -1}
         return mock_socket_factory(family, SOCK_STREAM, IPPROTO_TCP, fileno)
 
@@ -107,8 +112,8 @@ def mock_tcp_socket(mock_tcp_socket_factory: Callable[[], MagicMock]) -> MagicMo
 
 
 @pytest.fixture
-def mock_udp_socket_factory(mock_socket_factory: Callable[[int, int, int, int], MagicMock]) -> Callable[[], MagicMock]:
-    def factory(family: int = -1, fileno: int = 123) -> MagicMock:
+def mock_udp_socket_factory(mock_socket_factory: Callable[[int, int, int, int | None], MagicMock]) -> Callable[[], MagicMock]:
+    def factory(family: int = -1, fileno: int | None = None) -> MagicMock:
         assert family in {AF_INET, AF_INET6, -1}
         return mock_socket_factory(family, SOCK_DGRAM, IPPROTO_UDP, fileno)
 
@@ -121,10 +126,12 @@ def mock_udp_socket(mock_udp_socket_factory: Callable[[], MagicMock]) -> MagicMo
 
 
 @pytest.fixture
-def mock_unix_stream_socket_factory(mock_socket_factory: Callable[[int, int, int, int], MagicMock]) -> Callable[[], MagicMock]:
+def mock_unix_stream_socket_factory(
+    mock_socket_factory: Callable[[int, int, int, int | None], MagicMock],
+) -> Callable[[], MagicMock]:
     from ..fixtures.socket import AF_UNIX_or_skip
 
-    def factory(fileno: int = 123) -> MagicMock:
+    def factory(fileno: int | None = None) -> MagicMock:
         return mock_socket_factory(AF_UNIX_or_skip(), SOCK_STREAM, 0, fileno)
 
     return factory
@@ -136,10 +143,12 @@ def mock_unix_stream_socket(mock_unix_stream_socket_factory: Callable[[], MagicM
 
 
 @pytest.fixture
-def mock_unix_datagram_socket_factory(mock_socket_factory: Callable[[int, int, int, int], MagicMock]) -> Callable[[], MagicMock]:
+def mock_unix_datagram_socket_factory(
+    mock_socket_factory: Callable[[int, int, int, int | None], MagicMock],
+) -> Callable[[], MagicMock]:
     from ..fixtures.socket import AF_UNIX_or_skip
 
-    def factory(fileno: int = 123) -> MagicMock:
+    def factory(fileno: int | None = None) -> MagicMock:
         return mock_socket_factory(AF_UNIX_or_skip(), SOCK_DGRAM, 0, fileno)
 
     return factory
@@ -152,6 +161,8 @@ def mock_unix_datagram_socket(mock_unix_datagram_socket_factory: Callable[[], Ma
 
 @pytest.fixture
 def mock_ssl_socket_factory(mocker: MockerFixture) -> Callable[[], MagicMock]:
+    fileno_counter = itertools.count()
+
     def factory(family: int = -1) -> MagicMock:
         if family == -1:
             family = AF_INET
@@ -159,7 +170,7 @@ def mock_ssl_socket_factory(mocker: MockerFixture) -> Callable[[], MagicMock]:
         mock_socket.family = family
         mock_socket.type = SOCK_STREAM
         mock_socket.proto = IPPROTO_TCP
-        mock_socket.fileno.return_value = 123
+        mock_socket.fileno.return_value = 123 + next(fileno_counter)
         mock_socket.do_handshake.return_value = None
         mock_socket.unwrap.return_value = None
 

@@ -386,15 +386,18 @@ class BaseAsyncNetworkServerImpl(AbstractAsyncNetworkServer, Generic[_T_LowLevel
                 await initialize_service(server_exit_stack)
                 ############################
 
-                # Setup task group
+                # Setup task groups
                 self.__active_tasks = 0
                 server_exit_stack.callback(self.__server_tasks.clear)
-                task_group = await server_exit_stack.enter_async_context(self.__backend.create_task_group())
+                requests_task_group = await server_exit_stack.enter_async_context(self.__backend.create_task_group())
+                listeners_task_group = await server_exit_stack.enter_async_context(self.__backend.create_task_group())
                 server_exit_stack.callback(self.__logger.info, "Server loop break, waiting for remaining tasks...")
                 ##################
 
                 # Enable listener
-                self.__server_tasks[:] = [await task_group.start(self.__serve, server, task_group) for server in self.__servers]
+                self.__server_tasks[:] = [
+                    await listeners_task_group.start(self.__serve, server, requests_task_group) for server in self.__servers
+                ]
                 self.__logger.info("Start serving at %s", ", ".join(map(str, self.get_addresses())))
                 #################
 

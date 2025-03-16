@@ -690,6 +690,22 @@ class TestAsyncUnixStreamServer(BaseTestAsyncServer):
 
         assert len(caplog.records) == 0
 
+    async def test____serve_forever____accept_client____server_shutdown(
+        self,
+        server: MyAsyncUnixStreamServer,
+        server_address: UnixSocketAddress,
+        request_handler: MyStreamRequestHandler,
+    ) -> None:
+        from socket import socket as SocketType
+
+        with SocketType(AF_UNIX_or_skip()) as socket:
+            socket.connect(server_address.as_raw())
+            client_address: str | bytes = socket.getsockname()
+            assert client_address not in request_handler.connected_clients
+
+            async with asyncio.timeout(1):
+                await server.shutdown()
+
     async def test____serve_forever____client_extra_attributes(
         self,
         client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],

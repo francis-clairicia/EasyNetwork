@@ -408,6 +408,21 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
 
         assert request_handler.request_received[client_address] == ["hello, world."]
 
+    async def test____serve_forever____handle_request____server_shutdown(
+        self,
+        server: MyAsyncUDPServer,
+        client_factory: Callable[[], Awaitable[DatagramEndpoint]],
+        request_handler: MyDatagramRequestHandler,
+    ) -> None:
+        endpoint = await client_factory()
+        client_address: tuple[Any, ...] = endpoint.get_extra_info("sockname")
+
+        await endpoint.sendto(b"hello, world.", None)
+        assert client_address not in request_handler.created_clients_map
+
+        async with asyncio.timeout(1):
+            await server.shutdown()
+
     async def test____serve_forever____client_extra_attributes(
         self,
         client_factory: Callable[[], Awaitable[DatagramEndpoint]],
@@ -478,6 +493,23 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         assert (await endpoint.recvfrom())[0] == b"After wait: hello, world."
 
         assert set(request_handler.request_received[client_address]) == {"hello, world.", "Test 2."}
+
+    async def test____serve_forever____save_request_handler_context____server_shutdown(
+        self,
+        server: MyAsyncUDPServer,
+        client_factory: Callable[[], Awaitable[DatagramEndpoint]],
+        request_handler: MyDatagramRequestHandler,
+    ) -> None:
+        endpoint = await client_factory()
+        client_address: tuple[Any, ...] = endpoint.get_extra_info("sockname")
+
+        await endpoint.sendto(b"__wait__", None)
+        async with asyncio.timeout(1):
+            while client_address not in request_handler.created_clients_map:
+                await asyncio.sleep(0)
+
+        async with asyncio.timeout(1):
+            await server.shutdown()
 
     async def test____serve_forever____bad_request(
         self,

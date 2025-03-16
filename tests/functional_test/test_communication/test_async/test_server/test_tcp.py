@@ -662,6 +662,23 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         # On BSD: ECONNABORTED error on accept() should not create a big Traceback error
         assert len(caplog.records) == 0
 
+    @pytest.mark.parametrize("socket_family", ["AF_INET"], indirect=True)
+    async def test____serve_forever____accept_client____server_shutdown(
+        self,
+        server: MyAsyncTCPServer,
+        server_address: tuple[str, int],
+        request_handler: MyStreamRequestHandler,
+    ) -> None:
+        from socket import socket as SocketType
+
+        with SocketType() as socket:
+            socket.connect(server_address)
+            client_address: tuple[Any, ...] = socket.getsockname()
+            assert client_address not in request_handler.connected_clients
+
+            async with asyncio.timeout(1):
+                await server.shutdown()
+
     async def test____serve_forever____client_extra_attributes(
         self,
         client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
