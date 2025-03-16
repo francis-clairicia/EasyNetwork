@@ -21,6 +21,8 @@ __all__ = ["AsyncStreamServer", "ConnectedStreamClient"]
 import contextlib
 import dataclasses
 import functools
+import logging
+import types
 import warnings
 from collections.abc import AsyncGenerator, Callable, Mapping
 from typing import Any, Generic, NoReturn, assert_never
@@ -195,6 +197,7 @@ class AsyncStreamServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T_R
 
         async with contextlib.AsyncExitStack() as task_exit_stack:
             task_exit_stack.push_async_callback(_transports_utils.aclose_forcefully, transport)
+            task_exit_stack.push(self.__unhandled_exception_log)
 
             producer = _stream.StreamDataProducer(self.__protocol)
             consumer: _stream.StreamDataConsumer[_T_Request] | _stream.BufferedStreamDataConsumer[_T_Request]
@@ -256,6 +259,20 @@ class AsyncStreamServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T_R
                     return
             finally:
                 await request_handler_generator.aclose()
+
+    @classmethod
+    def __unhandled_exception_log(
+        cls,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: types.TracebackType | None,
+        /,
+    ) -> bool:
+        if exc_type is not None and issubclass(exc_type, Exception):
+            logger = logging.getLogger(__name__)
+            logger.error("Unhandled exception: %s", exc_val, exc_info=(exc_type, exc_val or exc_type(), exc_tb))
+            return True
+        return False
 
     @property
     @_utils.inherit_doc(_transports.AsyncBaseTransport)

@@ -22,6 +22,7 @@ import contextlib
 import contextvars
 import dataclasses
 import enum
+import logging
 import warnings
 import weakref
 from collections import deque
@@ -217,6 +218,10 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
                 request_handler_generator=datagram_received_cb(client_ctx),
                 client_data=client_data,
             )
+        except Exception as exc:
+            _utils.remove_traceback_frames_in_place(exc, 1)
+            logger = logging.getLogger(__name__)
+            logger.error("Unhandled exception: %s", exc, exc_info=exc)
         finally:
             self.__on_client_coroutine_task_done(
                 datagram_received_cb=datagram_received_cb,

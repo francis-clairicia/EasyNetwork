@@ -4,6 +4,13 @@ from collections.abc import Generator
 from socket import AF_INET, AF_INET6
 from typing import TYPE_CHECKING, Any
 
+from easynetwork.exceptions import (
+    DatagramProtocolParseError,
+    DeserializeError,
+    IncrementalDeserializeError,
+    StreamProtocolParseError,
+)
+
 import pytest
 
 from ..fixtures.socket import AF_UNIX_or_None, socket_family_or_skip
@@ -169,7 +176,10 @@ class BaseTestWithStreamProtocol:
                     continue
                 del buffer
                 data, chunk = chunk.split(b"\n", 1)
-                return getattr(mocker.sentinel, data.decode(encoding="ascii")), chunk
+                try:
+                    return getattr(mocker.sentinel, data.decode(encoding="ascii")), chunk
+                except UnicodeError as exc:
+                    raise StreamProtocolParseError(chunk, IncrementalDeserializeError(str(exc), chunk)) from exc
 
         mock_buffered_stream_protocol.generate_chunks.side_effect = generate_chunks_side_effect
         mock_buffered_stream_protocol.build_packet_from_buffer.side_effect = build_packet_from_buffer_side_effect
@@ -199,7 +209,10 @@ class BaseTestWithStreamProtocol:
                 if b"\n" not in buffer:
                     continue
                 data, buffer = buffer.split(b"\n", 1)
-                return getattr(mocker.sentinel, data.decode(encoding="ascii")), buffer
+                try:
+                    return getattr(mocker.sentinel, data.decode(encoding="ascii")), buffer
+                except UnicodeError as exc:
+                    raise StreamProtocolParseError(buffer, IncrementalDeserializeError(str(exc), buffer)) from exc
 
         mock_stream_protocol.generate_chunks.side_effect = generate_chunks_side_effect
         mock_stream_protocol.build_packet_from_chunks.side_effect = build_packet_from_chunks_side_effect
@@ -221,7 +234,10 @@ class BaseTestWithDatagramProtocol:
             return str(packet).encode("ascii").removeprefix(b"sentinel.")
 
         def build_packet_from_datagram_side_effect(data: bytes) -> Any:
-            return getattr(mocker.sentinel, data.decode("ascii"))
+            try:
+                return getattr(mocker.sentinel, data.decode("ascii"))
+            except UnicodeError as exc:
+                raise DatagramProtocolParseError(DeserializeError(str(exc))) from exc
 
         mock_datagram_protocol.make_datagram.side_effect = make_datagram_side_effect
         mock_datagram_protocol.build_packet_from_datagram.side_effect = build_packet_from_datagram_side_effect

@@ -2,17 +2,20 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 from collections import deque
-from collections.abc import AsyncIterator
-from typing import TYPE_CHECKING, Any
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
+from typing import TYPE_CHECKING, Any, NoReturn
 
-from easynetwork.lowlevel.api_async.backend.abc import TaskGroup
+from easynetwork.exceptions import DatagramProtocolParseError
+from easynetwork.lowlevel.api_async.backend._asyncio.tasks import TaskGroup
 from easynetwork.lowlevel.api_async.servers.datagram import AsyncDatagramServer, _ClientData, _ClientState
 from easynetwork.lowlevel.api_async.transports.abc import AsyncDatagramListener
 
 import pytest
 import pytest_asyncio
 
+from ...._utils import stub_decorator
 from ....base import BaseTestWithDatagramProtocol
 from ...mock_tools import make_transport_mock
 
@@ -129,7 +132,7 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
             mock_backend.create_task_group.side_effect = []
         else:
             mock_backend.create_task_group.side_effect = [mock_task_group]
-        datagram_received_cb = mocker.async_stub()
+        datagram_received_cb = mocker.stub()
         mock_datagram_listener.serve.side_effect = asyncio.CancelledError
 
         # Act
@@ -146,6 +149,68 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
         else:
             mock_backend.create_task_group.assert_called_once_with()
             mock_task_group.__aenter__.assert_awaited_once()
+
+    async def test____serve____unhandled_exception____from_system(
+        self,
+        server: AsyncDatagramServer[Any, Any, Any],
+        mock_datagram_listener: MagicMock,
+        caplog: pytest.LogCaptureFixture,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        caplog.set_level(logging.ERROR)
+
+        async def serve_side_effect(handler: Callable[[bytes, Any], Awaitable[None]], task_group: Any) -> NoReturn:
+            # mock_datagram_protocol does not accept non-ASCII strings.
+            packet = "\u00e9".encode("latin-1")
+            await handler(packet, mocker.sentinel.address)
+            raise asyncio.CancelledError("serve_side_effect")
+
+        mock_datagram_listener.serve.side_effect = serve_side_effect
+
+        @stub_decorator(mocker)
+        async def datagram_received_cb(_: Any) -> AsyncGenerator[None, Any]:
+            yield
+
+        # Act & Assert
+        async with TaskGroup() as tg:
+            with pytest.raises(asyncio.CancelledError, match=r"^serve_side_effect$"):
+                await server.serve(datagram_received_cb, tg)
+
+        assert len(caplog.records) == 1 and caplog.records[0].exc_info is not None
+        assert isinstance(caplog.records[0].exc_info[1], DatagramProtocolParseError)
+        assert caplog.records[0].getMessage().startswith("Unhandled exception:")
+
+    async def test____serve____unhandled_exception____from_request_handler(
+        self,
+        server: AsyncDatagramServer[Any, Any, Any],
+        mock_datagram_listener: MagicMock,
+        caplog: pytest.LogCaptureFixture,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        caplog.set_level(logging.ERROR)
+
+        async def serve_side_effect(handler: Callable[[bytes, Any], Awaitable[None]], task_group: Any) -> NoReturn:
+            packet = b"packet"
+            await handler(packet, mocker.sentinel.address)
+            raise asyncio.CancelledError("serve_side_effect")
+
+        mock_datagram_listener.serve.side_effect = serve_side_effect
+
+        @stub_decorator(mocker)
+        async def datagram_received_cb(_: Any) -> AsyncGenerator[None, Any]:
+            yield
+            raise ValueError("something bad happened")
+
+        # Act & Assert
+        async with TaskGroup() as tg:
+            with pytest.raises(asyncio.CancelledError, match=r"^serve_side_effect$"):
+                await server.serve(datagram_received_cb, tg)
+
+        assert len(caplog.records) == 1 and caplog.records[0].exc_info is not None
+        assert isinstance(caplog.records[0].exc_info[1], ValueError)
+        assert caplog.records[0].getMessage() == "Unhandled exception: something bad happened"
 
     async def test____extra_attributes____default(
         self,
