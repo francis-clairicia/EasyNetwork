@@ -1310,12 +1310,13 @@ _check_definition_consistency()
 
 def _kill_container(container: Container) -> None:
     with contextlib.suppress(docker.errors.NotFound):
-        container.kill()
+        # will kill the container if it is still running.
+        container.remove(force=True)
 
 
 def _stop_container(container: Container) -> None:
     with contextlib.suppress(docker.errors.NotFound):
-        container.stop(timeout=10)
+        container.stop(timeout=2)
 
 
 def _get_python_version_used_in_docker_image(client: docker.DockerClient, image_tag: str) -> str:
@@ -1354,7 +1355,6 @@ def _start_docker_instance(
             image_tag,
             server_cmd,
             name=container_name,
-            remove=True,
             detach=True,
             ports=ports,
             volumes=volumes,
@@ -1373,8 +1373,6 @@ def _start_docker_instance(
         socket_type: int = ping["socket_type"]
         ping_over_ssl: bool = ping.get("ssl", False)
 
-        start = time.monotonic()
-
         import socket
 
         unix_local_path: str | None = None
@@ -1386,6 +1384,8 @@ def _start_docker_instance(
             family = socket.AF_INET
 
         print(f"Trying to connect to server at address {server_address}")
+
+        start = time.monotonic()
 
         while (elapsed_time := time.monotonic() - start) < timeout:
             sock = socket.socket(family, socket_type)
@@ -1433,7 +1433,7 @@ def _start_docker_instance(
         except docker.errors.NotFound:
             logs = ""
         if not isinstance(logs, str):
-            logs = str(logs, "utf-8", "ignore")
+            logs = str(logs, "utf-8", "replace")
         sys.exit("Could not start server\n" + logs)
 
 
@@ -1601,6 +1601,7 @@ def main() -> None:
             )
             print()
 
+            stack.callback(_kill_container, container)
             stack.callback(_stop_container, container)
             stack.callback(print, "Shutting down server...")
 
