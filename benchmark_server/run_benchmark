@@ -137,6 +137,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             *_python_cmd,
             "/usr/src/servers/easynetwork_tcp_echoserver.py",
             f"--port={EXPOSED_PORT}",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _tcp_server_address,
@@ -153,6 +154,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             "/usr/src/servers/easynetwork_tcp_echoserver.py",
             f"--port={EXPOSED_PORT}",
             "--uvloop",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _tcp_server_address,
@@ -169,6 +171,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             "/usr/src/servers/easynetwork_tcp_echoserver.py",
             f"--port={EXPOSED_PORT}",
             "--trio",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _tcp_server_address,
@@ -185,6 +188,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             "/usr/src/servers/easynetwork_tcp_echoserver.py",
             f"--port={EXPOSED_PORT}",
             "--buffered",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _tcp_server_address,
@@ -202,6 +206,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             f"--port={EXPOSED_PORT}",
             "--buffered",
             "--uvloop",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _tcp_server_address,
@@ -219,6 +224,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             f"--port={EXPOSED_PORT}",
             "--buffered",
             "--trio",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _tcp_server_address,
@@ -234,6 +240,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             *_python_cmd,
             "/usr/src/servers/asyncio_tcp_echoserver.py",
             f"--port={EXPOSED_PORT}",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _tcp_server_address,
@@ -250,6 +257,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             "/usr/src/servers/asyncio_tcp_echoserver.py",
             f"--port={EXPOSED_PORT}",
             "--uvloop",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _tcp_server_address,
@@ -266,6 +274,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             "/usr/src/servers/asyncio_tcp_echoserver.py",
             f"--port={EXPOSED_PORT}",
             "--streams",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _tcp_server_address,
@@ -283,6 +292,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             f"--port={EXPOSED_PORT}",
             "--streams",
             "--uvloop",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _tcp_server_address,
@@ -298,6 +308,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             *_python_cmd,
             "/usr/src/servers/trio_tcp_echoserver.py",
             f"--port={EXPOSED_PORT}",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _tcp_server_address,
@@ -314,6 +325,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             "/usr/src/servers/trio_tcp_echoserver.py",
             f"--port={EXPOSED_PORT}",
             "--streams",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _tcp_server_address,
@@ -333,6 +345,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             "/usr/src/servers/easynetwork_tcp_echoserver.py",
             f"--port={EXPOSED_PORT}",
             "--readline",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _tcp_server_address,
@@ -350,6 +363,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             f"--port={EXPOSED_PORT}",
             "--readline",
             "--uvloop",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _tcp_server_address,
@@ -367,6 +381,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             f"--port={EXPOSED_PORT}",
             "--readline",
             "--trio",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _tcp_server_address,
@@ -384,6 +399,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             f"--port={EXPOSED_PORT}",
             "--readline",
             "--buffered",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _tcp_server_address,
@@ -402,6 +418,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             "--readline",
             "--buffered",
             "--uvloop",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _tcp_server_address,
@@ -420,6 +437,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             "--readline",
             "--buffered",
             "--trio",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _tcp_server_address,
@@ -436,6 +454,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             "/usr/src/servers/asyncio_tcp_echoserver.py",
             f"--port={EXPOSED_PORT}",
             "--readline",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _tcp_server_address,
@@ -453,6 +472,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             f"--port={EXPOSED_PORT}",
             "--readline",
             "--uvloop",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _tcp_server_address,
@@ -469,6 +489,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             "/usr/src/servers/easynetwork_unix_stream_echoserver.py",
             f"--path={UNIX_SOCKET_PATH}",
             "--readline",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _unix_stream_server_address,
@@ -486,6 +507,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             f"--path={UNIX_SOCKET_PATH}",
             "--readline",
             "--uvloop",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _unix_stream_server_address,
@@ -503,6 +525,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             f"--path={UNIX_SOCKET_PATH}",
             "--readline",
             "--trio",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _unix_stream_server_address,
@@ -520,6 +543,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             f"--path={UNIX_SOCKET_PATH}",
             "--readline",
             "--buffered",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _unix_stream_server_address,
@@ -538,6 +562,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             "--readline",
             "--buffered",
             "--uvloop",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _unix_stream_server_address,
@@ -556,6 +581,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             "--readline",
             "--buffered",
             "--trio",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _unix_stream_server_address,
@@ -572,6 +598,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             "/usr/src/servers/asyncio_unix_stream_echoserver.py",
             f"--path={UNIX_SOCKET_PATH}",
             "--readline",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _unix_stream_server_address,
@@ -589,6 +616,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             f"--path={UNIX_SOCKET_PATH}",
             "--readline",
             "--uvloop",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _unix_stream_server_address,
@@ -608,6 +636,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             "/usr/src/servers/easynetwork_tcp_echoserver.py",
             f"--port={EXPOSED_PORT}",
             "--ssl",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _tcp_server_address,
@@ -626,6 +655,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             f"--port={EXPOSED_PORT}",
             "--ssl",
             "--uvloop",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _tcp_server_address,
@@ -644,6 +674,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             f"--port={EXPOSED_PORT}",
             "--ssl",
             "--trio",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _tcp_server_address,
@@ -662,6 +693,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             f"--port={EXPOSED_PORT}",
             "--ssl",
             "--buffered",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _tcp_server_address,
@@ -681,6 +713,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             "--ssl",
             "--buffered",
             "--uvloop",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _tcp_server_address,
@@ -700,6 +733,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             "--ssl",
             "--buffered",
             "--trio",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _tcp_server_address,
@@ -718,6 +752,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             f"--port={EXPOSED_PORT}",
             "--ssl",
             "--streams",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _tcp_server_address,
@@ -737,6 +772,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             "--ssl",
             "--streams",
             "--uvloop",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _tcp_server_address,
@@ -755,6 +791,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             f"--port={EXPOSED_PORT}",
             "--ssl",
             "--streams",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _tcp_server_address,
@@ -774,6 +811,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             *_python_cmd,
             "/usr/src/servers/easynetwork_udp_echoserver.py",
             f"--port={EXPOSED_PORT}",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _udp_server_address,
@@ -790,6 +828,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             "/usr/src/servers/easynetwork_udp_echoserver.py",
             f"--port={EXPOSED_PORT}",
             "--uvloop",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _udp_server_address,
@@ -806,6 +845,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             "/usr/src/servers/easynetwork_udp_echoserver.py",
             f"--port={EXPOSED_PORT}",
             "--trio",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _udp_server_address,
@@ -821,6 +861,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             *_python_cmd,
             "/usr/src/servers/asyncio_udp_echoserver.py",
             f"--port={EXPOSED_PORT}",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _udp_server_address,
@@ -839,6 +880,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
     #         "/usr/src/servers/asyncio_udp_echoserver.py",
     #         f"--port={EXPOSED_PORT}",
     #         "--uvloop",
+    #         "--disable-gc",
     #     ),
     #     "ping": {
     #         "server_address": _udp_server_address,
@@ -855,6 +897,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             "/usr/src/servers/asyncio_udp_echoserver.py",
             f"--port={EXPOSED_PORT}",
             "--streams",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _udp_server_address,
@@ -872,6 +915,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             f"--port={EXPOSED_PORT}",
             "--streams",
             "--uvloop",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _udp_server_address,
@@ -887,6 +931,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             *_python_cmd,
             "/usr/src/servers/trio_udp_echoserver.py",
             f"--port={EXPOSED_PORT}",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _udp_server_address,
@@ -905,6 +950,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             *_python_cmd,
             "/usr/src/servers/easynetwork_unix_stream_echoserver.py",
             f"--path={UNIX_SOCKET_PATH}",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _unix_stream_server_address,
@@ -921,6 +967,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             "/usr/src/servers/easynetwork_unix_stream_echoserver.py",
             f"--path={UNIX_SOCKET_PATH}",
             "--uvloop",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _unix_stream_server_address,
@@ -937,6 +984,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             "/usr/src/servers/easynetwork_unix_stream_echoserver.py",
             f"--path={UNIX_SOCKET_PATH}",
             "--trio",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _unix_stream_server_address,
@@ -953,6 +1001,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             "/usr/src/servers/easynetwork_unix_stream_echoserver.py",
             f"--path={UNIX_SOCKET_PATH}",
             "--buffered",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _unix_stream_server_address,
@@ -970,6 +1019,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             f"--path={UNIX_SOCKET_PATH}",
             "--buffered",
             "--uvloop",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _unix_stream_server_address,
@@ -987,6 +1037,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             f"--path={UNIX_SOCKET_PATH}",
             "--buffered",
             "--trio",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _unix_stream_server_address,
@@ -1002,6 +1053,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             *_python_cmd,
             "/usr/src/servers/asyncio_unix_stream_echoserver.py",
             f"--path={UNIX_SOCKET_PATH}",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _unix_stream_server_address,
@@ -1018,6 +1070,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             "/usr/src/servers/asyncio_unix_stream_echoserver.py",
             f"--path={UNIX_SOCKET_PATH}",
             "--uvloop",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _unix_stream_server_address,
@@ -1034,6 +1087,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             "/usr/src/servers/asyncio_unix_stream_echoserver.py",
             f"--path={UNIX_SOCKET_PATH}",
             "--streams",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _unix_stream_server_address,
@@ -1051,6 +1105,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             f"--path={UNIX_SOCKET_PATH}",
             "--streams",
             "--uvloop",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _unix_stream_server_address,
@@ -1066,6 +1121,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             *_python_cmd,
             "/usr/src/servers/trio_unix_stream_echoserver.py",
             f"--path={UNIX_SOCKET_PATH}",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _unix_stream_server_address,
@@ -1082,6 +1138,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             "/usr/src/servers/trio_unix_stream_echoserver.py",
             f"--path={UNIX_SOCKET_PATH}",
             "--streams",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _unix_stream_server_address,
@@ -1100,6 +1157,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             *_python_cmd,
             "/usr/src/servers/easynetwork_unix_datagram_echoserver.py",
             f"--path={UNIX_SOCKET_PATH}",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _unix_datagram_server_address,
@@ -1116,6 +1174,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             "/usr/src/servers/easynetwork_unix_datagram_echoserver.py",
             f"--path={UNIX_SOCKET_PATH}",
             "--uvloop",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _unix_datagram_server_address,
@@ -1132,6 +1191,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             "/usr/src/servers/easynetwork_unix_datagram_echoserver.py",
             f"--path={UNIX_SOCKET_PATH}",
             "--trio",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _unix_datagram_server_address,
@@ -1147,6 +1207,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             *_python_cmd,
             "/usr/src/servers/asyncio_unix_datagram_echoserver.py",
             f"--path={UNIX_SOCKET_PATH}",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _unix_datagram_server_address,
@@ -1165,6 +1226,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
     #         "/usr/src/servers/asyncio_unix_datagram_echoserver.py",
     #         f"--path={UNIX_SOCKET_PATH}",
     #         "--uvloop",
+    #         "--disable-gc",
     #     ),
     #     "ping": {
     #         "server_address": _unix_datagram_server_address,
@@ -1181,6 +1243,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             "/usr/src/servers/asyncio_unix_datagram_echoserver.py",
             f"--path={UNIX_SOCKET_PATH}",
             "--streams",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _unix_datagram_server_address,
@@ -1198,6 +1261,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             f"--path={UNIX_SOCKET_PATH}",
             "--streams",
             "--uvloop",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _unix_datagram_server_address,
@@ -1213,6 +1277,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             *_python_cmd,
             "/usr/src/servers/trio_unix_datagram_echoserver.py",
             f"--path={UNIX_SOCKET_PATH}",
+            "--disable-gc",
         ),
         "ping": {
             "server_address": _unix_datagram_server_address,
@@ -1224,16 +1289,23 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
 )
 
 
-def _check_for_duplicate_definition_names() -> None:
+def _check_definition_consistency() -> None:
     import collections
 
+    # - Check for duplicates
     duplicates_counter = collections.Counter(b["name"] for b in BENCHMARKS_DEF)
 
     if duplicates := {name: count for name, count in duplicates_counter.items() if count > 1}:
         raise ValueError(f"Benchmark name duplicates: {duplicates}")
 
+    # - All python servers should have GC disabled
+    for b in BENCHMARKS_DEF:
+        server_args = tuple(b["server"])
+        if server_args[: len(_python_cmd)] == _python_cmd and "--disable-gc" not in server_args:
+            raise AssertionError(f'{b["name"]} misses --disable-gc flag.')
 
-_check_for_duplicate_definition_names()
+
+_check_definition_consistency()
 
 
 def _kill_container(container: Container) -> None:
