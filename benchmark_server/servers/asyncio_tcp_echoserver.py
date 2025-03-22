@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import gc
 import logging
 import pathlib
 import socket
@@ -166,12 +167,21 @@ def main() -> None:
         dest="over_ssl",
         action="store_true",
     )
+    parser.add_argument(
+        "--disable-gc",
+        dest="gc_enabled",
+        action="store_false",
+    )
 
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="[ %(levelname)s ] [ %(name)s ] %(message)s")
+    if not args.gc_enabled:
+        gc.disable()
 
     print(f"Python version: {sys.version}")
+    print(f"GC enabled: {gc.isenabled()}")
+
     with create_runner(use_uvloop=args.use_uvloop) as runner:
         ssl_context: ssl.SSLContext | None = None
         if args.over_ssl:

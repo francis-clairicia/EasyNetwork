@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import gc
 import logging
 import sys
 from collections.abc import AsyncGenerator, Generator
@@ -141,6 +142,11 @@ def main() -> None:
         dest="context_reuse",
         action="store_true",
     )
+    parser.add_argument(
+        "--disable-gc",
+        dest="gc_enabled",
+        action="store_false",
+    )
 
     runner_parser = parser.add_mutually_exclusive_group()
     runner_parser.add_argument("--uvloop", dest="runner", action="store_const", const="uvloop")
@@ -150,8 +156,12 @@ def main() -> None:
     args = parser.parse_args()
 
     logging.basicConfig(level=getattr(logging, args.log_level), format="[ %(levelname)s ] [ %(name)s ] %(message)s")
+    if not args.gc_enabled:
+        gc.disable()
 
     print(f"Python version: {sys.version}")
+    print(f"GC enabled: {gc.isenabled()}")
+
     with create_unix_stream_server(
         path=args.path,
         runner=args.runner,

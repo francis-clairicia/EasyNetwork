@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import gc
 import logging
 import sys
 from collections.abc import AsyncGenerator
@@ -136,6 +137,12 @@ def main() -> None:
         type=float,
         default=0.0,
     )
+    parser.add_argument(
+        "--disable-gc",
+        dest="gc_enabled",
+        action="store_false",
+    )
+
     runner_parser = parser.add_mutually_exclusive_group()
     runner_parser.add_argument("--uvloop", dest="runner", action="store_const", const="uvloop")
     runner_parser.add_argument("--trio", dest="runner", action="store_const", const="trio")
@@ -144,8 +151,12 @@ def main() -> None:
     args = parser.parse_args()
 
     logging.basicConfig(level=getattr(logging, args.log_level), format="[ %(levelname)s ] [ %(name)s ] %(message)s")
+    if not args.gc_enabled:
+        gc.disable()
 
     print(f"Python version: {sys.version}")
+    print(f"GC enabled: {gc.isenabled()}")
+
     with create_unix_datagram_server(
         path=args.path,
         runner=args.runner,

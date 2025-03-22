@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import gc
 import logging
 import socket
 import sys
@@ -47,12 +48,20 @@ def main() -> None:
         type=int,
         default=25000,
     )
+    parser.add_argument(
+        "--disable-gc",
+        dest="gc_enabled",
+        action="store_false",
+    )
 
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="[ %(levelname)s ] [ %(name)s ] %(message)s")
+    if not args.gc_enabled:
+        gc.disable()
 
     print(f"Python version: {sys.version}")
+    print(f"GC enabled: {gc.isenabled()}")
 
     port: int = args.port
 

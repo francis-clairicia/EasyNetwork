@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import gc
 import logging
 import socket
 import sys
@@ -129,12 +130,21 @@ def main() -> None:
         dest="use_uvloop",
         action="store_true",
     )
+    parser.add_argument(
+        "--disable-gc",
+        dest="gc_enabled",
+        action="store_false",
+    )
 
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="[ %(levelname)s ] [ %(name)s ] %(message)s")
+    if not args.gc_enabled:
+        gc.disable()
 
     print(f"Python version: {sys.version}")
+    print(f"GC enabled: {gc.isenabled()}")
+
     with create_runner(use_uvloop=args.use_uvloop) as runner:
         port: int = args.port
         if args.streams:
