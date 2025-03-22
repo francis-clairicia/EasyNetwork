@@ -22,6 +22,7 @@ __all__ = [
     "StreamDataProducer",
 ]
 
+import dataclasses
 from collections.abc import Generator
 from typing import TYPE_CHECKING, Any, Generic, final
 
@@ -122,7 +123,6 @@ class BufferedStreamDataConsumer(Generic[_T_ReceivedPacket]):
     __slots__ = (
         "__protocol",
         "__buffer",
-        "__buffer_view_cache",
         "__exported_write_buffer_view",
         "__buffer_start",
         "__already_written",
@@ -137,8 +137,7 @@ class BufferedStreamDataConsumer(Generic[_T_ReceivedPacket]):
             raise ValueError(f"{buffer_size_hint=!r}")
         self.__protocol: BufferedStreamProtocol[Any, _T_ReceivedPacket, WriteableBuffer] = protocol
         self.__consumer: Generator[int | None, int, tuple[_T_ReceivedPacket, ReadableBuffer]] | None = None
-        self.__buffer: WriteableBuffer | None = None
-        self.__buffer_view_cache: memoryview | None = None
+        self.__buffer: _BufferRef | None = None
         self.__exported_write_buffer_view: memoryview | None = None
         self.__buffer_start: int = 0
         self.__already_written: int = 0
@@ -165,10 +164,11 @@ class BufferedStreamDataConsumer(Generic[_T_ReceivedPacket]):
 
         nb_updated_bytes += self.__already_written
         self.__already_written = 0
-        self.__release_write_buffer_view()
 
         if not nb_updated_bytes:
             raise StopIteration
+
+        self.__release_write_buffer_view()
 
         # Reset consumer
         # Will be re-assigned if needed
@@ -187,40 +187,38 @@ class BufferedStreamDataConsumer(Generic[_T_ReceivedPacket]):
             raise
         except Exception as exc:
             # Reset buffer, since we do not know if the buffer state is still valid
-            self.__buffer_view_cache = self.__buffer = None
+            self.__buffer = None
             raise RuntimeError("protocol.build_packet_from_buffer() crashed") from exc
         else:
             self.__consumer = consumer
             raise StopIteration
 
-    def get_write_buffer(self) -> WriteableBuffer:
+    def get_write_buffer(self) -> memoryview:
         if self.__exported_write_buffer_view is not None:
-            return self.__exported_write_buffer_view
+            return self.__exported_write_buffer_view[:]
+        buffer = self.__new_write_buffer()
+        self.__exported_write_buffer_view = buffer[:]
+        return buffer
 
+    def __new_write_buffer(self) -> memoryview:
         if self.__buffer is None:
             whole_buffer = self.__protocol.create_buffer(self.__sizehint)
             self.__validate_created_buffer(whole_buffer)
-            self.__buffer = whole_buffer
-            self.__buffer_view_cache = None  # Ensure buffer view is reset
+            self.__buffer = _BufferRef(whole_buffer)
 
         if self.__consumer is None:
-            consumer = self.__protocol.build_packet_from_buffer(self.__buffer)
+            consumer = self.__protocol.build_packet_from_buffer(self.__buffer.ref)
             try:
                 self.__buffer_start = next(consumer) or 0
             except StopIteration:
                 raise RuntimeError("protocol.build_packet_from_buffer() did not yield") from None
             except Exception as exc:
                 # Reset buffer, since we do not know if the buffer state is still valid
-                self.__buffer_view_cache = self.__buffer = None
+                self.__buffer = None
                 raise RuntimeError("protocol.build_packet_from_buffer() crashed") from exc
             self.__consumer = consumer
 
-        buffer: memoryview | None
-        if (buffer := self.__buffer_view_cache) is None:
-            buffer = memoryview(self.__buffer).cast("B")
-            self.__buffer_view_cache = buffer
-
-        buffer = buffer[self.__buffer_start :]
+        buffer = self.__buffer.view[self.__buffer_start :]
 
         if self.__already_written:
             buffer = buffer[self.__already_written :]
@@ -228,15 +226,14 @@ class BufferedStreamDataConsumer(Generic[_T_ReceivedPacket]):
         if not buffer:
             raise RuntimeError("The start position is set to the end of the buffer")
 
-        self.__exported_write_buffer_view = buffer
         return buffer
 
     def get_value(self, *, full: bool = False) -> bytes | None:
         if self.__buffer is None:
             return None
         if full:
-            return bytes(self.__buffer)
-        buffer = memoryview(self.__buffer).cast("B")
+            return bytes(self.__buffer.ref)
+        buffer = self.__buffer.view
         if self.__buffer_start < 0:
             nbytes = self.__buffer_start + len(buffer) + self.__already_written
         else:
@@ -245,7 +242,7 @@ class BufferedStreamDataConsumer(Generic[_T_ReceivedPacket]):
 
     def clear(self) -> None:
         self.__release_write_buffer_view()
-        self.__buffer_view_cache = self.__buffer = None
+        self.__buffer = None
         self.__buffer_start = 0
         self.__already_written = 0
         consumer, self.__consumer = self.__consumer, None
@@ -253,17 +250,19 @@ class BufferedStreamDataConsumer(Generic[_T_ReceivedPacket]):
             consumer.close()
 
     def __save_remainder_in_buffer(self, remaining_data: ReadableBuffer) -> None:
-        # Copy remaining_data because it can be a view to the wrapped buffer
-        # NOTE: remaining_data is not copied if it is already a "bytes" object
-        remaining_data = bytes(remaining_data)
-        if not remaining_data:
-            # Nothing to save.
-            return
-        nbytes = len(remaining_data)
-        with memoryview(self.get_write_buffer()) as buffer:
-            buffer[:nbytes] = remaining_data
-        self.__already_written += nbytes
-        self.__release_write_buffer_view()
+        with memoryview(remaining_data) as remaining_data:
+            nbytes = remaining_data.nbytes
+            if not nbytes:
+                # Nothing to save.
+                return
+
+            with remaining_data.cast("B") if remaining_data.itemsize != 1 else remaining_data as remaining_data:
+                # Drop the current buffer so a new one is created because remaining_data can be a view to the wrapped buffer
+                self.__buffer = None
+
+                with self.__new_write_buffer() as buffer:
+                    buffer[:nbytes] = remaining_data
+                self.__already_written += nbytes
 
     def __release_write_buffer_view(self) -> None:
         buffer_view, self.__exported_write_buffer_view = self.__exported_write_buffer_view, None
@@ -280,10 +279,23 @@ class BufferedStreamDataConsumer(Generic[_T_ReceivedPacket]):
 
     @property
     def buffer_size(self) -> int:
-        if self.__buffer is None:
-            return 0
-        with memoryview(self.__buffer) as buffer:
-            return buffer.nbytes
+        match self.__buffer:
+            case None:
+                return 0
+            case buffer:
+                return buffer.view.nbytes
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class _BufferRef:
+    ref: WriteableBuffer
+    view: memoryview = dataclasses.field(init=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "view", memoryview(self.ref).cast("B"))
+
+    def __del__(self) -> None:
+        self.view.release()
 
 
 def _check_protocol(p: StreamProtocol[Any, Any]) -> None:

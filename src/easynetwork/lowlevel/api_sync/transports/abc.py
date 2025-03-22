@@ -171,7 +171,10 @@ class StreamWriteTransport(BaseTransport):
         """
 
         total_sent: int = 0
-        with memoryview(data) as data, data.cast("B") as data:
+        with (
+            memoryview(data) as data,
+            data.cast("B") if data.itemsize != 1 else data as data,
+        ):
             nb_bytes_to_send = len(data)
             if nb_bytes_to_send == 0:
                 sent = self.send(data, timeout)

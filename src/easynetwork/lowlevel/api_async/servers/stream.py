@@ -344,12 +344,13 @@ class _BufferedRequestReceiver(Generic[_T_Request]):
                     if nbytes is None:
                         await self.__backend.cancel_shielded_coro_yield()
                     return request
-                try:
-                    nbytes = await self.transport.recv_into(consumer.get_write_buffer())
-                except Exception as exc:
-                    if self.disconnect_error_filter is not None and self.disconnect_error_filter(exc):
-                        break
-                    raise
+                with consumer.get_write_buffer() as buffer:
+                    try:
+                        nbytes = await self.transport.recv_into(buffer)
+                    except Exception as exc:
+                        if self.disconnect_error_filter is not None and self.disconnect_error_filter(exc):
+                            break
+                        raise
                 if not nbytes:
                     break
 
