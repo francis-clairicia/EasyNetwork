@@ -404,7 +404,8 @@ class _BufferedReceiverImpl(Generic[_T_ReceivedPacket]):
         transport = self.transport
 
         while not self._eof_reached:
-            nbytes: int = await transport.recv_into(consumer.get_write_buffer())
+            with consumer.get_write_buffer() as buffer:
+                nbytes: int = await transport.recv_into(buffer)
             if not nbytes:
                 self._eof_reached = True
                 continue

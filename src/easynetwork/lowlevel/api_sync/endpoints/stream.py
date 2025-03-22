@@ -421,7 +421,7 @@ class _BufferedReceiverImpl(Generic[_T_ReceivedPacket]):
 
         transport = self.transport
         while not self._eof_reached:
-            with memoryview(consumer.get_write_buffer()) as buffer:
+            with consumer.get_write_buffer() as buffer:
                 bufsize: int = buffer.nbytes
                 with _utils.ElapsedTime() as elapsed:
                     nbytes: int = transport.recv_into(buffer, timeout)

@@ -374,7 +374,7 @@ class TestBufferedStreamDataConsumer:
         start_idx: int = 0,
     ) -> int:
         nbytes = len(data)
-        with memoryview(consumer.get_write_buffer())[start_idx:] as buffer:
+        with consumer.get_write_buffer()[start_idx:] as buffer:
             buffer[:nbytes] = data
         return nbytes
 
@@ -423,22 +423,6 @@ class TestBufferedStreamDataConsumer:
 
         mock_buffered_stream_protocol.build_packet_from_buffer.assert_not_called()
         assert consumer.get_value() is None
-
-    def test____get_write_buffer____do_not_recompute_buffer_view(
-        self,
-        consumer: BufferedStreamDataConsumer[Any],
-        mock_buffered_stream_protocol: MagicMock,
-    ) -> None:
-        # Arrange
-        def side_effect(buffer: memoryview) -> Generator[int, int, tuple[Any, bytes]]:
-            yield 0
-            pytest.fail("Should not arrive here")
-
-        mock_build_packet_from_buffer_func: MagicMock = mock_buffered_stream_protocol.build_packet_from_buffer
-        mock_build_packet_from_buffer_func.side_effect = side_effect
-
-        # Act & Assert
-        assert consumer.get_write_buffer() is consumer.get_write_buffer()
 
     def test____get_write_buffer____buffer_start_set_to_end(
         self,
@@ -505,7 +489,7 @@ class TestBufferedStreamDataConsumer:
 
         mock_build_packet_from_buffer_func: MagicMock = mock_buffered_stream_protocol.build_packet_from_buffer
         mock_build_packet_from_buffer_func.side_effect = side_effect
-        assert len(memoryview(consumer.get_write_buffer())) == 10
+        assert len(consumer.get_write_buffer()) == 10
 
         # Act & Assert
         with pytest.raises(RuntimeError, match=r"^Invalid value given$"):
@@ -870,9 +854,9 @@ class TestBufferedStreamDataConsumer:
 
         # Act & Assert
         buffer = consumer.get_write_buffer()
-        assert memoryview(buffer).format == "B"
-        assert memoryview(buffer).itemsize == 1
-        assert memoryview(buffer).nbytes == sizehint
+        assert buffer.format == "B"
+        assert buffer.itemsize == 1
+        assert buffer.nbytes == sizehint
         assert consumer.buffer_size == sizehint
         nb_updated_bytes = self.write_in_consumer(consumer, struct.pack("@I", 42))
         with pytest.raises(StopIteration):
