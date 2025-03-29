@@ -26,9 +26,11 @@ from __future__ import annotations
 
 __all__ = [
     "SelectorBaseTransport",
+    "SelectorDatagramListener",
     "SelectorDatagramReadTransport",
     "SelectorDatagramTransport",
     "SelectorDatagramWriteTransport",
+    "SelectorListener",
     "SelectorStreamReadTransport",
     "SelectorStreamTransport",
     "SelectorStreamWriteTransport",
@@ -36,6 +38,7 @@ __all__ = [
     "WouldBlockOnWrite",
 ]
 
+import concurrent.futures
 import errno as _errno
 import math
 import selectors
@@ -49,6 +52,8 @@ from . import abc as transports
 if TYPE_CHECKING:
     from _typeshed import WriteableBuffer
 
+_T_co = TypeVar("_T_co", covariant=True)
+_T_Address = TypeVar("_T_Address")
 _T_Return = TypeVar("_T_Return")
 
 
@@ -144,12 +149,12 @@ class SelectorBaseTransport(transports.BaseTransport):
                 break
             is_retry_interval: bool
             wait_time: float
-            if timeout <= retry_interval:
-                is_retry_interval = False
-                wait_time = timeout
-            else:
+            if timeout > retry_interval:
                 is_retry_interval = True
                 wait_time = retry_interval
+            else:
+                is_retry_interval = False
+                wait_time = timeout
             with self._selector_factory() as selector:
                 try:
                     selector.register(fileno, event)
@@ -166,6 +171,7 @@ class SelectorBaseTransport(transports.BaseTransport):
                     if not available:
                         if not is_retry_interval:
                             break
+            del selector
         raise _utils.error_from_errno(_errno.ETIMEDOUT)
 
 
@@ -528,3 +534,128 @@ class SelectorDatagramTransport(SelectorDatagramWriteTransport, SelectorDatagram
     """
 
     __slots__ = ()
+
+
+class SelectorListener(SelectorBaseTransport, transports.Listener[_T_co]):
+    """
+    An interface for objects that let you accept incoming connections
+    using the :mod:`selectors` module for blocking operations polling.
+
+    .. versionadded:: NEXT_VERSION
+    """
+
+    __slots__ = ()
+
+    @abstractmethod
+    def accept_noblock(
+        self,
+        handler: Callable[[_T_co], _T_Return],
+        executor: concurrent.futures.Executor,
+    ) -> concurrent.futures.Future[_T_Return]:
+        """
+        Accept incoming connections as they come in and start tasks to handle them.
+
+        Parameters:
+            handler: a callable that will be used to handle accepted connection.
+            executor: will be used to start task for handling accepted connection.
+
+        Raises:
+            WouldBlockOnRead: the operation would block when reading the pipe.
+            WouldBlockOnWrite: the operation would block when writing on the pipe.
+            OutOfResourcesError: Resource limits exceeded.
+
+        Returns:
+            a :class:`~concurrent.futures.Future` for the spawned task.
+        """
+        raise NotImplementedError
+
+    def accept(
+        self,
+        handler: Callable[[_T_co], _T_Return],
+        executor: concurrent.futures.Executor,
+        timeout: float,
+    ) -> concurrent.futures.Future[_T_Return]:
+        """
+        Accept incoming connections as they come in and start tasks to handle them.
+
+        The default implementation will retry to call :meth:`accept_noblock` until it succeeds under the given `timeout`.
+        """
+        return self._retry(lambda: self.accept_noblock(handler, executor), timeout)[0]
+
+
+class SelectorDatagramListener(SelectorBaseTransport, transports.DatagramListener[_T_Address]):
+    """
+    An interface specialized for objects that let you handle incoming datagrams from anywhere
+    using the :mod:`selectors` module for blocking operations polling.
+
+    .. versionadded:: NEXT_VERSION
+    """
+
+    __slots__ = ()
+
+    @abstractmethod
+    def recv_from_noblock(
+        self,
+        handler: Callable[[bytes, _T_Address], _T_Return],
+        executor: concurrent.futures.Executor,
+    ) -> concurrent.futures.Future[_T_Return]:
+        """
+        Receive incoming datagrams as they come in and start tasks to handle them.
+
+        Important:
+            The implementation must ensure that datagrams are processed in the order in which they are received.
+
+        Parameters:
+            handler: a callable that will be used to handle received datagram.
+            executor: will be used to start task for handling accepted datagram.
+
+        Raises:
+            WouldBlockOnRead: the operation would block when reading the pipe.
+            WouldBlockOnWrite: the operation would block when writing on the pipe.
+            OutOfResourcesError: Resource limits exceeded.
+
+        Returns:
+            a :class:`~concurrent.futures.Future` for the spawned task.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def recv_from(
+        self,
+        handler: Callable[[bytes, _T_Address], _T_Return],
+        executor: concurrent.futures.Executor,
+        timeout: float,
+    ) -> concurrent.futures.Future[_T_Return]:
+        """
+        Receive incoming datagrams as they come in and start tasks to handle them.
+
+        The default implementation will retry to call :meth:`recv_from_noblock` until it succeeds under the given `timeout`.
+        """
+        return self._retry(lambda: self.recv_from_noblock(handler, executor), timeout)[0]
+
+    @abstractmethod
+    def send_to_noblock(self, data: bytes | bytearray | memoryview, address: _T_Address) -> None:
+        """
+        Send the `data` bytes to the remote peer `address`.
+
+        Important:
+            This method should be safe to call from multiple threads.
+
+        Parameters:
+            data: the bytes to send.
+            address: the remote peer.
+
+        Raises:
+            WouldBlockOnRead: the operation would block when reading the pipe.
+            WouldBlockOnWrite: the operation would block when writing on the pipe.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def send_to(self, data: bytes | bytearray | memoryview, address: _T_Address, timeout: float) -> None:
+        """
+        Send the `data` bytes to the remote peer `address`.
+
+        The default implementation will retry to call :meth:`send_to_noblock` until it succeeds under the given `timeout`.
+        """
+        return self._retry(lambda: self.send_to_noblock(data, address), timeout)[0]
