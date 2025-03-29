@@ -18,16 +18,19 @@ from __future__ import annotations
 
 __all__ = [
     "BaseTransport",
+    "DatagramListener",
     "DatagramReadTransport",
     "DatagramTransport",
     "DatagramWriteTransport",
+    "Listener",
     "StreamReadTransport",
     "StreamTransport",
     "StreamWriteTransport",
 ]
 
+import concurrent.futures
 from abc import ABCMeta, abstractmethod
-from collections.abc import Buffer, Iterable
+from collections.abc import Callable, Buffer, Iterable
 from types import TracebackType
 from typing import Any, Self
 
@@ -47,6 +50,14 @@ class BaseTransport(typed_attr.TypedAttributeProvider, metaclass=ABCMeta):
     def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None) -> None:
         """
         Calls :meth:`close`.
+        """
+        self.close()
+
+    def abort(self) -> None:
+        """
+        Abruptly closes the transport.
+
+        .. versionadded:: NEXT_VERSION
         """
         self.close()
 
@@ -418,3 +429,112 @@ class DatagramTransport(DatagramWriteTransport, DatagramReadTransport):
     """
 
     __slots__ = ()
+
+
+class Listener[T](BaseTransport):
+    """
+    An interface for objects that let you accept incoming connections.
+
+    .. versionadded:: NEXT_VERSION
+    """
+
+    __slots__ = ()
+
+    @abstractmethod
+    def accept[R](
+        self,
+        handler: Callable[[T], R],
+        executor: concurrent.futures.Executor,
+        timeout: float,
+    ) -> concurrent.futures.Future[R]:
+        """
+        Accept incoming connections as they come in and start tasks to handle them.
+
+        Parameters:
+            handler: a callable that will be used to handle accepted connection.
+            executor: will be used to start task for handling accepted connection.
+            timeout: the allowed time (in seconds) for blocking operations. Can be set to :data:`math.inf`.
+
+        Raises:
+            ValueError: Negative `timeout`.
+            TimeoutError: Operation timed out.
+
+        Returns:
+            a :class:`~concurrent.futures.Future` for the spawned task.
+        """
+        raise NotImplementedError
+
+    def is_accept_capacity_error(self, exc: Exception) -> bool:
+        """
+        Checks whether an error raised by :meth:`accept` is due to a capacity error or not.
+
+        Parameters:
+            exc: error raised by :meth:`accept`.
+
+        Returns:
+            :data:`True` if the exception is the result of a capacity error.
+        """
+        return False
+
+    def accept_capacity_error_sleep_time(self) -> float:
+        """
+        Returns:
+            the time (in seconds) to wait before calling :meth:`accept` if there were a capacity error.
+        """
+        return 0.0
+
+
+class DatagramListener[Address](BaseTransport):
+    """
+    An interface specialized for objects that let you handle incoming datagrams from anywhere.
+
+    .. versionadded:: NEXT_VERSION
+    """
+
+    __slots__ = ()
+
+    @abstractmethod
+    def recv_from[R](
+        self,
+        handler: Callable[[bytes, Address], R],
+        executor: concurrent.futures.Executor,
+        timeout: float,
+    ) -> concurrent.futures.Future[R]:
+        """
+        Receive incoming datagrams as they come in and start tasks to handle them.
+
+        Important:
+            The implementation must ensure that datagrams are processed in the order in which they are received.
+
+        Parameters:
+            handler: a callable that will be used to handle received datagram.
+            executor: will be used to start task for handling accepted datagram.
+            timeout: the allowed time (in seconds) for blocking operations. Can be set to :data:`math.inf`.
+
+        Raises:
+            ValueError: Negative `timeout`.
+            TimeoutError: Operation timed out.
+
+        Returns:
+            a :class:`~concurrent.futures.Future` for the spawned task.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def send_to(self, data: bytes | bytearray | memoryview, address: Address, timeout: float) -> None:
+        """
+        Send the `data` bytes to the remote peer `address`.
+
+        Important:
+            This method should be safe to call from multiple threads.
+
+        Parameters:
+            data: the bytes to send.
+            address: the remote peer.
+            timeout: the allowed time (in seconds) for blocking operations. Can be set to :data:`math.inf`.
+
+        Raises:
+            ValueError: Negative `timeout`.
+            TimeoutError: Operation timed out.
+        """
+        raise NotImplementedError
