@@ -463,22 +463,22 @@ class ElapsedTime:
         return new_timeout
 
 
-class lock_with_timeout(contextlib.AbstractContextManager[float | None, None]):
+class lock_with_timeout[LockTimeout: (float, None, float | None)](contextlib.AbstractContextManager[LockTimeout, None]):
     __slots__ = ("__lock", "__timeout")
 
-    def __init__(self, lock: threading.RLock | threading.Lock, timeout: float | None) -> None:
+    def __init__(self, lock: threading.RLock | threading.Lock, timeout: LockTimeout) -> None:
         if timeout is not None:
             timeout = validate_timeout_delay(timeout, positive_check=True)
         self.__lock = lock
-        self.__timeout = timeout
+        self.__timeout: LockTimeout = timeout
 
-    def __enter__(self) -> float | None:
-        lock = self.__lock
+    def __enter__(self) -> LockTimeout:
         match self.__timeout:
             case None | math.inf as timeout:
-                lock.acquire()
+                self.__lock.acquire()
                 return timeout
             case timeout:
+                lock = self.__lock
                 # Try to acquire without blocking first
                 if not lock.acquire(blocking=False):
                     if timeout == 0.0:
@@ -515,3 +515,21 @@ class ResourceGuard:
         if not self.__held:
             raise AssertionError("ResourceGuard released too many times")
         self.__held = False
+
+
+class ThreadSafeResourceGuard(ResourceGuard):
+    __slots__ = ("__lock",)
+
+    def __init__(self, message: str, *, lock: threading.Lock | threading.RLock | None = None) -> None:
+        super().__init__(message)
+        if lock is None:
+            lock = threading.Lock()
+        self.__lock = lock
+
+    def __enter__(self) -> None:
+        with self.__lock:
+            return super().__enter__()
+
+    def __exit__(self, *args: Any) -> None:
+        with self.__lock:
+            return super().__exit__(*args)
