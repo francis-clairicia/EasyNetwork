@@ -93,6 +93,11 @@ class AsyncStreamReceiverEndpoint(_transports.AsyncBaseTransport, Generic[_T_Rec
     async def aclose(self) -> None:
         """
         Closes the endpoint.
+
+        Warning:
+            :meth:`aclose` performs a graceful close, waiting for the transport to close.
+
+            If :meth:`aclose` is cancelled, the transport is closed abruptly.
         """
         try:
             await self.__transport.aclose()
@@ -176,6 +181,11 @@ class AsyncStreamSenderEndpoint(_transports.AsyncBaseTransport, Generic[_T_SentP
     async def aclose(self) -> None:
         """
         Closes the endpoint.
+
+        Warning:
+            :meth:`aclose` performs a graceful close, waiting for the transport to close.
+
+            If :meth:`aclose` is cancelled, the transport is closed abruptly.
         """
         await self.__transport.aclose()
 
@@ -269,6 +279,11 @@ class AsyncStreamEndpoint(_transports.AsyncBaseTransport, Generic[_T_SentPacket,
     async def aclose(self) -> None:
         """
         Closes the endpoint.
+
+        Warning:
+            :meth:`aclose` performs a graceful close, waiting for the transport to close.
+
+            If :meth:`aclose` is cancelled, the transport is closed abruptly.
         """
         with self.__send_guard:
             try:
