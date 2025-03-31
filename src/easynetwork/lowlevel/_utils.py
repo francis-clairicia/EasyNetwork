@@ -433,8 +433,8 @@ class WarnCallback(Protocol):
 class Flag:
     __slots__ = ("__value", "__weakref__")
 
-    def __init__(self) -> None:
-        self.__value: bool = False
+    def __init__(self, default_value: bool = False) -> None:
+        self.__value: bool = bool(default_value)
 
     def is_set(self) -> bool:
         return self.__value

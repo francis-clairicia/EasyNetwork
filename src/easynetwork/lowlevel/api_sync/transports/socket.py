@@ -762,17 +762,17 @@ class SocketDatagramListener(base_selector.SelectorDatagramListener["_RetAddress
             _warn(f"unclosed listener {self!r}", ResourceWarning, source=self)
             sock.close()
 
-    @_utils.inherit_doc(base_selector.SelectorListener)
+    @_utils.inherit_doc(base_selector.SelectorDatagramListener)
     def is_closed(self) -> bool:
         with self.__send_lock.get():
             return self.__socket.fileno() < 0
 
-    @_utils.inherit_doc(base_selector.SelectorListener)
+    @_utils.inherit_doc(base_selector.SelectorDatagramListener)
     def close(self) -> None:
         with self.__send_lock.get():
             self.__socket.close()
 
-    @_utils.inherit_doc(base_selector.SelectorListener)
+    @_utils.inherit_doc(base_selector.SelectorDatagramListener)
     def recv_from_noblock(
         self,
         handler: Callable[[bytes, _RetAddress], _T_Return],

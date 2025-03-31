@@ -42,8 +42,9 @@ import concurrent.futures
 import errno as _errno
 import math
 import selectors
+import time
 from abc import abstractmethod
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, TypeVar
 
 from ... import _utils
@@ -133,10 +134,10 @@ class SelectorBaseTransport(transports.BaseTransport):
         :meta public:
         """
         timeout = _utils.validate_timeout_delay(timeout, positive_check=True)
-        retry_interval = self._retry_interval
         event: int
         fileno: int
-        while True:
+        available: bool = True
+        while available:
             try:
                 return callback(), timeout
             except WouldBlockOnRead as exc:
@@ -145,34 +146,38 @@ class SelectorBaseTransport(transports.BaseTransport):
             except WouldBlockOnWrite as exc:
                 event = selectors.EVENT_WRITE
                 fileno = exc.fileno
-            if timeout <= 0:
-                break
-            is_retry_interval: bool
-            wait_time: float
-            if timeout > retry_interval:
-                is_retry_interval = True
-                wait_time = retry_interval
-            else:
-                is_retry_interval = False
-                wait_time = timeout
-            with self._selector_factory() as selector:
-                try:
-                    selector.register(fileno, event)
-                except ValueError as exc:
-                    raise _utils.error_from_errno(_errno.EBADF) from exc
-                if wait_time == math.inf:
-                    available = bool(selector.select())
-                    if not available:
-                        raise RuntimeError("timeout error with infinite timeout")
-                else:
-                    with _utils.ElapsedTime() as elapsed:
-                        available = bool(selector.select(wait_time))
-                    timeout = elapsed.recompute_timeout(timeout)
-                    if not available:
-                        if not is_retry_interval:
-                            break
-            del selector
+            available, timeout = self._wait_for_fd({fileno: event}, timeout)
         raise _utils.error_from_errno(_errno.ETIMEDOUT)
+
+    def _wait_for_fd(self, fds: Mapping[int, int], timeout: float) -> tuple[bool, float]:
+        if timeout <= 0:
+            return False, 0.0
+        if not fds:
+            return True, timeout
+        is_retry_interval: bool
+        wait_time: float
+        if timeout > (retry_interval := self._retry_interval):
+            is_retry_interval = True
+            wait_time = retry_interval
+        else:
+            is_retry_interval = False
+            wait_time = timeout
+        with self._selector_factory() as selector:
+            try:
+                for fileno, events in fds.items():
+                    selector.register(fileno, events)
+            except ValueError as exc:
+                raise _utils.error_from_errno(_errno.EBADF) from exc
+            if wait_time == math.inf:
+                available = bool(selector.select())
+                if not available:
+                    raise RuntimeError("timeout error with infinite timeout")
+            else:
+                deadline: float = time.perf_counter() + timeout
+                available = bool(selector.select(wait_time))
+                timeout = max(deadline - time.perf_counter(), 0.0)
+                available = available or is_retry_interval
+            return available, timeout
 
 
 class SelectorStreamReadTransport(SelectorBaseTransport, transports.StreamReadTransport):
