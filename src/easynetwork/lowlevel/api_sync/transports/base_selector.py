@@ -42,8 +42,9 @@ import concurrent.futures
 import errno as _errno
 import math
 import selectors
+import time
 from abc import abstractmethod
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from typing import TYPE_CHECKING, Any, TypeVar
 
 from ... import _utils
@@ -133,10 +134,10 @@ class SelectorBaseTransport(transports.BaseTransport):
         :meta public:
         """
         timeout = _utils.validate_timeout_delay(timeout, positive_check=True)
-        retry_interval = self._retry_interval
         event: int
         fileno: int
-        while True:
+        available: bool = True
+        while available:
             try:
                 return callback(), timeout
             except WouldBlockOnRead as exc:
@@ -145,33 +146,7 @@ class SelectorBaseTransport(transports.BaseTransport):
             except WouldBlockOnWrite as exc:
                 event = selectors.EVENT_WRITE
                 fileno = exc.fileno
-            if timeout <= 0:
-                break
-            is_retry_interval: bool
-            wait_time: float
-            if timeout > retry_interval:
-                is_retry_interval = True
-                wait_time = retry_interval
-            else:
-                is_retry_interval = False
-                wait_time = timeout
-            with self._selector_factory() as selector:
-                try:
-                    selector.register(fileno, event)
-                except ValueError as exc:
-                    raise _utils.error_from_errno(_errno.EBADF) from exc
-                if wait_time == math.inf:
-                    available = bool(selector.select())
-                    if not available:
-                        raise RuntimeError("timeout error with infinite timeout")
-                else:
-                    with _utils.ElapsedTime() as elapsed:
-                        available = bool(selector.select(wait_time))
-                    timeout = elapsed.recompute_timeout(timeout)
-                    if not available:
-                        if not is_retry_interval:
-                            break
-            del selector
+            available, timeout = _wait_for_fd(self, {fileno: event}, timeout)
         raise _utils.error_from_errno(_errno.ETIMEDOUT)
 
 
@@ -594,7 +569,7 @@ class SelectorDatagramListener(SelectorBaseTransport, transports.DatagramListene
     __slots__ = ()
 
     @abstractmethod
-    def recv_from_noblock(
+    def recv_noblock_from(
         self,
         handler: Callable[[bytes, _T_Address], _T_Return],
         executor: concurrent.futures.Executor,
@@ -619,7 +594,6 @@ class SelectorDatagramListener(SelectorBaseTransport, transports.DatagramListene
         """
         raise NotImplementedError
 
-    @abstractmethod
     def recv_from(
         self,
         handler: Callable[[bytes, _T_Address], _T_Return],
@@ -629,17 +603,14 @@ class SelectorDatagramListener(SelectorBaseTransport, transports.DatagramListene
         """
         Receive incoming datagrams as they come in and start tasks to handle them.
 
-        The default implementation will retry to call :meth:`recv_from_noblock` until it succeeds under the given `timeout`.
+        The default implementation will retry to call :meth:`recv_noblock_from` until it succeeds under the given `timeout`.
         """
-        return self._retry(lambda: self.recv_from_noblock(handler, executor), timeout)[0]
+        return self._retry(lambda: self.recv_noblock_from(handler, executor), timeout)[0]
 
     @abstractmethod
-    def send_to_noblock(self, data: bytes | bytearray | memoryview, address: _T_Address) -> None:
+    def send_noblock_to(self, data: bytes | bytearray | memoryview, address: _T_Address) -> None:
         """
         Send the `data` bytes to the remote peer `address`.
-
-        Important:
-            This method should be safe to call from multiple threads.
 
         Parameters:
             data: the bytes to send.
@@ -651,11 +622,39 @@ class SelectorDatagramListener(SelectorBaseTransport, transports.DatagramListene
         """
         raise NotImplementedError
 
-    @abstractmethod
     def send_to(self, data: bytes | bytearray | memoryview, address: _T_Address, timeout: float) -> None:
         """
         Send the `data` bytes to the remote peer `address`.
 
-        The default implementation will retry to call :meth:`send_to_noblock` until it succeeds under the given `timeout`.
+        The default implementation will retry to call :meth:`send_noblock_to` until it succeeds under the given `timeout`.
         """
-        return self._retry(lambda: self.send_to_noblock(data, address), timeout)[0]
+        return self._retry(lambda: self.send_noblock_to(data, address), timeout)[0]
+
+
+def _wait_for_fd(transport: SelectorBaseTransport, fds: Mapping[int, int], timeout: float) -> tuple[bool, float]:
+    if timeout <= 0:
+        return False, 0.0
+    is_retry_interval: bool
+    wait_time: float
+    if timeout > (retry_interval := transport._retry_interval):
+        is_retry_interval = True
+        wait_time = retry_interval
+    else:
+        is_retry_interval = False
+        wait_time = timeout
+    with transport._selector_factory() as selector:
+        try:
+            for fileno, events in fds.items():
+                selector.register(fileno, events)
+        except ValueError as exc:
+            raise _utils.error_from_errno(_errno.EBADF) from exc
+        if wait_time == math.inf:
+            available = bool(selector.select())
+            if not available:
+                raise RuntimeError("timeout error with infinite timeout")
+        else:
+            deadline: float = time.perf_counter() + timeout
+            _ready_fds = selector.select(wait_time)
+            timeout = max(deadline - time.perf_counter(), 0.0)
+            available = bool(_ready_fds) or is_retry_interval
+        return available, timeout

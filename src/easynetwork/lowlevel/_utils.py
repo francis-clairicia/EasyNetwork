@@ -15,9 +15,11 @@
 from __future__ import annotations
 
 __all__ = [
+    "AtomicUIntCounter",
     "ElapsedTime",
     "Flag",
     "ResourceGuard",
+    "ThreadSafeResourceGuard",
     "WarnCallback",
     "adjust_leftover_buffer",
     "check_inet_socket_family",
@@ -102,11 +104,24 @@ def weak_method_proxy(weak_method: weakref.WeakMethod[Callable[_P, _T_Return]], 
 
 
 @overload
+def weak_method_proxy(
+    weak_method: weakref.WeakMethod[Callable[_P, _T_Return]], /, *, default: _T_Return
+) -> Callable[_P, _T_Return]: ...
+
+
+@overload
 def weak_method_proxy(weak_method: Callable[_P, _T_Return], /) -> Callable[_P, _T_Return]: ...
 
 
+@overload
+def weak_method_proxy(weak_method: Callable[_P, _T_Return], /, *, default: _T_Return) -> Callable[_P, _T_Return]: ...
+
+
 def weak_method_proxy(
-    weak_method: weakref.WeakMethod[Callable[_P, _T_Return]] | Callable[_P, _T_Return], /
+    weak_method: weakref.WeakMethod[Callable[_P, _T_Return]] | Callable[_P, _T_Return],
+    /,
+    *,
+    default: Any = ReferenceError,
 ) -> Callable[_P, _T_Return]:
     if not isinstance(weak_method, weakref.WeakMethod):
         weak_method = weakref.WeakMethod(weak_method)
@@ -115,6 +130,8 @@ def weak_method_proxy(
     def weak_method_proxy(*args: _P.args, **kwargs: _P.kwargs) -> _T_Return:
         method = weak_method()
         if method is None:
+            if default is not ReferenceError:
+                return default
             raise ReferenceError("weakly-referenced object no longer exists")
         return method(*args, **kwargs)
 
@@ -422,8 +439,8 @@ class WarnCallback(Protocol):
 class Flag:
     __slots__ = ("__value", "__weakref__")
 
-    def __init__(self) -> None:
-        self.__value: bool = False
+    def __init__(self, default_value: bool = False) -> None:
+        self.__value: bool = bool(default_value)
 
     def is_set(self) -> bool:
         return self.__value
@@ -486,7 +503,7 @@ class lock_with_timeout(contextlib.AbstractContextManager[_T_LockTimeout, None])
 
     def __enter__(self) -> _T_LockTimeout:
         match self.__timeout:
-            case None | math.inf as timeout:
+            case math.inf | None as timeout:
                 self.__lock.acquire()
                 return timeout
             case timeout:
@@ -545,3 +562,26 @@ class ThreadSafeResourceGuard(ResourceGuard):
     def __exit__(self, *args: Any) -> None:
         with self.__lock:
             return super().__exit__(*args)
+
+
+class AtomicUIntCounter:
+    __slots__ = ("__value", "__lock")
+
+    def __init__(self, *, value: int = 0) -> None:
+        self.__value: int = max(int(value), 0)
+        self.__lock = threading.Lock()
+
+    def increment(self) -> int:
+        with self.__lock:
+            self.__value += 1
+            return self.__value
+
+    def decrement(self) -> int:
+        with self.__lock:
+            if self.__value > 0:
+                self.__value -= 1
+            return self.__value
+
+    @property
+    def value(self) -> int:
+        return self.__value

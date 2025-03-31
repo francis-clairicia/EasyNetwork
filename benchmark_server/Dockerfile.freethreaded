@@ -1,4 +1,4 @@
-ARG PYTHON_IMAGE=python:3.14
+ARG PYTHON_IMAGE=ghcr.io/abebus/free-threaded-python-docker-image:main
 
 FROM $PYTHON_IMAGE
 
@@ -8,12 +8,10 @@ ENV PIP_ROOT_USER_ACTION=ignore
 ENV PIP_NO_CACHE_DIR=true
 ENV PIP_DISABLE_PIP_VERSION_CHECK=true
 
-RUN pip install -U pip
+# Can be used only on free-threaded builds.
+ENV PYTHON_GIL=0
 
-# Install dependencies prior to copy scripts
-RUN mkdir -p /usr/src/servers
-COPY servers/requirements.txt /usr/src/servers/requirements.txt
-RUN pip install -r /usr/src/servers/requirements.txt
+RUN pip install -U pip
 
 COPY servers /usr/src/servers
 
