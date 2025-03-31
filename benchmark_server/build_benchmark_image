@@ -21,9 +21,12 @@ import docker
 ROOT_DIR = Path(__file__).parent
 
 SUPPORTED_PYTHON_VERSIONS = {
-    "3.11": "3.11.13",
-    "3.12": "3.12.10",
-    "3.13": "3.13.5",
+    # Free-threaded builds
+    "3.13t": "ghcr.io/abebus/free-threaded-python-docker-image:main",
+    # Normal builds
+    "3.11": "python:3.11.13",
+    "3.12": "python:3.12.10",
+    "3.13": "python:3.13.5",
 }
 
 
@@ -59,10 +62,12 @@ def _build_docker_image(client: docker.DockerClient, sdist_path: Path, tag: str,
         f"--tag={tag}",
     ]
     buildargs = {
-        "PYTHON_VERSION": SUPPORTED_PYTHON_VERSIONS[python_version],
+        "PYTHON_IMAGE": SUPPORTED_PYTHON_VERSIONS[python_version],
         "EASYNETWORK_SDIST": os.fspath(sdist_path),
     }
     docker_build_command_line += chain.from_iterable(["--build-arg", f"{key}={value}"] for key, value in buildargs.items())
+    if python_version.endswith("t"):
+        docker_build_command_line += [f"--file={ROOT_DIR / 'Dockerfile.freethreaded'}"]
     docker_build_command_line += [os.fspath(ROOT_DIR)]
 
     with subprocess.Popen(
@@ -101,7 +106,7 @@ def main() -> None:
     args = parser.parse_args()
 
     python_version: str = args.python_version
-    print(f"Selected Python version: {python_version} (Docker image tag: python:{SUPPORTED_PYTHON_VERSIONS[python_version]})")
+    print(f"Selected Python version: {python_version} (Docker image tag: {SUPPORTED_PYTHON_VERSIONS[python_version]})")
 
     client = docker.from_env()
     _build_docker_image(client, _build_sdist_for_docker_image(), args.tag, python_version)
