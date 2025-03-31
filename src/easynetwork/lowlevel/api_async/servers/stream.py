@@ -196,8 +196,11 @@ class AsyncStreamServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T_R
         from ....protocol import BufferedStreamProtocol, StreamProtocol
 
         async with contextlib.AsyncExitStack() as task_exit_stack:
-            task_exit_stack.push_async_callback(_transports_utils.aclose_forcefully, transport)
             task_exit_stack.push(self.__unhandled_exception_log)
+
+            # By default, abort the connection at the end of the task.
+            transport_close_exit_stack = await task_exit_stack.enter_async_context(contextlib.AsyncExitStack())
+            transport_close_exit_stack.push_async_callback(_transports_utils.aclose_forcefully, transport)
 
             producer = _stream.StreamDataProducer(self.__protocol)
             consumer: _stream.StreamDataConsumer[_T_Request] | _stream.BufferedStreamDataConsumer[_T_Request]
@@ -256,6 +259,9 @@ class AsyncStreamServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T_R
                         finally:
                             request = None
                 except StopAsyncIteration:
+                    # Request handler stopped normally, attempt a graceful close.
+                    transport_close_exit_stack.pop_all()
+                    transport_close_exit_stack.push_async_exit(contextlib.aclosing(transport))
                     return
             finally:
                 await request_handler_generator.aclose()

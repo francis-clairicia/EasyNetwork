@@ -67,6 +67,8 @@ def build_lowlevel_stream_server_handler(
     if logger is None:
         logger = logging.getLogger(__name__)
 
+    from ..lowlevel.api_async.transports import utils as _transports_utils
+
     async def handler(
         lowlevel_client: _lowlevel_stream_server.ConnectedStreamClient[_T_Response], /
     ) -> AsyncGenerator[float | None, _T_Request]:
@@ -131,6 +133,7 @@ def build_lowlevel_stream_server_handler(
                 try:
                     timeout = await anext(request_handler_generator)
                 except StopAsyncIteration:
+                    await _transports_utils.aclose_forcefully(client)
                     return
                 else:
                     while True:
