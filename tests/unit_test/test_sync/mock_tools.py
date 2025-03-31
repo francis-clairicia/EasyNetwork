@@ -20,6 +20,7 @@ def make_transport_mock(*, mocker: MockerFixture, spec: Any) -> MagicMock:
     def close_side_effect() -> None:
         mock_transport.is_closed.return_value = True
 
+    mock_transport.abort.side_effect = close_side_effect
     mock_transport.close.side_effect = close_side_effect
     mock_transport.extra_attributes = {}
     mock_transport.extra.side_effect = weak_method_proxy(TypedAttributeProvider.extra.__get__(mock_transport))
