@@ -33,7 +33,6 @@ import logging
 import selectors
 import socket
 import sys
-import threading
 import warnings
 from collections import deque
 from collections.abc import Buffer, Callable, Iterable, Mapping
@@ -49,7 +48,7 @@ else:
     del ssl
 
 from ....exceptions import UnsupportedOperation
-from ... import _lock, _unix_utils, _utils, constants, socket as socket_tools
+from ... import _unix_utils, _utils, constants, socket as socket_tools
 from . import base_selector
 
 if TYPE_CHECKING:
@@ -598,13 +597,20 @@ class SocketStreamListener(base_selector.SelectorListener[SocketStreamTransport]
         handler: Callable[[SocketStreamTransport], R],
         executor: concurrent.futures.Executor,
     ) -> concurrent.futures.Future[R]:
+        future: concurrent.futures.Future[R]
         try:
             client_sock, _ = self.__socket.accept()
         except (BlockingIOError, InterruptedError):
             raise base_selector.WouldBlockOnRead(self.__socket.fileno()) from None
-
-        future = executor.submit(self.__in_executor, client_sock, handler)
-        future.add_done_callback(functools.partial(self.__on_task_done, client_sock=client_sock))
+        except OSError as exc:
+            if exc.errno not in constants.IGNORABLE_ACCEPT_ERRNOS:
+                raise
+            future = concurrent.futures.Future()
+            future.cancel()
+            future.set_running_or_notify_cancel()
+        else:
+            future = executor.submit(self.__in_executor, client_sock, handler)
+            future.add_done_callback(functools.partial(self.__on_task_done, client_sock=client_sock))
         return future
 
     def is_accept_capacity_error(self, exc: Exception) -> bool:
@@ -728,19 +734,26 @@ class SSLStreamListener(base_selector.SelectorListener[SSLStreamTransport]):
         handler: Callable[[SSLStreamTransport], R],
         executor: concurrent.futures.Executor,
     ) -> concurrent.futures.Future[R]:
+        client_task_future: concurrent.futures.Future[R]
         try:
             client_sock, _ = self.__socket.accept()
         except (BlockingIOError, InterruptedError):
             raise base_selector.WouldBlockOnRead(self.__socket.fileno()) from None
-
-        client_task_future: concurrent.futures.Future[R] = concurrent.futures.Future()
-
-        whole_task_future = executor.submit(self.__in_executor, client_sock, handler, client_task_future)
-        whole_task_future.add_done_callback(
-            functools.partial(self.__on_executor_task_done, client_sock=client_sock, client_task_future=client_task_future)
-        )
-        client_task_future.add_done_callback(functools.partial(self.__on_client_task_done, whole_task_future=whole_task_future))
-
+        except OSError as exc:
+            if exc.errno not in constants.IGNORABLE_ACCEPT_ERRNOS:
+                raise
+            client_task_future = concurrent.futures.Future()
+            client_task_future.cancel()
+            client_task_future.set_running_or_notify_cancel()
+        else:
+            client_task_future = concurrent.futures.Future()
+            whole_task_future = executor.submit(self.__in_executor, client_sock, handler, client_task_future)
+            whole_task_future.add_done_callback(
+                functools.partial(self.__on_executor_task_done, client_sock=client_sock, client_task_future=client_task_future)
+            )
+            client_task_future.add_done_callback(
+                functools.partial(self.__on_client_task_done, whole_task_future=whole_task_future)
+            )
         return client_task_future
 
     def is_accept_capacity_error(self, exc: Exception) -> bool:
@@ -858,7 +871,7 @@ class SocketDatagramListener(base_selector.SelectorDatagramListener["_RetAddress
     .. versionadded:: NEXT_VERSION
     """
 
-    __slots__ = ("__socket", "__extra_attributes", "__send_lock")
+    __slots__ = ("__socket", "__extra_attributes")
 
     def __init__(
         self,
@@ -879,10 +892,7 @@ class SocketDatagramListener(base_selector.SelectorDatagramListener["_RetAddress
         self.__socket: socket.socket = sock
         self.__socket.setblocking(False)
 
-        self.__send_lock = _lock.ForkSafeLock(threading.Lock)
-
-        socket_proxy = socket_tools.SocketProxy(self.__socket, lock=self.__send_lock.get)
-        self.__extra_attributes = MappingProxyType(socket_tools._get_socket_extra(socket_proxy, wrap_in_proxy=False))
+        self.__extra_attributes = MappingProxyType(socket_tools._get_socket_extra(self.__socket))
 
     def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
         try:
@@ -895,13 +905,11 @@ class SocketDatagramListener(base_selector.SelectorDatagramListener["_RetAddress
 
     @_utils.inherit_doc(base_selector.SelectorDatagramListener)
     def is_closed(self) -> bool:
-        with self.__send_lock.get():
-            return self.__socket.fileno() < 0
+        return self.__socket.fileno() < 0
 
     @_utils.inherit_doc(base_selector.SelectorDatagramListener)
     def close(self) -> None:
-        with self.__send_lock.get():
-            self.__socket.close()
+        self.__socket.close()
 
     @_utils.inherit_doc(base_selector.SelectorDatagramListener)
     def read_fileno(self) -> int:
@@ -925,16 +933,7 @@ class SocketDatagramListener(base_selector.SelectorDatagramListener["_RetAddress
             return executor.submit(handler, datagram, client_address)
 
     @_utils.inherit_doc(base_selector.SelectorDatagramListener)
-    def send_to_noblock(self, data: bytes | bytearray | memoryview, address: _Address) -> None:
-        with self.__send_lock.get():
-            return self.__send_to_noblock_unsafe_impl(data, address)
-
-    @_utils.inherit_doc(base_selector.SelectorDatagramListener)
-    def send_to(self, data: bytes | bytearray | memoryview, address: _Address, timeout: float) -> None:
-        with _utils.lock_with_timeout(self.__send_lock.get(), timeout) as timeout:
-            self._retry(lambda: self.__send_to_noblock_unsafe_impl(data, address), timeout)
-
-    def __send_to_noblock_unsafe_impl(self, data: bytes | bytearray | memoryview, address: _Address) -> None:
+    def send_noblock_to(self, data: bytes | bytearray | memoryview, address: _Address) -> None:
         try:
             self.__socket.sendto(data, address)
         except (BlockingIOError, InterruptedError):

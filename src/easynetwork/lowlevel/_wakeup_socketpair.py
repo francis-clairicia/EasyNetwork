@@ -21,9 +21,7 @@ __all__ = [
 ]
 
 import contextlib
-import selectors
 import socket
-from collections.abc import Callable
 
 from .constants import DEFAULT_STREAM_BUFSIZE
 from .socket import set_tcp_nodelay
@@ -32,8 +30,6 @@ from .socket import set_tcp_nodelay
 # Originally come from Trio
 # https://github.com/python-trio/trio/blob/v0.29.0/src/trio/_core/_wakeup_socketpair.py
 class WakeupSocketPair:
-
-    _selector_factory: Callable[[], selectors.BaseSelector] = getattr(selectors, "PollSelector", selectors.SelectSelector)
 
     def __init__(self) -> None:
         self._receive: socket.socket
@@ -60,12 +56,6 @@ class WakeupSocketPair:
     def close(self) -> None:
         self._send.close()
         self._receive.close()
-
-    def sleep(self, delay: float) -> None:
-        with self._selector_factory() as selector:
-            selector.register(self._receive.fileno(), selectors.EVENT_READ)
-            selector.select(delay)
-            self.drain()
 
     def wakeup_thread_and_signal_safe(self) -> None:
         with contextlib.suppress(BlockingIOError, InterruptedError):
