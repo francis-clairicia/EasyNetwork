@@ -175,8 +175,9 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
             backend = listener.backend()
 
             client_data_cache: weakref.WeakValueDictionary[_T_Address, _ClientData] = weakref.WeakValueDictionary()
-            client_ctx_cache: weakref.WeakValueDictionary[_T_Address, DatagramClientContext[_T_Response, _T_Address]]
-            client_ctx_cache = weakref.WeakValueDictionary()
+            client_ctx_cache: weakref.WeakValueDictionary[_T_Address, DatagramClientContext[_T_Response, _T_Address]] = (
+                weakref.WeakValueDictionary()
+            )
 
             default_context = contextvars.copy_context()
 
