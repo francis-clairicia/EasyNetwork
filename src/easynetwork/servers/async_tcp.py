@@ -306,9 +306,6 @@ class AsyncTCPNetworkServer(
                     self.__set_socket_linger_if_not_closed,
                     lowlevel_client.extra(INETSocketAttribute.socket),
                 )
-            elif lowlevel_client.extra(TLSAttribute.standard_compatible, False):
-                # We expect a TLS close handshake, so we must (try to) properly close the transport before
-                await client_exit_stack.enter_async_context(contextlib.aclosing(lowlevel_client))
 
             del lowlevel_client
 
