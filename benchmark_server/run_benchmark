@@ -56,6 +56,12 @@ class _BenchmarkDef(TypedDict):
     server: _CommandLine
     ping: _PingOptions
     client: _CommandLine
+    server_spec: NotRequired[_BenchmarkServerSpecDef]
+
+
+class _BenchmarkServerSpecDef(TypedDict, total=False):
+    have_gc: bool
+    need_concurrency_value: bool
 
 
 class _BenchmarkVariationDef(TypedDict):
@@ -1295,7 +1301,135 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
         },
         "client": _unix_datagram_echoclient,
     },
+    #########################################################################
+    ################################ Testing ################################
+    #########################################################################
+    {
+        "name": "test-easynetwork-threaded-stream-clients",
+        "title": "(Test) Multi-threaded stream server ('clients' strategy)",
+        "server": (
+            *_python_cmd,
+            "/usr/src/servers/test_selector_stream_server.py",
+            f"--path={UNIX_SOCKET_PATH}",
+            "--strategy=clients",
+            "--disable-gc",
+        ),
+        "ping": {
+            "server_address": _unix_stream_server_address,
+            "ping_request": b"ping\n",
+            "socket_type": SOCK_STREAM,
+        },
+        "client": _unix_stream_echoclient,
+        "server_spec": {
+            "need_concurrency_value": True,
+        },
+    },
+    {
+        "name": "test-easynetwork-threaded-stream-requests",
+        "title": "(Test) Multi-threaded stream server ('requests' strategy)",
+        "server": (
+            *_python_cmd,
+            "/usr/src/servers/test_selector_stream_server.py",
+            f"--path={UNIX_SOCKET_PATH}",
+            "--strategy=requests",
+            "--disable-gc",
+        ),
+        "ping": {
+            "server_address": _unix_stream_server_address,
+            "ping_request": b"ping\n",
+            "socket_type": SOCK_STREAM,
+        },
+        "client": _unix_stream_echoclient,
+        "server_spec": {
+            "need_concurrency_value": True,
+        },
+    },
+    {
+        "name": "test-easynetwork-threaded-stream-buffered-clients",
+        "title": "(Test) Multi-threaded stream server ('clients' strategy + buffered)",
+        "server": (
+            *_python_cmd,
+            "/usr/src/servers/test_selector_stream_server.py",
+            f"--path={UNIX_SOCKET_PATH}",
+            "--strategy=clients",
+            "--buffered",
+            "--disable-gc",
+        ),
+        "ping": {
+            "server_address": _unix_stream_server_address,
+            "ping_request": b"ping\n",
+            "socket_type": SOCK_STREAM,
+        },
+        "client": _unix_stream_echoclient,
+        "server_spec": {
+            "need_concurrency_value": True,
+        },
+    },
+    {
+        "name": "test-easynetwork-threaded-stream-buffered-requests",
+        "title": "(Test) Multi-threaded stream server ('requests' strategy + buffered)",
+        "server": (
+            *_python_cmd,
+            "/usr/src/servers/test_selector_stream_server.py",
+            f"--path={UNIX_SOCKET_PATH}",
+            "--strategy=requests",
+            "--buffered",
+            "--disable-gc",
+        ),
+        "ping": {
+            "server_address": _unix_stream_server_address,
+            "ping_request": b"ping\n",
+            "socket_type": SOCK_STREAM,
+        },
+        "client": _unix_stream_echoclient,
+        "server_spec": {
+            "need_concurrency_value": True,
+        },
+    },
+    {
+        "name": "test-easynetwork-threaded-dgram-requests",
+        "title": "(Test) Multi-threaded datagram server ('requests' strategy)",
+        "server": (
+            *_python_cmd,
+            "/usr/src/servers/test_selector_datagram_server.py",
+            f"--path={UNIX_SOCKET_PATH}",
+            "--disable-gc",
+        ),
+        "ping": {
+            "server_address": _unix_datagram_server_address,
+            "ping_request": b"ping",
+            "socket_type": SOCK_DGRAM,
+        },
+        "client": _unix_datagram_echoclient,
+        "server_spec": {
+            "need_concurrency_value": True,
+        },
+    },
+    {
+        "name": "test-easynetwork-threaded-dgram-requests-ttl",
+        "title": "(Test) Multi-threaded datagram server ('requests' strategy + TTL)",
+        "server": (
+            *_python_cmd,
+            "/usr/src/servers/test_selector_datagram_server.py",
+            f"--path={UNIX_SOCKET_PATH}",
+            "--client-ttl=10",
+            "--disable-gc",
+        ),
+        "ping": {
+            "server_address": _unix_datagram_server_address,
+            "ping_request": b"ping",
+            "socket_type": SOCK_DGRAM,
+        },
+        "client": _unix_datagram_echoclient,
+        "server_spec": {
+            "need_concurrency_value": True,
+        },
+    },
 )
+
+
+def _get_benchmark_server_spec(b: _BenchmarkDef) -> _BenchmarkServerSpecDef:
+    return b.get("server_spec") or {}
 
 
 def _check_definition_consistency() -> None:
@@ -1309,8 +1443,9 @@ def _check_definition_consistency() -> None:
 
     # - All python servers should have GC disabled
     for b in BENCHMARKS_DEF:
+        server_spec = _get_benchmark_server_spec(b)
         server_args = tuple(b["server"])
-        if server_args[: len(_python_cmd)] == _python_cmd and "--disable-gc" not in server_args:
+        if server_spec.get("have_gc", True) and "--disable-gc" not in server_args:
             raise AssertionError(f'{b["name"]} misses --disable-gc flag.')
 
 
@@ -1328,8 +1463,32 @@ def _stop_container(container: Container) -> None:
         container.stop(timeout=2)
 
 
+def _run_cmd_and_get_output(client: docker.DockerClient, image_tag: str, cmd: _CommandLine) -> str:
+    return client.containers.run(image_tag, cmd, stdout=True, remove=True).decode("utf8").strip()
+
+
 def _get_python_version_used_in_docker_image(client: docker.DockerClient, image_tag: str) -> str:
-    return client.containers.run(image_tag, (*_python_cmd, "-V"), stdout=True, remove=True).decode("utf8").strip()
+    python_version = _run_cmd_and_get_output(client, image_tag, (*_python_cmd, "-V"))
+    gil_enabled = _run_cmd_and_get_output(
+        client,
+        image_tag,
+        (
+            *_python_cmd,
+            "-c",
+            'import sys; _is_gil_enabled = getattr(sys, "_is_gil_enabled", lambda: True); print(_is_gil_enabled())',
+        ),
+    )
+    return f"{python_version} (GIL enabled: {gil_enabled})"
+
+
+def _get_container_logs(container: Container) -> str:
+    try:
+        logs: bytes | str = container.logs()
+    except docker.errors.NotFound:
+        logs = ""
+    if not isinstance(logs, str):
+        logs = str(logs, "utf-8", "replace")
+    return logs
 
 
 def _start_docker_instance(
@@ -1437,13 +1596,7 @@ def _start_docker_instance(
                 if unix_local_path:
                     os.unlink(unix_local_path)
 
-        try:
-            logs: bytes | str = container.logs()
-        except docker.errors.NotFound:
-            logs = ""
-        if not isinstance(logs, str):
-            logs = str(logs, "utf-8", "replace")
-        sys.exit("Could not start server\n" + logs)
+        sys.exit("Could not start server\n" + _get_container_logs(container))
 
 
 def _round_all_values(data: _BenchmarkVariationData) -> None:
@@ -1606,6 +1759,9 @@ def main() -> None:
 
             print("Starting server...")
             server_cmd = benchmark["server"]
+            if _get_benchmark_server_spec(benchmark).get("need_concurrency_value", False):
+                server_cmd += (f"--concurrency={concurrency}",)
+
             print("  " + shlex.join(server_cmd))
             container: Container = _start_docker_instance(
                 client=client,
@@ -1624,9 +1780,13 @@ def main() -> None:
             print("Warming up server...")
             warmup_cmd = benchmark["client"] + warmup
             print(shlex.join(warmup_cmd))
-            subprocess.check_output(warmup_cmd)
+            try:
+                subprocess.check_output(warmup_cmd)
+            except BaseException:
+                print("Output from server:")
+                print(_get_container_logs(container))
+                raise
             print("-> Warm up done.")
-            time.sleep(1)
             print()
 
             benchmark_data: _BenchmarkData = {
@@ -1636,6 +1796,9 @@ def main() -> None:
             benchmarks_data_list.append(benchmark_data)
 
             for variation in variations:
+                # Pause time between benchmarks run
+                time.sleep(1)
+
                 benchmark_title = f"BENCHMARK: {variation['title']}"
                 print(benchmark_title)
                 print("-" * len(benchmark_title))
@@ -1646,7 +1809,12 @@ def main() -> None:
                     f"--concurrency={concurrency}",
                 )
                 print(shlex.join(client_cmd))
-                output = subprocess.check_output(client_cmd, text=True)
+                try:
+                    output = subprocess.check_output(client_cmd, text=True)
+                except BaseException:
+                    print("Output from server:")
+                    print(_get_container_logs(container))
+                    raise
                 print("=> Done. Reading data...")
                 data: _BenchmarkVariationData = json.loads(output)
                 _round_all_values(data)
@@ -1674,9 +1842,6 @@ def main() -> None:
 
                 benchmark_data["variation"].append(data)
 
-                # Pause time between benchmarks run
-                time.sleep(1)
-
         # Pause time between server creation
         time.sleep(1)
 
@@ -1690,6 +1855,7 @@ def main() -> None:
 
     now = datetime.datetime.now()
     if json_output_file:
+        print("Writing JSON report...")
         if report_file_with_date:
             json_output_file = _add_date_to_filepath(json_output_file, now)
         benchmark_json_report = {
@@ -1704,11 +1870,13 @@ def main() -> None:
         with open(json_output_file, "w") as f:
             json.dump(benchmark_json_report, f, indent=4)
 
-        print(f"JSON report written in {json_output_file}")
+        print(f"=> JSON report written in {json_output_file}")
 
     if html_output_file:
         import plotly.graph_objects as go
         from plotly.offline import get_plotlyjs
+
+        print("Writing HTML report...")
 
         if report_file_with_date:
             html_output_file = _add_date_to_filepath(html_output_file, now)
@@ -1843,7 +2011,7 @@ def main() -> None:
             print("</body>", file=f)
             print("</html>", file=f)
 
-        print(f"HTML report written in {html_output_file}")
+        print(f"=> HTML report written in {html_output_file}")
 
 
 if __name__ == "__main__":
