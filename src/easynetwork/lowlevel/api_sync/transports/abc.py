@@ -525,9 +525,6 @@ class DatagramListener[Address](BaseTransport):
         """
         Send the `data` bytes to the remote peer `address`.
 
-        Important:
-            This method should be safe to call from multiple threads.
-
         Parameters:
             data: the bytes to send.
             address: the remote peer.
