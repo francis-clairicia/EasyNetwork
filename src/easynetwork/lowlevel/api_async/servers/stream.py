@@ -42,7 +42,6 @@ class ConnectedStreamClient(_transports.AsyncBaseTransport, Generic[_T_Response]
     __slots__ = (
         "__transport",
         "__producer",
-        "__exit_stack",
         "__send_guard",
     )
 
@@ -70,6 +69,11 @@ class ConnectedStreamClient(_transports.AsyncBaseTransport, Generic[_T_Response]
     async def aclose(self) -> None:
         """
         Closes the endpoint.
+
+        Warning:
+            :meth:`aclose` performs a graceful close, waiting for the transport to close.
+
+            If :meth:`aclose` is cancelled, the transport is closed abruptly.
         """
         with self.__send_guard:
             await self.__transport.aclose()
