@@ -13,7 +13,7 @@ from collections import deque
 from collections.abc import Callable
 from errno import EADDRINUSE, EINVAL, ENOTCONN, errorcode as errno_errorcode
 from socket import SO_ERROR, SOL_SOCKET
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from easynetwork.exceptions import BusyResourceError
 from easynetwork.lowlevel._final import runtime_final_class
@@ -44,6 +44,7 @@ from easynetwork.lowlevel._utils import (
     set_reuseport,
     supports_socket_sendmsg,
     validate_listener_hosts,
+    validate_optional_timeout_delay,
     validate_timeout_delay,
     weak_method_proxy,
 )
@@ -545,44 +546,67 @@ def test____is_ssl_eof_error____no_ssl_module() -> None:
     assert not is_ssl_eof_error(ssl.SSLEOFError())
 
 
+class _validate_timeout_delay_func_type(Protocol):
+    def __call__(self, /, delay: float, *, positive_check: bool) -> float:
+        raise NotImplementedError
+
+
 @pytest.mark.parametrize("delay", [1, 3.14, math.inf])
 @pytest.mark.parametrize("positive_check", [False, True], ids=lambda positive_check: f"{positive_check=}")
-def test____validate_timeout_delay____positive_value(delay: float, positive_check: bool) -> None:
+@pytest.mark.parametrize("validator_func", [validate_timeout_delay, validate_optional_timeout_delay])
+def test____validate_timeout_delay____positive_value(
+    delay: float,
+    positive_check: bool,
+    validator_func: _validate_timeout_delay_func_type,
+) -> None:
     # Arrange
 
     # Act & Assert
-    assert validate_timeout_delay(delay, positive_check=positive_check) == delay
+    assert validator_func(delay, positive_check=positive_check) == delay
 
 
 @pytest.mark.parametrize("positive_check", [False, True], ids=lambda positive_check: f"{positive_check=}")
-def test____validate_timeout_delay____null_value(positive_check: bool) -> None:
+@pytest.mark.parametrize("validator_func", [validate_timeout_delay, validate_optional_timeout_delay])
+def test____validate_timeout_delay____null_value(
+    positive_check: bool,
+    validator_func: _validate_timeout_delay_func_type,
+) -> None:
     # Arrange
     delay: float = 0.0
 
     # Act & Assert
-    assert validate_timeout_delay(delay, positive_check=positive_check) == delay
+    assert validator_func(delay, positive_check=positive_check) == delay
 
 
 @pytest.mark.parametrize("delay", [-1, -3.14, -math.inf])
 @pytest.mark.parametrize("positive_check", [False, True], ids=lambda positive_check: f"{positive_check=}")
-def test____validate_timeout_delay____negative_value(delay: float, positive_check: bool) -> None:
+@pytest.mark.parametrize("validator_func", [validate_timeout_delay, validate_optional_timeout_delay])
+def test____validate_timeout_delay____negative_value(
+    delay: float,
+    positive_check: bool,
+    validator_func: _validate_timeout_delay_func_type,
+) -> None:
     # Arrange
 
     # Act & Assert
     if positive_check:
         with pytest.raises(ValueError, match=r"^Invalid delay: negative value$"):
-            validate_timeout_delay(delay, positive_check=positive_check)
+            validator_func(delay, positive_check=positive_check)
     else:
-        assert validate_timeout_delay(delay, positive_check=positive_check) == delay
+        assert validator_func(delay, positive_check=positive_check) == delay
 
 
 @pytest.mark.parametrize("positive_check", [False, True], ids=lambda positive_check: f"{positive_check=}")
-def test____validate_timeout_delay____convert_integer_value(positive_check: bool) -> None:
+@pytest.mark.parametrize("validator_func", [validate_timeout_delay, validate_optional_timeout_delay])
+def test____validate_timeout_delay____convert_integer_value(
+    positive_check: bool,
+    validator_func: _validate_timeout_delay_func_type,
+) -> None:
     # Arrange
     delay: int = 32
 
     # Act
-    new_delay = validate_timeout_delay(delay, positive_check=positive_check)
+    new_delay = validator_func(delay, positive_check=positive_check)
 
     # Assert
     assert type(new_delay) is float
@@ -590,13 +614,25 @@ def test____validate_timeout_delay____convert_integer_value(positive_check: bool
 
 
 @pytest.mark.parametrize("positive_check", [False, True], ids=lambda positive_check: f"{positive_check=}")
-def test____validate_timeout_delay____not_a_number(positive_check: bool) -> None:
+@pytest.mark.parametrize("validator_func", [validate_timeout_delay, validate_optional_timeout_delay])
+def test____validate_timeout_delay____not_a_number(
+    positive_check: bool,
+    validator_func: _validate_timeout_delay_func_type,
+) -> None:
     # Arrange
     delay: float = math.nan
 
     # Act & Assert
     with pytest.raises(ValueError, match=r"^Invalid delay: NaN \(not a number\)$"):
-        validate_timeout_delay(delay, positive_check=positive_check)
+        validator_func(delay, positive_check=positive_check)
+
+
+@pytest.mark.parametrize("positive_check", [False, True], ids=lambda positive_check: f"{positive_check=}")
+def test____validate_optional_timeout_delay____None_value(positive_check: bool) -> None:
+    # Arrange
+
+    # Act & Assert
+    assert validate_optional_timeout_delay(None, positive_check=positive_check) == math.inf
 
 
 def test____iter_bytes____iterate_over_bytes_returning_one_byte() -> None:

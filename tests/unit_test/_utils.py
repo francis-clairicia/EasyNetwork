@@ -190,13 +190,15 @@ def __make_write_in_buffer_side_effect(to_write: bytes | list[bytes]) -> Callabl
         case bytes():
 
             def write_in_buffer_side_effect(buffer: bytearray | memoryview) -> int:
-                return write_in_buffer(memoryview(buffer), to_write)
+                with memoryview(buffer) as buffer:
+                    return write_in_buffer(buffer, to_write)
 
         case list() if all(isinstance(b, bytes) for b in to_write):
             iterator = iter(to_write)
 
             def write_in_buffer_side_effect(buffer: bytearray | memoryview) -> int:
-                return write_in_buffer(memoryview(buffer), next(iterator))
+                with memoryview(buffer) as buffer:
+                    return write_in_buffer(buffer, next(iterator))
 
         case _:
             pytest.fail("Invalid setup")

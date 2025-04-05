@@ -23,6 +23,7 @@ import contextvars
 import dataclasses
 import enum
 import logging
+import math
 import warnings
 import weakref
 from collections import deque
@@ -240,14 +241,15 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
         timeout: float | None
         try:
             datagram: bytes = client_data.pop_datagram_no_wait()
-            # Ignore sent timeout here, we already have the datagram.
-            await anext(request_handler_generator)
+            timeout = await anext(request_handler_generator)
         except StopAsyncIteration:
             return
         else:
             request: _T_Request | None
             try:
                 try:
+                    _utils.validate_optional_timeout_delay(timeout, positive_check=True)
+                    # Ignore sent timeout here, we already have the datagram.
                     request = self.__parse_datagram(datagram, self.__protocol)
                 except BaseException as exc:
                     timeout = await request_handler_generator.athrow(exc)
@@ -259,13 +261,16 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
             except StopAsyncIteration:
                 return
 
-            null_timeout_ctx = contextlib.nullcontext()
             backend = client_data.backend
             while True:
                 try:
                     try:
-                        with null_timeout_ctx if timeout is None else backend.timeout(timeout):
-                            datagram = await client_data.pop_datagram()
+                        match _utils.validate_optional_timeout_delay(timeout, positive_check=True):
+                            case math.inf:
+                                datagram = await client_data.pop_datagram()
+                            case timeout:
+                                with backend.timeout(timeout):
+                                    datagram = await client_data.pop_datagram()
                         request = self.__parse_datagram(datagram, self.__protocol)
                     except BaseException as exc:
                         timeout = await request_handler_generator.athrow(exc)

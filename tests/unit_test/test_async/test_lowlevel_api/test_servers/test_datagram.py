@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import math
 from collections import deque
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
 from typing import TYPE_CHECKING, Any, NoReturn
@@ -149,6 +150,49 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
         else:
             mock_backend.create_task_group.assert_called_once_with()
             mock_task_group.__aenter__.assert_awaited_once()
+
+    @pytest.mark.parametrize("invalid_timeout", [-1.0, math.nan])
+    @pytest.mark.parametrize("invalid_timeout_after_first_yield", [False, True], ids=lambda p: f"first_yield=={p}")
+    async def test____serve____invalid_timeout(
+        self,
+        invalid_timeout_after_first_yield: bool,
+        invalid_timeout: float,
+        server: AsyncDatagramServer[Any, Any, Any],
+        mock_datagram_listener: MagicMock,
+        mock_backend: MagicMock,
+        caplog: pytest.LogCaptureFixture,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        caplog.set_level(logging.ERROR)
+
+        async def serve_side_effect(handler: Callable[[bytes, Any], Awaitable[None]], task_group: TaskGroup) -> NoReturn:
+            packet = b"packet"
+
+            async def handler_coro(packet: bytes, address: Any, /) -> None:
+                return await handler(packet, address)
+
+            if invalid_timeout_after_first_yield:
+                task_group.start_soon(handler_coro, packet, mocker.sentinel.address)
+            await handler(packet, mocker.sentinel.address)
+            raise asyncio.CancelledError("serve_side_effect")
+
+        mock_datagram_listener.serve.side_effect = serve_side_effect
+        mock_backend.create_condition_var.side_effect = asyncio.Condition
+
+        @stub_decorator(mocker)
+        async def datagram_received_cb(_: Any) -> AsyncGenerator[float | None, Any]:
+            if invalid_timeout_after_first_yield:
+                yield 1.0
+            with pytest.raises(ValueError, match=r"^Invalid delay: .+$"):
+                yield invalid_timeout
+
+        # Act & Assert
+        async with TaskGroup() as tg:
+            with pytest.raises(asyncio.CancelledError, match=r"^serve_side_effect$"):
+                await server.serve(datagram_received_cb, tg)
+
+        assert not caplog.records
 
     async def test____serve____unhandled_exception____from_system(
         self,
