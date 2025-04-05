@@ -122,6 +122,10 @@ jobs:
         include:
           - python_version: '3.11'
             tox_py: py311
+    env:
+      # Since v7.6.11, coverage ships a pure python wheel (which is used on BSD) but the pure python Tracker always crashes.
+      # This indicates PDM not to use the .whl but the .tar.gz distribution in order to recompile the package in-place.
+      PDM_NO_BINARY: coverage
 
     name: test (freebsd-14.1, ${{ matrix.python_version }})
     steps:
@@ -135,6 +139,8 @@ jobs:
         with:
           release: '14.1'
           python-version: ${{ matrix.python_version }}
+          envs: >-
+            PDM_NO_BINARY
           run: |
             export TOX_WORK_DIR=/tmp/.tox
             tox run -f ${{ matrix.tox_py }} -- ${{ env.PYTEST_VERBOSE_FLAG }}
@@ -176,6 +182,10 @@ jobs:
         include:
           - python_version: '3.11'
             tox_py: py311
+    env:
+      # Since v7.6.11, coverage ships a pure python wheel (which is used on BSD) but the pure python Tracker always crashes.
+      # This indicates PDM not to use the .whl but the .tar.gz distribution in order to recompile the package in-place.
+      PDM_NO_BINARY: coverage
 
     name: test (openbsd-7.6, ${{ matrix.python_version }})
     steps:
@@ -199,7 +209,7 @@ jobs:
 
             $PYTHON -m venv /tmp/.venv
             . /tmp/.venv/bin/activate
-            pip install -r .github/requirements-test.txt -e .
+            pip install -r .github/requirements-test.txt -e . --no-binary="${{ env.PDM_NO_BINARY }}"
 
             # Launch common checks
             pytest -m "not unit and not functional" --no-cov ${{ env.PYTEST_VERBOSE_FLAG }}
@@ -250,6 +260,10 @@ jobs:
         include:
           - python_version: '3.11'
             tox_py: py311
+    env:
+      # Since v7.6.11, coverage ships a pure python wheel (which is used on BSD) but the pure python Tracker always crashes.
+      # This indicates PDM not to use the .whl but the .tar.gz distribution in order to recompile the package in-place.
+      PDM_NO_BINARY: coverage
 
     name: test (netbsd-10.0, ${{ matrix.python_version }})
     steps:
@@ -263,6 +277,8 @@ jobs:
         with:
           release: '10.0'
           python-version: ${{ matrix.python_version }}
+          envs: >-
+            PDM_NO_BINARY
           run: |
             export TOX_WORK_DIR=/tmp/.tox
             tox run -f ${{ matrix.tox_py }} -- ${{ env.PYTEST_VERBOSE_FLAG }}
