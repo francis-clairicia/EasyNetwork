@@ -54,6 +54,8 @@ def pytest_runtest_call(item: pytest.Item) -> Generator[None]:
     logger_crash_xfail: dict[str, str] = item_fixtures.get("logger_crash_xfail", {})
 
     log_line_counter: collections.Counter[str] = collections.Counter()
+
+    expected_failure_caught: dict[str, str] = {}
     for record in itertools.chain(caplog.get_records("setup"), caplog.get_records("call")):
         threshold_level = logger_crash_threshold_level.get(record.name, logging.ERROR)
         if record.levelno < threshold_level:
@@ -71,6 +73,10 @@ def pytest_runtest_call(item: pytest.Item) -> Generator[None]:
 
         expected_failure_message: str = logger_crash_xfail.get(record.name, "")
         if expected_failure_message:
-            pytest.xfail(f"{failure_message} because: {expected_failure_message}")
+            expected_failure_caught[record.name] = f"{failure_message} because: {expected_failure_message}"
         else:
             pytest.fail(failure_message)
+
+    if expected_failure_caught:
+        expected_failure_message = "\n".join(expected_failure_caught.values())
+        pytest.xfail(expected_failure_message)

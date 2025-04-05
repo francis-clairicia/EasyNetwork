@@ -221,9 +221,11 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
             )
         except Exception as exc:
             _utils.remove_traceback_frames_in_place(exc, 1)
-            logger = logging.getLogger(__name__)
-            logger.error("Unhandled exception: %s", exc, exc_info=exc)
+            self.__unhandled_exception_log(exc)
         finally:
+            client_data.mark_done()
+
+        try:
             self.__on_client_coroutine_task_done(
                 datagram_received_cb=datagram_received_cb,
                 client_ctx=client_ctx,
@@ -231,6 +233,13 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
                 task_group=task_group,
                 default_context=default_context,
             )
+        except Exception as exc:
+            self.__unhandled_exception_log(exc)
+
+    @classmethod
+    def __unhandled_exception_log(cls, exc: BaseException, /) -> None:
+        logger = logging.getLogger(__name__)
+        logger.error("Unhandled exception: %s", exc, exc_info=exc)
 
     async def __client_coroutine_inner_loop(
         self,
@@ -294,7 +303,6 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
         task_group: TaskGroup,
         default_context: contextvars.Context,
     ) -> None:
-        client_data.mark_done()
         if client_data.queue_is_empty():
             return
 
