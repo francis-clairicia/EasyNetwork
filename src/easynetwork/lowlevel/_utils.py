@@ -39,6 +39,7 @@ __all__ = [
     "set_reuseport",
     "supports_socket_sendmsg",
     "validate_listener_hosts",
+    "validate_optional_timeout_delay",
     "validate_timeout_delay",
     "weak_method_proxy",
 ]
@@ -231,9 +232,17 @@ def check_socket_no_ssl(socket: _socket.socket) -> None:
 def validate_timeout_delay(delay: float, *, positive_check: bool) -> float:
     if math.isnan(delay):
         raise ValueError("Invalid delay: NaN (not a number)")
-    if positive_check and delay < 0:
+    if positive_check and delay < 0.0:
         raise ValueError("Invalid delay: negative value")
     return float(delay)
+
+
+def validate_optional_timeout_delay(delay: float | None, *, positive_check: bool) -> float:
+    match delay:
+        case None:
+            return math.inf
+        case _:
+            return validate_timeout_delay(delay, positive_check=positive_check)
 
 
 def is_ssl_eof_error(exc: BaseException) -> TypeGuard[_SSLError]:

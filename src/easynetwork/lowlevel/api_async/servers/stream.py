@@ -22,6 +22,7 @@ import contextlib
 import dataclasses
 import functools
 import logging
+import math
 import types
 import warnings
 from collections.abc import AsyncGenerator, Callable, Mapping
@@ -248,12 +249,19 @@ class AsyncStreamServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T_R
             else:
                 try:
                     request: _T_Request | None
+                    _timeout_scope_ctx = self.backend().timeout
+                    _validate_timeout_delay = _utils.validate_optional_timeout_delay
                     _transport_is_closing = transport.is_closing
                     _next_packet = request_receiver.next
                     _request_handler_generator_asend = request_handler_generator.asend
                     while not _transport_is_closing():
                         try:
-                            request = await _next_packet(timeout)
+                            match _validate_timeout_delay(timeout, positive_check=True):
+                                case math.inf:
+                                    request = await _next_packet()
+                                case timeout:
+                                    with _timeout_scope_ctx(timeout):
+                                        request = await _next_packet()
                         except StopAsyncIteration:
                             raise
                         except BaseException as exc:
@@ -296,36 +304,39 @@ class _RequestReceiver(Generic[_T_Request]):
     consumer: _stream.StreamDataConsumer[_T_Request]
     max_recv_size: int
     disconnect_error_filter: Callable[[Exception], bool] | None
-    __null_timeout_ctx: contextlib.nullcontext[None] = dataclasses.field(init=False, default_factory=contextlib.nullcontext)
     __backend: AsyncBackend = dataclasses.field(init=False)
 
     def __post_init__(self) -> None:
         assert self.max_recv_size > 0, f"{self.max_recv_size=}"  # nosec assert_used
         self.__backend = self.transport.backend()
 
-    async def next(self, timeout: float | None) -> _T_Request:
+    async def next(self) -> _T_Request:
         consumer = self.consumer
-        with self.__null_timeout_ctx if timeout is None else self.__backend.timeout(timeout):
-            data: bytes | None = None
-            while True:
-                try:
-                    request = consumer.next(data)
-                except StopIteration:
-                    pass
-                else:
-                    if data is None:
-                        await self.__backend.cancel_shielded_coro_yield()
-                    return request
-                finally:
-                    data = None
-                try:
-                    data = await self.transport.recv(self.max_recv_size)
-                except Exception as exc:
-                    if self.disconnect_error_filter is not None and self.disconnect_error_filter(exc):
-                        break
-                    raise
-                if not data:
+        try:
+            request = consumer.next(None)
+        except StopIteration:
+            pass
+        else:
+            await self.__backend.cancel_shielded_coro_yield()
+            return request
+
+        data: bytes
+        while True:
+            try:
+                data = await self.transport.recv(self.max_recv_size)
+            except Exception as exc:
+                if self.disconnect_error_filter is not None and self.disconnect_error_filter(exc):
                     break
+                raise
+
+            if not data:
+                break
+            try:
+                return consumer.next(data)
+            except StopIteration:
+                pass
+            finally:
+                del data
 
         raise StopAsyncIteration
 
@@ -335,33 +346,35 @@ class _BufferedRequestReceiver(Generic[_T_Request]):
     transport: _transports.AsyncStreamReadTransport
     consumer: _stream.BufferedStreamDataConsumer[_T_Request]
     disconnect_error_filter: Callable[[Exception], bool] | None
-    __null_timeout_ctx: contextlib.nullcontext[None] = dataclasses.field(init=False, default_factory=contextlib.nullcontext)
     __backend: AsyncBackend = dataclasses.field(init=False)
 
     def __post_init__(self) -> None:
         self.__backend = self.transport.backend()
 
-    async def next(self, timeout: float | None) -> _T_Request:
+    async def next(self) -> _T_Request:
         consumer = self.consumer
-        with self.__null_timeout_ctx if timeout is None else self.__backend.timeout(timeout):
-            nbytes: int | None = None
-            while True:
+        try:
+            request = consumer.next(None)
+        except StopIteration:
+            pass
+        else:
+            await self.__backend.cancel_shielded_coro_yield()
+            return request
+
+        nbytes: int
+        while True:
+            with consumer.get_write_buffer() as buffer:
                 try:
-                    request = consumer.next(nbytes)
-                except StopIteration:
-                    pass
-                else:
-                    if nbytes is None:
-                        await self.__backend.cancel_shielded_coro_yield()
-                    return request
-                with consumer.get_write_buffer() as buffer:
-                    try:
-                        nbytes = await self.transport.recv_into(buffer)
-                    except Exception as exc:
-                        if self.disconnect_error_filter is not None and self.disconnect_error_filter(exc):
-                            break
-                        raise
-                if not nbytes:
-                    break
+                    nbytes = await self.transport.recv_into(buffer)
+                except Exception as exc:
+                    if self.disconnect_error_filter is not None and self.disconnect_error_filter(exc):
+                        break
+                    raise
+            if not nbytes:
+                break
+            try:
+                return consumer.next(nbytes)
+            except StopIteration:
+                pass
 
         raise StopAsyncIteration

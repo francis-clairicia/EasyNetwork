@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import math
 import warnings
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
 from typing import TYPE_CHECKING, Any, NoReturn
@@ -148,6 +149,7 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
             mock_stream_protocol,
             max_recv_size,
         )
+
         async with contextlib.aclosing(server):
             yield server
 
@@ -376,6 +378,39 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
                 )
 
         exception_caught.assert_called_once_with(False)
+
+    @pytest.mark.parametrize("invalid_timeout", [-1.0, math.nan])
+    async def test____serve____invalid_timeout(
+        self,
+        invalid_timeout: float,
+        server: AsyncStreamServer[Any, Any],
+        mock_stream_transport: MagicMock,
+        mock_listener: MagicMock,
+        caplog: pytest.LogCaptureFixture,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        caplog.set_level(logging.ERROR)
+
+        async def serve_side_effect(handler: Callable[[Any], Awaitable[None]], task_group: Any) -> NoReturn:
+            await handler(mock_stream_transport)
+            raise asyncio.CancelledError("serve_side_effect")
+
+        mock_listener.serve.side_effect = serve_side_effect
+        mock_stream_transport.recv.side_effect = OSError
+        mock_stream_transport.recv_into.side_effect = OSError
+
+        @stub_decorator(mocker)
+        async def client_connected_cb(_: Any) -> AsyncGenerator[float, Any]:
+            with pytest.raises(ValueError, match=r"^Invalid delay: .+$"):
+                yield invalid_timeout
+
+        # Act & Assert
+        async with TaskGroup() as tg:
+            with pytest.raises(asyncio.CancelledError, match=r"^serve_side_effect$"):
+                await server.serve(client_connected_cb, tg)
+
+        assert not caplog.records
 
     async def test____serve____unhandled_exception____from_system(
         self,
