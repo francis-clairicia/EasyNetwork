@@ -195,16 +195,26 @@ class ConcurrencyTestRequestHandler(AsyncDatagramRequestHandler[str, str]):
     sleep_time_before_second_yield: float | None = None
     sleep_time_before_response: float | None = None
     recreate_generator: bool = True
+    ignore_cancellation: bool = False
 
     async def handle(self, client: AsyncDatagramClient[str]) -> AsyncGenerator[None, str]:
         while True:
             assert (yield) == "something"
             if self.sleep_time_before_second_yield is not None:
-                await asyncio.sleep(self.sleep_time_before_second_yield)
+                if self.ignore_cancellation:
+                    await client.backend().ignore_cancellation(asyncio.sleep(self.sleep_time_before_second_yield))
+                else:
+                    await asyncio.sleep(self.sleep_time_before_second_yield)
             request = yield
             if self.sleep_time_before_response is not None:
-                await asyncio.sleep(self.sleep_time_before_response)
-            await client.send_packet(f"After wait: {request}")
+                if self.ignore_cancellation:
+                    await client.backend().ignore_cancellation(asyncio.sleep(self.sleep_time_before_response))
+                else:
+                    await asyncio.sleep(self.sleep_time_before_response)
+            if self.ignore_cancellation:
+                await client.backend().ignore_cancellation(client.send_packet(f"After wait: {request}"))
+            else:
+                await client.send_packet(f"After wait: {request}")
             if self.recreate_generator:
                 break
 
@@ -257,9 +267,6 @@ class ErrorBeforeYieldHandler(AsyncDatagramRequestHandler[str, str]):
             raise RandomError("An error occurred")
         request = yield
         await client.send_packet(request)
-
-    async def bad_request(self, client: AsyncDatagramClient[str], exc: BaseProtocolParseError, /) -> None:
-        pass
 
 
 class MyAsyncUnixDatagramServer(AsyncUnixDatagramServer[str, str]):
@@ -939,6 +946,29 @@ class TestAsyncUnixDatagramServer(BaseTestAsyncServer):
         await endpoint.sendto(b"hello, world.", None)
         async with asyncio.timeout(5):
             assert (await endpoint.recvfrom())[0] == b"After wait: hello, world."
+
+    @pytest.mark.parametrize("request_handler", [ConcurrencyTestRequestHandler], indirect=True)
+    @pytest.mark.parametrize("ignore_cancellation", [False, True], ids=lambda p: f"ignore_cancellation=={p}")
+    async def test____serve_forever____datagram_while_request_handle_is_performed____server_shutdown(
+        self,
+        server: MyAsyncUnixDatagramServer,
+        request_handler: ConcurrencyTestRequestHandler,
+        ignore_cancellation: bool,
+        client_factory: Callable[[], Awaitable[DatagramEndpoint]],
+        logger_crash_xfail: dict[str, str],
+    ) -> None:
+        request_handler.sleep_time_before_second_yield = 0.5
+        request_handler.ignore_cancellation = ignore_cancellation
+        endpoint = await client_factory()
+        if ignore_cancellation:
+            logger_crash_xfail["easynetwork.lowlevel.api_async.servers.datagram"] = "Cancellation has been ignored."
+
+        await endpoint.sendto(b"something", None)
+        await endpoint.sendto(b"hello, world.", None)
+        await endpoint.sendto(b"hello, world. new game +", None)
+        await asyncio.sleep(0.1)
+        async with asyncio.timeout(1):
+            await server.shutdown()
 
     @pytest.mark.parametrize("request_handler", [ConcurrencyTestRequestHandler], indirect=True)
     @pytest.mark.parametrize("recreate_generator", [False, True], ids=lambda p: f"recreate_generator=={p}")
