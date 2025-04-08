@@ -75,7 +75,7 @@ fn start_workers(args: &Args) -> io::Result<std::sync::mpsc::Receiver<RequestRep
         return Err(io::Error::other("--mpr is null"));
     }
 
-    for _ in 0..args.workers {
+    for worker_id in 0..args.workers {
         let barrier = barrier.clone();
         let sender = sender.clone();
         let mut client = client_from_args(args)?;
@@ -101,7 +101,7 @@ fn start_workers(args: &Args) -> io::Result<std::sync::mpsc::Receiver<RequestRep
                 client.read_exact(&mut recv_buffer).unwrap();
                 let request_duration = request_start_time.elapsed();
                 current_test_duration += request_duration;
-                sender.send(RequestReport::new(request_duration)).unwrap();
+                sender.send(RequestReport::new(request_duration, worker_id)).unwrap();
             }
         });
     }

@@ -1,17 +1,32 @@
-use std::{collections::LinkedList, fmt, time::Duration};
+use std::{
+    collections::{HashMap, LinkedList},
+    fmt,
+    time::{Duration, SystemTime},
+};
 
 use serde::Serialize;
 
 use statrs::statistics::{Data, Distribution, Max, Median, Min, OrderStatistics};
 
-#[derive(Debug, Clone)]
+pub type WorkerID = usize;
+
+#[derive(Debug, Clone, Serialize)]
 pub struct RequestReport {
+    #[serde(serialize_with = "helper::serialize_duration_as_millis_f64")]
     duration: Duration,
+    #[serde(skip)]
+    worker_id: WorkerID,
+    #[serde(serialize_with = "helper::serialize_unix_timestamp_f64")]
+    timestamp: SystemTime,
 }
 
 impl RequestReport {
-    pub fn new(duration: Duration) -> Self {
-        Self { duration }
+    pub fn new(duration: Duration, worker_id: WorkerID) -> Self {
+        Self {
+            duration,
+            worker_id,
+            timestamp: SystemTime::now(),
+        }
     }
 
     #[inline]
@@ -23,23 +38,31 @@ impl RequestReport {
 #[derive(Debug, Clone)]
 pub struct TestReport {
     times_per_request: LinkedList<RequestReport>,
+    times_per_request_for_worker: HashMap<WorkerID, LinkedList<RequestReport>>,
     duration: Duration,
     messages_per_request: usize,
     message_size: usize,
+    start_time: SystemTime,
 }
 
 impl TestReport {
     pub fn new(duration: Duration, messages_per_request: usize, message_size: usize) -> Self {
         Self {
             times_per_request: Default::default(),
+            times_per_request_for_worker: Default::default(),
             duration,
             messages_per_request,
             message_size,
+            start_time: SystemTime::now(),
         }
     }
 
     #[inline]
     pub fn add(&mut self, report: RequestReport) {
+        self.times_per_request_for_worker
+            .entry(report.worker_id)
+            .or_default()
+            .push_back(report.clone());
         self.times_per_request.push_back(report);
     }
 
@@ -73,6 +96,7 @@ pub struct Report {
     pub message_size: usize,
     #[serde(skip)]
     pub duration: u64,
+    pub raw_data: HashMap<usize, LinkedList<RequestReport>>,
 
     pub messages: usize,
     pub latency_min: f64,
@@ -131,10 +155,20 @@ impl TryFrom<TestReport> for Report {
         let latency_percent_low_outliers = 100.0 * latency_nb_low_outliers as f64 / latency_stats.len() as f64;
         let latency_percent_high_outliers = 100.0 * latency_nb_high_outliers as f64 / latency_stats.len() as f64;
 
+        let mut raw_data = report.times_per_request_for_worker;
+        raw_data.iter_mut().for_each(|(worker_id, timestamps)| {
+            timestamps.push_front(RequestReport {
+                duration: Duration::ZERO,
+                worker_id: *worker_id,
+                timestamp: report.start_time,
+            });
+        });
+
         Ok(Self {
             messages: nb_messages,
             message_size,
             duration: duration.as_secs(),
+            raw_data,
             latency_min,
             latency_max,
             latency_mean,
@@ -206,5 +240,30 @@ impl fmt::Display for DistributionDisplay<'_> {
             .collect();
 
         f.write_str(&distributions.join("; "))
+    }
+}
+
+mod helper {
+    use serde::Serialize;
+    use std::time::{Duration, SystemTime};
+
+    pub fn serialize_unix_timestamp_f64<S>(timestamp: &SystemTime, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::Error;
+
+        timestamp
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .map_err(S::Error::custom)?
+            .as_secs_f64()
+            .serialize(serializer)
+    }
+
+    pub fn serialize_duration_as_millis_f64<S>(duration: &Duration, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        (duration.as_secs_f64() * 1_000.0).serialize(serializer)
     }
 }

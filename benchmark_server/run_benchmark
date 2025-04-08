@@ -10,6 +10,7 @@ import argparse
 import contextlib
 import datetime
 import json
+import operator
 import os
 import re
 import shlex
@@ -69,6 +70,7 @@ class _BenchmarkData(TypedDict):
 
 class _BenchmarkVariationData(TypedDict):
     messages: int
+    raw_data: dict[str, list[_BenchmarkVariationSingleRequestData]]
     rps: int
     latency_min: float
     latency_max: float
@@ -82,6 +84,11 @@ class _BenchmarkVariationData(TypedDict):
     latency_percent_low_outliers: float
     latency_percent_high_outliers: float
     transfer: NotRequired[float]
+
+
+class _BenchmarkVariationSingleRequestData(TypedDict):
+    duration: float
+    timestamp: float
 
 
 _python_cmd: Final[_CommandLine] = ("python3", "-OO")
@@ -1450,6 +1457,28 @@ def _round_all_values(data: _BenchmarkVariationData) -> None:
     if "transfer" in data:
         data["transfer"] = round(data["transfer"], 2)
 
+    for worker_id in data["raw_data"]:
+        # Aggregate data by timestamp at 10 milliseconds resolution.
+        _new_data: dict[float, _BenchmarkVariationSingleRequestData] = {}
+        _duration_getter = operator.itemgetter("duration")
+        _timestamp_getter = operator.itemgetter("timestamp")
+        for raw_data in data["raw_data"][worker_id]:
+            raw_data["duration"] = round(raw_data["duration"], 3)
+            raw_data["timestamp"] = _data_timestamp = round(raw_data["timestamp"], 2)
+            try:
+                _old_raw_data = _new_data[_data_timestamp]
+            except KeyError:
+                _new_data[_data_timestamp] = raw_data
+            else:
+                _new_data[_data_timestamp] = max(_old_raw_data, raw_data, key=_duration_getter)
+                del _old_raw_data
+
+        data["raw_data"][worker_id] = sorted(_new_data.values(), key=_timestamp_getter)
+        del _new_data
+
+    # Sort by worker ID
+    data["raw_data"] = dict(sorted(data["raw_data"].items(), key=operator.itemgetter(0)))
+
 
 def _compute_latency_iqr(data: _BenchmarkVariationData) -> float:
     return data["latency_q3"] - data["latency_q1"]
@@ -1631,9 +1660,11 @@ def main() -> None:
                 )
                 print(shlex.join(client_cmd))
                 output = subprocess.check_output(client_cmd, text=True)
+                print("=> Done. Reading data...")
                 data: _BenchmarkVariationData = json.loads(output)
                 _round_all_values(data)
 
+                print()
                 print(f"{data['messages']} in {duration} seconds")
                 print("Latency:")
                 print(f"- min {data['latency_min']}ms")
@@ -1740,9 +1771,54 @@ def main() -> None:
             )
             return fig
 
+        def _build_tendency_graph_figures() -> list[go.Figure]:
+            all_graphs: list[go.Figure] = []
+
+            def _datetime_from_timestamp(timestamp: float, *, _cache: dict[float, datetime.datetime] = {}) -> datetime.datetime:
+                try:
+                    return _cache[timestamp]
+                except KeyError:
+                    _cache[timestamp] = result = datetime.datetime.fromtimestamp(timestamp)
+                    return result
+
+            for b in benchmarks_data_list:
+                for variation_idx, msgsize in enumerate(payload_size_levels):
+                    fig = go.Figure(
+                        data=[
+                            go.Scatter(
+                                name=f"Worker {worker_id}",
+                                x=[_datetime_from_timestamp(raw_data["timestamp"]) for raw_data in raw_requests_data],
+                                y=[raw_data["duration"] for raw_data in raw_requests_data],
+                            )
+                            for worker_id, raw_requests_data in b["variation"][variation_idx]["raw_data"].items()
+                        ]
+                    )
+                    fig.update_layout(
+                        yaxis_title="Latency (msec)",
+                        legend_title="Worker",
+                        annotations=[
+                            dict(
+                                xref="paper",
+                                yref="paper",
+                                x=0.0,
+                                y=1.02,
+                                xanchor="left",
+                                yanchor="bottom",
+                                text=f"Benchmark name: {b['name']} ({round(msgsize / 1024, 1)}KiB)",
+                                showarrow=False,
+                            )
+                        ],
+                    )
+
+                    all_graphs.append(fig)
+                    del fig
+
+            return all_graphs
+
         figures = [
             _build_rps_bars_figure(),
             _build_latency_boxes_figure(),
+            *_build_tendency_graph_figures(),
         ]
 
         benchmark_title = f"Server Performance Benchmark Report on {used_python_version} ({now.strftime('%c')})"
