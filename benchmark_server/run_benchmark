@@ -9,7 +9,9 @@ from __future__ import annotations
 import argparse
 import contextlib
 import datetime
+import itertools
 import json
+import operator
 import os
 import re
 import shlex
@@ -20,7 +22,7 @@ import time
 from collections.abc import Sequence
 from pathlib import Path
 from socket import SOCK_DGRAM, SOCK_STREAM
-from typing import TYPE_CHECKING, Final, NotRequired, TypeAlias, TypedDict, cast
+from typing import TYPE_CHECKING, Final, Literal, NotRequired, TypeAlias, TypedDict, cast
 
 import docker
 import docker.errors
@@ -68,6 +70,7 @@ class _BenchmarkData(TypedDict):
 
 
 class _BenchmarkVariationData(TypedDict):
+    graph_data: dict[str, list[_BenchmarkVariationReportingGraphData]]
     messages: int
     rps: int
     latency_min: float
@@ -82,6 +85,12 @@ class _BenchmarkVariationData(TypedDict):
     latency_percent_low_outliers: float
     latency_percent_high_outliers: float
     transfer: NotRequired[float]
+
+
+class _BenchmarkVariationReportingGraphData(TypedDict):
+    timestamp: float
+    lowerfence_value: float
+    upperfence_value: float
 
 
 _python_cmd: Final[_CommandLine] = ("python3", "-OO")
@@ -1450,6 +1459,13 @@ def _round_all_values(data: _BenchmarkVariationData) -> None:
     if "transfer" in data:
         data["transfer"] = round(data["transfer"], 2)
 
+    for raw_graph_data in itertools.chain.from_iterable(raw_graph_data for raw_graph_data in data["graph_data"].values()):
+        raw_graph_data["lowerfence_value"] = round(raw_graph_data["lowerfence_value"], 3)
+        raw_graph_data["upperfence_value"] = round(raw_graph_data["upperfence_value"], 3)
+
+    # Sort by worker ID
+    data["graph_data"] = dict(sorted(data["graph_data"].items(), key=operator.itemgetter(0)))
+
 
 def _compute_latency_iqr(data: _BenchmarkVariationData) -> float:
     return data["latency_q3"] - data["latency_q1"]
@@ -1631,9 +1647,11 @@ def main() -> None:
                 )
                 print(shlex.join(client_cmd))
                 output = subprocess.check_output(client_cmd, text=True)
+                print("=> Done. Reading data...")
                 data: _BenchmarkVariationData = json.loads(output)
                 _round_all_values(data)
 
+                print()
                 print(f"{data['messages']} in {duration} seconds")
                 print("Latency:")
                 print(f"- min {data['latency_min']}ms")
@@ -1740,9 +1758,71 @@ def main() -> None:
             )
             return fig
 
+        def _build_tendency_graph_figures() -> list[go.Figure]:
+            from plotly.subplots import make_subplots
+
+            all_graphs: list[go.Figure] = []
+
+            def _datetime_from_timestamp(timestamp: float, *, _cache: dict[float, datetime.datetime] = {}) -> datetime.datetime:
+                try:
+                    return _cache[timestamp]
+                except KeyError:
+                    _cache[timestamp] = result = datetime.datetime.fromtimestamp(timestamp)
+                    return result
+
+            _all_graph_names: dict[str, Literal["lowerfence_value", "upperfence_value"]] = {
+                "Upperfence": "upperfence_value",
+                "Lowerfence": "lowerfence_value",
+            }
+
+            for b in benchmarks_data_list:
+                for variation_idx, msgsize in enumerate(payload_size_levels):
+                    data = {
+                        (row, 1): [
+                            go.Scatter(
+                                name=f"Worker {worker_id} - {graph_name}",
+                                mode="lines",
+                                x=[_datetime_from_timestamp(raw_data["timestamp"]) for raw_data in raw_requests_data],
+                                y=[raw_data[_all_graph_names[graph_name]] for raw_data in raw_requests_data],
+                            )
+                            for worker_id, raw_requests_data in b["variation"][variation_idx]["graph_data"].items()
+                        ]
+                        for row, graph_name in enumerate(_all_graph_names, start=1)
+                    }
+                    fig = make_subplots(rows=len(_all_graph_names), cols=1, shared_xaxes=True)
+                    for (row, col), traces in data.items():
+                        fig.add_traces(traces, rows=row, cols=col)
+                        fig.update_yaxes(
+                            title_text="Latency (msec)",
+                            row=row,
+                            col=col,
+                        )
+
+                    fig.update_layout(
+                        legend_title="Worker",
+                        annotations=[
+                            dict(
+                                xref="paper",
+                                yref="paper",
+                                x=0.0,
+                                y=1.02,
+                                xanchor="left",
+                                yanchor="bottom",
+                                text=f"Benchmark name: {b['name']} ({round(msgsize / 1024, 1)}KiB)",
+                                showarrow=False,
+                            )
+                        ],
+                    )
+
+                    all_graphs.append(fig)
+                    del fig
+
+            return all_graphs
+
         figures = [
             _build_rps_bars_figure(),
             _build_latency_boxes_figure(),
+            *_build_tendency_graph_figures(),
         ]
 
         benchmark_title = f"Server Performance Benchmark Report on {used_python_version} ({now.strftime('%c')})"

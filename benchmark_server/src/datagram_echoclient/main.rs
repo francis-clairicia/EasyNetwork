@@ -89,7 +89,7 @@ fn start_workers(args: &Args) -> io::Result<std::sync::mpsc::Receiver<RequestRep
                 client.recv(&mut recv_buffer).unwrap();
                 let request_duration = request_start_time.elapsed();
                 current_test_duration += request_duration;
-                sender.send(RequestReport::new(request_duration)).unwrap();
+                sender.send(RequestReport::new(request_duration, worker_id)).unwrap();
             }
         });
     }
