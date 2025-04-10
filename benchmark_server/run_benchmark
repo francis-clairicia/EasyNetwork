@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import datetime
+import itertools
 import json
 import operator
 import os
@@ -21,7 +22,7 @@ import time
 from collections.abc import Sequence
 from pathlib import Path
 from socket import SOCK_DGRAM, SOCK_STREAM
-from typing import TYPE_CHECKING, Final, NotRequired, TypeAlias, TypedDict, cast
+from typing import TYPE_CHECKING, Final, Literal, NotRequired, TypeAlias, TypedDict, cast
 
 import docker
 import docker.errors
@@ -69,8 +70,8 @@ class _BenchmarkData(TypedDict):
 
 
 class _BenchmarkVariationData(TypedDict):
+    graph_data: dict[str, list[_BenchmarkVariationReportingGraphData]]
     messages: int
-    raw_data: dict[str, list[_BenchmarkVariationSingleRequestData]]
     rps: int
     latency_min: float
     latency_max: float
@@ -86,9 +87,10 @@ class _BenchmarkVariationData(TypedDict):
     transfer: NotRequired[float]
 
 
-class _BenchmarkVariationSingleRequestData(TypedDict):
-    duration: float
+class _BenchmarkVariationReportingGraphData(TypedDict):
     timestamp: float
+    lowerfence_value: float
+    upperfence_value: float
 
 
 _python_cmd: Final[_CommandLine] = ("python3", "-OO")
@@ -1457,27 +1459,12 @@ def _round_all_values(data: _BenchmarkVariationData) -> None:
     if "transfer" in data:
         data["transfer"] = round(data["transfer"], 2)
 
-    for worker_id in data["raw_data"]:
-        # Aggregate data by timestamp at 10 milliseconds resolution.
-        _new_data: dict[float, _BenchmarkVariationSingleRequestData] = {}
-        _duration_getter = operator.itemgetter("duration")
-        _timestamp_getter = operator.itemgetter("timestamp")
-        for raw_data in data["raw_data"][worker_id]:
-            raw_data["duration"] = round(raw_data["duration"], 3)
-            raw_data["timestamp"] = _data_timestamp = round(raw_data["timestamp"], 2)
-            try:
-                _old_raw_data = _new_data[_data_timestamp]
-            except KeyError:
-                _new_data[_data_timestamp] = raw_data
-            else:
-                _new_data[_data_timestamp] = max(_old_raw_data, raw_data, key=_duration_getter)
-                del _old_raw_data
-
-        data["raw_data"][worker_id] = sorted(_new_data.values(), key=_timestamp_getter)
-        del _new_data
+    for raw_graph_data in itertools.chain.from_iterable(raw_graph_data for raw_graph_data in data["graph_data"].values()):
+        raw_graph_data["lowerfence_value"] = round(raw_graph_data["lowerfence_value"], 3)
+        raw_graph_data["upperfence_value"] = round(raw_graph_data["upperfence_value"], 3)
 
     # Sort by worker ID
-    data["raw_data"] = dict(sorted(data["raw_data"].items(), key=operator.itemgetter(0)))
+    data["graph_data"] = dict(sorted(data["graph_data"].items(), key=operator.itemgetter(0)))
 
 
 def _compute_latency_iqr(data: _BenchmarkVariationData) -> float:
@@ -1772,6 +1759,8 @@ def main() -> None:
             return fig
 
         def _build_tendency_graph_figures() -> list[go.Figure]:
+            from plotly.subplots import make_subplots
+
             all_graphs: list[go.Figure] = []
 
             def _datetime_from_timestamp(timestamp: float, *, _cache: dict[float, datetime.datetime] = {}) -> datetime.datetime:
@@ -1781,20 +1770,35 @@ def main() -> None:
                     _cache[timestamp] = result = datetime.datetime.fromtimestamp(timestamp)
                     return result
 
+            _all_graph_names: dict[str, Literal["lowerfence_value", "upperfence_value"]] = {
+                "Upperfence": "upperfence_value",
+                "Lowerfence": "lowerfence_value",
+            }
+
             for b in benchmarks_data_list:
                 for variation_idx, msgsize in enumerate(payload_size_levels):
-                    fig = go.Figure(
-                        data=[
+                    data = {
+                        (row, 1): [
                             go.Scatter(
-                                name=f"Worker {worker_id}",
+                                name=f"Worker {worker_id} - {graph_name}",
+                                mode="lines",
                                 x=[_datetime_from_timestamp(raw_data["timestamp"]) for raw_data in raw_requests_data],
-                                y=[raw_data["duration"] for raw_data in raw_requests_data],
+                                y=[raw_data[_all_graph_names[graph_name]] for raw_data in raw_requests_data],
                             )
-                            for worker_id, raw_requests_data in b["variation"][variation_idx]["raw_data"].items()
+                            for worker_id, raw_requests_data in b["variation"][variation_idx]["graph_data"].items()
                         ]
-                    )
+                        for row, graph_name in enumerate(_all_graph_names, start=1)
+                    }
+                    fig = make_subplots(rows=len(_all_graph_names), cols=1, shared_xaxes=True)
+                    for (row, col), traces in data.items():
+                        fig.add_traces(traces, rows=row, cols=col)
+                        fig.update_yaxes(
+                            title_text="Latency (msec)",
+                            row=row,
+                            col=col,
+                        )
+
                     fig.update_layout(
-                        yaxis_title="Latency (msec)",
                         legend_title="Worker",
                         annotations=[
                             dict(
