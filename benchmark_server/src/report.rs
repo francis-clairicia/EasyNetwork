@@ -66,17 +66,23 @@ impl TestReport {
     #[inline]
     pub fn graph_data(&self) -> HashMap<WorkerID, Vec<ReportGraphData>> {
         #[inline]
-        fn ceil_milliseconds_duration(d: Duration) -> Duration {
-            Duration::from_millis((d.as_millis() as u64 / 10) * 10 + 10)
+        fn ceil_milliseconds_duration(d: Duration, resolution: u64) -> Duration {
+            if resolution == 0 {
+                return d;
+            }
+
+            let milliseconds = d.as_millis() as u64;
+            Duration::from_millis(milliseconds - (milliseconds % resolution) + resolution)
         }
 
         let mut per_worker_data: HashMap<WorkerID, HashMap<Duration, Vec<f64>>> = Default::default();
+        const RESOLUTION: u64 = 5;
 
         for request_report in &self.times_per_request {
             per_worker_data
                 .entry(request_report.worker_id)
                 .or_default()
-                .entry(ceil_milliseconds_duration(helper::system_time_into_duration(request_report.timestamp)))
+                .entry(ceil_milliseconds_duration(helper::system_time_into_duration(request_report.timestamp), RESOLUTION))
                 .or_default()
                 .push(helper::duration_as_millis_f64(request_report.duration));
         }
