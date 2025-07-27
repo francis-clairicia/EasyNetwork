@@ -367,7 +367,7 @@ async def test____resolve_listener_addresses____error_getaddrinfo_returns_empty_
     dns_resolver.mock_async_getaddrinfo.return_value = []
 
     # Act
-    with pytest.raises(ExceptionGroup) as exc_info:
+    with pytest.RaisesGroup(pytest.RaisesExc(OSError, match=r"^getaddrinfo\('localhost'\) returned empty list$")):
         await dns_resolver.resolve_listener_addresses(
             asyncio_backend,
             hosts=[local_host],
@@ -376,8 +376,6 @@ async def test____resolve_listener_addresses____error_getaddrinfo_returns_empty_
         )
 
     # Assert
-    assert exc_info.group_contains(OSError, match=r"^getaddrinfo\('localhost'\) returned empty list$")
-
     dns_resolver.mock_async_getaddrinfo.assert_awaited_once_with(
         local_host,
         local_port,
@@ -607,7 +605,7 @@ async def test____create_connection____all_failed(
             assert_never(fail_on)
 
     # Act
-    with pytest.raises(ExceptionGroup) as exc_info:
+    with pytest.RaisesGroup(OSError, OSError):
         await create_connection_of_socktype(dns_resolver, connection_socktype)(
             asyncio_backend,
             remote_host,
@@ -616,13 +614,6 @@ async def test____create_connection____all_failed(
         )
 
     # Assert
-    os_errors, exc = exc_info.value.split(OSError)
-    assert exc is None
-    assert os_errors is not None
-    assert len(os_errors.exceptions) == 2
-    assert all(isinstance(exc, OSError) for exc in os_errors.exceptions)
-    del os_errors
-
     if connection_socktype == SOCK_STREAM:
         assert mock_socket_cls.call_args_list == [
             mocker.call(AF_INET6, SOCK_STREAM, IPPROTO_TCP),
@@ -756,7 +747,7 @@ async def test____create_connection____getaddrinfo_return_mismatch(
     ]
 
     # Act
-    with pytest.raises(ExceptionGroup) as exc_info:
+    with pytest.RaisesGroup(pytest.RaisesExc(OSError, match=f"no matching local address with family={AF_INET6!r} found")):
         await create_connection_of_socktype(dns_resolver, connection_socktype)(
             asyncio_backend,
             remote_host,
@@ -765,13 +756,6 @@ async def test____create_connection____getaddrinfo_return_mismatch(
         )
 
     # Assert
-    os_errors, exc = exc_info.value.split(OSError)
-    assert exc is None
-    assert os_errors is not None
-    assert len(os_errors.exceptions) == 1
-    assert str(os_errors.exceptions[0]) == f"no matching local address with family={AF_INET6!r} found"
-    del os_errors
-
     mock_socket_ipv4.bind.assert_not_called()
     mock_socket_ipv6.bind.assert_not_called()
     dns_resolver.mock_sock_connect.assert_not_called()

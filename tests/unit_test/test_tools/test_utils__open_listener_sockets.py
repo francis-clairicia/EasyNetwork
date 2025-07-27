@@ -141,17 +141,13 @@ def test____open_listener_sockets_from_getaddrinfo_result____bind_failed(
     s2.bind.side_effect = OSError(1234, "error message")
 
     # Act
-    with pytest.raises(ExceptionGroup, match=r"^Error when trying to create listeners$") as exc_info:
+    with pytest.RaisesGroup(
+        pytest.RaisesExc(OSError, check=lambda exc: exc.errno == 1234),
+        match=r"^Error when trying to create listeners$",
+    ):
         open_listener_sockets_from_getaddrinfo_result(addrinfo_list, reuse_address=True, reuse_port=False)
 
     # Assert
-    os_errors, exc = exc_info.value.split(OSError)
-    assert exc is None
-    assert os_errors is not None
-    assert len(os_errors.exceptions) == 1
-    assert isinstance(os_errors.exceptions[0], OSError)
-    assert os_errors.exceptions[0].errno == 1234
-
     s1.close.assert_called_once_with()
     s2.close.assert_called_once_with()
 

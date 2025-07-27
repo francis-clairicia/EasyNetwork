@@ -5,7 +5,7 @@
 groups = ["default", "bandit", "benchmark-servers", "benchmark-servers-deps", "build", "cbor", "coverage", "dev", "doc", "flake8", "format", "micro-benchmark", "msgpack", "mypy", "pre-commit", "test", "test-ssl", "test-trio", "tox", "trio", "types-msgpack", "uvloop"]
 strategy = ["inherit_metadata"]
 lock_version = "4.5.0"
-content_hash = "sha256:2a7f53267489f7dabc1b787de60a4ce1f908c276d50b7610cc85ae036f2e106f"
+content_hash = "sha256:9d3d0b3564b3ee8eb8460b0b1e78f0a1a889e5cecccc97c0503644ed43859900"
 
 [[metadata.targets]]
 requires_python = ">=3.11"

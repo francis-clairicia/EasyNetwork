@@ -1034,10 +1034,8 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
 
         assert not server.is_serving()
 
-        with pytest.raises(ExceptionGroup) as exc_info:
+        with pytest.RaisesGroup(ConnectionError):
             await client_factory()
-
-        assert exc_info.group_contains(ConnectionError, depth=1)
 
         writer.close()
         await writer.wait_closed()

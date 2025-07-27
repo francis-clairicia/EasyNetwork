@@ -958,17 +958,10 @@ class TestUDPSocketFactory:
                 assert_never(fail_on)
 
         # Act
-        with pytest.raises(ExceptionGroup) as exc_info:
+        with pytest.RaisesGroup(OSError, OSError):
             _ = create_udp_socket(local_address=local_address, remote_address=remote_address)
 
         # Assert
-        os_errors, exc = exc_info.value.split(OSError)
-        assert exc is None
-        assert os_errors is not None
-        assert len(os_errors.exceptions) == 2
-        assert all(isinstance(exc, OSError) for exc in os_errors.exceptions)
-        del os_errors
-
         assert mock_socket_cls.call_args_list == [
             mocker.call(AF_INET, SOCK_DGRAM, IPPROTO_UDP),
             mocker.call(AF_INET6, SOCK_DGRAM, IPPROTO_UDP),

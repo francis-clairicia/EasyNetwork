@@ -98,7 +98,7 @@ bandit = [
     "bandit>=1.7.5,<2",
 ]
 test = [
-    "pytest~=8.3",
+    "pytest~=8.4",
     "pytest-xdist~=3.3",
     "pytest-mock~=3.10",
     "pytest-cov~=6.0",
