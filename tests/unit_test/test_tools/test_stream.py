@@ -321,6 +321,63 @@ class TestStreamDataConsumer:
         # Assert
         assert exc_info.value.__cause__ is expected_error
 
+    def test____next____generator_raised____before_yielding____keep_buffer(
+        self,
+        consumer: StreamDataConsumer[Any],
+        mock_stream_protocol: MagicMock,
+    ) -> None:
+        # Arrange
+        build_fail: bool = False
+
+        def side_effect() -> Generator[None, bytes, tuple[Any, bytes]]:
+            if build_fail:
+                raise Exception("Error")
+            data = yield
+            return data.decode("ascii"), b"remaining"
+
+        mock_build_packet_from_chunks_func: MagicMock = mock_stream_protocol.build_packet_from_chunks
+        mock_build_packet_from_chunks_func.side_effect = side_effect
+
+        assert consumer.next(b"Hello") == "Hello"
+        assert consumer.get_buffer().tobytes() == b"remaining"
+
+        # Act
+        build_fail = True
+        with pytest.raises(RuntimeError, match=r"^protocol\.build_packet_from_chunks\(\) crashed$"):
+            consumer.next(b"World")
+
+        # Assert
+        assert consumer.get_buffer().tobytes() == b"remainingWorld"
+
+    def test____next____generator_raised____after_first_yield____clear_buffer(
+        self,
+        consumer: StreamDataConsumer[Any],
+        mock_stream_protocol: MagicMock,
+    ) -> None:
+        # Arrange
+        build_fail: bool = False
+
+        def side_effect() -> Generator[None, bytes, tuple[Any, bytes]]:
+            data = yield
+            if build_fail:
+                raise Exception("Error")
+
+            return data.decode("ascii"), b"remaining"
+
+        mock_build_packet_from_chunks_func: MagicMock = mock_stream_protocol.build_packet_from_chunks
+        mock_build_packet_from_chunks_func.side_effect = side_effect
+
+        assert consumer.next(b"Hello") == "Hello"
+        assert consumer.get_buffer().tobytes() == b"remaining"
+
+        # Act
+        build_fail = True
+        with pytest.raises(RuntimeError, match=r"^protocol\.build_packet_from_chunks\(\) crashed$"):
+            consumer.next(b"World")
+
+        # Assert
+        assert consumer.get_buffer().tobytes() == b""
+
     def test____clear____close_current_generator(
         self,
         consumer: StreamDataConsumer[Any],
