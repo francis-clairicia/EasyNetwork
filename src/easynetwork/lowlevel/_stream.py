@@ -84,6 +84,7 @@ class StreamDataConsumer(Generic[_T_ReceivedPacket]):
                 self.__buffer = bytes(received_chunk)
                 raise RuntimeError("protocol.build_packet_from_chunks() did not yield") from None
             except Exception as exc:
+                self.__buffer = bytes(received_chunk)
                 raise RuntimeError("protocol.build_packet_from_chunks() crashed") from exc
         else:
             # Reset consumer
