@@ -33,6 +33,8 @@ class MyAsyncRequestHandler(AsyncStreamRequestHandler[str, str], AsyncDatagramRe
                 await self.server.server_close()
                 await client.send_packet("stop_listening() done")
                 return
+            case _:
+                pass
         await client.send_packet(request.upper())
 
 

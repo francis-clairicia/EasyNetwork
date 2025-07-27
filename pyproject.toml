@@ -85,7 +85,7 @@ format = [
     "black>=22.6.0",
 ]
 mypy = [
-    "mypy~=1.15",
+    "mypy~=1.17",
 ]
 types-msgpack = [
     "msgpack-types>=0.5.0",
@@ -98,11 +98,11 @@ bandit = [
     "bandit>=1.7.5,<2",
 ]
 test = [
-    "pytest~=8.3",
+    "pytest~=8.4",
     "pytest-xdist~=3.3",
     "pytest-mock~=3.10",
     "pytest-cov~=6.0",
-    "pytest-asyncio~=0.25.0",
+    "pytest-asyncio~=1.1",
     "trove-classifiers>=2023.11.9",
     "pytest-retry~=1.7",
 ]
@@ -113,13 +113,13 @@ test-trio = [
     "pytest-trio~=0.8.0",
 ]
 coverage = [
-    "coverage~=7.8",
+    "coverage~=7.10",
 ]
 doc = [
     "sphinx>=8.2,<9",
     "sphinx-rtd-theme>=3.0,<4",
     "sphinx-tabs>=3.4.1,<4",
-    "sphinx-toolbox>=3.5.0,<4",
+    "sphinx-toolbox~=4.0",
     "enum-tools[sphinx]>=0.12.0,<1",
 ]
 micro-benchmark = [
@@ -139,6 +139,11 @@ benchmark-servers-deps = [
 
 [tool.pdm]
 distribution = true
+
+[tool.pdm.resolution]
+# No binary for coverage.py because pure-python wheel is selected on BSD platforms and this implementaton crashes the test suite.
+# -> Force to use source code to compile the wheel and therefore use the C code.
+no-binary = "coverage"
 
 ############################ hatchling configuration ############################
 
@@ -224,7 +229,8 @@ no_implicit_reexport = true
 strict_equality = true
 strict_bytes = true
 local_partial_types = true
-enable_error_code = ["truthy-bool", "ignore-without-code", "unused-awaitable"]
+allow_redefinition_new = true
+enable_error_code = ["truthy-bool", "ignore-without-code", "unused-awaitable", "exhaustive-match"]
 
 [[tool.mypy.overrides]]
 module = ["docker.*", "plotly.*", "pytest_benchmark.*", "pytest_trio.*"]
@@ -232,7 +238,6 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "strict"  # Avoid some unwanted behaviour
-asyncio_default_fixture_loop_scope = "function"
 addopts = "--dist=worksteal --strict-markers -p 'no:anyio' -p 'no:benchmark'"  # hatch CLI dependencies installs anyio
 doctest_optionflags = "ELLIPSIS"
 minversion = "7.1.2"
@@ -249,6 +254,7 @@ filterwarnings = [
 ]
 
 [tool.coverage.run]
+core = "ctrace"
 branch = true
 source_pkgs = [
     "easynetwork",

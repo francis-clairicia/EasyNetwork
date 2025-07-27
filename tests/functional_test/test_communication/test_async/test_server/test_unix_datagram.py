@@ -279,17 +279,16 @@ _UnixAddressTypeLiteral = Literal["PATHNAME", "ABSTRACT"]
 @pytest.mark.flaky(retries=3, delay=0.1)
 @PlatformMarkers.skipif_platform_win32
 class TestAsyncUnixDatagramServer(BaseTestAsyncServer):
-    @pytest.fixture(
+    @pytest_asyncio.fixture(
         params=[
             pytest.param("PATHNAME"),
             pytest.param("ABSTRACT", marks=PlatformMarkers.supports_abstract_sockets),
         ]
     )
     @staticmethod
-    def use_unix_address_type(
-        request: pytest.FixtureRequest,
-        event_loop: asyncio.AbstractEventLoop,
-    ) -> _UnixAddressTypeLiteral:
+    async def use_unix_address_type(request: pytest.FixtureRequest) -> _UnixAddressTypeLiteral:
+        event_loop = asyncio.get_running_loop()
+
         match request.param:
             case "PATHNAME" as param:
                 return param

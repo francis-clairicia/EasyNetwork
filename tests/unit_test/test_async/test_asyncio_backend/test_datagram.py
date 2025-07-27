@@ -104,9 +104,10 @@ async def test____create_datagram_endpoint____return_DatagramEndpoint_instance(
 
 @pytest.mark.asyncio
 class TestDatagramEndpoint:
-    @pytest.fixture
+    @pytest_asyncio.fixture
     @staticmethod
-    def mock_asyncio_protocol(mocker: MockerFixture, event_loop: asyncio.AbstractEventLoop) -> MagicMock:
+    async def mock_asyncio_protocol(mocker: MockerFixture) -> MagicMock:
+        event_loop = asyncio.get_running_loop()
         mock = mocker.NonCallableMagicMock(spec=DatagramEndpointProtocol)
         # Currently, _get_close_waiter() is a synchronous function returning a Future, but it will be awaited so this works
         mock._get_close_waiter = mocker.AsyncMock()
@@ -447,16 +448,14 @@ class TestDatagramEndpointProtocol:
     def mock_asyncio_exception_queue(cls, mocker: MockerFixture) -> MagicMock:
         return cls._mock_queue_factory(mocker)
 
-    @pytest.fixture
+    @pytest_asyncio.fixture
     @staticmethod
-    def protocol(
-        event_loop: asyncio.AbstractEventLoop,
+    async def protocol(
         mock_asyncio_recv_queue: MagicMock,
         mock_asyncio_exception_queue: MagicMock,
         mock_asyncio_transport: MagicMock,
     ) -> DatagramEndpointProtocol:
         protocol = DatagramEndpointProtocol(
-            loop=event_loop,
             recv_queue=mock_asyncio_recv_queue,
             exception_queue=mock_asyncio_exception_queue,
         )
@@ -900,17 +899,18 @@ class TestAsyncioTransportDatagramSocketAdapter(BaseTestAsyncioDatagramTransport
 class TestDatagramListenerSocketAdapter(BaseTestAsyncioDatagramTransport):
     @pytest.fixture
     @staticmethod
-    def mock_endpoint() -> Any:  # type: ignore[override]
+    def mock_endpoint() -> Any:
         raise ValueError("Do not use this fixture here")
 
     @pytest.fixture
     @classmethod
-    def remote_address(cls) -> None:  # type: ignore[override]
+    def remote_address(cls) -> None:
         return None
 
-    @pytest.fixture
+    @pytest_asyncio.fixture
     @staticmethod
-    def mock_asyncio_protocol(mocker: MockerFixture, event_loop: asyncio.AbstractEventLoop) -> MagicMock:
+    async def mock_asyncio_protocol(mocker: MockerFixture) -> MagicMock:
+        event_loop = asyncio.get_running_loop()
         mock = mocker.NonCallableMagicMock(spec=DatagramListenerProtocol)
         # Currently, _get_close_waiter() is a synchronous function returning a Future, but it will be awaited so this works
         mock._get_close_waiter = mocker.AsyncMock()
@@ -1096,13 +1096,10 @@ class TestDatagramListenerProtocol:
 
         return mock
 
-    @pytest.fixture
+    @pytest_asyncio.fixture
     @staticmethod
-    def protocol(
-        event_loop: asyncio.AbstractEventLoop,
-        mock_asyncio_transport: MagicMock,
-    ) -> DatagramListenerProtocol:
-        protocol = DatagramListenerProtocol(loop=event_loop)
+    async def protocol(mock_asyncio_transport: MagicMock) -> DatagramListenerProtocol:
+        protocol = DatagramListenerProtocol()
         protocol.connection_made(mock_asyncio_transport)
         return protocol
 
@@ -1247,15 +1244,16 @@ class TestDatagramListenerProtocol:
             mocker.call(b"datagram_2", expected_other_address),
         ]
 
+    @pytest.mark.asyncio
     @pytest.mark.parametrize("event_loop_debug", [False, True], ids=lambda p: f"event_loop_debug=={p}")
-    def test____error_received____log_error(
+    async def test____error_received____log_error(
         self,
         event_loop_debug: bool,
-        event_loop: asyncio.AbstractEventLoop,
         protocol: DatagramListenerProtocol,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         # Arrange
+        event_loop = asyncio.get_running_loop()
         event_loop.set_debug(event_loop_debug)
         assert event_loop.get_debug() is event_loop_debug
         caplog.set_level(logging.INFO, DatagramListenerProtocol.__module__)
@@ -1273,15 +1271,16 @@ class TestDatagramListenerProtocol:
         else:
             assert caplog.records[0].exc_info is None
 
+    @pytest.mark.asyncio
     @pytest.mark.parametrize("event_loop_debug", [False, True], ids=lambda p: f"event_loop_debug=={p}")
-    def test____error_received____do_not_log_after_connection_lost(
+    async def test____error_received____do_not_log_after_connection_lost(
         self,
         event_loop_debug: bool,
-        event_loop: asyncio.AbstractEventLoop,
         protocol: DatagramListenerProtocol,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         # Arrange
+        event_loop = asyncio.get_running_loop()
         event_loop.set_debug(event_loop_debug)
         assert event_loop.get_debug() is event_loop_debug
         caplog.set_level(logging.INFO, DatagramListenerProtocol.__module__)

@@ -314,17 +314,13 @@ class TestTrioBackend:
                 await trio.sleep(0.5)
             raise exception
 
-        with pytest.raises(ExceptionGroup) as exc_info:
+        with pytest.RaisesGroup(ValueError, KeyError):
             await backend.gather(
                 coroutine(42),
                 coroutine_error(ValueError("conversion error")),
                 coroutine(54),
                 coroutine_error(KeyError("unknown")),
             )
-
-        assert len(exc_info.value.exceptions) == 2
-        assert exc_info.group_contains(ValueError, depth=1)
-        assert exc_info.group_contains(KeyError, depth=1)
 
     async def test____gather____duplicate_awaitable(
         self,
@@ -616,7 +612,7 @@ class TestTrioBackend:
             async with rx:
                 return (await rx.receive()).unwrap()
 
-        with pytest.raises(ExceptionGroup) if task_state == "exception" else contextlib.nullcontext() as exc_info:
+        with pytest.RaisesGroup(FutureException) if task_state == "exception" else contextlib.nullcontext():
             async with backend.create_task_group() as task_group:
                 task = await task_group.start(coroutine)
 
@@ -628,9 +624,6 @@ class TestTrioBackend:
                 # Must not yield if task is already done
                 with backend.timeout(0):
                     await task.wait()
-
-        if exc_info is not None:
-            assert exc_info.group_contains(FutureException, depth=1)
 
     async def test____run_in_thread____cannot_be_cancelled_by_default(
         self,

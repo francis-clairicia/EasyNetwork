@@ -1,5 +1,6 @@
 [python]
 use_venv = true
+use_python_version = false
 
 [venv]
 backend = "venv"

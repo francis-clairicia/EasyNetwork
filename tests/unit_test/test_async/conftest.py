@@ -9,6 +9,7 @@ from easynetwork.lowlevel.api_async.backend.abc import AsyncBackend
 from easynetwork.lowlevel.api_async.transports.abc import AsyncDatagramTransport, AsyncStreamTransport
 
 import pytest
+import pytest_asyncio
 
 from .mock_tools import make_transport_mock
 
@@ -27,8 +28,9 @@ class FakeCancellation(BaseException):
     pass
 
 
-@pytest.fixture(autouse=True)
-def __increase_event_loop_execution_time_before_warning(event_loop: asyncio.AbstractEventLoop) -> None:
+@pytest_asyncio.fixture(autouse=True)
+async def __increase_event_loop_execution_time_before_warning() -> None:
+    event_loop = asyncio.get_running_loop()
     event_loop.slow_callback_duration = 5.0
 
 

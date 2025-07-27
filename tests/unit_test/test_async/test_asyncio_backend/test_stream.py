@@ -658,23 +658,25 @@ class TestListenerSocketAdapter(BaseTestSocketTransport, BaseTestAsyncSocket):
 @pytest.mark.asyncio
 @pytest.mark.filterwarnings("ignore::ResourceWarning")
 class TestAcceptedSocketFactory(BaseTestTransportStreamSocket):
-    @pytest.fixture
+    @pytest_asyncio.fixture
     @staticmethod
-    def mock_asyncio_protocol(mocker: MockerFixture, event_loop: asyncio.AbstractEventLoop) -> MagicMock:
+    async def mock_asyncio_protocol(mocker: MockerFixture) -> MagicMock:
+        event_loop = asyncio.get_running_loop()
         mock = mocker.NonCallableMagicMock(spec=StreamReaderBufferedProtocol)
         # Currently, _get_close_waiter() is a synchronous function returning a Future, but it will be awaited so this works
         mock._get_close_waiter = mocker.AsyncMock()
         mock._get_loop.return_value = event_loop
         return mock
 
-    @pytest.fixture
+    @pytest_asyncio.fixture
     @staticmethod
-    def mock_event_loop_connect_accepted_socket(
-        event_loop: asyncio.AbstractEventLoop,
+    async def mock_event_loop_connect_accepted_socket(
         mocker: MockerFixture,
         mock_asyncio_transport: MagicMock,
         mock_asyncio_protocol: MagicMock,
     ) -> AsyncMock:
+        event_loop = asyncio.get_running_loop()
+
         async def side_effect(protocol_factory: Callable[[], asyncio.Protocol], sock: Any, *args: Any, **kwargs: Any) -> Any:
             protocol_factory()
             return mock_asyncio_transport, mock_asyncio_protocol
@@ -733,9 +735,10 @@ class TestAcceptedSocketFactory(BaseTestTransportStreamSocket):
 
 @pytest.mark.asyncio
 class TestAsyncioTransportStreamSocketAdapter(BaseTestTransportWithSSL):
-    @pytest.fixture
+    @pytest_asyncio.fixture
     @staticmethod
-    def mock_asyncio_protocol(mocker: MockerFixture, event_loop: asyncio.AbstractEventLoop) -> MagicMock:
+    async def mock_asyncio_protocol(mocker: MockerFixture) -> MagicMock:
+        event_loop = asyncio.get_running_loop()
         mock = mocker.NonCallableMagicMock(spec=StreamReaderBufferedProtocol)
         # Currently, _get_close_waiter() is a synchronous function returning a Future, but it will be awaited so this works
         mock._get_close_waiter = mocker.AsyncMock()
@@ -1025,13 +1028,10 @@ class TestStreamReaderBufferedProtocol(BaseTestTransportWithSSL):
     def reduce_protocol_buffer_size(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(StreamReaderBufferedProtocol, "max_size", 16 * 1024)
 
-    @pytest.fixture
+    @pytest_asyncio.fixture
     @staticmethod
-    def protocol(
-        event_loop: asyncio.AbstractEventLoop,
-        mock_asyncio_transport: MagicMock,
-    ) -> StreamReaderBufferedProtocol:
-        protocol = StreamReaderBufferedProtocol(loop=event_loop)
+    async def protocol(mock_asyncio_transport: MagicMock) -> StreamReaderBufferedProtocol:
+        protocol = StreamReaderBufferedProtocol()
         protocol.connection_made(mock_asyncio_transport)
         return protocol
 

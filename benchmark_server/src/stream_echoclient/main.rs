@@ -121,7 +121,7 @@ fn main() -> io::Result<()> {
     let report = Report::try_from(report_builder).map_err(io::Error::other)?.with_transfer();
 
     match args.output_format {
-        OutputFormat::Text => print!("{}", report),
+        OutputFormat::Text => print!("{report}"),
         OutputFormat::Json => serde_json::to_writer(io::stdout(), &report)?,
     };
 
