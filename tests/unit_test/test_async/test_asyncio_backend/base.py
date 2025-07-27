@@ -9,6 +9,7 @@ from socket import socket as Socket
 from typing import TYPE_CHECKING, Any, TypeVar
 
 import pytest
+import pytest_asyncio
 
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
@@ -20,9 +21,10 @@ _T = TypeVar("_T")
 
 @pytest.mark.asyncio
 class BaseTestAsyncSocket:
-    @pytest.fixture(autouse=True)
+    @pytest_asyncio.fixture(autouse=True)
     @classmethod
-    def event_loop_sock_method_replace(cls, event_loop: asyncio.AbstractEventLoop, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def event_loop_sock_method_replace(cls, monkeypatch: pytest.MonkeyPatch) -> None:
+        event_loop = asyncio.get_running_loop()
         to_patch = [
             ("sock_accept", "accept"),
             ("sock_recv", "recv"),
@@ -52,9 +54,10 @@ class BaseTestAsyncSocket:
 
         monkeypatch.setattr(event_loop, event_loop_method, sock_method_patch)
 
-    @pytest.fixture(autouse=True)
+    @pytest_asyncio.fixture(autouse=True)
     @classmethod
-    def event_loop_mock_event_handlers(cls, event_loop: asyncio.AbstractEventLoop, mocker: MockerFixture) -> dict[str, MagicMock]:
+    async def event_loop_mock_event_handlers(cls, mocker: MockerFixture) -> dict[str, MagicMock]:
+        event_loop = asyncio.get_running_loop()
         to_patch = [
             ("add_reader", "remove_reader"),
             ("add_writer", "remove_writer"),

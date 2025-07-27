@@ -141,7 +141,7 @@ def test____open_listener_sockets_from_getaddrinfo_result____bind_failed(
     s2.bind.side_effect = OSError(1234, "error message")
 
     # Act
-    with pytest.raises(ExceptionGroup, match=r"^Error when trying to create listeners \(1 sub-exception\)$") as exc_info:
+    with pytest.raises(ExceptionGroup, match=r"^Error when trying to create listeners$") as exc_info:
         open_listener_sockets_from_getaddrinfo_result(addrinfo_list, reuse_address=True, reuse_port=False)
 
     # Assert

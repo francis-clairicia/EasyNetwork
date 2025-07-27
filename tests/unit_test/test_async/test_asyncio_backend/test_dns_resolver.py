@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from easynetwork.lowlevel.api_async.backend._asyncio.dns_resolver import AsyncIODNSResolver
 
 import pytest
+import pytest_asyncio
 
 if TYPE_CHECKING:
     from unittest.mock import AsyncMock, MagicMock
@@ -13,8 +14,9 @@ if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
 
-@pytest.fixture
-def mock_sock_connect(event_loop: asyncio.AbstractEventLoop, mocker: MockerFixture) -> AsyncMock:
+@pytest_asyncio.fixture
+async def mock_sock_connect(mocker: MockerFixture) -> AsyncMock:
+    event_loop = asyncio.get_running_loop()
     return mocker.patch.object(event_loop, "sock_connect", new_callable=mocker.AsyncMock, return_value=None)
 
 

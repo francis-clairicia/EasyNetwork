@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import asyncio.trsock
 import errno
 from collections.abc import Callable, Sequence
 from socket import (
@@ -29,6 +28,7 @@ from easynetwork.lowlevel.api_async.backend._common.dns_resolver import BaseAsyn
 from easynetwork.lowlevel.api_async.backend.abc import AsyncBackend
 
 import pytest
+import pytest_asyncio
 
 from ......fixtures.socket import socket_family_or_skip
 from ......tools import PlatformMarkers
@@ -50,8 +50,9 @@ class MockedDNSResolver(BaseAsyncDNSResolver):
         return await self.mock_sock_connect(socket, address)
 
 
-@pytest.fixture
-def dns_resolver(event_loop: asyncio.AbstractEventLoop, mocker: MockerFixture) -> MockedDNSResolver:
+@pytest_asyncio.fixture
+async def dns_resolver(mocker: MockerFixture) -> MockedDNSResolver:
+    event_loop = asyncio.get_running_loop()
     return MockedDNSResolver(event_loop, mocker)
 
 

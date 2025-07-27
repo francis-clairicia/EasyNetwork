@@ -23,15 +23,16 @@ from .....tools import PlatformMarkers, is_uvloop_event_loop
 from .._utils import delay
 
 
-@pytest.fixture
-def unix_datagram_socket_factory(
+@pytest_asyncio.fixture
+async def unix_datagram_socket_factory(
     request: pytest.FixtureRequest,
-    event_loop: asyncio.AbstractEventLoop,
     unix_datagram_socket_factory: Callable[[], Socket],
     unix_socket_path_factory: UnixSocketPathFactory,
 ) -> Callable[[], Socket]:
 
     from easynetwork.lowlevel import _unix_utils
+
+    event_loop = asyncio.get_running_loop()
 
     @functools.wraps(unix_datagram_socket_factory)
     def bound_unix_datagram_socket_factory() -> Socket:

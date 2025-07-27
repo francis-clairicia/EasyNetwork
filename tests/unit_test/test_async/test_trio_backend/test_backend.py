@@ -451,6 +451,8 @@ class TestTrioBackend:
             case "UNIX":
                 mock_stream_socket = mock_unix_stream_socket_factory()
                 mock_trio_stream_socket = mock_trio_unix_stream_socket_factory()
+            case _:
+                pytest.fail(socket_family_name)
 
         mock_trio_socket_stream = mock_trio_socket_stream_factory(mock_stream_socket)
         mock_TrioStreamSocketAdapter: MagicMock = mocker.patch(
@@ -1098,6 +1100,8 @@ class TestTrioBackend:
             case "UNIX":
                 mock_datagram_socket = mock_unix_datagram_socket_factory()
                 mock_trio_datagram_socket = mock_trio_unix_datagram_socket_factory()
+            case _:
+                pytest.fail(socket_family_name)
 
         mock_TrioDatagramSocketAdapter: MagicMock = mocker.patch(
             f"{_TRIO_BACKEND_MODULE}.datagram.socket.TrioDatagramSocketAdapter",

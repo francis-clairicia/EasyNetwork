@@ -337,10 +337,7 @@ class TestAsyncUnixStreamServer(BaseTestAsyncServer):
         ]
     )
     @staticmethod
-    def use_unix_address_type(
-        request: pytest.FixtureRequest,
-        event_loop: asyncio.AbstractEventLoop,
-    ) -> _UnixAddressTypeLiteral:
+    def use_unix_address_type(request: pytest.FixtureRequest) -> _UnixAddressTypeLiteral:
         match request.param:
             case "PATHNAME" as param:
                 return param

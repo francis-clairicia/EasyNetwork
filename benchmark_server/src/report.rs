@@ -257,7 +257,7 @@ impl fmt::Display for Report {
         )?;
         writeln!(f, "{} requests/sec", self.rps)?;
         if let Some(transfer) = self.transfer {
-            writeln!(f, "{:.2} MiB/sec", transfer)?;
+            writeln!(f, "{transfer:.2} MiB/sec")?;
         }
         Ok(())
     }

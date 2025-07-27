@@ -1218,6 +1218,8 @@ class TestAsyncIOBackend:
                 mock_datagram_socket = mock_udp_socket_factory()
             case "UNIX":
                 mock_datagram_socket = mock_unix_datagram_socket_factory()
+            case _:
+                pytest.fail(socket_family_name)
 
         mock_endpoint = mock_datagram_endpoint_factory()
         mock_AsyncioTransportDatagramSocketAdapter: MagicMock = mocker.patch(
