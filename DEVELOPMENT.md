@@ -18,7 +18,7 @@ pyenv local 3.11 3.12 3.13
 1. Create the virtual environment :
 ```sh
 # Creates the virtual environment ( in .venv directory )
-pdm venv create 3.11
+pdm venv create --with-pip 3.11
 
 # Tell pdm to use this virtualenv
 pdm use --venv in-project --no-version-file
