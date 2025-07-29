@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling >=1.26.3,<2"]
+requires = ["hatchling >=1.27,<2"]
 build-backend = "hatchling.build"
 
 [project]
@@ -13,6 +13,7 @@ dependencies = [
 ]
 requires-python = ">=3.11"
 readme = "README.md"
+license = "Apache-2.0"
 license-files = ["LICENSE"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
