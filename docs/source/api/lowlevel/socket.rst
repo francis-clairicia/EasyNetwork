@@ -47,6 +47,26 @@ Unix-related
 .. autoclass:: UnixSocketAddress
    :members:
 
+   .. describe:: str(addr)
+
+      Displays the Unix address in a similar way to that seen in ``/proc/net/unix``.
+
+      .. versionchanged:: NEXT_VERSION
+         Prior to this version, ``str(addr)`` used to return something like ``repr(addr)``.
+
+      .. note::
+         Returns ``<unnamed>`` for unnamed addresses.
+
+      .. rubric:: Example
+
+      >>> from easynetwork.lowlevel.socket import UnixSocketAddress
+      >>> str(UnixSocketAddress.from_pathname("/tmp/sock"))
+      '/tmp/sock'
+      >>> str(UnixSocketAddress.from_abstract_name(b"hidden"))
+      '@hidden'
+      >>> str(UnixSocketAddress()) # Unnamed
+      '<unnamed>'
+
 .. autonamedtuple:: UnixCredentials
    :members:
 
