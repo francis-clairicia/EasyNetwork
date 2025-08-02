@@ -390,11 +390,11 @@ class UnixSocketAddress:
     def __str__(self) -> str:
         match self.__addr:
             case str(addr):
-                return f"{addr} (pathname)"
+                return addr
             case bytes(addr):
-                return f"{addr[1:]!r} (abstract)"
+                return f"@{os.fsdecode(addr[1:])}"
             case _:
-                return "(unnamed)"
+                return "<unnamed>"
 
     def __hash__(self) -> int:
         return hash(self.__addr)

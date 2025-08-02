@@ -267,7 +267,7 @@ class TestUnixSocketAddress:
         ["/path/to/sock", b"\0hidden", ""],
         ids=repr,
     )
-    def test____display____show_value_and_kind(self, raw_addr: str | bytes) -> None:
+    def test____display____show_value_in_proc_net_unix_form(self, raw_addr: str | bytes) -> None:
         # Arrange
         address = UnixSocketAddress.from_raw(raw_addr)
 
@@ -276,13 +276,13 @@ class TestUnixSocketAddress:
 
         # Assert
         if address.is_unnamed():
-            assert address_as_str == "(unnamed)"
+            assert address_as_str == "<unnamed>"
         elif (name := address.as_abstract_name()) is not None:
-            assert address_as_str == f"{name!r} (abstract)"
+            assert address_as_str == f"@{os.fsdecode(name)}"
         else:
             path = address.as_pathname()
             assert path is not None
-            assert address_as_str == f"{os.fspath(path)} (pathname)"
+            assert address_as_str == os.fspath(path)
 
 
 class TestSocketProxy:
