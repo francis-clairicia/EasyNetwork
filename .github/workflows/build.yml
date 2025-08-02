@@ -11,7 +11,7 @@ on:
       - main
     paths-ignore:
       - '**.pyi'
-      - '.bumpversion.cfg'
+      - '.bumpversion.toml'
       - '.flake8'
       - '.pre-commit-config.yaml'
       - '.readthedocs.yaml'
@@ -31,7 +31,7 @@ on:
       - '*'
     paths-ignore:
       - '**.pyi'
-      - '.bumpversion.cfg'
+      - '.bumpversion.toml'
       - '.flake8'
       - '.pre-commit-config.yaml'
       - '.readthedocs.yaml'

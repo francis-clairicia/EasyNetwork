@@ -65,7 +65,7 @@ trio = [
 
 [dependency-groups]
 dev = [
-    "bump2version>=1.0.1,<2",
+    "bump-my-version~=1.2",
     "hatch>=1.8,<2",
 ]
 build = [
