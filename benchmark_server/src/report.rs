@@ -115,7 +115,7 @@ impl TestReport {
                     })
                     .collect();
 
-                graph_data.sort_by_key(|data| (data.timestamp * 1_000.0) as u64);
+                graph_data.sort_by(|a, b| a.timestamp.total_cmp(&b.timestamp));
 
                 (worker_id, graph_data)
             })
