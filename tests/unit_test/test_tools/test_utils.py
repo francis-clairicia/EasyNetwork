@@ -42,7 +42,6 @@ from easynetwork.lowlevel._utils import (
     remove_traceback_frames_in_place,
     replace_kwargs,
     set_reuseport,
-    supports_socket_sendmsg,
     validate_listener_hosts,
     validate_optional_timeout_delay,
     validate_timeout_delay,
@@ -449,33 +448,6 @@ def test____check_inet_socket_family____invalid_family(socket_family: int) -> No
     # Act & Assert
     with pytest.raises(ValueError, match=r"^Only these families are supported: AF_INET, AF_INET6$"):
         check_inet_socket_family(socket_family)
-
-
-def test____supports_socket_sendmsg____have_sendmsg_method(
-    mock_socket_factory: Callable[[], MagicMock],
-    mocker: MockerFixture,
-) -> None:
-    # Arrange
-    mock_socket = mock_socket_factory()
-    mock_socket.sendmsg = mocker.MagicMock(
-        spec=lambda *args: None,
-        side_effect=lambda buffers, *args: sum(map(len, map(lambda v: memoryview(v), buffers))),
-    )
-
-    # Act & Assert
-    assert supports_socket_sendmsg(mock_socket)
-
-
-def test____supports_socket_sendmsg____dont_have_sendmsg_method(
-    mock_socket_factory: Callable[[], MagicMock],
-    mocker: MockerFixture,
-) -> None:
-    # Arrange
-    mock_socket = mock_socket_factory()
-    del mock_socket.sendmsg
-
-    # Act & Assert
-    assert not supports_socket_sendmsg(mock_socket)
 
 
 def test____is_ssl_socket____regular_socket(mock_socket_factory: Callable[[], MagicMock]) -> None:

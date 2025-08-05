@@ -23,10 +23,11 @@ __all__ = [
     "AsyncStreamClient",
     "AsyncStreamRequestHandler",
     "INETClientAttribute",
-    "UNIXClientAttribute",
 ]
 
 import contextlib
+import socket as _socket
+import sys
 from abc import ABCMeta, abstractmethod
 from collections.abc import AsyncGenerator, Coroutine
 from typing import TYPE_CHECKING, Any, Generic
@@ -55,26 +56,30 @@ class INETClientAttribute(typed_attr.TypedAttributeSet):
     """the remote address to which the socket is connected, result of :meth:`socket.socket.getpeername`."""
 
 
-class UNIXClientAttribute(typed_attr.TypedAttributeSet):
-    """
-    Typed attributes which can be used on an :class:`AsyncBaseClientInterface`.
+if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
 
-    .. versionadded:: 1.1
-    """
+    __all__ += ["UNIXClientAttribute"]
 
-    __slots__ = ()
+    class UNIXClientAttribute(typed_attr.TypedAttributeSet):
+        """
+        Typed attributes which can be used on an :class:`AsyncBaseClientInterface`.
 
-    socket: socket_tools.ISocket = socket_tools.SocketAttribute.socket
-    """:class:`socket.socket` instance."""
+        .. versionadded:: 1.1
+        """
 
-    local_name: socket_tools.UnixSocketAddress = typed_attr.typed_attribute()
-    """the socket's own address, result of :meth:`socket.socket.getsockname`."""
+        __slots__ = ()
 
-    peer_name: socket_tools.UnixSocketAddress = typed_attr.typed_attribute()
-    """the remote address to which the socket is connected, result of :meth:`socket.socket.getpeername`."""
+        socket: socket_tools.ISocket = socket_tools.SocketAttribute.socket
+        """:class:`socket.socket` instance."""
 
-    peer_credentials: socket_tools.UnixCredentials = typed_attr.typed_attribute()
-    """the credentials of the peer process connected to this socket."""
+        local_name: socket_tools.UnixSocketAddress = typed_attr.typed_attribute()
+        """the socket's own address, result of :meth:`socket.socket.getsockname`."""
+
+        peer_name: socket_tools.UnixSocketAddress = typed_attr.typed_attribute()
+        """the remote address to which the socket is connected, result of :meth:`socket.socket.getpeername`."""
+
+        peer_credentials: socket_tools.UnixCredentials = typed_attr.typed_attribute()
+        """the credentials of the peer process connected to this socket."""
 
 
 class AsyncBaseClientInterface(typed_attr.TypedAttributeProvider, Generic[_T_Response], metaclass=ABCMeta):
