@@ -156,27 +156,27 @@ class TrioBackend(AbstractAsyncBackend):
 
         return await self.wrap_stream_socket(socket)
 
-    async def create_unix_stream_connection(
-        self,
-        path: str | bytes,
-        *,
-        local_path: str | bytes | None = None,
-    ) -> AsyncStreamTransport:
-        from ._trio_utils import connect_sock_to_resolved_address
+    if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
 
-        AF_UNIX: int = getattr(_socket, "AF_UNIX")
+        async def create_unix_stream_connection(
+            self,
+            path: str | bytes,
+            *,
+            local_path: str | bytes | None = None,
+        ) -> AsyncStreamTransport:
+            from ._trio_utils import connect_sock_to_resolved_address
 
-        socket = _socket.socket(AF_UNIX, _socket.SOCK_STREAM, 0)
-        try:
-            if local_path is not None:
-                await self.__trio.to_thread.run_sync(self.__bind_unix_socket, socket, local_path, abandon_on_cancel=True)
-            socket.setblocking(False)
-            await connect_sock_to_resolved_address(socket, path)
-        except BaseException:
-            socket.close()
-            raise
+            socket = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM, 0)
+            try:
+                if local_path is not None:
+                    await self.__trio.to_thread.run_sync(self.__bind_unix_socket, socket, local_path, abandon_on_cancel=True)
+                socket.setblocking(False)
+                await connect_sock_to_resolved_address(socket, path)
+            except BaseException:
+                socket.close()
+                raise
 
-        return await self.wrap_stream_socket(socket)
+            return await self.wrap_stream_socket(socket)
 
     async def wrap_stream_socket(self, socket: _socket.socket) -> AsyncStreamTransport:
         from .stream.socket import TrioStreamSocketAdapter
@@ -223,31 +223,31 @@ class TrioBackend(AbstractAsyncBackend):
         ]
         return listeners
 
-    async def create_unix_stream_listener(
-        self,
-        path: str | bytes,
-        backlog: int,
-        *,
-        mode: int | None = None,
-    ) -> AsyncListener[AsyncStreamTransport]:
-        from .stream.listener import TrioListenerSocketAdapter
+    if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
 
-        AF_UNIX: int = getattr(_socket, "AF_UNIX")
+        async def create_unix_stream_listener(
+            self,
+            path: str | bytes,
+            backlog: int,
+            *,
+            mode: int | None = None,
+        ) -> AsyncListener[AsyncStreamTransport]:
+            from .stream.listener import TrioListenerSocketAdapter
 
-        socket = _socket.socket(AF_UNIX, _socket.SOCK_STREAM, 0)
-        try:
-            await self.__trio.to_thread.run_sync(self.__bind_unix_socket, socket, path, abandon_on_cancel=True)
-            if mode is not None:
-                await self.__trio.to_thread.run_sync(os.chmod, path, mode, abandon_on_cancel=True)
-            socket.setblocking(False)
-            socket.listen(backlog)
-        except BaseException:
-            socket.close()
-            raise
+            socket = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM, 0)
+            try:
+                await self.__trio.to_thread.run_sync(self.__bind_unix_socket, socket, path, abandon_on_cancel=True)
+                if mode is not None:
+                    await self.__trio.to_thread.run_sync(os.chmod, path, mode, abandon_on_cancel=True)
+                socket.setblocking(False)
+                socket.listen(backlog)
+            except BaseException:
+                socket.close()
+                raise
 
-        trio_socket = self.__trio.socket.from_stdlib_socket(socket)
-        listener = TrioListenerSocketAdapter(self, self.__trio.SocketListener(trio_socket))
-        return listener
+            trio_socket = self.__trio.socket.from_stdlib_socket(socket)
+            listener = TrioListenerSocketAdapter(self, self.__trio.SocketListener(trio_socket))
+            return listener
 
     async def create_udp_endpoint(
         self,
@@ -266,27 +266,27 @@ class TrioBackend(AbstractAsyncBackend):
         )
         return await self.wrap_connected_datagram_socket(socket)
 
-    async def create_unix_datagram_endpoint(
-        self,
-        path: str | bytes,
-        *,
-        local_path: str | bytes | None = None,
-    ) -> AsyncDatagramTransport:
-        from ._trio_utils import connect_sock_to_resolved_address
+    if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
 
-        AF_UNIX: int = getattr(_socket, "AF_UNIX")
+        async def create_unix_datagram_endpoint(
+            self,
+            path: str | bytes,
+            *,
+            local_path: str | bytes | None = None,
+        ) -> AsyncDatagramTransport:
+            from ._trio_utils import connect_sock_to_resolved_address
 
-        socket = _socket.socket(AF_UNIX, _socket.SOCK_DGRAM, 0)
-        try:
-            if local_path is not None:
-                await self.__trio.to_thread.run_sync(self.__bind_unix_socket, socket, local_path, abandon_on_cancel=True)
-            socket.setblocking(False)
-            await connect_sock_to_resolved_address(socket, path)
-        except BaseException:
-            socket.close()
-            raise
+            socket = _socket.socket(_socket.AF_UNIX, _socket.SOCK_DGRAM, 0)
+            try:
+                if local_path is not None:
+                    await self.__trio.to_thread.run_sync(self.__bind_unix_socket, socket, local_path, abandon_on_cancel=True)
+                socket.setblocking(False)
+                await connect_sock_to_resolved_address(socket, path)
+            except BaseException:
+                socket.close()
+                raise
 
-        return await self.wrap_connected_datagram_socket(socket)
+            return await self.wrap_connected_datagram_socket(socket)
 
     async def wrap_connected_datagram_socket(self, socket: _socket.socket) -> AsyncDatagramTransport:
         from .datagram.socket import TrioDatagramSocketAdapter
@@ -325,28 +325,28 @@ class TrioBackend(AbstractAsyncBackend):
         listeners = [TrioDatagramListenerSocketAdapter(self, sock) for sock in sockets]
         return listeners
 
-    async def create_unix_datagram_listener(
-        self,
-        path: str | bytes,
-        *,
-        mode: int | None = None,
-    ) -> AsyncDatagramListener[str | bytes]:
-        from .datagram.listener import TrioDatagramListenerSocketAdapter
+    if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
 
-        AF_UNIX: int = getattr(_socket, "AF_UNIX")
+        async def create_unix_datagram_listener(
+            self,
+            path: str | bytes,
+            *,
+            mode: int | None = None,
+        ) -> AsyncDatagramListener[str | bytes]:
+            from .datagram.listener import TrioDatagramListenerSocketAdapter
 
-        socket = _socket.socket(AF_UNIX, _socket.SOCK_DGRAM, 0)
-        try:
-            await self.__trio.to_thread.run_sync(self.__bind_unix_socket, socket, path, abandon_on_cancel=True)
-            if mode is not None:
-                await self.__trio.to_thread.run_sync(os.chmod, path, mode, abandon_on_cancel=True)
-            socket.setblocking(False)
-        except BaseException:
-            socket.close()
-            raise
+            socket = _socket.socket(_socket.AF_UNIX, _socket.SOCK_DGRAM, 0)
+            try:
+                await self.__trio.to_thread.run_sync(self.__bind_unix_socket, socket, path, abandon_on_cancel=True)
+                if mode is not None:
+                    await self.__trio.to_thread.run_sync(os.chmod, path, mode, abandon_on_cancel=True)
+                socket.setblocking(False)
+            except BaseException:
+                socket.close()
+                raise
 
-        listener = TrioDatagramListenerSocketAdapter(self, socket)
-        return listener
+            listener = TrioDatagramListenerSocketAdapter(self, socket)
+            return listener
 
     def create_lock(self) -> ILock:
         return self.__trio.Lock()

@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import pathlib
 import socket
+import sys
 from collections.abc import Callable
 from socket import AF_INET, AF_INET6, IPPROTO_TCP, SO_KEEPALIVE, SO_LINGER, SOL_SOCKET, TCP_NODELAY
 from typing import TYPE_CHECKING, Any
@@ -12,7 +13,6 @@ from easynetwork.lowlevel.socket import (
     IPv6SocketAddress,
     SocketAddress,
     SocketProxy,
-    UnixSocketAddress,
     disable_socket_linger,
     enable_socket_linger,
     get_socket_linger,
@@ -25,7 +25,6 @@ from easynetwork.lowlevel.socket import (
 
 import pytest
 
-from ...tools import PlatformMarkers
 from .._utils import partial_eq, unsupported_families
 from ..base import INET_FAMILIES
 
@@ -94,195 +93,197 @@ class TestSocketAddress:
             _ = new_socket_address(("127.0.0.1", 12345), family)
 
 
-@PlatformMarkers.skipif_platform_win32
-class TestUnixSocketAddress:
-    def test____dunder_init____is_unnamed_address(self) -> None:
-        # Arrange
+if sys.platform != "win32":
+    from easynetwork.lowlevel.socket import UnixSocketAddress
 
-        # Act
-        addr = UnixSocketAddress()
+    class TestUnixSocketAddress:
+        def test____dunder_init____is_unnamed_address(self) -> None:
+            # Arrange
 
-        # Assert
-        assert addr.is_unnamed()
-        assert addr.as_pathname() is None
-        assert addr.as_abstract_name() is None
-        assert addr.as_raw() == ""
+            # Act
+            addr = UnixSocketAddress()
 
-    @pytest.mark.parametrize(
-        "path",
-        ["/path/to/sock", pathlib.Path("/path/to/sock"), pathlib.PurePath("/path/to/sock")],
-        ids=repr,
-    )
-    def test____from_pathname____is_named_address(self, path: str | pathlib.Path | pathlib.PurePath) -> None:
-        # Arrange
+            # Assert
+            assert addr.is_unnamed()
+            assert addr.as_pathname() is None
+            assert addr.as_abstract_name() is None
+            assert addr.as_raw() == ""
 
-        # Act
-        addr = UnixSocketAddress.from_pathname(path)
+        @pytest.mark.parametrize(
+            "path",
+            ["/path/to/sock", pathlib.Path("/path/to/sock"), pathlib.PurePath("/path/to/sock")],
+            ids=repr,
+        )
+        def test____from_pathname____is_named_address(self, path: str | pathlib.Path | pathlib.PurePath) -> None:
+            # Arrange
 
-        # Assert
-        assert not addr.is_unnamed()
-        assert addr.as_pathname() == pathlib.Path("/path/to/sock")
-        assert addr.as_abstract_name() is None
-        assert addr.as_raw() == "/path/to/sock"
+            # Act
+            addr = UnixSocketAddress.from_pathname(path)
 
-    @pytest.mark.parametrize(
-        "path",
-        ["/path/with/\0/bytes", pathlib.Path("/path/with/\0/bytes"), pathlib.PurePath("/path/with/\0/bytes")],
-        ids=repr,
-    )
-    def test____from_pathname____null_byte_in_str(self, path: str | pathlib.Path | pathlib.PurePath) -> None:
-        # Arrange
+            # Assert
+            assert not addr.is_unnamed()
+            assert addr.as_pathname() == pathlib.Path("/path/to/sock")
+            assert addr.as_abstract_name() is None
+            assert addr.as_raw() == "/path/to/sock"
 
-        # Act & Assert
-        with pytest.raises(ValueError, match=r"^paths must not contain interior null bytes$"):
-            _ = UnixSocketAddress.from_pathname(path)
+        @pytest.mark.parametrize(
+            "path",
+            ["/path/with/\0/bytes", pathlib.Path("/path/with/\0/bytes"), pathlib.PurePath("/path/with/\0/bytes")],
+            ids=repr,
+        )
+        def test____from_pathname____null_byte_in_str(self, path: str | pathlib.Path | pathlib.PurePath) -> None:
+            # Arrange
 
-    def test____from_pathname____bytes_path(self) -> None:
-        # Arrange
+            # Act & Assert
+            with pytest.raises(ValueError, match=r"^paths must not contain interior null bytes$"):
+                _ = UnixSocketAddress.from_pathname(path)
 
-        # Act & Assert
-        with pytest.raises(TypeError, match=r"^Expected a str object or an os.PathLike object, got .+$"):
-            _ = UnixSocketAddress.from_pathname(b"/path/to/sock")  # type: ignore[arg-type]
+        def test____from_pathname____bytes_path(self) -> None:
+            # Arrange
 
-    def test____from_pathname____empty_str(self) -> None:
-        # Arrange
+            # Act & Assert
+            with pytest.raises(TypeError, match=r"^Expected a str object or an os.PathLike object, got .+$"):
+                _ = UnixSocketAddress.from_pathname(b"/path/to/sock")  # type: ignore[arg-type]
 
-        # Act
-        addr = UnixSocketAddress.from_pathname("")
+        def test____from_pathname____empty_str(self) -> None:
+            # Arrange
 
-        # Assert
-        assert addr.is_unnamed()
-        assert addr.as_pathname() is None
-        assert addr.as_abstract_name() is None
-        assert addr.as_raw() == ""
+            # Act
+            addr = UnixSocketAddress.from_pathname("")
 
-    @pytest.mark.parametrize(
-        "name",
-        ["hidden", b"hidden"],
-        ids=repr,
-    )
-    def test____from_abstract_name____is_in_abstract_namespace(self, name: str | bytes) -> None:
-        # Arrange
+            # Assert
+            assert addr.is_unnamed()
+            assert addr.as_pathname() is None
+            assert addr.as_abstract_name() is None
+            assert addr.as_raw() == ""
 
-        # Act
-        addr = UnixSocketAddress.from_abstract_name(name)
+        @pytest.mark.parametrize(
+            "name",
+            ["hidden", b"hidden"],
+            ids=repr,
+        )
+        def test____from_abstract_name____is_in_abstract_namespace(self, name: str | bytes) -> None:
+            # Arrange
 
-        # Assert
-        assert not addr.is_unnamed()
-        assert addr.as_pathname() is None
-        assert addr.as_abstract_name() == b"hidden"
-        assert addr.as_raw() == b"\x00hidden"
+            # Act
+            addr = UnixSocketAddress.from_abstract_name(name)
 
-    def test____from_abstract_name____refuse_path_like_objects(self) -> None:
-        # Arrange
+            # Assert
+            assert not addr.is_unnamed()
+            assert addr.as_pathname() is None
+            assert addr.as_abstract_name() == b"hidden"
+            assert addr.as_raw() == b"\x00hidden"
 
-        # Act & Assert
-        with pytest.raises(TypeError, match=r"^Expected a str object or a bytes object, got .+$"):
-            _ = UnixSocketAddress.from_abstract_name(pathlib.Path("hidden"))  # type: ignore[arg-type]
+        def test____from_abstract_name____refuse_path_like_objects(self) -> None:
+            # Arrange
 
-    @pytest.mark.parametrize(
-        "path",
-        ["/path/to/sock", b"/path/to/sock"],
-        ids=repr,
-    )
-    def test____from_raw____pathname(self, path: str | bytes) -> None:
-        # Arrange
+            # Act & Assert
+            with pytest.raises(TypeError, match=r"^Expected a str object or a bytes object, got .+$"):
+                _ = UnixSocketAddress.from_abstract_name(pathlib.Path("hidden"))  # type: ignore[arg-type]
 
-        # Act
-        addr = UnixSocketAddress.from_raw(path)
+        @pytest.mark.parametrize(
+            "path",
+            ["/path/to/sock", b"/path/to/sock"],
+            ids=repr,
+        )
+        def test____from_raw____pathname(self, path: str | bytes) -> None:
+            # Arrange
 
-        # Assert
-        assert not addr.is_unnamed()
-        assert addr.as_pathname() == pathlib.Path("/path/to/sock")
-        assert addr.as_abstract_name() is None
-        assert addr.as_raw() == "/path/to/sock"
+            # Act
+            addr = UnixSocketAddress.from_raw(path)
 
-    @pytest.mark.parametrize(
-        "name",
-        ["\0hidden", b"\x00hidden"],
-        ids=repr,
-    )
-    def test____from_raw____is_in_abstract_namespace(self, name: str | bytes) -> None:
-        # Arrange
+            # Assert
+            assert not addr.is_unnamed()
+            assert addr.as_pathname() == pathlib.Path("/path/to/sock")
+            assert addr.as_abstract_name() is None
+            assert addr.as_raw() == "/path/to/sock"
 
-        # Act
-        addr = UnixSocketAddress.from_raw(name)
+        @pytest.mark.parametrize(
+            "name",
+            ["\0hidden", b"\x00hidden"],
+            ids=repr,
+        )
+        def test____from_raw____is_in_abstract_namespace(self, name: str | bytes) -> None:
+            # Arrange
 
-        # Assert
-        assert not addr.is_unnamed()
-        assert addr.as_pathname() is None
-        assert addr.as_abstract_name() == b"hidden"
-        assert addr.as_raw() == b"\x00hidden"
+            # Act
+            addr = UnixSocketAddress.from_raw(name)
 
-    @pytest.mark.parametrize(
-        "name",
-        ["", b""],
-        ids=repr,
-    )
-    def test____from_raw____unnamed(self, name: str | bytes) -> None:
-        # Arrange
+            # Assert
+            assert not addr.is_unnamed()
+            assert addr.as_pathname() is None
+            assert addr.as_abstract_name() == b"hidden"
+            assert addr.as_raw() == b"\x00hidden"
 
-        # Act
-        addr = UnixSocketAddress.from_raw(name)
+        @pytest.mark.parametrize(
+            "name",
+            ["", b""],
+            ids=repr,
+        )
+        def test____from_raw____unnamed(self, name: str | bytes) -> None:
+            # Arrange
 
-        # Assert
-        assert addr.is_unnamed()
-        assert addr.as_pathname() is None
-        assert addr.as_abstract_name() is None
-        assert addr.as_raw() == ""
+            # Act
+            addr = UnixSocketAddress.from_raw(name)
 
-    def test____from_raw____invalid_object_type(self) -> None:
-        # Arrange
+            # Assert
+            assert addr.is_unnamed()
+            assert addr.as_pathname() is None
+            assert addr.as_abstract_name() is None
+            assert addr.as_raw() == ""
 
-        # Act & Assert
-        with pytest.raises(TypeError, match=r"^Cannot convert \('127.0.0.1', 12345\) to a UnixSocketAddress$"):
-            _ = UnixSocketAddress.from_raw(("127.0.0.1", 12345))
+        def test____from_raw____invalid_object_type(self) -> None:
+            # Arrange
 
-    @pytest.mark.parametrize(
-        "raw_addr",
-        ["/path/to/sock", b"\0hidden", ""],
-        ids=repr,
-    )
-    def test____uniqueness____hash_and_eq(self, raw_addr: str | bytes) -> None:
-        # Arrange
-        addr_1 = UnixSocketAddress.from_raw(raw_addr)
-        addr_2 = UnixSocketAddress.from_raw(raw_addr)
-        addr_3 = UnixSocketAddress.from_raw("/path/to/other/sock")
-        assert addr_1 is not addr_2
+            # Act & Assert
+            with pytest.raises(TypeError, match=r"^Cannot convert \('127.0.0.1', 12345\) to a UnixSocketAddress$"):
+                _ = UnixSocketAddress.from_raw(("127.0.0.1", 12345))
 
-        # Act & Assert
-        assert addr_1 == addr_2
-        assert hash(addr_1) == hash(addr_2)
-        assert addr_1 == addr_2
-        assert addr_1 != addr_3
-        assert addr_2 != addr_3
-        assert hash(addr_1) != hash(addr_3)
-        assert hash(addr_2) != hash(addr_3)
+        @pytest.mark.parametrize(
+            "raw_addr",
+            ["/path/to/sock", b"\0hidden", ""],
+            ids=repr,
+        )
+        def test____uniqueness____hash_and_eq(self, raw_addr: str | bytes) -> None:
+            # Arrange
+            addr_1 = UnixSocketAddress.from_raw(raw_addr)
+            addr_2 = UnixSocketAddress.from_raw(raw_addr)
+            addr_3 = UnixSocketAddress.from_raw("/path/to/other/sock")
+            assert addr_1 is not addr_2
 
-        assert addr_1 != raw_addr
-        assert addr_2 != raw_addr
+            # Act & Assert
+            assert addr_1 == addr_2
+            assert hash(addr_1) == hash(addr_2)
+            assert addr_1 == addr_2
+            assert addr_1 != addr_3
+            assert addr_2 != addr_3
+            assert hash(addr_1) != hash(addr_3)
+            assert hash(addr_2) != hash(addr_3)
 
-    @pytest.mark.parametrize(
-        "raw_addr",
-        ["/path/to/sock", b"\0hidden", ""],
-        ids=repr,
-    )
-    def test____display____show_value_in_proc_net_unix_form(self, raw_addr: str | bytes) -> None:
-        # Arrange
-        address = UnixSocketAddress.from_raw(raw_addr)
+            assert addr_1 != raw_addr
+            assert addr_2 != raw_addr
 
-        # Act
-        address_as_str = str(address)
+        @pytest.mark.parametrize(
+            "raw_addr",
+            ["/path/to/sock", b"\0hidden", ""],
+            ids=repr,
+        )
+        def test____display____show_value_in_proc_net_unix_form(self, raw_addr: str | bytes) -> None:
+            # Arrange
+            address = UnixSocketAddress.from_raw(raw_addr)
 
-        # Assert
-        if address.is_unnamed():
-            assert address_as_str == "<unnamed>"
-        elif (name := address.as_abstract_name()) is not None:
-            assert address_as_str == f"@{os.fsdecode(name)}"
-        else:
-            path = address.as_pathname()
-            assert path is not None
-            assert address_as_str == os.fspath(path)
+            # Act
+            address_as_str = str(address)
+
+            # Assert
+            if address.is_unnamed():
+                assert address_as_str == "<unnamed>"
+            elif (name := address.as_abstract_name()) is not None:
+                assert address_as_str == f"@{os.fsdecode(name)}"
+            else:
+                path = address.as_pathname()
+                assert path is not None
+                assert address_as_str == os.fspath(path)
 
 
 class TestSocketProxy:

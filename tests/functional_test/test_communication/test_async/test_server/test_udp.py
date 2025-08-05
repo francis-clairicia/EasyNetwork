@@ -399,7 +399,6 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         request_handler: MyDatagramRequestHandler,
     ) -> None:
         assert request_handler.server == server
-        assert isinstance(request_handler.server, AsyncUDPNetworkServer)
 
     async def test____serve_forever____handle_request(
         self,

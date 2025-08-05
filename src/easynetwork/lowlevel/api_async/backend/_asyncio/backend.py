@@ -166,32 +166,33 @@ class AsyncIOBackend(AbstractAsyncBackend):
 
         return await self.wrap_stream_socket(socket)
 
-    async def create_unix_stream_connection(
-        self,
-        path: str | bytes,
-        *,
-        local_path: str | bytes | None = None,
-    ) -> AsyncStreamTransport:
-        from .stream.socket import AsyncioTransportStreamSocketAdapter, StreamReaderBufferedProtocol
+    if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
 
-        AF_UNIX: int = getattr(_socket, "AF_UNIX")
-        loop = self.__asyncio.get_running_loop()
+        async def create_unix_stream_connection(
+            self,
+            path: str | bytes,
+            *,
+            local_path: str | bytes | None = None,
+        ) -> AsyncStreamTransport:
+            from .stream.socket import AsyncioTransportStreamSocketAdapter, StreamReaderBufferedProtocol
 
-        socket = _socket.socket(AF_UNIX, _socket.SOCK_STREAM, 0)
-        try:
-            if local_path is not None:
-                await loop.run_in_executor(None, self.__bind_unix_socket, socket, local_path)
-            socket.setblocking(False)
-            await loop.sock_connect(socket, path)
-        except BaseException:
-            socket.close()
-            raise
+            loop = self.__asyncio.get_running_loop()
 
-        transport, protocol = await loop.create_unix_connection(
-            _utils.make_callback(StreamReaderBufferedProtocol, loop=loop),
-            sock=socket,
-        )
-        return AsyncioTransportStreamSocketAdapter(self, transport, protocol)
+            socket = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM, 0)
+            try:
+                if local_path is not None:
+                    await loop.run_in_executor(None, self.__bind_unix_socket, socket, local_path)
+                socket.setblocking(False)
+                await loop.sock_connect(socket, path)
+            except BaseException:
+                socket.close()
+                raise
+
+            transport, protocol = await loop.create_unix_connection(
+                _utils.make_callback(StreamReaderBufferedProtocol, loop=loop),
+                sock=socket,
+            )
+            return AsyncioTransportStreamSocketAdapter(self, transport, protocol)
 
     async def wrap_stream_socket(self, socket: _socket.socket) -> AsyncStreamTransport:
         from .stream.socket import AsyncioTransportStreamSocketAdapter, StreamReaderBufferedProtocol
@@ -246,31 +247,32 @@ class AsyncIOBackend(AbstractAsyncBackend):
         listeners = [ListenerSocketAdapter(self, sock, factory, backlog=backlog) for sock in sockets]
         return listeners
 
-    async def create_unix_stream_listener(
-        self,
-        path: str | bytes,
-        backlog: int,
-        *,
-        mode: int | None = None,
-    ) -> AsyncListener[AsyncStreamTransport]:
-        from .stream.listener import AcceptedSocketFactory, ListenerSocketAdapter
+    if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
 
-        AF_UNIX: int = getattr(_socket, "AF_UNIX")
-        loop = self.__asyncio.get_running_loop()
+        async def create_unix_stream_listener(
+            self,
+            path: str | bytes,
+            backlog: int,
+            *,
+            mode: int | None = None,
+        ) -> AsyncListener[AsyncStreamTransport]:
+            from .stream.listener import AcceptedSocketFactory, ListenerSocketAdapter
 
-        socket = _socket.socket(AF_UNIX, _socket.SOCK_STREAM, 0)
-        try:
-            await loop.run_in_executor(None, self.__bind_unix_socket, socket, path)
-            if mode is not None:
-                await loop.run_in_executor(None, os.chmod, path, mode)
-            socket.setblocking(False)
-            socket.listen(backlog)
-        except BaseException:
-            socket.close()
-            raise
+            loop = self.__asyncio.get_running_loop()
 
-        listener = ListenerSocketAdapter(self, socket, AcceptedSocketFactory(), backlog=backlog)
-        return listener
+            socket = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM, 0)
+            try:
+                await loop.run_in_executor(None, self.__bind_unix_socket, socket, path)
+                if mode is not None:
+                    await loop.run_in_executor(None, os.chmod, path, mode)
+                socket.setblocking(False)
+                socket.listen(backlog)
+            except BaseException:
+                socket.close()
+                raise
+
+            listener = ListenerSocketAdapter(self, socket, AcceptedSocketFactory(), backlog=backlog)
+            return listener
 
     async def create_udp_endpoint(
         self,
@@ -289,30 +291,31 @@ class AsyncIOBackend(AbstractAsyncBackend):
         )
         return await self.wrap_connected_datagram_socket(socket)
 
-    async def create_unix_datagram_endpoint(
-        self,
-        path: str | bytes,
-        *,
-        local_path: str | bytes | None = None,
-    ) -> AsyncDatagramTransport:
-        from .datagram.endpoint import create_datagram_endpoint
-        from .datagram.socket import AsyncioTransportDatagramSocketAdapter
+    if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
 
-        AF_UNIX: int = getattr(_socket, "AF_UNIX")
-        loop = self.__asyncio.get_running_loop()
+        async def create_unix_datagram_endpoint(
+            self,
+            path: str | bytes,
+            *,
+            local_path: str | bytes | None = None,
+        ) -> AsyncDatagramTransport:
+            from .datagram.endpoint import create_datagram_endpoint
+            from .datagram.socket import AsyncioTransportDatagramSocketAdapter
 
-        socket = _socket.socket(AF_UNIX, _socket.SOCK_DGRAM, 0)
-        try:
-            if local_path is not None:
-                await loop.run_in_executor(None, self.__bind_unix_socket, socket, local_path)
-            socket.setblocking(False)
-            await loop.sock_connect(socket, path)
-        except BaseException:
-            socket.close()
-            raise
+            loop = self.__asyncio.get_running_loop()
 
-        endpoint = await create_datagram_endpoint(sock=socket)
-        return AsyncioTransportDatagramSocketAdapter(self, endpoint)
+            socket = _socket.socket(_socket.AF_UNIX, _socket.SOCK_DGRAM, 0)
+            try:
+                if local_path is not None:
+                    await loop.run_in_executor(None, self.__bind_unix_socket, socket, local_path)
+                socket.setblocking(False)
+                await loop.sock_connect(socket, path)
+            except BaseException:
+                socket.close()
+                raise
+
+            endpoint = await create_datagram_endpoint(sock=socket)
+            return AsyncioTransportDatagramSocketAdapter(self, endpoint)
 
     async def wrap_connected_datagram_socket(self, socket: _socket.socket) -> AsyncDatagramTransport:
         from .datagram.endpoint import create_datagram_endpoint
@@ -354,33 +357,34 @@ class AsyncIOBackend(AbstractAsyncBackend):
         listeners = [await loop.create_datagram_endpoint(protocol_factory, sock=sock) for sock in sockets]
         return [DatagramListenerSocketAdapter(self, transport, protocol) for transport, protocol in listeners]
 
-    async def create_unix_datagram_listener(
-        self,
-        path: str | bytes,
-        *,
-        mode: int | None = None,
-    ) -> AsyncDatagramListener[str | bytes]:
-        from .datagram.listener import DatagramListenerProtocol, DatagramListenerSocketAdapter
+    if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
 
-        loop = self.__asyncio.get_running_loop()
+        async def create_unix_datagram_listener(
+            self,
+            path: str | bytes,
+            *,
+            mode: int | None = None,
+        ) -> AsyncDatagramListener[str | bytes]:
+            from .datagram.listener import DatagramListenerProtocol, DatagramListenerSocketAdapter
 
-        AF_UNIX: int = getattr(_socket, "AF_UNIX")
-        socket = _socket.socket(AF_UNIX, _socket.SOCK_DGRAM, 0)
-        try:
-            await loop.run_in_executor(None, self.__bind_unix_socket, socket, path)
-            if mode is not None:
-                await loop.run_in_executor(None, os.chmod, path, mode)
-            socket.setblocking(False)
-        except BaseException:
-            socket.close()
-            raise
+            loop = self.__asyncio.get_running_loop()
 
-        transport, protocol = await loop.create_datagram_endpoint(
-            _utils.make_callback(DatagramListenerProtocol, loop=loop),
-            sock=socket,
-        )
-        listener = DatagramListenerSocketAdapter(self, transport, protocol)
-        return listener
+            socket = _socket.socket(_socket.AF_UNIX, _socket.SOCK_DGRAM, 0)
+            try:
+                await loop.run_in_executor(None, self.__bind_unix_socket, socket, path)
+                if mode is not None:
+                    await loop.run_in_executor(None, os.chmod, path, mode)
+                socket.setblocking(False)
+            except BaseException:
+                socket.close()
+                raise
+
+            transport, protocol = await loop.create_datagram_endpoint(
+                _utils.make_callback(DatagramListenerProtocol, loop=loop),
+                sock=socket,
+            )
+            listener = DatagramListenerSocketAdapter(self, transport, protocol)
+            return listener
 
     def create_lock(self) -> ILock:
         return self.__asyncio.Lock()

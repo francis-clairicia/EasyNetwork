@@ -1018,7 +1018,7 @@ class AsyncBackend(metaclass=ABCMeta):
         Returns:
             A stream socket.
         """
-        raise NotImplementedError
+        raise NotImplementedError("UNIX sockets are not supported.")
 
     @abstractmethod
     async def wrap_stream_socket(self, socket: _socket.socket) -> _transports.AsyncStreamTransport:
@@ -1101,7 +1101,7 @@ class AsyncBackend(metaclass=ABCMeta):
         Returns:
             A listener socket.
         """
-        raise NotImplementedError
+        raise NotImplementedError("UNIX sockets are not supported.")
 
     @abstractmethod
     async def create_udp_endpoint(
@@ -1150,7 +1150,7 @@ class AsyncBackend(metaclass=ABCMeta):
         Returns:
             A datagram socket.
         """
-        raise NotImplementedError
+        raise NotImplementedError("UNIX sockets are not supported.")
 
     @abstractmethod
     async def wrap_connected_datagram_socket(self, socket: _socket.socket) -> _transports.AsyncDatagramTransport:
@@ -1227,7 +1227,7 @@ class AsyncBackend(metaclass=ABCMeta):
         Returns:
             A datagram listener socket.
         """
-        raise NotImplementedError
+        raise NotImplementedError("UNIX sockets are not supported.")
 
     @abstractmethod
     def create_lock(self) -> ILock:

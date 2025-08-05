@@ -1,29 +1,22 @@
 from __future__ import annotations
 
+import sys
 from collections.abc import AsyncGenerator, Iterator
+from typing import TYPE_CHECKING
 
 from easynetwork.clients.async_tcp import AsyncTCPNetworkClient
 from easynetwork.clients.async_udp import AsyncUDPNetworkClient
-from easynetwork.clients.async_unix_datagram import AsyncUnixDatagramClient
-from easynetwork.clients.async_unix_stream import AsyncUnixStreamClient
 from easynetwork.clients.tcp import TCPNetworkClient
 from easynetwork.clients.udp import UDPNetworkClient
-from easynetwork.clients.unix_datagram import UnixDatagramClient
-from easynetwork.clients.unix_stream import UnixStreamClient
 from easynetwork.lowlevel.api_async.backend.utils import BuiltinAsyncBackendLiteral
 from easynetwork.protocol import AnyStreamProtocolType, DatagramProtocol
 from easynetwork.servers.abc import AbstractNetworkServer
 from easynetwork.servers.handlers import AsyncBaseClientInterface, AsyncDatagramRequestHandler, AsyncStreamRequestHandler
 from easynetwork.servers.standalone_tcp import StandaloneTCPNetworkServer
 from easynetwork.servers.standalone_udp import StandaloneUDPNetworkServer
-from easynetwork.servers.standalone_unix_datagram import StandaloneUnixDatagramServer
-from easynetwork.servers.standalone_unix_stream import StandaloneUnixStreamServer
 from easynetwork.servers.threads_helper import NetworkServerThread
 
 import pytest
-
-from ...pytest_plugins.unix_sockets import UnixSocketPathFactory
-from ...tools import PlatformMarkers
 
 
 class EchoRequestHandler(AsyncStreamRequestHandler[str, str], AsyncDatagramRequestHandler[str, str]):
@@ -200,154 +193,162 @@ class TestNetworkUDP(BaseTestNetworkServer):
             assert responses == expected
 
 
-@PlatformMarkers.skipif_platform_win32
-class TestUnixStream(BaseTestNetworkServer):
-    @pytest.fixture
-    @staticmethod
-    def server(
-        unix_socket_path_factory: UnixSocketPathFactory,
-        server_backend: BuiltinAsyncBackendLiteral,
-        stream_protocol: AnyStreamProtocolType[str, str],
-    ) -> StandaloneUnixStreamServer[str, str]:
-        return StandaloneUnixStreamServer(
-            unix_socket_path_factory(),
-            stream_protocol,
-            EchoRequestHandler(),
-            backend=server_backend,
-        )
+if sys.platform != "win32":
+    from easynetwork.clients.async_unix_datagram import AsyncUnixDatagramClient
+    from easynetwork.clients.async_unix_stream import AsyncUnixStreamClient
+    from easynetwork.clients.unix_datagram import UnixDatagramClient
+    from easynetwork.clients.unix_stream import UnixStreamClient
+    from easynetwork.servers.standalone_unix_datagram import StandaloneUnixDatagramServer
+    from easynetwork.servers.standalone_unix_stream import StandaloneUnixStreamServer
 
-    @pytest.fixture
-    @staticmethod
-    def server_address(server: StandaloneUnixStreamServer[str, str]) -> str:
-        addr = server.get_addresses()[0].as_raw()
-        assert isinstance(addr, str)
-        return addr
+    if TYPE_CHECKING:
+        from ...pytest_plugins.unix_sockets import UnixSocketPathFactory
 
-    def test____blocking_client____echo(
-        self,
-        server_address: str,
-        stream_protocol: AnyStreamProtocolType[str, str],
-    ) -> None:
+    class TestUnixStream(BaseTestNetworkServer):
+        @pytest.fixture
+        @staticmethod
+        def server(
+            unix_socket_path_factory: UnixSocketPathFactory,
+            server_backend: BuiltinAsyncBackendLiteral,
+            stream_protocol: AnyStreamProtocolType[str, str],
+        ) -> StandaloneUnixStreamServer[str, str]:
+            return StandaloneUnixStreamServer(
+                unix_socket_path_factory(),
+                stream_protocol,
+                EchoRequestHandler(),
+                backend=server_backend,
+            )
 
-        with UnixStreamClient(server_address, stream_protocol, connect_timeout=1) as client:
+        @pytest.fixture
+        @staticmethod
+        def server_address(server: StandaloneUnixStreamServer[str, str]) -> str:
+            addr = server.get_addresses()[0].as_raw()
+            assert isinstance(addr, str)
+            return addr
 
-            # Sequential read/write
-            for i in range(3):
-                client.send_packet(f"Hello world {i}")
-                assert client.recv_packet(timeout=1) == f"Hello world {i}"
+        def test____blocking_client____echo(
+            self,
+            server_address: str,
+            stream_protocol: AnyStreamProtocolType[str, str],
+        ) -> None:
 
-            # Several write
-            for i in range(3):
-                client.send_packet(f"Hello world {i}")
-            responses: list[str] = []
-            expected: list[str] = []
-            for i in range(3):
-                responses.append(client.recv_packet(timeout=1))
-                expected.append(f"Hello world {i}")
-            assert responses == expected
+            with UnixStreamClient(server_address, stream_protocol, connect_timeout=1) as client:
 
-    async def test____asynchronous_client____echo(
-        self,
-        async_client_backend: BuiltinAsyncBackendLiteral,
-        server_address: str,
-        stream_protocol: AnyStreamProtocolType[str, str],
-    ) -> None:
+                # Sequential read/write
+                for i in range(3):
+                    client.send_packet(f"Hello world {i}")
+                    assert client.recv_packet(timeout=1) == f"Hello world {i}"
 
-        async with AsyncUnixStreamClient(server_address, stream_protocol, backend=async_client_backend) as client:
+                # Several write
+                for i in range(3):
+                    client.send_packet(f"Hello world {i}")
+                responses: list[str] = []
+                expected: list[str] = []
+                for i in range(3):
+                    responses.append(client.recv_packet(timeout=1))
+                    expected.append(f"Hello world {i}")
+                assert responses == expected
 
-            # Sequential read/write
-            for i in range(3):
-                await client.send_packet(f"Hello world {i}")
-                with client.backend().timeout(1):
-                    assert (await client.recv_packet()) == f"Hello world {i}"
+        async def test____asynchronous_client____echo(
+            self,
+            async_client_backend: BuiltinAsyncBackendLiteral,
+            server_address: str,
+            stream_protocol: AnyStreamProtocolType[str, str],
+        ) -> None:
 
-            # Several write
-            for i in range(3):
-                await client.send_packet(f"Hello world {i}")
-            responses: list[str] = []
-            expected: list[str] = []
-            for i in range(3):
-                with client.backend().timeout(1):
-                    responses.append(await client.recv_packet())
-                expected.append(f"Hello world {i}")
-            assert responses == expected
+            async with AsyncUnixStreamClient(server_address, stream_protocol, backend=async_client_backend) as client:
 
+                # Sequential read/write
+                for i in range(3):
+                    await client.send_packet(f"Hello world {i}")
+                    with client.backend().timeout(1):
+                        assert (await client.recv_packet()) == f"Hello world {i}"
 
-@PlatformMarkers.skipif_platform_win32
-class TestUnixDatagram(BaseTestNetworkServer):
-    @pytest.fixture
-    @staticmethod
-    def server(
-        unix_socket_path_factory: UnixSocketPathFactory,
-        server_backend: BuiltinAsyncBackendLiteral,
-        datagram_protocol: DatagramProtocol[str, str],
-    ) -> StandaloneUnixDatagramServer[str, str]:
-        return StandaloneUnixDatagramServer(
-            unix_socket_path_factory(),
-            datagram_protocol,
-            EchoRequestHandler(),
-            backend=server_backend,
-        )
+                # Several write
+                for i in range(3):
+                    await client.send_packet(f"Hello world {i}")
+                responses: list[str] = []
+                expected: list[str] = []
+                for i in range(3):
+                    with client.backend().timeout(1):
+                        responses.append(await client.recv_packet())
+                    expected.append(f"Hello world {i}")
+                assert responses == expected
 
-    @pytest.fixture
-    @staticmethod
-    def server_address(server: StandaloneUnixDatagramServer[str, str]) -> str:
-        addr = server.get_addresses()[0].as_raw()
-        assert isinstance(addr, str)
-        return addr
+    class TestUnixDatagram(BaseTestNetworkServer):
+        @pytest.fixture
+        @staticmethod
+        def server(
+            unix_socket_path_factory: UnixSocketPathFactory,
+            server_backend: BuiltinAsyncBackendLiteral,
+            datagram_protocol: DatagramProtocol[str, str],
+        ) -> StandaloneUnixDatagramServer[str, str]:
+            return StandaloneUnixDatagramServer(
+                unix_socket_path_factory(),
+                datagram_protocol,
+                EchoRequestHandler(),
+                backend=server_backend,
+            )
 
-    def test____blocking_client____echo(
-        self,
-        unix_socket_path_factory: UnixSocketPathFactory,
-        server_address: str,
-        datagram_protocol: DatagramProtocol[str, str],
-    ) -> None:
+        @pytest.fixture
+        @staticmethod
+        def server_address(server: StandaloneUnixDatagramServer[str, str]) -> str:
+            addr = server.get_addresses()[0].as_raw()
+            assert isinstance(addr, str)
+            return addr
 
-        with UnixDatagramClient(server_address, datagram_protocol, local_path=unix_socket_path_factory()) as client:
+        def test____blocking_client____echo(
+            self,
+            unix_socket_path_factory: UnixSocketPathFactory,
+            server_address: str,
+            datagram_protocol: DatagramProtocol[str, str],
+        ) -> None:
 
-            # Sequential read/write
-            for i in range(3):
-                client.send_packet(f"Hello world {i}")
-                assert client.recv_packet(timeout=1) == f"Hello world {i}"
+            with UnixDatagramClient(server_address, datagram_protocol, local_path=unix_socket_path_factory()) as client:
 
-            # Several write
-            for i in range(3):
-                client.send_packet(f"Hello world {i}")
-            responses: list[str] = []
-            expected: list[str] = []
-            for i in range(3):
-                responses.append(client.recv_packet(timeout=1))
-                expected.append(f"Hello world {i}")
-            assert responses == expected
+                # Sequential read/write
+                for i in range(3):
+                    client.send_packet(f"Hello world {i}")
+                    assert client.recv_packet(timeout=1) == f"Hello world {i}"
 
-    async def test____asynchronous_client____echo(
-        self,
-        unix_socket_path_factory: UnixSocketPathFactory,
-        async_client_backend: BuiltinAsyncBackendLiteral,
-        server_address: str,
-        datagram_protocol: DatagramProtocol[str, str],
-    ) -> None:
+                # Several write
+                for i in range(3):
+                    client.send_packet(f"Hello world {i}")
+                responses: list[str] = []
+                expected: list[str] = []
+                for i in range(3):
+                    responses.append(client.recv_packet(timeout=1))
+                    expected.append(f"Hello world {i}")
+                assert responses == expected
 
-        async with AsyncUnixDatagramClient(
-            server_address,
-            datagram_protocol,
-            backend=async_client_backend,
-            local_path=unix_socket_path_factory(),
-        ) as client:
+        async def test____asynchronous_client____echo(
+            self,
+            unix_socket_path_factory: UnixSocketPathFactory,
+            async_client_backend: BuiltinAsyncBackendLiteral,
+            server_address: str,
+            datagram_protocol: DatagramProtocol[str, str],
+        ) -> None:
 
-            # Sequential read/write
-            for i in range(3):
-                await client.send_packet(f"Hello world {i}")
-                with client.backend().timeout(1):
-                    assert (await client.recv_packet()) == f"Hello world {i}"
+            async with AsyncUnixDatagramClient(
+                server_address,
+                datagram_protocol,
+                backend=async_client_backend,
+                local_path=unix_socket_path_factory(),
+            ) as client:
 
-            # Several write
-            for i in range(3):
-                await client.send_packet(f"Hello world {i}")
-            responses: list[str] = []
-            expected: list[str] = []
-            for i in range(3):
-                with client.backend().timeout(1):
-                    responses.append(await client.recv_packet())
-                expected.append(f"Hello world {i}")
-            assert responses == expected
+                # Sequential read/write
+                for i in range(3):
+                    await client.send_packet(f"Hello world {i}")
+                    with client.backend().timeout(1):
+                        assert (await client.recv_packet()) == f"Hello world {i}"
+
+                # Several write
+                for i in range(3):
+                    await client.send_packet(f"Hello world {i}")
+                responses: list[str] = []
+                expected: list[str] = []
+                for i in range(3):
+                    with client.backend().timeout(1):
+                        responses.append(await client.recv_packet())
+                    expected.append(f"Hello world {i}")
+                assert responses == expected

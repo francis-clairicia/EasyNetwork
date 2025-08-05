@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ssl
+import sys
 from collections.abc import Callable, Iterator
 from contextlib import ExitStack
 from functools import partial
@@ -148,19 +149,21 @@ def inet_socket_pair(localhost_ip: str, tcp_socket_factory: Callable[[], Socket]
         yield ssock, csock
 
 
-@pytest.fixture
-def unix_socket_pair() -> Iterator[tuple[Socket, Socket]]:
-    from socket import socketpair
+if sys.platform != "win32":
 
-    from easynetwork.lowlevel import _unix_utils
+    @pytest.fixture
+    def unix_socket_pair() -> Iterator[tuple[Socket, Socket]]:
+        from socket import socketpair
 
-    left_sock, right_sock = socketpair(AF_UNIX_or_skip())
-    with left_sock, right_sock:
-        if _unix_utils.platform_supports_automatic_socket_bind():
-            left_sock.bind("")
-            right_sock.bind("")
+        from easynetwork.lowlevel import _unix_utils
 
-        yield left_sock, right_sock
+        left_sock, right_sock = socketpair(AF_UNIX_or_skip())
+        with left_sock, right_sock:
+            if _unix_utils.platform_supports_automatic_socket_bind():
+                left_sock.bind("")
+                right_sock.bind("")
+
+            yield left_sock, right_sock
 
 
 @pytest.fixture(scope="session")

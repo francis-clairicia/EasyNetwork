@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import itertools
 import os
+import sys
 from collections.abc import Callable
 from socket import AF_INET, AF_INET6, IPPROTO_TCP, IPPROTO_UDP, SOCK_DGRAM, SOCK_STREAM, socket as Socket
 from ssl import SSLContext, SSLObject, SSLSocket
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.converter import AbstractPacketConverterComposite
-from easynetwork.lowlevel.socket import UnixCredentials
 from easynetwork.protocol import BufferedStreamProtocol, DatagramProtocol, StreamProtocol
 from easynetwork.serializers.abc import (
     AbstractIncrementalPacketSerializer,
@@ -38,23 +38,25 @@ def remove_SO_REUSEPORT_support(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delattr("socket.SO_REUSEPORT", raising=False)
 
 
-@pytest.fixture
-def fake_ucred() -> UnixCredentials:
-    return UnixCredentials(pid=os.getpid(), uid=1000, gid=1000)
+if sys.platform != "win32":
+    from easynetwork.lowlevel.socket import UnixCredentials
 
+    @pytest.fixture
+    def fake_ucred() -> UnixCredentials:
+        return UnixCredentials(pid=os.getpid(), uid=1000, gid=1000)
 
-@pytest.fixture
-def mock_get_peer_credentials(mocker: MockerFixture) -> MagicMock:
-    mock_get_peer_credentials = mocker.MagicMock(
-        name="mock_get_peer_credentials",
-        spec=lambda sock: None,
-    )
+    @pytest.fixture
+    def mock_get_peer_credentials(mocker: MockerFixture) -> MagicMock:
+        mock_get_peer_credentials = mocker.MagicMock(
+            name="mock_get_peer_credentials",
+            spec=lambda sock: None,
+        )
 
-    def patch_get_peer_credentials_impl() -> Callable[[Any], UnixCredentials]:
+        def patch_get_peer_credentials_impl() -> Callable[[Any], UnixCredentials]:
+            return mock_get_peer_credentials
+
+        mocker.patch("easynetwork.lowlevel._unix_utils._get_peer_credentials_impl_from_platform", patch_get_peer_credentials_impl)
         return mock_get_peer_credentials
-
-    mocker.patch("easynetwork.lowlevel._unix_utils._get_peer_credentials_impl_from_platform", patch_get_peer_credentials_impl)
-    return mock_get_peer_credentials
 
 
 @pytest.fixture

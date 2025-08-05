@@ -17,6 +17,7 @@ from __future__ import annotations
 __all__ = [
     "ElapsedTime",
     "Flag",
+    "ResourceGuard",
     "WarnCallback",
     "adjust_leftover_buffer",
     "check_inet_socket_family",
@@ -37,7 +38,6 @@ __all__ = [
     "remove_traceback_frames_in_place",
     "replace_kwargs",
     "set_reuseport",
-    "supports_socket_sendmsg",
     "validate_listener_hosts",
     "validate_optional_timeout_delay",
     "validate_timeout_delay",
@@ -70,8 +70,6 @@ from ._errno import error_from_errno
 
 if TYPE_CHECKING:
     from ssl import SSLError as _SSLError, SSLSocket as _SSLSocket
-
-    from _typeshed import ReadableBuffer
 
     from .socket import ISocket, SupportsSocketOptions
 
@@ -206,16 +204,6 @@ def check_real_socket_state(socket: ISocket, error_msg: str | None = None) -> No
             raise error_from_errno(errno, error_msg)
         else:
             raise error_from_errno(errno)
-
-
-class _SupportsSocketSendMSG(Protocol):
-    @abstractmethod
-    def sendmsg(self, buffers: Iterable[ReadableBuffer], /) -> int: ...
-
-
-def supports_socket_sendmsg(sock: _socket.socket) -> TypeGuard[_SupportsSocketSendMSG]:
-    assert isinstance(sock, _socket.SocketType)  # nosec assert_used
-    return hasattr(sock, "sendmsg")
 
 
 def is_ssl_socket(socket: _socket.socket) -> TypeGuard[_SSLSocket]:
