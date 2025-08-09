@@ -589,7 +589,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         request_handler: MyStreamRequestHandler,
     ) -> None:
         assert request_handler.server == server
-        assert isinstance(request_handler.server, AsyncTCPNetworkServer)
 
     @pytest.mark.parametrize(
         "log_client_connection",

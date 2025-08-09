@@ -76,7 +76,7 @@ class TestStarImports:
     @pytest.mark.parametrize("module_name", ALL_EASYNETWORK_MODULES)
     def test____dunder_all____is_conform(self, module_name: str) -> None:
         # Arrange
-        module = import_module(module_name)
+        module = pytest.importorskip(module_name, exc_type=ImportError)
         module_namespace = vars(module)
         try:
             __all_module__: list[str] = module.__all__

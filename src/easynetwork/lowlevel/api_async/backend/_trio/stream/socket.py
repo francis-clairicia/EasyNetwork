@@ -20,6 +20,7 @@ __all__ = ["TrioStreamSocketAdapter"]
 
 import errno as _errno
 import itertools
+import sys
 import warnings
 from collections import deque
 from collections.abc import Callable, Iterable, Mapping
@@ -32,7 +33,6 @@ from ..... import _utils, constants, socket as socket_tools
 from ....transports.abc import AsyncStreamTransport
 from ...abc import AsyncBackend
 from .._trio_utils import convert_trio_resource_errors
-from ._sendmsg import supports_async_socket_sendmsg
 
 if TYPE_CHECKING:
     from _typeshed import WriteableBuffer
@@ -80,25 +80,24 @@ class TrioStreamSocketAdapter(AsyncStreamTransport):
         with convert_trio_resource_errors(broken_resource_errno=_errno.ECONNABORTED):
             return await self.__stream.send_all(data)
 
-    async def send_all_from_iterable(self, iterable_of_data: Iterable[bytes | bytearray | memoryview]) -> None:
-        if constants.SC_IOV_MAX <= 0:
-            return await super().send_all_from_iterable(iterable_of_data)
+    if sys.platform != "win32" or (not TYPE_CHECKING and hasattr(trio.socket.SocketType, "sendmsg")):
 
-        socket = self.__stream.socket
-        if not supports_async_socket_sendmsg(socket):
-            return await super().send_all_from_iterable(iterable_of_data)
+        if constants.SC_IOV_MAX > 0:  # pragma: no branch
 
-        buffers: deque[memoryview] = deque(map(memoryview, iterable_of_data))  # type: ignore[arg-type]
-        del iterable_of_data
+            async def send_all_from_iterable(self, iterable_of_data: Iterable[bytes | bytearray | memoryview]) -> None:
+                buffers: deque[memoryview] = deque(map(memoryview, iterable_of_data))  # type: ignore[arg-type]
+                del iterable_of_data
 
-        if not buffers:
-            return await self.send_all(b"")
+                if not buffers:
+                    return await self.send_all(b"")
 
-        while buffers:
-            # Do not send the islice directly because if sendmsg() blocks,
-            # it would retry with an already consumed iterator.
-            sent = await socket.sendmsg(list(itertools.islice(buffers, constants.SC_IOV_MAX)))
-            _utils.adjust_leftover_buffer(buffers, sent)
+                socket_sendmsg = self.__stream.socket.sendmsg
+
+                while buffers:
+                    # Do not send the islice directly because if sendmsg() blocks,
+                    # it would retry with an already consumed iterator.
+                    sent = await socket_sendmsg(list(itertools.islice(buffers, constants.SC_IOV_MAX)))
+                    _utils.adjust_leftover_buffer(buffers, sent)
 
     async def send_eof(self) -> None:
         with convert_trio_resource_errors(broken_resource_errno=_errno.ECONNABORTED):

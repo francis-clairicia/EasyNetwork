@@ -15,12 +15,8 @@
 from __future__ import annotations
 
 __all__ = [
-    "UnixCredsContainer",
     "check_unix_socket_family",
-    "convert_optional_unix_socket_address",
-    "convert_unix_socket_address",
     "is_unix_socket_family",
-    "platform_supports_automatic_socket_bind",
 ]
 
 import functools
@@ -29,7 +25,7 @@ import socket as _socket
 import sys
 from collections.abc import Callable
 
-from .socket import ISocket, UnixCredentials, UnixSocketAddress
+from .socket import ISocket
 
 
 def is_unix_socket_family(family: int) -> bool:
@@ -45,171 +41,176 @@ def check_unix_socket_family(family: int) -> None:
         raise ValueError("Only these families are supported: AF_UNIX")
 
 
-def convert_unix_socket_address(path: str | os.PathLike[str] | bytes | UnixSocketAddress) -> str | bytes:
-    if isinstance(path, (str, bytes)):
-        path = UnixSocketAddress.from_raw(path)
-    elif not isinstance(path, UnixSocketAddress):
-        path = UnixSocketAddress.from_pathname(path)
-    return path.as_raw()
+if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
+    from .socket import UnixCredentials, UnixSocketAddress
 
+    __all__ += [
+        "UnixCredsContainer",
+        "convert_unix_socket_address",
+        "convert_optional_unix_socket_address",
+        "platform_supports_automatic_socket_bind",
+    ]
 
-def convert_optional_unix_socket_address(path: str | os.PathLike[str] | bytes | UnixSocketAddress | None) -> str | bytes | None:
-    if path is not None:
-        path = convert_unix_socket_address(path)
-    return path
+    def convert_unix_socket_address(path: str | os.PathLike[str] | bytes | UnixSocketAddress) -> str | bytes:
+        if isinstance(path, (str, bytes)):
+            path = UnixSocketAddress.from_raw(path)
+        elif not isinstance(path, UnixSocketAddress):
+            path = UnixSocketAddress.from_pathname(path)
+        return path.as_raw()
 
+    def convert_optional_unix_socket_address(
+        path: str | os.PathLike[str] | bytes | UnixSocketAddress | None,
+    ) -> str | bytes | None:
+        if path is not None:
+            path = convert_unix_socket_address(path)
+        return path
 
-def platform_supports_automatic_socket_bind() -> bool:
-    # Automatic socket bind feature is available on platforms supporting abstract unix sockets.
-    # Currently, only linux platform has this feature.
-    return sys.platform == "linux"
+    def platform_supports_automatic_socket_bind() -> bool:
+        # Automatic socket bind feature is available on platforms supporting abstract unix sockets.
+        # Currently, only linux platform has this feature.
+        return sys.platform == "linux"
 
+    class UnixCredsContainer:
+        __slots__ = ("__peer_credentials", "__sock")
 
-class UnixCredsContainer:
-    __slots__ = ("__peer_credentials", "__sock")
+        def __init__(self, sock: ISocket) -> None:
+            check_unix_socket_family(sock.family)
+            self.__peer_credentials: UnixCredentials | None = None
+            self.__sock: ISocket = sock
 
-    def __init__(self, sock: ISocket) -> None:
-        check_unix_socket_family(sock.family)
-        self.__peer_credentials: UnixCredentials | None = None
-        self.__sock: ISocket = sock
+        def get(self) -> UnixCredentials:
+            if (peer_creds := self.__peer_credentials) is None:
+                sock = self.__sock
+                get_peer_credentials = _get_peer_credentials_impl_from_platform()
+                peer_creds = get_peer_credentials(sock)
+                self.__peer_credentials = peer_creds
+            return peer_creds
 
-    def get(self) -> UnixCredentials:
-        if (peer_creds := self.__peer_credentials) is None:
-            sock = self.__sock
-            get_peer_credentials = _get_peer_credentials_impl_from_platform()
-            peer_creds = get_peer_credentials(sock)
-            self.__peer_credentials = peer_creds
-        return peer_creds
+    @functools.cache
+    def _get_peer_credentials_impl_from_platform() -> Callable[[ISocket], UnixCredentials]:
+        match sys.platform:
+            case "darwin":
+                return __get_peer_eid_macos_impl()
+            case platform if platform.startswith(("linux", "openbsd", "netbsd")):
+                return __get_ucred_impl()
+            case platform if platform.startswith(("freebsd", "dragonfly")):
+                return __get_peer_eid_bsd_generic_impl()
+            case platform:  # pragma: no cover
+                raise NotImplementedError(f"There is no implementation available for {platform!r}")
 
+    def __get_ucred_impl() -> Callable[[ISocket], UnixCredentials]:
+        from errno import EBADF, EINVAL
+        from struct import Struct
 
-@functools.cache
-def _get_peer_credentials_impl_from_platform() -> Callable[[ISocket], UnixCredentials]:
-    match sys.platform:
-        case "darwin":
-            return __get_peer_eid_macos_impl()
-        case platform if platform.startswith(("linux", "openbsd", "netbsd")):
-            return __get_ucred_impl()
-        case platform if platform.startswith(("freebsd", "dragonfly")):
-            return __get_peer_eid_bsd_generic_impl()
-        case platform:
-            raise NotImplementedError(f"There is no implementation available for {platform!r}")
+        from ._errno import error_from_errno
 
+        if sys.platform.startswith("netbsd"):
+            # The constants are not defined in _socket module (at least on 3.11).
+            # https://man.netbsd.org/unix.4
+            SOL_LOCAL: int = 0
+            LOCAL_PEEREID: int = 3
 
-def __get_ucred_impl() -> Callable[[ISocket], UnixCredentials]:
-    from errno import EBADF, EINVAL
-    from struct import Struct
+            level = SOL_LOCAL
+            option = LOCAL_PEEREID
+        else:
+            from socket import SO_PEERCRED, SOL_SOCKET  # type: ignore[attr-defined, unused-ignore]
 
-    from ._errno import error_from_errno
+            level = SOL_SOCKET
+            option = SO_PEERCRED
 
-    if sys.platform.startswith("netbsd"):
+        _UID_GID_MAX: int = 2**32 - 1
+
+        if sys.platform.startswith("openbsd"):
+            # Surprise! The fields order differs.
+            # https://unix.stackexchange.com/a/496586
+
+            _ucred_struct = Struct("@IIi")
+
+            def _unpack_ucred(buffer: bytes, /) -> tuple[int, int, int]:
+                uid, gid, pid = _ucred_struct.unpack(buffer)
+                return pid, uid, gid
+
+        else:
+            _ucred_struct = Struct("@iII")
+
+            _unpack_ucred = _ucred_struct.unpack
+
+        def get_peer_credentials(sock: ISocket, /) -> UnixCredentials:
+            if sock.fileno() < 0:
+                raise error_from_errno(EBADF)
+
+            ucred = UnixCredentials._make(_unpack_ucred(sock.getsockopt(level, option, _ucred_struct.size)))
+            if ucred.pid == 0 or ucred.uid == _UID_GID_MAX or ucred.gid == _UID_GID_MAX:
+                raise error_from_errno(EINVAL)
+
+            return ucred
+
+        return get_peer_credentials
+
+    def __get_peer_eid_macos_impl() -> Callable[[ISocket], UnixCredentials]:
+        import ctypes
+        import ctypes.util
+        from errno import EBADF
+
+        from ._errno import error_from_errno
+
         # The constants are not defined in _socket module (at least on 3.11).
-        # https://man.netbsd.org/unix.4
+        # c.f. https://stackoverflow.com/a/67971484
         SOL_LOCAL: int = 0
-        LOCAL_PEEREID: int = 3
+        LOCAL_PEERPID: int = 2
 
-        level = SOL_LOCAL
-        option = LOCAL_PEEREID
-    else:
-        from socket import SO_PEERCRED, SOL_SOCKET  # type: ignore[attr-defined, unused-ignore]
+        c_uid_t = ctypes.c_uint
+        c_gid_t = ctypes.c_uint
 
-        level = SOL_SOCKET
-        option = SO_PEERCRED
+        if (libc_name := ctypes.util.find_library("c")) is None:
+            raise NotImplementedError(f"Could not find libc on {sys.platform!r}")
 
-    _UID_GID_MAX: int = 2**32 - 1
+        libc = ctypes.CDLL(libc_name, use_errno=True)
+        libc.getpeereid.argtypes = [ctypes.c_int, ctypes.POINTER(c_uid_t), ctypes.POINTER(c_gid_t)]
+        libc.getpeereid.restype = ctypes.c_int
 
-    if sys.platform.startswith("openbsd"):
-        # Surprise! The fields order differs.
-        # https://unix.stackexchange.com/a/496586
+        def get_peer_credentials(sock: ISocket, /) -> UnixCredentials:
+            fileno = sock.fileno()
+            if fileno < 0:
+                raise error_from_errno(EBADF)
 
-        _ucred_struct = Struct("@IIi")
+            uid = c_uid_t(1)
+            gid = c_gid_t(1)
+            if libc.getpeereid(fileno, ctypes.byref(uid), ctypes.byref(gid)) != 0:
+                raise error_from_errno(ctypes.get_errno())
 
-        def _unpack_ucred(buffer: bytes, /) -> tuple[int, int, int]:
-            uid, gid, pid = _ucred_struct.unpack(buffer)
-            return pid, uid, gid
+            pid = sock.getsockopt(SOL_LOCAL, LOCAL_PEERPID)
+            return UnixCredentials(pid, uid.value, gid.value)
 
-    else:
-        _ucred_struct = Struct("@iII")
+        return get_peer_credentials
 
-        _unpack_ucred = _ucred_struct.unpack
+    def __get_peer_eid_bsd_generic_impl() -> Callable[[ISocket], UnixCredentials]:
+        import ctypes
+        import ctypes.util
+        from errno import EBADF
 
-    def get_peer_credentials(sock: ISocket, /) -> UnixCredentials:
-        if sock.fileno() < 0:
-            raise error_from_errno(EBADF)
+        from ._errno import error_from_errno
 
-        ucred = UnixCredentials._make(_unpack_ucred(sock.getsockopt(level, option, _ucred_struct.size)))
-        if ucred.pid == 0 or ucred.uid == _UID_GID_MAX or ucred.gid == _UID_GID_MAX:
-            raise error_from_errno(EINVAL)
+        c_uid_t = ctypes.c_uint
+        c_gid_t = ctypes.c_uint
 
-        return ucred
+        if (libc_name := ctypes.util.find_library("c")) is None:
+            raise NotImplementedError(f"Could not find libc on {sys.platform!r}")
 
-    return get_peer_credentials
+        libc = ctypes.CDLL(libc_name, use_errno=True)
+        libc.getpeereid.argtypes = [ctypes.c_int, ctypes.POINTER(c_uid_t), ctypes.POINTER(c_gid_t)]
+        libc.getpeereid.restype = ctypes.c_int
 
+        def get_peer_credentials(sock: ISocket, /) -> UnixCredentials:
+            fileno = sock.fileno()
+            if fileno < 0:
+                raise error_from_errno(EBADF)
 
-def __get_peer_eid_macos_impl() -> Callable[[ISocket], UnixCredentials]:
-    import ctypes
-    import ctypes.util
-    from errno import EBADF
+            uid = c_uid_t(1)
+            gid = c_gid_t(1)
+            if libc.getpeereid(fileno, ctypes.byref(uid), ctypes.byref(gid)) != 0:
+                raise error_from_errno(ctypes.get_errno())
 
-    from ._errno import error_from_errno
+            return UnixCredentials(None, uid.value, gid.value)
 
-    # The constants are not defined in _socket module (at least on 3.11).
-    # c.f. https://stackoverflow.com/a/67971484
-    SOL_LOCAL: int = 0
-    LOCAL_PEERPID: int = 2
-
-    c_uid_t = ctypes.c_uint
-    c_gid_t = ctypes.c_uint
-
-    if (libc_name := ctypes.util.find_library("c")) is None:
-        raise NotImplementedError(f"Could not find libc on {sys.platform!r}")
-
-    libc = ctypes.CDLL(libc_name, use_errno=True)
-    libc.getpeereid.argtypes = [ctypes.c_int, ctypes.POINTER(c_uid_t), ctypes.POINTER(c_gid_t)]
-    libc.getpeereid.restype = ctypes.c_int
-
-    def get_peer_credentials(sock: ISocket, /) -> UnixCredentials:
-        fileno = sock.fileno()
-        if fileno < 0:
-            raise error_from_errno(EBADF)
-
-        uid = c_uid_t(1)
-        gid = c_gid_t(1)
-        if libc.getpeereid(fileno, ctypes.byref(uid), ctypes.byref(gid)) != 0:
-            raise error_from_errno(ctypes.get_errno())
-
-        pid = sock.getsockopt(SOL_LOCAL, LOCAL_PEERPID)
-        return UnixCredentials(pid, uid.value, gid.value)
-
-    return get_peer_credentials
-
-
-def __get_peer_eid_bsd_generic_impl() -> Callable[[ISocket], UnixCredentials]:
-    import ctypes
-    import ctypes.util
-    from errno import EBADF
-
-    from ._errno import error_from_errno
-
-    c_uid_t = ctypes.c_uint
-    c_gid_t = ctypes.c_uint
-
-    if (libc_name := ctypes.util.find_library("c")) is None:
-        raise NotImplementedError(f"Could not find libc on {sys.platform!r}")
-
-    libc = ctypes.CDLL(libc_name, use_errno=True)
-    libc.getpeereid.argtypes = [ctypes.c_int, ctypes.POINTER(c_uid_t), ctypes.POINTER(c_gid_t)]
-    libc.getpeereid.restype = ctypes.c_int
-
-    def get_peer_credentials(sock: ISocket, /) -> UnixCredentials:
-        fileno = sock.fileno()
-        if fileno < 0:
-            raise error_from_errno(EBADF)
-
-        uid = c_uid_t(1)
-        gid = c_gid_t(1)
-        if libc.getpeereid(fileno, ctypes.byref(uid), ctypes.byref(gid)) != 0:
-            raise error_from_errno(ctypes.get_errno())
-
-        return UnixCredentials(None, uid.value, gid.value)
-
-    return get_peer_credentials
+        return get_peer_credentials

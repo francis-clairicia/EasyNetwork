@@ -1,23 +1,22 @@
 from __future__ import annotations
 
+import sys
 from collections.abc import AsyncGenerator, Iterator
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from easynetwork.lowlevel.socket import IPv4SocketAddress
 from easynetwork.protocol import DatagramProtocol, StreamProtocol
 from easynetwork.serializers.line import StringLineSerializer
 from easynetwork.servers.abc import AbstractNetworkServer
 from easynetwork.servers.handlers import AsyncBaseClientInterface, AsyncDatagramRequestHandler, AsyncStreamRequestHandler
-from easynetwork.servers.standalone_tcp import StandaloneTCPNetworkServer
-from easynetwork.servers.standalone_udp import StandaloneUDPNetworkServer
-from easynetwork.servers.standalone_unix_datagram import StandaloneUnixDatagramServer
-from easynetwork.servers.standalone_unix_stream import StandaloneUnixStreamServer
 from easynetwork.servers.threads_helper import NetworkServerThread
 
 import pytest
 
-from ...pytest_plugins.unix_sockets import UnixSocketPathFactory
 from ...tools import PlatformMarkers
+
+if TYPE_CHECKING:
+    from ...pytest_plugins.unix_sockets import UnixSocketPathFactory
 
 
 class EchoRequestHandler(AsyncStreamRequestHandler[str, str], AsyncDatagramRequestHandler[str, str]):
@@ -35,7 +34,7 @@ class EchoRequestHandler(AsyncStreamRequestHandler[str, str], AsyncDatagramReque
     ]
 )
 def ipproto(request: pytest.FixtureRequest) -> Literal["TCP", "UDP", "UNIX_STREAM", "UNIX_DGRAM"]:
-    return getattr(request, "param").upper()
+    return getattr(request, "param")
 
 
 def _build_server(
@@ -45,13 +44,27 @@ def _build_server(
     request_handler = EchoRequestHandler()
     match ipproto:
         case "TCP":
+            from easynetwork.servers.standalone_tcp import StandaloneTCPNetworkServer
+
             return StandaloneTCPNetworkServer(None, 0, StreamProtocol(serializer), request_handler)
         case "UDP":
+            from easynetwork.servers.standalone_udp import StandaloneUDPNetworkServer
+
             return StandaloneUDPNetworkServer(None, 0, DatagramProtocol(serializer), request_handler)
         case "UNIX_STREAM":
-            return StandaloneUnixStreamServer(unix_socket_path_factory(), StreamProtocol(serializer), request_handler)
+            if sys.platform == "win32":
+                raise NotImplementedError
+            else:
+                from easynetwork.servers.standalone_unix_stream import StandaloneUnixStreamServer
+
+                return StandaloneUnixStreamServer(unix_socket_path_factory(), StreamProtocol(serializer), request_handler)
         case "UNIX_DGRAM":
-            return StandaloneUnixDatagramServer(unix_socket_path_factory(), DatagramProtocol(serializer), request_handler)
+            if sys.platform == "win32":
+                raise NotImplementedError
+            else:
+                from easynetwork.servers.standalone_unix_datagram import StandaloneUnixDatagramServer
+
+                return StandaloneUnixDatagramServer(unix_socket_path_factory(), DatagramProtocol(serializer), request_handler)
         case _:
             pytest.fail("Invalid ipproto")
 
@@ -64,16 +77,23 @@ def _run_server(server: AbstractNetworkServer) -> NetworkServerThread:
 
 
 def _retrieve_server_address(server: AbstractNetworkServer) -> Any:
-    match server:
-        case StandaloneTCPNetworkServer() | StandaloneUDPNetworkServer():
-            address = server.get_addresses()[0]
-            if isinstance(address, IPv4SocketAddress):
-                return "127.0.0.1", address.port
-            return "::1", address.port
-        case StandaloneUnixStreamServer() | StandaloneUnixDatagramServer():
+    from easynetwork.servers.standalone_tcp import StandaloneTCPNetworkServer
+    from easynetwork.servers.standalone_udp import StandaloneUDPNetworkServer
+
+    if isinstance(server, (StandaloneTCPNetworkServer, StandaloneUDPNetworkServer)):
+        address = server.get_addresses()[0]
+        if isinstance(address, IPv4SocketAddress):
+            return "127.0.0.1", address.port
+        return "::1", address.port
+
+    if sys.platform != "win32":
+        from easynetwork.servers.standalone_unix_datagram import StandaloneUnixDatagramServer
+        from easynetwork.servers.standalone_unix_stream import StandaloneUnixStreamServer
+
+        if isinstance(server, (StandaloneUnixDatagramServer, StandaloneUnixStreamServer)):
             return server.get_addresses()[0].as_raw()
-        case _:
-            pytest.fail("Invalid ipproto")
+
+    pytest.fail("Invalid ipproto")
 
 
 @pytest.fixture
