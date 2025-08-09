@@ -239,7 +239,9 @@ if sys.platform != "win32":
             ucred_struct: Struct,
         ) -> None:
             # Arrange
-            from socket import SO_PEERCRED
+            import socket
+
+            SO_PEERCRED: int = getattr(socket, "SO_PEERCRED")
 
             get_peer_credentials = _get_peer_credentials_impl_from_platform()
             expected_getsockopt_size = ucred_struct.size
@@ -394,7 +396,6 @@ if sys.platform != "win32":
         @PlatformMarkers.runs_only_on_platform(MACOS, "get_peer_eid_impl____macos_impl")
         def test____get_peer_credentials_impl_from_platform____get_peer_eid_impl____macos_impl____libc_not_found(
             self,
-            platform: str,
             mock_find_library: MagicMock,
             mock_CDLL: MagicMock,
         ) -> None:
@@ -402,7 +403,7 @@ if sys.platform != "win32":
             mock_find_library.side_effect = [None]
 
             # Act
-            with pytest.raises(NotImplementedError, match=r"^Could not find libc on '%s'$" % platform):
+            with pytest.raises(NotImplementedError, match=r"^Could not find libc on '%s'$" % sys.platform):
                 _ = _get_peer_credentials_impl_from_platform()
 
             # Assert
@@ -495,7 +496,6 @@ if sys.platform != "win32":
         @PlatformMarkers.runs_only_on_platform(FREEBSD + DRAGONFLYBSD, "get_peer_eid_impl____bsd_generic_impl")
         def test____get_peer_credentials_impl_from_platform____get_peer_eid_impl____bsd_generic_impl____libc_not_found(
             self,
-            platform: str,
             mock_find_library: MagicMock,
             mock_CDLL: MagicMock,
         ) -> None:
@@ -503,12 +503,12 @@ if sys.platform != "win32":
             mock_find_library.side_effect = [None]
 
             # Act
-            with pytest.raises(NotImplementedError, match=r"^Could not find libc on '%s'$" % platform):
+            with pytest.raises(NotImplementedError, match=r"^Could not find libc on '%s'$" % sys.platform):
                 _ = _get_peer_credentials_impl_from_platform()
 
             # Assert
             mock_CDLL.assert_not_called()
-            with pytest.raises(NotImplementedError, match=r"^Could not find libc on '%s'$" % platform):
+            with pytest.raises(NotImplementedError, match=r"^Could not find libc on '%s'$" % sys.platform):
                 _ = _get_peer_credentials_impl_from_platform()
 
             # Assert
