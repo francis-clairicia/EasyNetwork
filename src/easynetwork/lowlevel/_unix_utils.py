@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 __all__ = [
-    "convert_unix_socket_address",
+    "check_unix_socket_family",
     "is_unix_socket_family",
 ]
 
@@ -46,7 +46,7 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
 
     __all__ += [
         "UnixCredsContainer",
-        "check_unix_socket_family",
+        "convert_unix_socket_address",
         "convert_optional_unix_socket_address",
         "platform_supports_automatic_socket_bind",
     ]

@@ -244,8 +244,6 @@ if sys.platform != "win32":
             # Arrange
             import socket
 
-            SO_PEERCRED: int = getattr(socket, "SO_PEERCRED")
-
             get_peer_credentials = _get_peer_credentials_impl_from_platform()
             if sys.platform.startswith("openbsd"):
                 expected_getsockopt_size = openbsd_ucred_struct.size
@@ -265,6 +263,7 @@ if sys.platform != "win32":
                 # SOL_LOCAL=0, LOCAL_PEEREID=3
                 mock_unix_stream_socket.getsockopt.assert_called_once_with(0, 3, expected_getsockopt_size)
             else:
+                SO_PEERCRED: int = getattr(socket, "SO_PEERCRED")
                 mock_unix_stream_socket.getsockopt.assert_called_once_with(SOL_SOCKET, SO_PEERCRED, expected_getsockopt_size)
 
         @PlatformMarkers.runs_only_on_platform(LINUX + OPENBSD + NETBSD, "ucred_impl")
@@ -510,11 +509,6 @@ if sys.platform != "win32":
             mock_find_library.side_effect = [None]
 
             # Act
-            with pytest.raises(NotImplementedError, match=r"^Could not find libc on '%s'$" % sys.platform):
-                _ = _get_peer_credentials_impl_from_platform()
-
-            # Assert
-            mock_CDLL.assert_not_called()
             with pytest.raises(NotImplementedError, match=r"^Could not find libc on '%s'$" % sys.platform):
                 _ = _get_peer_credentials_impl_from_platform()
 
