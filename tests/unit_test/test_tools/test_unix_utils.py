@@ -215,11 +215,13 @@ if sys.platform != "win32":
 
         @pytest.fixture
         @staticmethod
-        def ucred_struct() -> Struct:
-            if sys.platform.startswith("openbsd"):
-                return Struct("@IIi")
-
+        def linux_ucred_struct() -> Struct:
             return Struct("@iII")
+
+        @pytest.fixture
+        @staticmethod
+        def openbsd_ucred_struct() -> Struct:
+            return Struct("@IIi")
 
         def test____socket_ucred___field_order(self) -> None:
             # Arrange
@@ -236,7 +238,8 @@ if sys.platform != "win32":
         def test____get_peer_credentials_impl_from_platform____ucred_impl(
             self,
             mock_unix_stream_socket: MagicMock,
-            ucred_struct: Struct,
+            linux_ucred_struct: Struct,
+            openbsd_ucred_struct: Struct,
         ) -> None:
             # Arrange
             import socket
@@ -244,8 +247,12 @@ if sys.platform != "win32":
             SO_PEERCRED: int = getattr(socket, "SO_PEERCRED")
 
             get_peer_credentials = _get_peer_credentials_impl_from_platform()
-            expected_getsockopt_size = ucred_struct.size
-            mock_unix_stream_socket.getsockopt.return_value = ucred_struct.pack(12345, 1001, 1002)
+            if sys.platform.startswith("openbsd"):
+                expected_getsockopt_size = openbsd_ucred_struct.size
+                mock_unix_stream_socket.getsockopt.return_value = openbsd_ucred_struct.pack(1001, 1002, 12345)
+            else:
+                expected_getsockopt_size = linux_ucred_struct.size
+                mock_unix_stream_socket.getsockopt.return_value = linux_ucred_struct.pack(12345, 1001, 1002)
 
             # Act
             peer_creds = get_peer_credentials(mock_unix_stream_socket)
