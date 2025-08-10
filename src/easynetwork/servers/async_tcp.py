@@ -119,8 +119,8 @@ class AsyncTCPNetworkServer(
                         This option is not supported on Windows and some Unixes.
                         If the SO_REUSEPORT constant is not defined then this capability is unsupported.
             max_recv_size: Read buffer size. If not given, a default reasonable value is used.
-            log_client_connection: If :data:`True`, log clients connection/disconnection in :data:`logging.INFO` level.
-                                   (This log will always be available in :data:`logging.DEBUG` level.)
+            log_client_connection: If :data:`True` (default), log clients connection/disconnection in :data:`~logging.INFO` level.
+                                   (This log will always be available in :data:`~logging.DEBUG` level.)
             logger: If given, the logger instance to use.
 
         See Also:
