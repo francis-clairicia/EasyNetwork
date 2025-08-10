@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import pytest
 
+from .....tools import PlatformMarkers
 from ....base import BaseTestSocket
 from ...mock_tools import make_transport_mock
 
@@ -41,13 +42,7 @@ if sys.platform != "win32":
                 "/path/to/sock",
                 b"/path/to/sock",
                 pathlib.Path("/path/to/sock"),
-                b"\0abstract",
-                "\0abstract",
-                b"",  # <- Indicates the kernel to give an arbitrary abstract Unix address.
-                "",  # <- Indicates the kernel to give an arbitrary abstract Unix address.
                 UnixSocketAddress.from_pathname("/path/to/sock"),
-                UnixSocketAddress.from_abstract_name(b"abstract"),
-                UnixSocketAddress(),  # <- Indicates the kernel to give an arbitrary abstract Unix address.
             ],
             ids=repr,
         )
@@ -63,6 +58,55 @@ if sys.platform != "win32":
             # Act & Assert
             _ = AsyncUnixDatagramServer(valid_path, mock_datagram_protocol, mock_datagram_request_handler, mock_backend)
 
+        if sys.platform == "linux":
+
+            @pytest.mark.parametrize(
+                "valid_path",
+                [
+                    b"\0abstract",
+                    "\0abstract",
+                    UnixSocketAddress.from_abstract_name(b"abstract"),
+                ],
+                ids=repr,
+            )
+            async def test____dunder_init____path____valid_value____abstract_sockets(
+                self,
+                valid_path: str | bytes,
+                mock_datagram_protocol: MagicMock,
+                mock_datagram_request_handler: MagicMock,
+                mock_backend: MagicMock,
+            ) -> None:
+                # Arrange
+
+                # Act & Assert
+                _ = AsyncUnixDatagramServer(valid_path, mock_datagram_protocol, mock_datagram_request_handler, mock_backend)
+
+        @pytest.mark.parametrize(
+            "valid_path",
+            # Indicates the kernel to give an arbitrary abstract Unix address.
+            [b"", "", UnixSocketAddress()],
+            ids=repr,
+        )
+        async def test____dunder_init____path____automatic_socket_bind(
+            self,
+            valid_path: str | bytes | UnixSocketAddress,
+            mock_datagram_protocol: MagicMock,
+            mock_datagram_request_handler: MagicMock,
+            mock_backend: MagicMock,
+        ) -> None:
+            # Arrange
+            from easynetwork.lowlevel._unix_utils import platform_supports_automatic_socket_bind
+
+            # Act & Assert
+            if platform_supports_automatic_socket_bind():
+                _ = AsyncUnixDatagramServer(valid_path, mock_datagram_protocol, mock_datagram_request_handler, mock_backend)
+            else:
+                with pytest.raises(
+                    ValueError,
+                    match=r"^path parameter is required on this platform and cannot be an empty string",
+                ):
+                    _ = AsyncUnixDatagramServer(valid_path, mock_datagram_protocol, mock_datagram_request_handler, mock_backend)
+
         async def test____dunder_init____path____invalid_value____unknown_type(
             self,
             mock_datagram_protocol: MagicMock,
@@ -77,14 +121,23 @@ if sys.platform != "win32":
             with pytest.raises(TypeError, match=r"^expected str, bytes or os.PathLike object"):
                 _ = AsyncUnixDatagramServer(invalid_path, mock_datagram_protocol, mock_datagram_request_handler, mock_backend)
 
+        @pytest.mark.parametrize(
+            "invalid_path",
+            [
+                pytest.param("/path/with/\0/bytes", id="byte in middle"),
+                pytest.param(
+                    "\0/path/with/nul/bytes", id="byte at beginning", marks=[PlatformMarkers.abstract_sockets_unsupported]
+                ),
+            ],
+        )
         async def test____dunder_init____path____invalid_value____null_bytes_in_path(
             self,
+            invalid_path: str,
             mock_datagram_protocol: MagicMock,
             mock_datagram_request_handler: MagicMock,
             mock_backend: MagicMock,
         ) -> None:
             # Arrange
-            invalid_path = "/path/with/\0/bytes"
 
             # Act & Assert
             with pytest.raises(ValueError, match=r"^paths must not contain interior null bytes$"):
@@ -164,7 +217,13 @@ if sys.platform != "win32":
         def local_address() -> str:
             return "/path/to/server.sock"
 
-        @pytest.fixture(params=["NAMED", "ABSTRACT", "UNNAMED"])
+        @pytest.fixture(
+            params=[
+                pytest.param("NAMED"),
+                pytest.param("ABSTRACT", marks=PlatformMarkers.supports_abstract_sockets),
+                pytest.param("UNNAMED"),
+            ]
+        )
         @staticmethod
         def remote_address(request: pytest.FixtureRequest) -> str | bytes:
             match request.param:

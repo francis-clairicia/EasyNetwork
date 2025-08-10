@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import pytest
 
+from .....tools import PlatformMarkers
 from ...._utils import AsyncDummyLock
 from ....base import BaseTestSocket
 from ...mock_tools import make_transport_mock
@@ -42,13 +43,7 @@ if sys.platform != "win32":
                 "/path/to/sock",
                 b"/path/to/sock",
                 pathlib.Path("/path/to/sock"),
-                b"\0abstract",
-                "\0abstract",
-                b"",  # <- Indicates the kernel to give an arbitrary abstract Unix address.
-                "",  # <- Indicates the kernel to give an arbitrary abstract Unix address.
                 UnixSocketAddress.from_pathname("/path/to/sock"),
-                UnixSocketAddress.from_abstract_name(b"abstract"),
-                UnixSocketAddress(),  # <- Indicates the kernel to give an arbitrary abstract Unix address.
             ],
             ids=repr,
         )
@@ -64,6 +59,55 @@ if sys.platform != "win32":
             # Act & Assert
             _ = AsyncUnixStreamServer(valid_path, mock_stream_protocol, mock_stream_request_handler, mock_backend)
 
+        if sys.platform == "linux":
+
+            @pytest.mark.parametrize(
+                "valid_path",
+                [
+                    b"\0abstract",
+                    "\0abstract",
+                    UnixSocketAddress.from_abstract_name(b"abstract"),
+                ],
+                ids=repr,
+            )
+            async def test____dunder_init____path____valid_value____abstract_sockets(
+                self,
+                valid_path: str | bytes,
+                mock_stream_protocol: MagicMock,
+                mock_stream_request_handler: MagicMock,
+                mock_backend: MagicMock,
+            ) -> None:
+                # Arrange
+
+                # Act & Assert
+                _ = AsyncUnixStreamServer(valid_path, mock_stream_protocol, mock_stream_request_handler, mock_backend)
+
+        @pytest.mark.parametrize(
+            "valid_path",
+            # Indicates the kernel to give an arbitrary abstract Unix address.
+            [b"", "", UnixSocketAddress()],
+            ids=repr,
+        )
+        async def test____dunder_init____path____automatic_socket_bind(
+            self,
+            valid_path: str | bytes | UnixSocketAddress,
+            mock_stream_protocol: MagicMock,
+            mock_stream_request_handler: MagicMock,
+            mock_backend: MagicMock,
+        ) -> None:
+            # Arrange
+            from easynetwork.lowlevel._unix_utils import platform_supports_automatic_socket_bind
+
+            # Act & Assert
+            if platform_supports_automatic_socket_bind():
+                _ = AsyncUnixStreamServer(valid_path, mock_stream_protocol, mock_stream_request_handler, mock_backend)
+            else:
+                with pytest.raises(
+                    ValueError,
+                    match=r"^path parameter is required on this platform and cannot be an empty string",
+                ):
+                    _ = AsyncUnixStreamServer(valid_path, mock_stream_protocol, mock_stream_request_handler, mock_backend)
+
         async def test____dunder_init____path____invalid_value____unknown_type(
             self,
             mock_stream_protocol: MagicMock,
@@ -78,14 +122,23 @@ if sys.platform != "win32":
             with pytest.raises(TypeError, match=r"^expected str, bytes or os.PathLike object"):
                 _ = AsyncUnixStreamServer(invalid_path, mock_stream_protocol, mock_stream_request_handler, mock_backend)
 
+        @pytest.mark.parametrize(
+            "invalid_path",
+            [
+                pytest.param("/path/with/\0/bytes", id="byte in middle"),
+                pytest.param(
+                    "\0/path/with/nul/bytes", id="byte at beginning", marks=[PlatformMarkers.abstract_sockets_unsupported]
+                ),
+            ],
+        )
         async def test____dunder_init____path____invalid_value____null_bytes_in_path(
             self,
+            invalid_path: str,
             mock_stream_protocol: MagicMock,
             mock_stream_request_handler: MagicMock,
             mock_backend: MagicMock,
         ) -> None:
             # Arrange
-            invalid_path = "/path/with/\0/bytes"
 
             # Act & Assert
             with pytest.raises(ValueError, match=r"^paths must not contain interior null bytes$"):
@@ -145,7 +198,13 @@ if sys.platform != "win32":
         def local_address() -> str:
             return "/path/to/server.sock"
 
-        @pytest.fixture(params=["NAMED", "ABSTRACT", "UNNAMED"])
+        @pytest.fixture(
+            params=[
+                pytest.param("NAMED"),
+                pytest.param("ABSTRACT", marks=PlatformMarkers.supports_abstract_sockets),
+                pytest.param("UNNAMED"),
+            ]
+        )
         @staticmethod
         def remote_address(request: pytest.FixtureRequest) -> str | bytes:
             match request.param:
@@ -224,7 +283,14 @@ if sys.platform != "win32":
             assert client.extra(UNIXSocketAttribute.family) == AF_UNIX
             assert client.extra(mocker.sentinel.custom_attribute) is mocker.sentinel.custom_value
 
-        @pytest.mark.parametrize("remote_address", ["NAMED", "ABSTRACT"], indirect=True)
+        @pytest.mark.parametrize(
+            "remote_address",
+            [
+                pytest.param("NAMED"),
+                pytest.param("ABSTRACT", marks=PlatformMarkers.supports_abstract_sockets),
+            ],
+            indirect=True,
+        )
         async def test____dunder_init____initialize_inner_client____cache_peer_name_if_named(
             self,
             remote_address: str | bytes,
@@ -284,9 +350,9 @@ if sys.platform != "win32":
 
             ## The call to bind(2) or the autobind feature happened.
             ## Should have cached the result
-            self.set_remote_address_to_socket_mock(mock_unix_stream_socket, AF_UNIX, b"\0new_address")
+            self.set_remote_address_to_socket_mock(mock_unix_stream_socket, AF_UNIX, b"/path/to/new_address")
             mock_unix_stream_socket.reset_mock()
-            assert client.extra(UNIXClientAttribute.peer_name).as_abstract_name() == b"new_address"
+            assert client.extra(UNIXClientAttribute.peer_name).as_pathname() == pathlib.Path("/path/to/new_address")
             for _ in range(3):
                 assert client.extra(UNIXClientAttribute.peer_name) is client.extra(UNIXClientAttribute.peer_name)
             mock_unix_stream_socket.getpeername.assert_called_once_with()

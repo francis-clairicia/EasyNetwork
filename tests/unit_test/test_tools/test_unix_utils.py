@@ -86,8 +86,6 @@ if sys.platform != "win32":
             pytest.param("/path/to/sock", "/path/to/sock"),
             pytest.param(pathlib.Path("/path/to/sock"), "/path/to/sock"),
             pytest.param(UnixSocketAddress.from_pathname("/path/to/sock"), "/path/to/sock"),
-            pytest.param(b"\0abstract", b"\0abstract"),
-            pytest.param(UnixSocketAddress.from_abstract_name(b"abstract"), b"\0abstract"),
             pytest.param("", ""),
             pytest.param(UnixSocketAddress(), ""),
         ],
@@ -106,6 +104,30 @@ if sys.platform != "win32":
         # Assert
         assert type(output) is type(expected_output)
         assert output == expected_output
+
+    if sys.platform == "linux":
+
+        @pytest.mark.parametrize(
+            ["input", "expected_output"],
+            [
+                pytest.param(b"\0abstract", b"\0abstract"),
+                pytest.param(UnixSocketAddress.from_abstract_name(b"abstract"), b"\0abstract"),
+            ],
+        )
+        @pytest.mark.parametrize("conversion_func", [convert_unix_socket_address, convert_optional_unix_socket_address])
+        def test_____convert_unix_socket_address____transform_to_raw_address____abstract_sockets(
+            input: str | pathlib.Path | bytes,
+            expected_output: str | bytes,
+            conversion_func: Callable[[str | pathlib.Path | bytes], str | bytes],
+        ) -> None:
+            # Arrange
+
+            # Act
+            output = conversion_func(input)
+
+            # Assert
+            assert type(output) is type(expected_output)
+            assert output == expected_output
 
     def test_____convert_optional_unix_socket_address____skip_None() -> None:
         # Arrange
