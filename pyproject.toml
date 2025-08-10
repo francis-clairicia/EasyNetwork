@@ -141,11 +141,6 @@ benchmark-servers-deps = [
 [tool.pdm]
 distribution = true
 
-[tool.pdm.resolution]
-# No binary for coverage.py because pure-python wheel is selected on BSD platforms and this implementaton crashes the test suite.
-# -> Force to use source code to compile the wheel and therefore use the C code.
-no-binary = "coverage"
-
 ############################ hatchling configuration ############################
 
 [tool.hatch.build.targets.wheel]
