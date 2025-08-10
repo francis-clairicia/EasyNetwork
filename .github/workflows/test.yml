@@ -142,7 +142,7 @@ jobs:
           envs: >-
             PDM_NO_BINARY
           run: |
-            pdm update --update-reuse --no-sync
+            pdm lock -G coverage --refresh
             export TOX_WORK_DIR=/tmp/.tox
             tox run -f ${{ matrix.tox_py }} -- ${{ env.PYTEST_VERBOSE_FLAG }}
             tox run -f coverage
@@ -281,7 +281,7 @@ jobs:
           envs: >-
             PDM_NO_BINARY
           run: |
-            pdm update --update-reuse --no-sync
+            pdm lock -G coverage --refresh
             export TOX_WORK_DIR=/tmp/.tox
             tox run -f ${{ matrix.tox_py }} -- ${{ env.PYTEST_VERBOSE_FLAG }}
             tox run -f coverage
