@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 import pytest_asyncio
 
+from .....tools import PlatformMarkers
 from ...._utils import AsyncDummyLock, unsupported_families
 from ....base import UNIX_FAMILIES
 from ...mock_tools import make_transport_mock
@@ -43,12 +44,24 @@ if sys.platform != "win32":
 
             return getattr(socket, request.param)
 
-        @pytest.fixture(scope="class", params=["/path/to/local_sock", b"\0abstract_local"])
+        @pytest.fixture(
+            scope="class",
+            params=[
+                pytest.param("/path/to/local_sock"),
+                pytest.param(b"\0abstract_local", marks=[PlatformMarkers.supports_abstract_sockets]),
+            ],
+        )
         @staticmethod
         def global_local_address(request: pytest.FixtureRequest) -> str | bytes:
             return request.param
 
-        @pytest.fixture(scope="class", params=["/path/to/sock", b"\0abstract"])
+        @pytest.fixture(
+            scope="class",
+            params=[
+                pytest.param("/path/to/sock"),
+                pytest.param(b"\0abstract", marks=[PlatformMarkers.supports_abstract_sockets]),
+            ],
+        )
         @staticmethod
         def global_remote_address(request: pytest.FixtureRequest) -> str | bytes:
             return request.param

@@ -115,6 +115,10 @@ else:
             from ..lowlevel._stream import _check_any_protocol
 
             path = _unix_utils.convert_unix_socket_address(path)
+            if not path and not _unix_utils.platform_supports_automatic_socket_bind():
+                msg = "path parameter is required on this platform and cannot be an empty string."
+                note = "Automatic socket bind is not supported."
+                raise _utils.exception_with_notes(ValueError(msg), note)
 
             _check_any_protocol(protocol)
 

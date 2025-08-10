@@ -73,6 +73,18 @@ if TYPE_CHECKING:
 _P = ParamSpec("_P")
 _T_Return = TypeVar("_T_Return")
 
+if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
+
+    __all__ += ["RawUnixSocketAddress"]
+
+    if sys.platform == "linux":
+        # Abstract Unix socket addresses are returned as bytes.
+        RawUnixSocketAddress: TypeAlias = str | bytes
+        """An address associated with a Unix socket."""
+    else:
+        RawUnixSocketAddress: TypeAlias = str
+        """An address associated with a Unix socket."""
+
 
 class SocketAttribute(typed_attr.TypedAttributeSet):
     """Typed attributes which can be used on an endpoint or a transport."""
@@ -123,21 +135,11 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
         family: Literal[_socket.AddressFamily.AF_UNIX]
         """the socket's family, as returned by :attr:`socket.socket.family`."""
 
-        if sys.platform == "linux":
-            # Abstract Unix socket addresses are returned as bytes.
+        sockname: RawUnixSocketAddress
+        """the socket's own address, result of :meth:`socket.socket.getsockname`."""
 
-            sockname: str | bytes
-            """the socket's own address, result of :meth:`socket.socket.getsockname`."""
-
-            peername: str | bytes
-            """the remote address to which the socket is connected, result of :meth:`socket.socket.getpeername`."""
-
-        else:
-            sockname: str
-            """the socket's own address, result of :meth:`socket.socket.getsockname`."""
-
-            peername: str
-            """the remote address to which the socket is connected, result of :meth:`socket.socket.getpeername`."""
+        peername: RawUnixSocketAddress
+        """the remote address to which the socket is connected, result of :meth:`socket.socket.getpeername`."""
 
 
 class TLSAttribute(typed_attr.TypedAttributeSet):
@@ -282,7 +284,7 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
                 >>> addr.is_unnamed()
                 True
             """
-            self.__addr: str | bytes | None = None
+            self.__addr: RawUnixSocketAddress | None = None
 
         @classmethod
         def from_pathname(cls, path: str | os.PathLike[str]) -> Self:
@@ -325,36 +327,38 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
             self.__addr = path or None
             return self
 
-        @classmethod
-        def from_abstract_name(cls, name: str | bytes) -> Self:
-            """
-            Creates a Unix socket address in the abstract namespace.
+        if sys.platform == "linux":
 
-            The abstract namespace is a Linux-specific extension that allows Unix sockets to be bound
-            without creating an entry in the filesystem. Abstract sockets are unaffected by filesystem layout or permissions,
-            and no cleanup is necessary when the socket is closed.
+            @classmethod
+            def from_abstract_name(cls, name: str | bytes) -> Self:
+                """
+                Creates a Unix socket address in the abstract namespace.
 
-            An abstract socket address name may contain any bytes, including zero.
+                The abstract namespace is a Linux-specific extension that allows Unix sockets to be bound
+                without creating an entry in the filesystem. Abstract sockets are unaffected by filesystem layout or permissions,
+                and no cleanup is necessary when the socket is closed.
 
-            Examples:
+                An abstract socket address name may contain any bytes, including zero.
 
-                >>> addr = UnixSocketAddress.from_abstract_name("hidden")
-                >>> addr
-                UnixSocketAddress(b'hidden' <abstract>)
-                >>> addr.as_abstract_name()
-                b'hidden'
-            """
-            if not isinstance(name, (str, bytes)):
-                raise TypeError(f"Expected a str object or a bytes object, got {name!r}")
-            name = os.fsencode(name)
-            return cls.__from_abstract_name_unchecked(b"\0" + name)
+                Examples:
 
-        @classmethod
-        def __from_abstract_name_unchecked(cls, name: bytes) -> Self:
-            assert name[0] == 0, "Should start with a NUL byte."  # nosec assert_used
-            self = cls()
-            self.__addr = name
-            return self
+                    >>> addr = UnixSocketAddress.from_abstract_name("hidden")
+                    >>> addr
+                    UnixSocketAddress(b'hidden' <abstract>)
+                    >>> addr.as_abstract_name()
+                    b'hidden'
+                """
+                if not isinstance(name, (str, bytes)):
+                    raise TypeError(f"Expected a str object or a bytes object, got {name!r}")
+                name = os.fsencode(name)
+                return cls.__from_abstract_name_unchecked(b"\0" + name)
+
+            @classmethod
+            def __from_abstract_name_unchecked(cls, name: bytes) -> Self:
+                assert name[0] == 0, "Should start with a NUL byte."  # nosec assert_used
+                self = cls()
+                self.__addr = name
+                return self
 
         @classmethod
         def from_raw(cls, addr: Any) -> Self:
@@ -369,12 +373,12 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
             """
             match addr:
                 case str():
-                    if addr and addr[0] == "\0":
+                    if addr and addr[0] == "\0" and sys.platform == "linux":
                         return cls.__from_abstract_name_unchecked(os.fsencode(addr))
                     else:
                         return cls.__from_pathname_unchecked(addr)
                 case bytes():
-                    if addr and addr[0] == 0:
+                    if addr and addr[0] == 0 and sys.platform == "linux":
                         return cls.__from_abstract_name_unchecked(addr)
                     else:
                         return cls.__from_pathname_unchecked(os.fsdecode(addr))
@@ -385,7 +389,7 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
             match self.__addr:
                 case str(addr):
                     return f"{self.__class__.__name__}({addr!r} <pathname>)"
-                case bytes(addr):
+                case bytes(addr) if sys.platform == "linux":
                     return f"{self.__class__.__name__}({addr[1:]!r} <abstract>)"
                 case _:
                     return f"{self.__class__.__name__}(<unnamed>)"
@@ -394,7 +398,7 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
             match self.__addr:
                 case str(addr):
                     return addr
-                case bytes(addr):
+                case bytes(addr) if sys.platform == "linux":
                     return f"@{os.fsdecode(addr[1:])}"
                 case _:
                     return "<unnamed>"
@@ -463,26 +467,28 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
                 case _:
                     return None
 
-        def as_abstract_name(self) -> bytes | None:
-            """
-            Returns the contents of this address if it is in the abstract namespace.
+        if sys.platform == "linux":
 
-            Examples:
+            def as_abstract_name(self) -> bytes | None:
+                """
+                Returns the contents of this address if it is in the abstract namespace.
 
-                >>> import socket
-                >>> s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-                >>> s.bind(b"\\0hidden")
-                >>> addr = UnixSocketAddress.from_raw(s.getsockname())
-                >>> addr.as_abstract_name()
-                b'hidden'
-            """
-            match self.__addr:
-                case bytes(addr):
-                    return addr[1:]
-                case _:
-                    return None
+                Examples:
 
-        def as_raw(self) -> str | bytes:
+                    >>> import socket
+                    >>> s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                    >>> s.bind(b"\\0hidden")
+                    >>> addr = UnixSocketAddress.from_raw(s.getsockname())
+                    >>> addr.as_abstract_name()
+                    b'hidden'
+                """
+                match self.__addr:
+                    case bytes(addr):
+                        return addr[1:]
+                    case _:
+                        return None
+
+        def as_raw(self) -> RawUnixSocketAddress:
             """
             Returns the raw representation of this address.
 

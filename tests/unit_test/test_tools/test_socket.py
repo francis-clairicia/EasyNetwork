@@ -25,6 +25,7 @@ from easynetwork.lowlevel.socket import (
 
 import pytest
 
+from ...tools import PlatformMarkers
 from .._utils import partial_eq, unsupported_families
 from ..base import INET_FAMILIES
 
@@ -106,7 +107,8 @@ if sys.platform != "win32":
             # Assert
             assert addr.is_unnamed()
             assert addr.as_pathname() is None
-            assert addr.as_abstract_name() is None
+            if sys.platform == "linux":
+                assert addr.as_abstract_name() is None
             assert addr.as_raw() == ""
 
         @pytest.mark.parametrize(
@@ -123,7 +125,8 @@ if sys.platform != "win32":
             # Assert
             assert not addr.is_unnamed()
             assert addr.as_pathname() == pathlib.Path("/path/to/sock")
-            assert addr.as_abstract_name() is None
+            if sys.platform == "linux":
+                assert addr.as_abstract_name() is None
             assert addr.as_raw() == "/path/to/sock"
 
         @pytest.mark.parametrize(
@@ -154,32 +157,35 @@ if sys.platform != "win32":
             # Assert
             assert addr.is_unnamed()
             assert addr.as_pathname() is None
-            assert addr.as_abstract_name() is None
+            if sys.platform == "linux":
+                assert addr.as_abstract_name() is None
             assert addr.as_raw() == ""
 
-        @pytest.mark.parametrize(
-            "name",
-            ["hidden", b"hidden"],
-            ids=repr,
-        )
-        def test____from_abstract_name____is_in_abstract_namespace(self, name: str | bytes) -> None:
-            # Arrange
+        if sys.platform == "linux":
 
-            # Act
-            addr = UnixSocketAddress.from_abstract_name(name)
+            @pytest.mark.parametrize(
+                "name",
+                ["hidden", b"hidden"],
+                ids=repr,
+            )
+            def test____from_abstract_name____is_in_abstract_namespace(self, name: str | bytes) -> None:
+                # Arrange
 
-            # Assert
-            assert not addr.is_unnamed()
-            assert addr.as_pathname() is None
-            assert addr.as_abstract_name() == b"hidden"
-            assert addr.as_raw() == b"\x00hidden"
+                # Act
+                addr = UnixSocketAddress.from_abstract_name(name)
 
-        def test____from_abstract_name____refuse_path_like_objects(self) -> None:
-            # Arrange
+                # Assert
+                assert not addr.is_unnamed()
+                assert addr.as_pathname() is None
+                assert addr.as_abstract_name() == b"hidden"
+                assert addr.as_raw() == b"\x00hidden"
 
-            # Act & Assert
-            with pytest.raises(TypeError, match=r"^Expected a str object or a bytes object, got .+$"):
-                _ = UnixSocketAddress.from_abstract_name(pathlib.Path("hidden"))  # type: ignore[arg-type]
+            def test____from_abstract_name____refuse_path_like_objects(self) -> None:
+                # Arrange
+
+                # Act & Assert
+                with pytest.raises(TypeError, match=r"^Expected a str object or a bytes object, got .+$"):
+                    _ = UnixSocketAddress.from_abstract_name(pathlib.Path("hidden"))  # type: ignore[arg-type]
 
         @pytest.mark.parametrize(
             "path",
@@ -195,25 +201,28 @@ if sys.platform != "win32":
             # Assert
             assert not addr.is_unnamed()
             assert addr.as_pathname() == pathlib.Path("/path/to/sock")
-            assert addr.as_abstract_name() is None
+            if sys.platform == "linux":
+                assert addr.as_abstract_name() is None
             assert addr.as_raw() == "/path/to/sock"
 
-        @pytest.mark.parametrize(
-            "name",
-            ["\0hidden", b"\x00hidden"],
-            ids=repr,
-        )
-        def test____from_raw____is_in_abstract_namespace(self, name: str | bytes) -> None:
-            # Arrange
+        if sys.platform == "linux":
 
-            # Act
-            addr = UnixSocketAddress.from_raw(name)
+            @pytest.mark.parametrize(
+                "name",
+                ["\0hidden", b"\x00hidden"],
+                ids=repr,
+            )
+            def test____from_raw____is_in_abstract_namespace(self, name: str | bytes) -> None:
+                # Arrange
 
-            # Assert
-            assert not addr.is_unnamed()
-            assert addr.as_pathname() is None
-            assert addr.as_abstract_name() == b"hidden"
-            assert addr.as_raw() == b"\x00hidden"
+                # Act
+                addr = UnixSocketAddress.from_raw(name)
+
+                # Assert
+                assert not addr.is_unnamed()
+                assert addr.as_pathname() is None
+                assert addr.as_abstract_name() == b"hidden"
+                assert addr.as_raw() == b"\x00hidden"
 
         @pytest.mark.parametrize(
             "name",
@@ -229,7 +238,8 @@ if sys.platform != "win32":
             # Assert
             assert addr.is_unnamed()
             assert addr.as_pathname() is None
-            assert addr.as_abstract_name() is None
+            if sys.platform == "linux":
+                assert addr.as_abstract_name() is None
             assert addr.as_raw() == ""
 
         def test____from_raw____invalid_object_type(self) -> None:
@@ -240,8 +250,29 @@ if sys.platform != "win32":
                 _ = UnixSocketAddress.from_raw(("127.0.0.1", 12345))
 
         @pytest.mark.parametrize(
+            "path",
+            [
+                "/path/with/\0/bytes",
+                pathlib.Path("/path/with/\0/bytes"),
+                pathlib.PurePath("/path/with/\0/bytes"),
+                pytest.param("\0/path/with/nul/bytes", marks=[PlatformMarkers.abstract_sockets_unsupported]),
+            ],
+            ids=repr,
+        )
+        def test____from_raw____null_byte_in_str(self, path: str | pathlib.Path | pathlib.PurePath) -> None:
+            # Arrange
+
+            # Act & Assert
+            with pytest.raises(ValueError, match=r"^paths must not contain interior null bytes$"):
+                _ = UnixSocketAddress.from_pathname(path)
+
+        @pytest.mark.parametrize(
             "raw_addr",
-            ["/path/to/sock", b"\0hidden", ""],
+            [
+                "/path/to/sock",
+                pytest.param(b"\0hidden", marks=[PlatformMarkers.supports_abstract_sockets]),
+                "",
+            ],
             ids=repr,
         )
         def test____uniqueness____hash_and_eq(self, raw_addr: str | bytes) -> None:
@@ -265,7 +296,11 @@ if sys.platform != "win32":
 
         @pytest.mark.parametrize(
             "raw_addr",
-            ["/path/to/sock", b"\0hidden", ""],
+            [
+                "/path/to/sock",
+                pytest.param(b"\0hidden", marks=[PlatformMarkers.supports_abstract_sockets]),
+                "",
+            ],
             ids=repr,
         )
         def test____display____show_value_in_proc_net_unix_form(self, raw_addr: str | bytes) -> None:
@@ -278,7 +313,7 @@ if sys.platform != "win32":
             # Assert
             if address.is_unnamed():
                 assert address_as_str == "<unnamed>"
-            elif (name := address.as_abstract_name()) is not None:
+            elif sys.platform == "linux" and (name := address.as_abstract_name()) is not None:
                 assert address_as_str == f"@{os.fsdecode(name)}"
             else:
                 path = address.as_pathname()
