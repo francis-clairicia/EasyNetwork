@@ -40,8 +40,8 @@ import errno as _errno
 import math
 import selectors
 from abc import abstractmethod
-from collections.abc import Callable
-from typing import TYPE_CHECKING, TypeVar
+from collections.abc import Callable, Iterable
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from ... import _utils
 from . import abc as transports
@@ -239,6 +239,77 @@ class SelectorStreamReadTransport(SelectorBaseTransport, transports.StreamReadTr
         """
         return self._retry(lambda: self.recv_noblock_into(buffer), timeout)[0]
 
+    def recv_noblock_with_ancillary(self, bufsize: int, ancillary_bufsize: int) -> tuple[bytes, Any]:  # pragma: no cover
+        """
+        Read and return up to `bufsize` bytes with ancillary data.
+
+        .. versionadded:: NEXT_VERSION
+
+        Parameters:
+            bufsize: the maximum buffer size.
+            ancillary_bufsize: the maximum buffer size for ancillary data.
+
+        Raises:
+            ValueError: Negative `bufsize`.
+            ValueError: Negative `ancillary_bufsize`.
+            WouldBlockOnRead: the operation would block when reading the pipe.
+            WouldBlockOnWrite: the operation would block when writing on the pipe.
+
+        Returns:
+            a tuple with some :class:`bytes` and the ancillary data.
+
+            If `bufsize` is greater than zero and an empty byte buffer is returned, this indicates an EOF.
+        """
+        raise NotImplementedError("This transport does not have ancillary data support.")
+
+    def recv_with_ancillary(self, bufsize: int, ancillary_bufsize: int, timeout: float) -> tuple[bytes, Any]:
+        """
+        Read and return up to `bufsize` bytes with ancillary data.
+
+        The default implementation will retry to call :meth:`recv_noblock_with_ancillary` until it succeeds
+        under the given `timeout`.
+
+        .. versionadded:: NEXT_VERSION
+        """
+        return self._retry(lambda: self.recv_noblock_with_ancillary(bufsize, ancillary_bufsize), timeout)[0]
+
+    def recv_noblock_with_ancillary_into(
+        self,
+        buffer: WriteableBuffer,
+        ancillary_bufsize: int,
+    ) -> tuple[int, Any]:  # pragma: no cover
+        """
+        Read into the given `buffer` with ancillary data.
+
+        .. versionadded:: NEXT_VERSION
+
+        Parameters:
+            buffer: where to write the received bytes.
+            ancillary_bufsize: the maximum buffer size for ancillary data.
+
+        Raises:
+            ValueError: Negative `ancillary_bufsize`.
+            WouldBlockOnRead: the operation would block when reading the pipe.
+            WouldBlockOnWrite: the operation would block when writing on the pipe.
+
+        Returns:
+            a tuple with the number of bytes written and the ancillary data.
+
+            Returning ``0`` for a non-zero buffer indicates an EOF.
+        """
+        raise NotImplementedError("This transport does not have ancillary data support.")
+
+    def recv_with_ancillary_into(self, buffer: WriteableBuffer, ancillary_bufsize: int, timeout: float) -> tuple[int, Any]:
+        """
+        Read into the given `buffer` with ancillary data.
+
+        The default implementation will retry to call :meth:`recv_noblock_with_ancillary` until it succeeds
+        under the given `timeout`.
+
+        .. versionadded:: NEXT_VERSION
+        """
+        return self._retry(lambda: self.recv_noblock_with_ancillary_into(buffer, ancillary_bufsize), timeout)[0]
+
 
 class SelectorStreamWriteTransport(SelectorBaseTransport, transports.StreamWriteTransport):
     """
@@ -268,6 +339,46 @@ class SelectorStreamWriteTransport(SelectorBaseTransport, transports.StreamWrite
         The default implementation will retry to call :meth:`send_noblock` until it succeeds under the given `timeout`.
         """
         return self._retry(lambda: self.send_noblock(data), timeout)[0]
+
+    def send_all_noblock_with_ancillary(
+        self,
+        iterable_of_data: Iterable[bytes | bytearray | memoryview],
+        ancillary_data: Any,
+    ) -> None:  # pragma: no cover
+        """
+        An efficient way to send a bunch of data via the transport with ancillary data.
+
+        .. versionadded:: NEXT_VERSION
+
+        Parameters:
+            iterable_of_data: An :term:`iterable` yielding the bytes to send.
+            ancillary_data: The ancillary data to send along with the message.
+
+        Raises:
+            OSError: Data too big to be sent at once.
+            WouldBlockOnRead: the operation would block when reading the pipe.
+            WouldBlockOnWrite: the operation would block when writing on the pipe.
+        """
+        raise NotImplementedError("This transport does not have ancillary data support.")
+
+    def send_all_with_ancillary(
+        self,
+        iterable_of_data: Iterable[bytes | bytearray | memoryview],
+        ancillary_data: Any,
+        timeout: float,
+    ) -> None:
+        """
+        An efficient way to send a bunch of data via the transport with ancillary data.
+
+        The default implementation will retry to call :meth:`send_all_noblock_with_ancillary` until it succeeds
+        under the given `timeout`.
+
+        .. versionadded:: NEXT_VERSION
+        """
+        # Do not send the iterable directly because if sendmsg() blocks,
+        # it would retry with an already consumed iterator.
+        iterable_of_data = list(iterable_of_data)
+        return self._retry(lambda: self.send_all_noblock_with_ancillary(iterable_of_data, ancillary_data), timeout)[0]
 
 
 class SelectorStreamTransport(SelectorStreamWriteTransport, SelectorStreamReadTransport, transports.StreamTransport):
@@ -307,6 +418,36 @@ class SelectorDatagramReadTransport(SelectorBaseTransport, transports.DatagramRe
         """
         return self._retry(lambda: self.recv_noblock(), timeout)[0]
 
+    def recv_noblock_with_ancillary(self, ancillary_bufsize: int) -> tuple[bytes, Any]:  # pragma: no cover
+        """
+        Read and return the next available packet with ancillary data.
+
+        .. versionadded:: NEXT_VERSION
+
+        Parameters:
+            ancillary_bufsize: the maximum buffer size for ancillary data.
+
+        Raises:
+            ValueError: Negative `ancillary_bufsize`.
+            WouldBlockOnRead: the operation would block when reading the pipe.
+            WouldBlockOnWrite: the operation would block when writing on the pipe.
+
+        Returns:
+            a tuple with some :class:`bytes` and the ancillary data.
+        """
+        raise NotImplementedError("This transport does not have ancillary data support.")
+
+    def recv_with_ancillary(self, ancillary_bufsize: int, timeout: float) -> tuple[bytes, Any]:
+        """
+        Read and return the next available packet with ancillary data.
+
+        The default implementation will retry to call :meth:`recv_noblock_with_ancillary` until it succeeds
+        under the given `timeout`.
+
+        .. versionadded:: NEXT_VERSION
+        """
+        return self._retry(lambda: self.recv_noblock_with_ancillary(ancillary_bufsize), timeout)[0]
+
 
 class SelectorDatagramWriteTransport(SelectorBaseTransport, transports.DatagramWriteTransport):
     """
@@ -336,6 +477,33 @@ class SelectorDatagramWriteTransport(SelectorBaseTransport, transports.DatagramW
         The default implementation will retry to call :meth:`send_noblock` until it succeeds under the given `timeout`.
         """
         return self._retry(lambda: self.send_noblock(data), timeout)[0]
+
+    def send_noblock_with_ancillary(self, data: bytes | bytearray | memoryview, ancillary_data: Any) -> None:  # pragma: no cover
+        """
+        Send the `data` bytes with ancillary data to the remote peer.
+
+        .. versionadded:: NEXT_VERSION
+
+        Parameters:
+            data: the bytes to send.
+            ancillary_data: The ancillary data to send along with the message.
+
+        Raises:
+            WouldBlockOnRead: the operation would block when reading the pipe.
+            WouldBlockOnWrite: the operation would block when writing on the pipe.
+        """
+        raise NotImplementedError("This transport does not have ancillary data support.")
+
+    def send_with_ancillary(self, data: bytes | bytearray | memoryview, ancillary_data: Any, timeout: float) -> None:
+        """
+        Send the `data` bytes with ancillary data to the remote peer.
+
+        The default implementation will retry to call :meth:`send_noblock_with_ancillary` until it succeeds
+        under the given `timeout`.
+
+        .. versionadded:: NEXT_VERSION
+        """
+        return self._retry(lambda: self.send_noblock_with_ancillary(data, ancillary_data), timeout)[0]
 
 
 class SelectorDatagramTransport(SelectorDatagramWriteTransport, SelectorDatagramReadTransport, transports.DatagramTransport):
