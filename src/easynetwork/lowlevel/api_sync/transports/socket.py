@@ -48,7 +48,7 @@ from . import base_selector
 if TYPE_CHECKING:
     from ssl import SSLContext, SSLSession, SSLSocket
 
-    from _typeshed import WriteableBuffer
+    from _typeshed import ReadableBuffer, WriteableBuffer
 
 _P = ParamSpec("_P")
 _T_Return = TypeVar("_T_Return")
@@ -125,6 +125,32 @@ class SocketStreamTransport(base_selector.SelectorStreamTransport):
         except (BlockingIOError, InterruptedError):
             raise base_selector.WouldBlockOnRead(self.__socket.fileno()) from None
 
+    if sys.platform != "win32" or (not TYPE_CHECKING and hasattr(socket.socket, "recvmsg")):
+
+        @_utils.inherit_doc(base_selector.SelectorStreamTransport)
+        def recv_noblock_with_ancillary(self, bufsize: int, ancillary_bufsize: int) -> tuple[bytes, list[tuple[int, int, bytes]]]:
+            try:
+                msg, ancdata, _, _ = self.__socket.recvmsg(bufsize, ancillary_bufsize)
+            except (BlockingIOError, InterruptedError):
+                raise base_selector.WouldBlockOnRead(self.__socket.fileno()) from None
+            else:
+                return msg, ancdata
+
+    if sys.platform != "win32" or (not TYPE_CHECKING and hasattr(socket.socket, "recvmsg_into")):
+
+        @_utils.inherit_doc(base_selector.SelectorStreamTransport)
+        def recv_noblock_with_ancillary_into(
+            self,
+            buffer: WriteableBuffer,
+            ancillary_bufsize: int,
+        ) -> tuple[int, list[tuple[int, int, bytes]]]:
+            try:
+                nbytes, ancdata, _, _ = self.__socket.recvmsg_into([buffer], ancillary_bufsize)
+            except (BlockingIOError, InterruptedError):
+                raise base_selector.WouldBlockOnRead(self.__socket.fileno()) from None
+            else:
+                return nbytes, ancdata
+
     @_utils.inherit_doc(base_selector.SelectorStreamTransport)
     def send_noblock(self, data: bytes | bytearray | memoryview) -> int:
         try:
@@ -133,6 +159,21 @@ class SocketStreamTransport(base_selector.SelectorStreamTransport):
             raise base_selector.WouldBlockOnWrite(self.__socket.fileno()) from None
 
     if sys.platform != "win32" or (not TYPE_CHECKING and hasattr(socket.socket, "sendmsg")):
+
+        def send_all_noblock_with_ancillary(
+            self,
+            iterable_of_data: Iterable[bytes | bytearray | memoryview],
+            ancillary_data: list[tuple[int, int, ReadableBuffer]],
+        ) -> None:
+            buffers: deque[memoryview] = deque(map(memoryview, iterable_of_data))  # type: ignore[arg-type]
+            del iterable_of_data
+            try:
+                sent = self.__socket.sendmsg(buffers, ancillary_data)
+            except (BlockingIOError, InterruptedError):
+                raise base_selector.WouldBlockOnWrite(self.__socket.fileno()) from None
+            _utils.adjust_leftover_buffer(buffers, sent)
+            if buffers:
+                raise _utils.error_from_errno(errno.EMSGSIZE)
 
         if constants.SC_IOV_MAX > 0:  # pragma: no branch
 
@@ -395,12 +436,37 @@ class SocketDatagramTransport(base_selector.SelectorDatagramTransport):
         except (BlockingIOError, InterruptedError):
             raise base_selector.WouldBlockOnRead(self.__socket.fileno()) from None
 
+    if sys.platform != "win32" or (not TYPE_CHECKING and hasattr(socket.socket, "recvmsg")):
+
+        @_utils.inherit_doc(base_selector.SelectorDatagramTransport)
+        def recv_noblock_with_ancillary(self, ancillary_bufsize: int) -> tuple[bytes, list[tuple[int, int, bytes]]]:
+            max_datagram_size: int = self.__max_datagram_size
+            try:
+                msg, ancdata, _, _ = self.__socket.recvmsg(max_datagram_size, ancillary_bufsize)
+            except (BlockingIOError, InterruptedError):
+                raise base_selector.WouldBlockOnRead(self.__socket.fileno()) from None
+            else:
+                return msg, ancdata
+
     @_utils.inherit_doc(base_selector.SelectorDatagramTransport)
     def send_noblock(self, data: bytes | bytearray | memoryview) -> None:
         try:
             self.__socket.send(data)
         except (BlockingIOError, InterruptedError):
             raise base_selector.WouldBlockOnWrite(self.__socket.fileno()) from None
+
+    if sys.platform != "win32" or (not TYPE_CHECKING and hasattr(socket.socket, "sendmsg")):
+
+        @_utils.inherit_doc(base_selector.SelectorDatagramTransport)
+        def send_noblock_with_ancillary(
+            self,
+            data: bytes | bytearray | memoryview,
+            ancillary_data: list[tuple[int, int, ReadableBuffer]],
+        ) -> None:
+            try:
+                self.__socket.sendmsg([data], ancillary_data)
+            except (BlockingIOError, InterruptedError):
+                raise base_selector.WouldBlockOnWrite(self.__socket.fileno()) from None
 
     @property
     @_utils.inherit_doc(base_selector.SelectorDatagramTransport)
