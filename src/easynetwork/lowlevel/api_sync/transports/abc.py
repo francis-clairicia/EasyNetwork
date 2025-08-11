@@ -29,7 +29,7 @@ __all__ = [
 from abc import ABCMeta, abstractmethod
 from collections.abc import Iterable
 from types import TracebackType
-from typing import TYPE_CHECKING, Self
+from typing import TYPE_CHECKING, Any, Self
 
 from ... import _utils, typed_attr
 
@@ -127,6 +127,58 @@ class StreamReadTransport(BaseTransport):
         """
         raise NotImplementedError
 
+    def recv_with_ancillary(self, bufsize: int, ancillary_bufsize: int, timeout: float) -> tuple[bytes, Any]:  # pragma: no cover
+        """
+        Read and return up to `bufsize` bytes with ancillary data.
+
+        .. versionadded:: NEXT_VERSION
+
+        Parameters:
+            bufsize: the maximum buffer size.
+            ancillary_bufsize: the maximum buffer size for ancillary data.
+            timeout: the allowed time (in seconds) for blocking operations. Can be set to :data:`math.inf`.
+
+        Raises:
+            ValueError: Negative `bufsize`.
+            ValueError: Negative `ancillary_bufsize`.
+            ValueError: Negative `timeout`.
+            TimeoutError: Operation timed out.
+
+        Returns:
+            a tuple with some :class:`bytes` and the ancillary data.
+
+            If `bufsize` is greater than zero and an empty byte buffer is returned, this indicates an EOF.
+        """
+        raise NotImplementedError("This transport does not have ancillary data support.")
+
+    def recv_with_ancillary_into(
+        self,
+        buffer: WriteableBuffer,
+        ancillary_bufsize: int,
+        timeout: float,
+    ) -> tuple[int, Any]:  # pragma: no cover
+        """
+        Read into the given `buffer` with ancillary data.
+
+        .. versionadded:: NEXT_VERSION
+
+        Parameters:
+            buffer: where to write the received bytes.
+            ancillary_bufsize: the maximum buffer size for ancillary data.
+            timeout: the allowed time (in seconds) for blocking operations. Can be set to :data:`math.inf`.
+
+        Raises:
+            ValueError: Negative `ancillary_bufsize`.
+            ValueError: Negative `timeout`.
+            TimeoutError: Operation timed out.
+
+        Returns:
+            a tuple with the number of bytes written and the ancillary data.
+
+            Returning ``0`` for a non-zero buffer indicates an EOF.
+        """
+        raise NotImplementedError("This transport does not have ancillary data support.")
+
 
 class StreamWriteTransport(BaseTransport):
     """
@@ -193,7 +245,7 @@ class StreamWriteTransport(BaseTransport):
         """
         An efficient way to send a bunch of data via the transport.
 
-        Like :meth:`send_all`, this method continues to send data from bytes until either all data has been sent or an error
+        Like :meth:`send_all`, this method continues to send data from `bytes` until either all data has been sent or an error
         occurs. :data:`None` is returned on success. On error, an exception is raised, and there is no way to determine how much
         data, if any, was successfully sent.
 
@@ -210,6 +262,33 @@ class StreamWriteTransport(BaseTransport):
         data = b"".join(iterable_of_data)
         del iterable_of_data
         self.send_all(data, timeout)
+
+    def send_all_with_ancillary(
+        self,
+        iterable_of_data: Iterable[bytes | bytearray | memoryview],
+        ancillary_data: Any,
+        timeout: float,
+    ) -> None:  # pragma: no cover
+        """
+        An efficient way to send a bunch of data via the transport with ancillary data.
+
+        Unlike :meth:`send_all` and :meth:`send_all_from_iterable`, this method tries to send all data at once. If not all
+        could be sent, an exception is raised. :data:`None` is returned on success.
+        On error, an exception is raised, and there is no way to determine how much data, if any, was successfully sent.
+
+        .. versionadded:: NEXT_VERSION
+
+        Parameters:
+            iterable_of_data: An :term:`iterable` yielding the bytes to send.
+            ancillary_data: The ancillary data to send along with the message.
+            timeout: the allowed time (in seconds) for blocking operations. Can be set to :data:`math.inf`.
+
+        Raises:
+            ValueError: Negative `timeout`.
+            TimeoutError: Operation timed out.
+            OSError: Data too big to be sent at once.
+        """
+        raise NotImplementedError("This transport does not have ancillary data support.")
 
 
 class StreamTransport(StreamWriteTransport, StreamReadTransport):
@@ -253,6 +332,26 @@ class DatagramReadTransport(BaseTransport):
         """
         raise NotImplementedError
 
+    def recv_with_ancillary(self, ancillary_bufsize: int, timeout: float) -> tuple[bytes, Any]:  # pragma: no cover
+        """
+        Read and return the next available packet with ancillary data.
+
+        .. versionadded:: NEXT_VERSION
+
+        Parameters:
+            ancillary_bufsize: the maximum buffer size for ancillary data.
+            timeout: the allowed time (in seconds) for blocking operations. Can be set to :data:`math.inf`.
+
+        Raises:
+            ValueError: Negative `ancillary_bufsize`.
+            ValueError: Negative `timeout`.
+            TimeoutError: Operation timed out.
+
+        Returns:
+            a tuple with some :class:`bytes` and the ancillary data.
+        """
+        raise NotImplementedError("This transport does not have ancillary data support.")
+
 
 class DatagramWriteTransport(BaseTransport):
     """
@@ -275,6 +374,28 @@ class DatagramWriteTransport(BaseTransport):
             TimeoutError: Operation timed out.
         """
         raise NotImplementedError
+
+    def send_with_ancillary(
+        self,
+        data: bytes | bytearray | memoryview,
+        ancillary_data: Any,
+        timeout: float,
+    ) -> None:  # pragma: no cover
+        """
+        Send the `data` bytes with ancillary data to the remote peer.
+
+        .. versionadded:: NEXT_VERSION
+
+        Parameters:
+            data: the bytes to send.
+            ancillary_data: The ancillary data to send along with the message.
+            timeout: the allowed time (in seconds) for blocking operations. Can be set to :data:`math.inf`.
+
+        Raises:
+            ValueError: Negative `timeout`.
+            TimeoutError: Operation timed out.
+        """
+        raise NotImplementedError("This transport does not have ancillary data support.")
 
 
 class DatagramTransport(DatagramWriteTransport, DatagramReadTransport):
