@@ -103,6 +103,22 @@ class AsyncStapledStreamTransport(_transports.AsyncStreamTransport, Generic[_T_S
         """
         return await self.receive_transport.recv_into(buffer)
 
+    async def recv_with_ancillary(self, bufsize: int, ancillary_bufsize: int) -> tuple[bytes, Any]:
+        """
+        Calls :meth:`self.receive_transport.recv_with_ancillary() <.AsyncStreamReadTransport.recv_with_ancillary>`.
+
+        .. versionadded:: NEXT_VERSION
+        """
+        return await self.receive_transport.recv_with_ancillary(bufsize, ancillary_bufsize)
+
+    async def recv_with_ancillary_into(self, buffer: WriteableBuffer, ancillary_bufsize: int) -> tuple[int, Any]:
+        """
+        Calls :meth:`self.receive_transport.recv_with_ancillary_into() <.AsyncStreamReadTransport.recv_with_ancillary_into>`.
+
+        .. versionadded:: NEXT_VERSION
+        """
+        return await self.receive_transport.recv_with_ancillary_into(buffer, ancillary_bufsize)
+
     async def send_all(self, data: bytes | bytearray | memoryview) -> None:
         """
         Calls :meth:`self.send_transport.send_all() <.AsyncStreamWriteTransport.send_all>`.
@@ -114,6 +130,18 @@ class AsyncStapledStreamTransport(_transports.AsyncStreamTransport, Generic[_T_S
         Calls :meth:`self.send_transport.send_all_from_iterable() <.AsyncStreamWriteTransport.send_all_from_iterable>`.
         """
         return await self.send_transport.send_all_from_iterable(iterable_of_data)
+
+    async def send_all_with_ancillary(
+        self,
+        iterable_of_data: Iterable[bytes | bytearray | memoryview],
+        ancillary_data: Any,
+    ) -> None:
+        """
+        Calls :meth:`self.send_transport.send_all_with_ancillary() <.AsyncStreamWriteTransport.send_all_with_ancillary>`.
+
+        .. versionadded:: NEXT_VERSION
+        """
+        return await self.send_transport.send_all_with_ancillary(iterable_of_data, ancillary_data)
 
     async def send_eof(self) -> None:
         """
@@ -201,11 +229,27 @@ class AsyncStapledDatagramTransport(
         """
         return await self.receive_transport.recv()
 
+    async def recv_with_ancillary(self, ancillary_bufsize: int) -> tuple[bytes, Any]:
+        """
+        Calls :meth:`self.receive_transport.recv_with_ancillary() <.AsyncDatagramReadTransport.recv_with_ancillary>`.
+
+        .. versionadded:: NEXT_VERSION
+        """
+        return await self.receive_transport.recv_with_ancillary(ancillary_bufsize)
+
     async def send(self, data: bytes | bytearray | memoryview) -> None:
         """
         Calls :meth:`self.send_transport.send() <.AsyncDatagramWriteTransport.send>`.
         """
         return await self.send_transport.send(data)
+
+    async def send_with_ancillary(self, data: bytes | bytearray | memoryview, ancillary_data: Any) -> None:
+        """
+        Calls :meth:`self.send_transport.send_with_ancillary() <.AsyncDatagramWriteTransport.send_with_ancillary>`.
+
+        .. versionadded:: NEXT_VERSION
+        """
+        return await self.send_transport.send_with_ancillary(data, ancillary_data)
 
     @_utils.inherit_doc(_transports.AsyncDatagramTransport)
     def backend(self) -> AsyncBackend:
