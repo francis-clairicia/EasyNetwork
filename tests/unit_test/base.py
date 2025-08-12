@@ -146,13 +146,10 @@ class BaseTestSocketTransport(BaseTestSocket):
 
 
 class MixinTestSocketSendMSG:
-    @pytest.fixture(autouse=True)
+    @pytest.fixture
     @staticmethod
     def SC_IOV_MAX(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> int:
-        try:
-            value: int = request.param
-        except AttributeError:
-            value = 1024
+        value: int = request.param
         monkeypatch.setattr("easynetwork.lowlevel.constants.SC_IOV_MAX", value)
         return value
 

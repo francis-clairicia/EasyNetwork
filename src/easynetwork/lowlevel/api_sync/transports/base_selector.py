@@ -375,9 +375,10 @@ class SelectorStreamWriteTransport(SelectorBaseTransport, transports.StreamWrite
 
         .. versionadded:: NEXT_VERSION
         """
-        # Do not send the iterable directly because if sendmsg() blocks,
-        # it would retry with an already consumed iterator.
-        iterable_of_data = list(iterable_of_data)
+        if hasattr(iterable_of_data, "__next__"):
+            # Do not send the iterator directly because if sendmsg() blocks,
+            # it would retry with an already consumed iterator.
+            iterable_of_data = list(iterable_of_data)
         return self._retry(lambda: self.send_all_noblock_with_ancillary(iterable_of_data, ancillary_data), timeout)[0]
 
 

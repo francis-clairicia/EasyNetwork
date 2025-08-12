@@ -381,26 +381,6 @@ class TestSelectorStreamTransport:
         assert mock_transport.recv_noblock.call_args_list == [mocker.call(mocker.sentinel.bufsize) for _ in range(3)]
         assert data is mocker.sentinel.bytes
 
-    def test____send____call_noblock_within_retry(
-        self,
-        mock_transport: MagicMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        mock_transport.send_noblock.side_effect = [
-            WouldBlockOnRead(mocker.sentinel.fd),
-            WouldBlockOnWrite(mocker.sentinel.fd),
-            (mocker.sentinel.nb_sent_bytes, mocker.sentinel.timeout),
-        ]
-
-        # Act
-        sent = SelectorStreamTransport.send(mock_transport, mocker.sentinel.data, mocker.sentinel.timeout)
-
-        # Assert
-        mock_transport._retry.assert_called_once_with(mocker.ANY, mocker.sentinel.timeout)
-        assert mock_transport.send_noblock.call_args_list == [mocker.call(mocker.sentinel.data) for _ in range(3)]
-        assert sent is mocker.sentinel.nb_sent_bytes
-
     def test____recv_into____call_noblock_within_retry(
         self,
         mock_transport: MagicMock,
@@ -420,6 +400,62 @@ class TestSelectorStreamTransport:
         mock_transport._retry.assert_called_once_with(mocker.ANY, mocker.sentinel.timeout)
         assert mock_transport.recv_noblock_into.call_args_list == [mocker.call(mocker.sentinel.buffer) for _ in range(3)]
         assert nbytes is mocker.sentinel.nb_bytes_written
+
+    def test____recv_with_ancillary____call_noblock_within_retry(
+        self,
+        mock_transport: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_transport.recv_noblock_with_ancillary.side_effect = [
+            WouldBlockOnRead(mocker.sentinel.fd),
+            WouldBlockOnWrite(mocker.sentinel.fd),
+            ((mocker.sentinel.bytes, mocker.sentinel.ancillary_data), mocker.sentinel.timeout),
+        ]
+
+        # Act
+        data, ancdata = SelectorStreamTransport.recv_with_ancillary(
+            mock_transport,
+            mocker.sentinel.bufsize,
+            mocker.sentinel.ancbufsize,
+            mocker.sentinel.timeout,
+        )
+
+        # Assert
+        mock_transport._retry.assert_called_once_with(mocker.ANY, mocker.sentinel.timeout)
+        assert mock_transport.recv_noblock_with_ancillary.call_args_list == [
+            mocker.call(mocker.sentinel.bufsize, mocker.sentinel.ancbufsize) for _ in range(3)
+        ]
+        assert data is mocker.sentinel.bytes
+        assert ancdata is mocker.sentinel.ancillary_data
+
+    def test____recv_with_ancillary_into____call_noblock_within_retry(
+        self,
+        mock_transport: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_transport.recv_noblock_with_ancillary_into.side_effect = [
+            WouldBlockOnRead(mocker.sentinel.fd),
+            WouldBlockOnWrite(mocker.sentinel.fd),
+            ((mocker.sentinel.nb_bytes_written, mocker.sentinel.ancillary_data), mocker.sentinel.timeout),
+        ]
+
+        # Act
+        nbytes, ancdata = SelectorStreamTransport.recv_with_ancillary_into(
+            mock_transport,
+            mocker.sentinel.buffer,
+            mocker.sentinel.ancbufsize,
+            mocker.sentinel.timeout,
+        )
+
+        # Assert
+        mock_transport._retry.assert_called_once_with(mocker.ANY, mocker.sentinel.timeout)
+        assert mock_transport.recv_noblock_with_ancillary_into.call_args_list == [
+            mocker.call(mocker.sentinel.buffer, mocker.sentinel.ancbufsize) for _ in range(3)
+        ]
+        assert nbytes is mocker.sentinel.nb_bytes_written
+        assert ancdata is mocker.sentinel.ancillary_data
 
     def test____recv_noblock____default(
         self,
@@ -485,6 +521,78 @@ class TestSelectorStreamTransport:
         mock_transport.recv_noblock_into.assert_called_once_with(mocker.ANY)
         mock_transport.recv_into.assert_not_called()
 
+    def test____send____call_noblock_within_retry(
+        self,
+        mock_transport: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_transport.send_noblock.side_effect = [
+            WouldBlockOnRead(mocker.sentinel.fd),
+            WouldBlockOnWrite(mocker.sentinel.fd),
+            (mocker.sentinel.nb_sent_bytes, mocker.sentinel.timeout),
+        ]
+
+        # Act
+        sent = SelectorStreamTransport.send(mock_transport, mocker.sentinel.data, mocker.sentinel.timeout)
+
+        # Assert
+        mock_transport._retry.assert_called_once_with(mocker.ANY, mocker.sentinel.timeout)
+        assert mock_transport.send_noblock.call_args_list == [mocker.call(mocker.sentinel.data) for _ in range(3)]
+        assert sent is mocker.sentinel.nb_sent_bytes
+
+    def test____send_all_with_ancillary____call_noblock_within_retry(
+        self,
+        mock_transport: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_transport.send_all_noblock_with_ancillary.side_effect = [
+            WouldBlockOnRead(mocker.sentinel.fd),
+            WouldBlockOnWrite(mocker.sentinel.fd),
+            (None, mocker.sentinel.timeout),
+        ]
+
+        # Act
+        SelectorStreamTransport.send_all_with_ancillary(
+            mock_transport,
+            mocker.sentinel.data,
+            mocker.sentinel.ancdata,
+            mocker.sentinel.timeout,
+        )
+
+        # Assert
+        mock_transport._retry.assert_called_once_with(mocker.ANY, mocker.sentinel.timeout)
+        assert mock_transport.send_all_noblock_with_ancillary.call_args_list == [
+            mocker.call(mocker.sentinel.data, mocker.sentinel.ancdata) for _ in range(3)
+        ]
+
+    def test____send_all_with_ancillary____call_noblock_within_retry____handle_iterators(
+        self,
+        mock_transport: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_transport.send_all_noblock_with_ancillary.side_effect = [
+            WouldBlockOnRead(mocker.sentinel.fd),
+            WouldBlockOnWrite(mocker.sentinel.fd),
+            (None, mocker.sentinel.timeout),
+        ]
+
+        # Act
+        SelectorStreamTransport.send_all_with_ancillary(
+            mock_transport,
+            iter({mocker.sentinel.data}),
+            mocker.sentinel.ancdata,
+            mocker.sentinel.timeout,
+        )
+
+        # Assert
+        mock_transport._retry.assert_called_once_with(mocker.ANY, mocker.sentinel.timeout)
+        assert mock_transport.send_all_noblock_with_ancillary.call_args_list == [
+            mocker.call([mocker.sentinel.data], mocker.sentinel.ancdata) for _ in range(3)
+        ]
+
 
 class TestSelectorDatagramTransport:
     @pytest.fixture
@@ -512,6 +620,33 @@ class TestSelectorDatagramTransport:
         assert mock_transport.recv_noblock.call_args_list == [mocker.call() for _ in range(3)]
         assert data is mocker.sentinel.bytes
 
+    def test____recv_with_ancillary____call_noblock_within_retry(
+        self,
+        mock_transport: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_transport.recv_noblock_with_ancillary.side_effect = [
+            WouldBlockOnRead(mocker.sentinel.fd),
+            WouldBlockOnWrite(mocker.sentinel.fd),
+            ((mocker.sentinel.bytes, mocker.sentinel.ancillary_data), mocker.sentinel.timeout),
+        ]
+
+        # Act
+        data, ancdata = SelectorDatagramTransport.recv_with_ancillary(
+            mock_transport,
+            mocker.sentinel.ancbufsize,
+            mocker.sentinel.timeout,
+        )
+
+        # Assert
+        mock_transport._retry.assert_called_once_with(mocker.ANY, mocker.sentinel.timeout)
+        assert mock_transport.recv_noblock_with_ancillary.call_args_list == [
+            mocker.call(mocker.sentinel.ancbufsize) for _ in range(3)
+        ]
+        assert data is mocker.sentinel.bytes
+        assert ancdata is mocker.sentinel.ancillary_data
+
     def test____send____call_noblock_within_retry(
         self,
         mock_transport: MagicMock,
@@ -530,3 +665,29 @@ class TestSelectorDatagramTransport:
         # Assert
         mock_transport._retry.assert_called_once_with(mocker.ANY, mocker.sentinel.timeout)
         assert mock_transport.send_noblock.call_args_list == [mocker.call(mocker.sentinel.data) for _ in range(3)]
+
+    def test____send_with_ancillary____call_noblock_within_retry(
+        self,
+        mock_transport: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_transport.send_noblock_with_ancillary.side_effect = [
+            WouldBlockOnRead(mocker.sentinel.fd),
+            WouldBlockOnWrite(mocker.sentinel.fd),
+            (None, mocker.sentinel.timeout),
+        ]
+
+        # Act
+        SelectorDatagramTransport.send_with_ancillary(
+            mock_transport,
+            mocker.sentinel.data,
+            mocker.sentinel.ancdata,
+            mocker.sentinel.timeout,
+        )
+
+        # Assert
+        mock_transport._retry.assert_called_once_with(mocker.ANY, mocker.sentinel.timeout)
+        assert mock_transport.send_noblock_with_ancillary.call_args_list == [
+            mocker.call(mocker.sentinel.data, mocker.sentinel.ancdata) for _ in range(3)
+        ]
