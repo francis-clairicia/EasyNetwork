@@ -4,7 +4,6 @@ import contextlib
 import errno
 import logging
 import os
-import sys
 from collections.abc import AsyncIterator, Callable, Coroutine, Iterable, Iterator
 from typing import TYPE_CHECKING, Any
 
@@ -88,9 +87,7 @@ class TestTrioStreamSocketAdapter(BaseTestTrioSocketStream, MixinTestSocketSendM
         # Always create a new mock instance because sendmsg() is not available on all platforms
         # therefore the mocker's autospec will consider sendmsg() unknown on these ones.
         if hasattr(mock_trio_stream_socket, "sendmsg"):
-            mock_trio_stream_socket.sendmsg.side_effect = lambda buffers, *args: sum(
-                map(len, map(lambda v: memoryview(v), buffers))
-            )
+            mock_trio_stream_socket.sendmsg.side_effect = lambda buffers, *args: sum(memoryview(v).nbytes for v in buffers)
 
         mock_trio_socket_stream = mock_trio_socket_stream_factory(mock_trio_stream_socket)
         assert mock_trio_socket_stream.socket is mock_trio_stream_socket
@@ -110,11 +107,6 @@ class TestTrioStreamSocketAdapter(BaseTestTrioSocketStream, MixinTestSocketSendM
         transport = TrioStreamSocketAdapter(trio_backend, mock_trio_socket_stream)
         async with transport:
             yield transport
-
-    @staticmethod
-    def __assert_sendmsg_is_available_or_skip(mock_trio_stream_socket: MagicMock) -> None:
-        if not hasattr(mock_trio_stream_socket, "sendmsg"):
-            pytest.skip(f"socket.sendmsg() is not available on {sys.platform}")
 
     async def test____dunder_del____ResourceWarning(
         self,
@@ -306,14 +298,13 @@ class TestTrioStreamSocketAdapter(BaseTestTrioSocketStream, MixinTestSocketSendM
         # Assert
         assert exc_info.value.errno == connection_error_errno
 
+    @PlatformMarkers.supports_socket_sendmsg
     async def test____send_all_from_iterable____use_socket_sendmsg_when_available(
         self,
         transport: TrioStreamSocketAdapter,
         mock_trio_socket_stream: MagicMock,
     ) -> None:
         # Arrange
-        self.__assert_sendmsg_is_available_or_skip(mock_trio_socket_stream.socket)
-
         chunks: list[list[bytes]] = []
 
         def sendmsg_side_effect(buffers: Iterable[ReadableBuffer]) -> int:
@@ -322,7 +313,7 @@ class TestTrioStreamSocketAdapter(BaseTestTrioSocketStream, MixinTestSocketSendM
 
             buffers = list(buffers)
             chunks.append(list(map(bytes, buffers)))
-            return sum(map(len, map(lambda v: memoryview(v), buffers)))
+            return sum(memoryview(v).nbytes for v in buffers)
 
         mock_trio_socket_stream.socket.sendmsg.side_effect = sendmsg_side_effect
 
@@ -334,6 +325,8 @@ class TestTrioStreamSocketAdapter(BaseTestTrioSocketStream, MixinTestSocketSendM
         mock_trio_socket_stream.socket.sendmsg.assert_called_once()
         assert chunks == [[b"data", b"to", b"send"]]
 
+    @PlatformMarkers.supports_socket_sendmsg
+    @pytest.mark.usefixtures("SC_IOV_MAX")
     @pytest.mark.parametrize("SC_IOV_MAX", [2], ids=lambda p: f"SC_IOV_MAX=={p}", indirect=True)
     async def test____send_all_from_iterable____use_socket_sendmsg____nb_buffers_greather_than_SC_IOV_MAX(
         self,
@@ -341,14 +334,12 @@ class TestTrioStreamSocketAdapter(BaseTestTrioSocketStream, MixinTestSocketSendM
         mock_trio_socket_stream: MagicMock,
     ) -> None:
         # Arrange
-        self.__assert_sendmsg_is_available_or_skip(mock_trio_socket_stream.socket)
-
         chunks: list[list[bytes]] = []
 
         def sendmsg_side_effect(buffers: Iterable[ReadableBuffer]) -> int:
             buffers = list(buffers)
             chunks.append(list(map(bytes, buffers)))
-            return sum(map(len, map(lambda v: memoryview(v), buffers)))
+            return sum(memoryview(v).nbytes for v in buffers)
 
         mock_trio_socket_stream.socket.sendmsg.side_effect = sendmsg_side_effect
 
@@ -363,20 +354,19 @@ class TestTrioStreamSocketAdapter(BaseTestTrioSocketStream, MixinTestSocketSendM
             [b"e"],
         ]
 
+    @PlatformMarkers.supports_socket_sendmsg
     async def test____send_all_from_iterable____use_socket_sendmsg____adjust_leftover_buffer(
         self,
         transport: TrioStreamSocketAdapter,
         mock_trio_socket_stream: MagicMock,
     ) -> None:
         # Arrange
-        self.__assert_sendmsg_is_available_or_skip(mock_trio_socket_stream.socket)
-
         chunks: list[list[bytes]] = []
 
         def sendmsg_side_effect(buffers: Iterable[ReadableBuffer]) -> int:
             buffers = list(buffers)
             chunks.append(list(map(bytes, buffers)))
-            return min(sum(map(len, map(lambda v: memoryview(v), buffers))), 3)
+            return min(sum(memoryview(v).nbytes for v in buffers), 3)
 
         mock_trio_socket_stream.socket.sendmsg.side_effect = sendmsg_side_effect
 
@@ -394,6 +384,7 @@ class TestTrioStreamSocketAdapter(BaseTestTrioSocketStream, MixinTestSocketSendM
             [b"p"],
         ]
 
+    @PlatformMarkers.socket_sendmsg_unsupported
     async def test____send_all_from_iterable____fallback_to_send_all____sendmsg_unavailable(
         self,
         transport: TrioStreamSocketAdapter,
@@ -401,8 +392,6 @@ class TestTrioStreamSocketAdapter(BaseTestTrioSocketStream, MixinTestSocketSendM
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        if hasattr(mock_trio_socket_stream.socket, "sendmsg"):
-            pytest.skip("socket.sendmsg() is available")
 
         # Act
         await transport.send_all_from_iterable(iter([b"data", b"to", b"send"]))
@@ -412,13 +401,13 @@ class TestTrioStreamSocketAdapter(BaseTestTrioSocketStream, MixinTestSocketSendM
             mocker.call(b"".join([b"data", b"to", b"send"])),
         ]
 
+    @PlatformMarkers.supports_socket_sendmsg
     async def test____send_all_from_iterable____fallback_to_send_all____sendmsg_available_but_empty_buffer_list(
         self,
         transport: TrioStreamSocketAdapter,
         mock_trio_socket_stream: MagicMock,
     ) -> None:
         # Arrange
-        self.__assert_sendmsg_is_available_or_skip(mock_trio_socket_stream.socket)
 
         # Act
         await transport.send_all_from_iterable(iter([]))

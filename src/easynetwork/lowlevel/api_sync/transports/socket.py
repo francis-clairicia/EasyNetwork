@@ -160,10 +160,11 @@ class SocketStreamTransport(base_selector.SelectorStreamTransport):
 
     if sys.platform != "win32" or (not TYPE_CHECKING and hasattr(socket.socket, "sendmsg")):
 
+        @_utils.inherit_doc(base_selector.SelectorStreamTransport)
         def send_all_noblock_with_ancillary(
             self,
             iterable_of_data: Iterable[bytes | bytearray | memoryview],
-            ancillary_data: list[tuple[int, int, ReadableBuffer]],
+            ancillary_data: Iterable[tuple[int, int, ReadableBuffer]],
         ) -> None:
             buffers: deque[memoryview] = deque(map(memoryview, iterable_of_data))  # type: ignore[arg-type]
             del iterable_of_data
@@ -174,6 +175,19 @@ class SocketStreamTransport(base_selector.SelectorStreamTransport):
             _utils.adjust_leftover_buffer(buffers, sent)
             if buffers:
                 raise _utils.error_from_errno(errno.EMSGSIZE)
+
+        @_utils.inherit_doc(base_selector.SelectorStreamTransport)
+        def send_all_with_ancillary(
+            self,
+            iterable_of_data: Iterable[bytes | bytearray | memoryview],
+            ancillary_data: Iterable[tuple[int, int, ReadableBuffer]],
+            timeout: float,
+        ) -> None:
+            if hasattr(ancillary_data, "__next__"):
+                # Do not send the iterator directly because if sendmsg() blocks,
+                # it would retry with an already consumed iterator.
+                ancillary_data = list(ancillary_data)
+            return super().send_all_with_ancillary(iterable_of_data, ancillary_data, timeout)
 
         if constants.SC_IOV_MAX > 0:  # pragma: no branch
 
@@ -461,12 +475,25 @@ class SocketDatagramTransport(base_selector.SelectorDatagramTransport):
         def send_noblock_with_ancillary(
             self,
             data: bytes | bytearray | memoryview,
-            ancillary_data: list[tuple[int, int, ReadableBuffer]],
+            ancillary_data: Iterable[tuple[int, int, ReadableBuffer]],
         ) -> None:
             try:
                 self.__socket.sendmsg([data], ancillary_data)
             except (BlockingIOError, InterruptedError):
                 raise base_selector.WouldBlockOnWrite(self.__socket.fileno()) from None
+
+        @_utils.inherit_doc(base_selector.SelectorDatagramTransport)
+        def send_with_ancillary(
+            self,
+            data: bytes | bytearray | memoryview,
+            ancillary_data: Iterable[tuple[int, int, ReadableBuffer]],
+            timeout: float,
+        ) -> None:
+            if hasattr(ancillary_data, "__next__"):
+                # Do not send the iterator directly because if sendmsg() blocks,
+                # it would retry with an already consumed iterator.
+                ancillary_data = list(ancillary_data)
+            return super().send_with_ancillary(data, ancillary_data, timeout)
 
     @property
     @_utils.inherit_doc(base_selector.SelectorDatagramTransport)
