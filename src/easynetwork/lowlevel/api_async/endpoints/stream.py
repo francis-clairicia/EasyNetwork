@@ -120,6 +120,33 @@ class AsyncStreamReceiverEndpoint(_transports.AsyncBaseTransport, Generic[_T_Rec
 
             return await receiver.receive()
 
+    async def recv_packet_with_ancillary(
+        self,
+        ancillary_bufsize: int,
+        ancillary_data_received: Callable[[Any], object],
+    ) -> _T_ReceivedPacket:
+        """
+        Waits for a new packet with ancillary data to arrive from the remote endpoint.
+
+        .. versionadded:: NEXT_VERSION
+
+        Parameters:
+            ancillary_bufsize: Read buffer size for ancillary data.
+            ancillary_data_received: Action to perform on ancillary data reception.
+
+        Raises:
+            ConnectionAbortedError: the read end of the stream is closed.
+            EOFError: could not deserialize packet because of partial chunk reception.
+            StreamProtocolParseError: invalid data received.
+
+        Returns:
+            the received packet.
+        """
+        with self.__recv_guard:
+            receiver = self.__receiver
+
+            return await receiver.receive_with_ancillary(ancillary_bufsize, ancillary_data_received)
+
     @_utils.inherit_doc(_transports.AsyncBaseTransport)
     def backend(self) -> AsyncBackend:
         return self.__transport.backend()
@@ -204,6 +231,24 @@ class AsyncStreamSenderEndpoint(_transports.AsyncBaseTransport, Generic[_T_SentP
             sender = self.__sender
 
             return await sender.send(packet)
+
+    async def send_packet_with_ancillary(self, packet: _T_SentPacket, ancillary_data: Any) -> None:
+        """
+        Sends `packet` to the remote endpoint with ancillary data.
+
+        .. versionadded:: NEXT_VERSION
+
+        Parameters:
+            packet: the Python object to send.
+            ancillary_data: The ancillary data to send along with the message.
+
+        Raises:
+            OSError: Data too big to be sent at once.
+        """
+        with self.__send_guard:
+            sender = self.__sender
+
+            return await sender.send_with_ancillary(packet, ancillary_data)
 
     @_utils.inherit_doc(_transports.AsyncBaseTransport)
     def backend(self) -> AsyncBackend:
@@ -313,6 +358,28 @@ class AsyncStreamEndpoint(_transports.AsyncBaseTransport, Generic[_T_SentPacket,
 
             return await sender.send(packet)
 
+    async def send_packet_with_ancillary(self, packet: _T_SentPacket, ancillary_data: Any) -> None:
+        """
+        Sends `packet` to the remote endpoint with ancillary data.
+
+        .. versionadded:: NEXT_VERSION
+
+        Parameters:
+            packet: the Python object to send.
+            ancillary_data: The ancillary data to send along with the message.
+
+        Raises:
+            RuntimeError: :meth:`send_eof` has been called earlier.
+            OSError: Data too big to be sent at once.
+        """
+        with self.__send_guard:
+            if self.__eof_sent:
+                raise RuntimeError("send_eof() has been called earlier")
+
+            sender = self.__sender
+
+            return await sender.send_with_ancillary(packet, ancillary_data)
+
     async def send_eof(self) -> None:
         """
         Close the write end of the stream after the buffered write data is flushed.
@@ -346,6 +413,33 @@ class AsyncStreamEndpoint(_transports.AsyncBaseTransport, Generic[_T_SentPacket,
 
             return await receiver.receive()
 
+    async def recv_packet_with_ancillary(
+        self,
+        ancillary_bufsize: int,
+        ancillary_data_received: Callable[[Any], object],
+    ) -> _T_ReceivedPacket:
+        """
+        Waits for a new packet with ancillary data to arrive from the remote endpoint.
+
+        .. versionadded:: NEXT_VERSION
+
+        Parameters:
+            ancillary_bufsize: Read buffer size for ancillary data.
+            ancillary_data_received: Action to perform on ancillary data reception.
+
+        Raises:
+            ConnectionAbortedError: the read end of the stream is closed.
+            EOFError: could not deserialize packet because of partial chunk reception.
+            StreamProtocolParseError: invalid data received.
+
+        Returns:
+            the received packet.
+        """
+        with self.__recv_guard:
+            receiver = self.__receiver
+
+            return await receiver.receive_with_ancillary(ancillary_bufsize, ancillary_data_received)
+
     @_utils.inherit_doc(_transports.AsyncBaseTransport)
     def backend(self) -> AsyncBackend:
         return self.__transport.backend()
@@ -363,6 +457,9 @@ class _DataSenderImpl(Generic[_T_SentPacket]):
 
     async def send(self, packet: _T_SentPacket) -> None:
         return await self.transport.send_all_from_iterable(self.producer.generate(packet))
+
+    async def send_with_ancillary(self, packet: _T_SentPacket, ancillary_data: Any) -> None:
+        return await self.transport.send_all_with_ancillary(self.producer.generate(packet), ancillary_data)
 
 
 @dataclasses.dataclass(slots=True)
@@ -399,6 +496,41 @@ class _DataReceiverImpl(Generic[_T_ReceivedPacket]):
 
         raise _utils.error_from_errno(_errno.ECONNABORTED, "{strerror} (end-of-stream)")
 
+    async def receive_with_ancillary(
+        self,
+        ancillary_bufsize: int,
+        ancillary_data_received: Callable[[Any], object],
+    ) -> _T_ReceivedPacket:
+        consumer = self.consumer
+        try:
+            return consumer.next(None)
+        except StopIteration:
+            pass
+
+        transport = self.transport
+        bufsize: int = self.max_recv_size
+
+        if not self._eof_reached:
+            data, ancdata = await transport.recv_with_ancillary(bufsize, ancillary_bufsize)
+            if data:
+                try:
+                    try:
+                        ancillary_data_received(ancdata)
+                    except Exception as exc:
+                        raise RuntimeError("ancillary_data_received() crashed") from exc
+                    try:
+                        return consumer.next(data)
+                    except StopIteration:
+                        raise EOFError("Received partial packet data") from None
+                finally:
+                    del ancdata, data
+            else:
+                self._eof_reached = True
+                del ancdata
+
+        assert self._eof_reached  # nosec assert_used
+        raise _utils.error_from_errno(_errno.ECONNABORTED, "{strerror} (end-of-stream)")
+
 
 @dataclasses.dataclass(slots=True)
 class _BufferedReceiverImpl(Generic[_T_ReceivedPacket]):
@@ -429,6 +561,40 @@ class _BufferedReceiverImpl(Generic[_T_ReceivedPacket]):
             except StopIteration:
                 pass
 
+        raise _utils.error_from_errno(_errno.ECONNABORTED, "{strerror} (end-of-stream)")
+
+    async def receive_with_ancillary(
+        self,
+        ancillary_bufsize: int,
+        ancillary_data_received: Callable[[Any], object],
+    ) -> _T_ReceivedPacket:
+        consumer = self.consumer
+        try:
+            return consumer.next(None)
+        except StopIteration:
+            pass
+
+        transport = self.transport
+
+        if not self._eof_reached:
+            with consumer.get_write_buffer() as buffer:
+                nbytes, ancdata = await transport.recv_with_ancillary_into(buffer, ancillary_bufsize)
+            if nbytes:
+                try:
+                    ancillary_data_received(ancdata)
+                except Exception as exc:
+                    raise RuntimeError("ancillary_data_received() crashed") from exc
+                finally:
+                    del ancdata
+                try:
+                    return consumer.next(nbytes)
+                except StopIteration:
+                    raise EOFError("Received partial packet data") from None
+            else:
+                self._eof_reached = True
+                del ancdata
+
+        assert self._eof_reached  # nosec assert_used
         raise _utils.error_from_errno(_errno.ECONNABORTED, "{strerror} (end-of-stream)")
 
 
