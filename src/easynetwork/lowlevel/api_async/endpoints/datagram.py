@@ -181,6 +181,9 @@ class AsyncDatagramSenderEndpoint(_transports.AsyncBaseTransport, Generic[_T_Sen
 
         Parameters:
             packet: the Python object to send.
+
+        Raises:
+            OSError: Data too big to be sent at once.
         """
         with self.__send_guard:
             sender = self.__sender
@@ -266,6 +269,9 @@ class AsyncDatagramEndpoint(_transports.AsyncBaseTransport, Generic[_T_SentPacke
 
         Parameters:
             packet: the Python object to send.
+
+        Raises:
+            OSError: Data too big to be sent at once.
         """
         with self.__send_guard:
             sender = self.__sender
