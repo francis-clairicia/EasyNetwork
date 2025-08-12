@@ -227,6 +227,9 @@ class AsyncDatagramWriteTransport(AsyncBaseTransport):
 
         Parameters:
             data: the bytes to send.
+
+        Raises:
+            OSError: Data too big to be sent at once.
         """
         raise NotImplementedError
 
@@ -294,5 +297,8 @@ class AsyncDatagramListener(AsyncBaseTransport, Generic[_T_Address]):
         Parameters:
             data: the bytes to send.
             address: the remote peer.
+
+        Raises:
+            OSError: Data too big to be sent at once.
         """
         raise NotImplementedError
