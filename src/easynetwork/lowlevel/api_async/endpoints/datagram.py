@@ -106,6 +106,31 @@ class AsyncDatagramReceiverEndpoint(_transports.AsyncBaseTransport, Generic[_T_R
 
             return await receiver.receive()
 
+    async def recv_packet_with_ancillary(
+        self,
+        ancillary_bufsize: int,
+        ancillary_data_received: Callable[[Any], object],
+    ) -> _T_ReceivedPacket:
+        """
+        Waits for a new packet with ancillary data to arrive from the remote endpoint.
+
+        .. versionadded:: NEXT_VERSION
+
+        Parameters:
+            ancillary_bufsize: Read buffer size for ancillary data.
+            ancillary_data_received: Action to perform on ancillary data reception.
+
+        Raises:
+            DatagramProtocolParseError: invalid data received.
+
+        Returns:
+            the received packet.
+        """
+        with self.__recv_guard:
+            receiver = self.__receiver
+
+            return await receiver.receive_with_ancillary(ancillary_bufsize, ancillary_data_received)
+
     @_utils.inherit_doc(_transports.AsyncBaseTransport)
     def backend(self) -> AsyncBackend:
         return self.__transport.backend()
@@ -189,6 +214,24 @@ class AsyncDatagramSenderEndpoint(_transports.AsyncBaseTransport, Generic[_T_Sen
             sender = self.__sender
 
             await sender.send(packet)
+
+    async def send_packet_with_ancillary(self, packet: _T_SentPacket, ancillary_data: Any) -> None:
+        """
+        Sends `packet` to the remote endpoint with ancillary data.
+
+        .. versionadded:: NEXT_VERSION
+
+        Parameters:
+            packet: the Python object to send.
+            ancillary_data: The ancillary data to send along with the message.
+
+        Raises:
+            OSError: Data too big to be sent at once.
+        """
+        with self.__send_guard:
+            sender = self.__sender
+
+            await sender.send_with_ancillary(packet, ancillary_data)
 
     @_utils.inherit_doc(_transports.AsyncBaseTransport)
     def backend(self) -> AsyncBackend:
@@ -278,6 +321,24 @@ class AsyncDatagramEndpoint(_transports.AsyncBaseTransport, Generic[_T_SentPacke
 
             await sender.send(packet)
 
+    async def send_packet_with_ancillary(self, packet: _T_SentPacket, ancillary_data: Any) -> None:
+        """
+        Sends `packet` to the remote endpoint with ancillary data.
+
+        .. versionadded:: NEXT_VERSION
+
+        Parameters:
+            packet: the Python object to send.
+            ancillary_data: The ancillary data to send along with the message.
+
+        Raises:
+            OSError: Data too big to be sent at once.
+        """
+        with self.__send_guard:
+            sender = self.__sender
+
+            await sender.send_with_ancillary(packet, ancillary_data)
+
     async def recv_packet(self) -> _T_ReceivedPacket:
         """
         Waits for a new packet from the remote endpoint.
@@ -292,6 +353,31 @@ class AsyncDatagramEndpoint(_transports.AsyncBaseTransport, Generic[_T_SentPacke
             receiver = self.__receiver
 
             return await receiver.receive()
+
+    async def recv_packet_with_ancillary(
+        self,
+        ancillary_bufsize: int,
+        ancillary_data_received: Callable[[Any], object],
+    ) -> _T_ReceivedPacket:
+        """
+        Waits for a new packet with ancillary data to arrive from the remote endpoint.
+
+        .. versionadded:: NEXT_VERSION
+
+        Parameters:
+            ancillary_bufsize: Read buffer size for ancillary data.
+            ancillary_data_received: Action to perform on ancillary data reception.
+
+        Raises:
+            DatagramProtocolParseError: invalid data received.
+
+        Returns:
+            the received packet.
+        """
+        with self.__recv_guard:
+            receiver = self.__receiver
+
+            return await receiver.receive_with_ancillary(ancillary_bufsize, ancillary_data_received)
 
     @_utils.inherit_doc(_transports.AsyncBaseTransport)
     def backend(self) -> AsyncBackend:
@@ -318,6 +404,16 @@ class _DataSenderImpl(Generic[_T_SentPacket]):
 
         await self.transport.send(datagram)
 
+    async def send_with_ancillary(self, packet: _T_SentPacket, ancillary_data: Any) -> None:
+        try:
+            datagram: bytes = self.protocol.make_datagram(packet)
+        except Exception as exc:
+            raise RuntimeError("protocol.make_datagram() crashed") from exc
+        finally:
+            del packet
+
+        await self.transport.send_with_ancillary(datagram, ancillary_data)
+
 
 @dataclasses.dataclass(slots=True)
 class _DataReceiverImpl(Generic[_T_ReceivedPacket]):
@@ -334,3 +430,23 @@ class _DataReceiverImpl(Generic[_T_ReceivedPacket]):
             raise RuntimeError("protocol.build_packet_from_datagram() crashed") from exc
         finally:
             del datagram
+
+    async def receive_with_ancillary(
+        self,
+        ancillary_bufsize: int,
+        ancillary_data_received: Callable[[Any], object],
+    ) -> _T_ReceivedPacket:
+        datagram, ancdata = await self.transport.recv_with_ancillary(ancillary_bufsize)
+        try:
+            try:
+                ancillary_data_received(ancdata)
+            except Exception as exc:
+                raise RuntimeError("ancillary_data_received() crashed") from exc
+            try:
+                return self.protocol.build_packet_from_datagram(datagram)
+            except DatagramProtocolParseError:
+                raise
+            except Exception as exc:
+                raise RuntimeError("protocol.build_packet_from_datagram() crashed") from exc
+        finally:
+            del ancdata, datagram

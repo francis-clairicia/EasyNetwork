@@ -116,6 +116,7 @@ class TestStreamEndpoint(BaseEndpointSendTests, BaseEndpointReceiveTests):
             endpoint.send_packet_with_ancillary(mocker.sentinel.packet, mocker.sentinel.ancdata)
         mock_stream_protocol.generate_chunks.assert_not_called()
         mock_stream_transport.send_all_from_iterable.assert_not_called()
+        mock_stream_transport.send_all_with_ancillary.assert_not_called()
 
     @pytest.mark.parametrize("transport_closed", [False, True], ids=lambda p: f"transport_closed=={p}")
     def test____send_eof____idempotent(
@@ -161,6 +162,8 @@ class TestStreamEndpoint(BaseEndpointSendTests, BaseEndpointReceiveTests):
                 mock_stream_transport.recv.side_effect = [b""]
             case "buffer":
                 mock_stream_transport.recv_into.side_effect = make_recv_into_side_effect([b""])
+            case _:
+                pytest.fail("Invalid fixture")
         with pytest.raises(ConnectionAbortedError):
             _ = endpoint.recv_packet(timeout=recv_timeout)
 

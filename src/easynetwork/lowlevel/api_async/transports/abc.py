@@ -144,6 +144,51 @@ class AsyncStreamReadTransport(AsyncBaseTransport):
         """
         raise NotImplementedError
 
+    async def recv_with_ancillary(self, bufsize: int, ancillary_bufsize: int) -> tuple[bytes, Any]:  # pragma: no cover
+        """
+        Read and return up to `bufsize` bytes with ancillary data.
+
+        .. versionadded:: NEXT_VERSION
+
+        Parameters:
+            bufsize: the maximum buffer size.
+            ancillary_bufsize: the maximum buffer size for ancillary data.
+
+        Raises:
+            ValueError: Negative `bufsize`.
+            ValueError: Negative `ancillary_bufsize`.
+
+        Returns:
+            a tuple with some :class:`bytes` and the ancillary data.
+
+            If `bufsize` is greater than zero and an empty byte buffer is returned, this indicates an EOF.
+        """
+        raise NotImplementedError("This transport does not have ancillary data support.")
+
+    async def recv_with_ancillary_into(
+        self,
+        buffer: WriteableBuffer,
+        ancillary_bufsize: int,
+    ) -> tuple[int, Any]:  # pragma: no cover
+        """
+        Read into the given `buffer` with ancillary data.
+
+        .. versionadded:: NEXT_VERSION
+
+        Parameters:
+            buffer: where to write the received bytes.
+            ancillary_bufsize: the maximum buffer size for ancillary data.
+
+        Raises:
+            ValueError: Negative `ancillary_bufsize`.
+
+        Returns:
+            a tuple with the number of bytes written and the ancillary data.
+
+            Returning ``0`` for a non-zero buffer indicates an EOF.
+        """
+        raise NotImplementedError("This transport does not have ancillary data support.")
+
 
 class AsyncStreamWriteTransport(AsyncBaseTransport):
     """
@@ -179,6 +224,29 @@ class AsyncStreamWriteTransport(AsyncBaseTransport):
         del iterable_of_data
         await self.send_all(data)
 
+    async def send_all_with_ancillary(
+        self,
+        iterable_of_data: Iterable[bytes | bytearray | memoryview],
+        ancillary_data: Any,
+    ) -> None:  # pragma: no cover
+        """
+        An efficient way to send a bunch of data via the transport with ancillary data.
+
+        Unlike :meth:`send_all` and :meth:`send_all_from_iterable`, this method tries to send all data at once. If not all
+        could be sent, an exception is raised. :data:`None` is returned on success.
+        On error, an exception is raised, and there is no way to determine how much data, if any, was successfully sent.
+
+        .. versionadded:: NEXT_VERSION
+
+        Parameters:
+            iterable_of_data: An :term:`iterable` yielding the bytes to send.
+            ancillary_data: The ancillary data to send along with the message.
+
+        Raises:
+            OSError: Data too big to be sent at once.
+        """
+        raise NotImplementedError("This transport does not have ancillary data support.")
+
 
 class AsyncStreamTransport(AsyncStreamWriteTransport, AsyncStreamReadTransport):
     """
@@ -212,6 +280,23 @@ class AsyncDatagramReadTransport(AsyncBaseTransport):
         """
         raise NotImplementedError
 
+    async def recv_with_ancillary(self, ancillary_bufsize: int) -> tuple[bytes, Any]:  # pragma: no cover
+        """
+        Read and return the next available packet with ancillary data.
+
+        .. versionadded:: NEXT_VERSION
+
+        Parameters:
+            ancillary_bufsize: the maximum buffer size for ancillary data.
+
+        Raises:
+            ValueError: Negative `ancillary_bufsize`.
+
+        Returns:
+            a tuple with some :class:`bytes` and the ancillary data.
+        """
+        raise NotImplementedError("This transport does not have ancillary data support.")
+
 
 class AsyncDatagramWriteTransport(AsyncBaseTransport):
     """
@@ -232,6 +317,25 @@ class AsyncDatagramWriteTransport(AsyncBaseTransport):
             OSError: Data too big to be sent at once.
         """
         raise NotImplementedError
+
+    async def send_with_ancillary(
+        self,
+        data: bytes | bytearray | memoryview,
+        ancillary_data: Any,
+    ) -> None:  # pragma: no cover
+        """
+        Send the `data` bytes with ancillary data to the remote peer.
+
+        .. versionadded:: NEXT_VERSION
+
+        Parameters:
+            data: the bytes to send.
+            ancillary_data: The ancillary data to send along with the message.
+
+        Raises:
+            OSError: Data too big to be sent at once.
+        """
+        raise NotImplementedError("This transport does not have ancillary data support.")
 
 
 class AsyncDatagramTransport(AsyncDatagramWriteTransport, AsyncDatagramReadTransport):
