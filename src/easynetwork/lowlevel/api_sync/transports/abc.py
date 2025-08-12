@@ -372,6 +372,7 @@ class DatagramWriteTransport(BaseTransport):
         Raises:
             ValueError: Negative `timeout`.
             TimeoutError: Operation timed out.
+            OSError: Data too big to be sent at once.
         """
         raise NotImplementedError
 
@@ -394,6 +395,7 @@ class DatagramWriteTransport(BaseTransport):
         Raises:
             ValueError: Negative `timeout`.
             TimeoutError: Operation timed out.
+            OSError: Data too big to be sent at once.
         """
         raise NotImplementedError("This transport does not have ancillary data support.")
 

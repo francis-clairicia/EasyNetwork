@@ -121,6 +121,41 @@ class StreamReceiverEndpoint(_transports.BaseTransport, Generic[_T_ReceivedPacke
 
         return receiver.receive(timeout)
 
+    def recv_packet_with_ancillary(
+        self,
+        ancillary_bufsize: int,
+        ancillary_data_received: Callable[[Any], object],
+        *,
+        timeout: float | None = None,
+    ) -> _T_ReceivedPacket:
+        """
+        Waits for a new packet with ancillary data to arrive from the remote endpoint.
+
+        If `timeout` is not :data:`None`, the entire receive operation will take at most `timeout` seconds.
+
+        .. versionadded:: NEXT_VERSION
+
+        Parameters:
+            ancillary_bufsize: Read buffer size for ancillary data.
+            ancillary_data_received: Action to perform on ancillary data reception.
+            timeout: the allowed time (in seconds) for blocking operations.
+
+        Raises:
+            TimeoutError: the receive operation does not end up after `timeout` seconds.
+            ConnectionAbortedError: the read end of the stream is closed.
+            EOFError: could not deserialize packet because of partial chunk reception.
+            StreamProtocolParseError: invalid data received.
+
+        Returns:
+            the received packet.
+        """
+        receiver = self.__receiver
+
+        if timeout is None:
+            timeout = math.inf
+
+        return receiver.receive_with_ancillary(ancillary_bufsize, ancillary_data_received, timeout)
+
     @property
     @_utils.inherit_doc(_transports.BaseTransport)
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
@@ -204,6 +239,30 @@ class StreamSenderEndpoint(_transports.BaseTransport, Generic[_T_SentPacket]):
             timeout = math.inf
 
         return sender.send(packet, timeout)
+
+    def send_packet_with_ancillary(self, packet: _T_SentPacket, ancillary_data: Any, *, timeout: float | None = None) -> None:
+        """
+        Sends `packet` to the remote endpoint with ancillary data.
+
+        If `timeout` is not :data:`None`, the entire send operation will take at most `timeout` seconds.
+
+        .. versionadded:: NEXT_VERSION
+
+        Parameters:
+            packet: the Python object to send.
+            ancillary_data: The ancillary data to send along with the message.
+            timeout: the allowed time (in seconds) for blocking operations.
+
+        Raises:
+            TimeoutError: the send operation does not end up after `timeout` seconds.
+            OSError: Data too big to be sent at once.
+        """
+        sender = self.__sender
+
+        if timeout is None:
+            timeout = math.inf
+
+        return sender.send_with_ancillary(packet, ancillary_data, timeout)
 
     @property
     @_utils.inherit_doc(_transports.BaseTransport)
@@ -307,6 +366,34 @@ class StreamEndpoint(_transports.BaseTransport, Generic[_T_SentPacket, _T_Receiv
 
         return sender.send(packet, timeout)
 
+    def send_packet_with_ancillary(self, packet: _T_SentPacket, ancillary_data: Any, *, timeout: float | None = None) -> None:
+        """
+        Sends `packet` to the remote endpoint with ancillary data.
+
+        If `timeout` is not :data:`None`, the entire send operation will take at most `timeout` seconds.
+
+        .. versionadded:: NEXT_VERSION
+
+        Parameters:
+            packet: the Python object to send.
+            ancillary_data: The ancillary data to send along with the message.
+            timeout: the allowed time (in seconds) for blocking operations.
+
+        Raises:
+            TimeoutError: the send operation does not end up after `timeout` seconds.
+            RuntimeError: :meth:`send_eof` has been called earlier.
+            OSError: Data too big to be sent at once.
+        """
+        if self.__eof_sent:
+            raise RuntimeError("send_eof() has been called earlier")
+
+        sender = self.__sender
+
+        if timeout is None:
+            timeout = math.inf
+
+        return sender.send_with_ancillary(packet, ancillary_data, timeout)
+
     def send_eof(self) -> None:
         """
         Close the write end of the stream after the buffered write data is flushed.
@@ -347,6 +434,41 @@ class StreamEndpoint(_transports.BaseTransport, Generic[_T_SentPacket, _T_Receiv
 
         return receiver.receive(timeout)
 
+    def recv_packet_with_ancillary(
+        self,
+        ancillary_bufsize: int,
+        ancillary_data_received: Callable[[Any], object],
+        *,
+        timeout: float | None = None,
+    ) -> _T_ReceivedPacket:
+        """
+        Waits for a new packet with ancillary data to arrive from the remote endpoint.
+
+        If `timeout` is not :data:`None`, the entire receive operation will take at most `timeout` seconds.
+
+        .. versionadded:: NEXT_VERSION
+
+        Parameters:
+            ancillary_bufsize: Read buffer size for ancillary data.
+            ancillary_data_received: Action to perform on ancillary data reception.
+            timeout: the allowed time (in seconds) for blocking operations.
+
+        Raises:
+            TimeoutError: the receive operation does not end up after `timeout` seconds.
+            ConnectionAbortedError: the read end of the stream is closed.
+            EOFError: could not deserialize packet because of partial chunk reception.
+            StreamProtocolParseError: invalid data received.
+
+        Returns:
+            the received packet.
+        """
+        receiver = self.__receiver
+
+        if timeout is None:
+            timeout = math.inf
+
+        return receiver.receive_with_ancillary(ancillary_bufsize, ancillary_data_received, timeout)
+
     @property
     @_utils.inherit_doc(_transports.BaseTransport)
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
@@ -360,6 +482,9 @@ class _DataSenderImpl(Generic[_T_SentPacket]):
 
     def send(self, packet: _T_SentPacket, timeout: float) -> None:
         return self.transport.send_all_from_iterable(self.producer.generate(packet), timeout)
+
+    def send_with_ancillary(self, packet: _T_SentPacket, ancillary_data: Any, timeout: float) -> None:
+        return self.transport.send_all_with_ancillary(self.producer.generate(packet), ancillary_data, timeout)
 
 
 @dataclasses.dataclass(slots=True)
@@ -402,6 +527,42 @@ class _DataReceiverImpl(Generic[_T_ReceivedPacket]):
             raise _utils.error_from_errno(_errno.ECONNABORTED, "{strerror} (end-of-stream)")
         raise _utils.error_from_errno(_errno.ETIMEDOUT)
 
+    def receive_with_ancillary(
+        self,
+        ancillary_bufsize: int,
+        ancillary_data_received: Callable[[Any], object],
+        timeout: float,
+    ) -> _T_ReceivedPacket:
+        consumer = self.consumer
+        try:
+            return consumer.next(None)
+        except StopIteration:
+            pass
+
+        transport = self.transport
+        bufsize: int = self.max_recv_size
+
+        if not self._eof_reached:
+            data, ancdata = transport.recv_with_ancillary(bufsize, ancillary_bufsize, timeout)
+            if data:
+                try:
+                    try:
+                        ancillary_data_received(ancdata)
+                    except Exception as exc:
+                        raise RuntimeError("ancillary_data_received() crashed") from exc
+                    try:
+                        return consumer.next(data)
+                    except StopIteration:
+                        raise EOFError("Received partial packet data") from None
+                finally:
+                    del ancdata, data
+            else:
+                self._eof_reached = True
+                del ancdata
+
+        assert self._eof_reached  # nosec assert_used
+        raise _utils.error_from_errno(_errno.ECONNABORTED, "{strerror} (end-of-stream)")
+
 
 @dataclasses.dataclass(slots=True)
 class _BufferedReceiverImpl(Generic[_T_ReceivedPacket]):
@@ -439,6 +600,41 @@ class _BufferedReceiverImpl(Generic[_T_ReceivedPacket]):
         if self._eof_reached:
             raise _utils.error_from_errno(_errno.ECONNABORTED, "{strerror} (end-of-stream)")
         raise _utils.error_from_errno(_errno.ETIMEDOUT)
+
+    def receive_with_ancillary(
+        self,
+        ancillary_bufsize: int,
+        ancillary_data_received: Callable[[Any], object],
+        timeout: float,
+    ) -> _T_ReceivedPacket:
+        consumer = self.consumer
+        try:
+            return consumer.next(None)
+        except StopIteration:
+            pass
+
+        transport = self.transport
+
+        if not self._eof_reached:
+            with consumer.get_write_buffer() as buffer:
+                nbytes, ancdata = transport.recv_with_ancillary_into(buffer, ancillary_bufsize, timeout)
+            if nbytes:
+                try:
+                    ancillary_data_received(ancdata)
+                except Exception as exc:
+                    raise RuntimeError("ancillary_data_received() crashed") from exc
+                finally:
+                    del ancdata
+                try:
+                    return consumer.next(nbytes)
+                except StopIteration:
+                    raise EOFError("Received partial packet data") from None
+            else:
+                self._eof_reached = True
+                del ancdata
+
+        assert self._eof_reached  # nosec assert_used
+        raise _utils.error_from_errno(_errno.ECONNABORTED, "{strerror} (end-of-stream)")
 
 
 def _get_receiver(

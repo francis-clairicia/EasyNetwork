@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from easynetwork.lowlevel.api_sync.endpoints.stream import StreamEndpoint
 from easynetwork.lowlevel.api_sync.transports.abc import StreamTransport
@@ -112,6 +112,8 @@ class TestStreamEndpoint(BaseEndpointSendTests, BaseEndpointReceiveTests):
         mock_stream_transport.send_eof.assert_called_once_with()
         with pytest.raises(RuntimeError, match=r"^send_eof\(\) has been called earlier$"):
             endpoint.send_packet(mocker.sentinel.packet)
+        with pytest.raises(RuntimeError, match=r"^send_eof\(\) has been called earlier$"):
+            endpoint.send_packet_with_ancillary(mocker.sentinel.packet, mocker.sentinel.ancdata)
         mock_stream_protocol.generate_chunks.assert_not_called()
         mock_stream_transport.send_all_from_iterable.assert_not_called()
 
@@ -134,10 +136,14 @@ class TestStreamEndpoint(BaseEndpointSendTests, BaseEndpointReceiveTests):
         mock_stream_transport.send_eof.assert_called_once_with()
         with pytest.raises(RuntimeError, match=r"^send_eof\(\) has been called earlier$"):
             endpoint.send_packet(mocker.sentinel.packet)
+        with pytest.raises(RuntimeError, match=r"^send_eof\(\) has been called earlier$"):
+            endpoint.send_packet_with_ancillary(mocker.sentinel.packet, mocker.sentinel.ancdata)
 
-    @pytest.mark.parametrize("stream_protocol_mode", ["data"], indirect=True)
+    @pytest.mark.parametrize("with_ancillary", [False, True], ids=lambda p: f"with_ancillary=={p}")
     def test____special_case____send_packet____eof_error____still_try_socket_send(
         self,
+        stream_protocol_mode: Literal["data", "buffer"],
+        with_ancillary: bool,
         send_timeout: float | None,
         expected_send_timeout: float,
         recv_timeout: float | None,
@@ -149,48 +155,34 @@ class TestStreamEndpoint(BaseEndpointSendTests, BaseEndpointReceiveTests):
         # Arrange
         chunks: list[bytes] = []
         mock_stream_transport.send_all_from_iterable.side_effect = lambda it, timeout: chunks.extend(it)
-        mock_stream_transport.recv.side_effect = [b""]
+        mock_stream_transport.send_all_with_ancillary.side_effect = lambda it, ancdata, timeout: chunks.extend(it)
+        match stream_protocol_mode:
+            case "data":
+                mock_stream_transport.recv.side_effect = [b""]
+            case "buffer":
+                mock_stream_transport.recv_into.side_effect = make_recv_into_side_effect([b""])
         with pytest.raises(ConnectionAbortedError):
             _ = endpoint.recv_packet(timeout=recv_timeout)
 
         mock_stream_transport.recv.reset_mock()
-
-        # Act
-        endpoint.send_packet(mocker.sentinel.packet, timeout=send_timeout)
-
-        # Assert
-        mock_stream_protocol.generate_chunks.assert_called_with(mocker.sentinel.packet)
-        mock_stream_transport.send_all_from_iterable.assert_called_once_with(mocker.ANY, expected_send_timeout)
-        mock_stream_transport.send_all.assert_not_called()
-        mock_stream_transport.send.assert_not_called()
-        assert chunks == [b"packet\n"]
-
-    @pytest.mark.parametrize("stream_protocol_mode", ["buffer"], indirect=True)
-    def test____special_case____send_packet____eof_error____recv_buffered____still_try_socket_send(
-        self,
-        send_timeout: float | None,
-        expected_send_timeout: float,
-        recv_timeout: float | None,
-        endpoint: StreamEndpoint[Any, Any],
-        mock_stream_transport: MagicMock,
-        mock_stream_protocol: MagicMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        chunks: list[bytes] = []
-        mock_stream_transport.send_all_from_iterable.side_effect = lambda it, timeout: chunks.extend(it)
-        mock_stream_transport.recv_into.side_effect = make_recv_into_side_effect([b""])
-        with pytest.raises(ConnectionAbortedError):
-            _ = endpoint.recv_packet(timeout=recv_timeout)
-
         mock_stream_transport.recv_into.reset_mock()
 
         # Act
-        endpoint.send_packet(mocker.sentinel.packet, timeout=send_timeout)
+        if with_ancillary:
+            endpoint.send_packet_with_ancillary(mocker.sentinel.packet, mocker.sentinel.ancdata, timeout=send_timeout)
+        else:
+            endpoint.send_packet(mocker.sentinel.packet, timeout=send_timeout)
 
         # Assert
         mock_stream_protocol.generate_chunks.assert_called_with(mocker.sentinel.packet)
-        mock_stream_transport.send_all_from_iterable.assert_called_once_with(mocker.ANY, expected_send_timeout)
+        if with_ancillary:
+            mock_stream_transport.send_all_with_ancillary.assert_called_once_with(
+                mocker.ANY,
+                mocker.sentinel.ancdata,
+                expected_send_timeout,
+            )
+        else:
+            mock_stream_transport.send_all_from_iterable.assert_called_once_with(mocker.ANY, expected_send_timeout)
         mock_stream_transport.send_all.assert_not_called()
         mock_stream_transport.send.assert_not_called()
         assert chunks == [b"packet\n"]
