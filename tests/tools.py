@@ -5,6 +5,7 @@ import contextlib
 import dataclasses
 import importlib
 import os
+import socket
 import sys
 import time
 from collections.abc import Callable, Generator, Iterator
@@ -71,6 +72,26 @@ class PlatformMarkers:
 
     supports_abstract_sockets = runs_only_on_platform("linux", "abstract sockets are available only on Linux")
     abstract_sockets_unsupported = skipif_platform_linux_because("abstract sockets are available only on Linux")
+
+    supports_socket_sendmsg = pytest.mark.skipif(
+        not hasattr(socket.socket, "sendmsg"), reason=f"socket.sendmsg() is not available on {sys.platform}"
+    )
+    supports_socket_recvmsg = pytest.mark.skipif(
+        not hasattr(socket.socket, "recvmsg"), reason=f"socket.recvmsg() is not available on {sys.platform}"
+    )
+    supports_socket_recvmsg_into = pytest.mark.skipif(
+        not hasattr(socket.socket, "recvmsg_into"), reason=f"socket.recvmsg_into() is not available on {sys.platform}"
+    )
+
+    socket_sendmsg_unsupported = pytest.mark.skipif(
+        hasattr(socket.socket, "sendmsg"), reason=f"socket.sendmsg() is available on {sys.platform}"
+    )
+    socket_recvmsg_unsupported = pytest.mark.skipif(
+        hasattr(socket.socket, "recvmsg"), reason=f"socket.recvmsg() is available on {sys.platform}"
+    )
+    socket_recvmsg_into_unsupported = pytest.mark.skipif(
+        hasattr(socket.socket, "recvmsg_into"), reason=f"socket.recvmsg_into() is available on {sys.platform}"
+    )
 
 
 def send_return(gen: Generator[Any, _T_contra, _V_co], value: _T_contra, /) -> _V_co:
