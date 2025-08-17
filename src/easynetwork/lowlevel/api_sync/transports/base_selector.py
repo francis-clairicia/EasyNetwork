@@ -254,13 +254,16 @@ class SelectorStreamReadTransport(SelectorBaseTransport, transports.StreamReadTr
             ValueError: Negative `ancillary_bufsize`.
             WouldBlockOnRead: the operation would block when reading the pipe.
             WouldBlockOnWrite: the operation would block when writing on the pipe.
+            UnsupportedOperation: This transport does not have ancillary data support.
 
         Returns:
             a tuple with some :class:`bytes` and the ancillary data.
 
             If `bufsize` is greater than zero and an empty byte buffer is returned, this indicates an EOF.
         """
-        raise NotImplementedError("This transport does not have ancillary data support.")
+        from ....exceptions import UnsupportedOperation
+
+        raise UnsupportedOperation("This transport does not have ancillary data support.")
 
     def recv_with_ancillary(self, bufsize: int, ancillary_bufsize: int, timeout: float) -> tuple[bytes, Any]:
         """
@@ -291,13 +294,16 @@ class SelectorStreamReadTransport(SelectorBaseTransport, transports.StreamReadTr
             ValueError: Negative `ancillary_bufsize`.
             WouldBlockOnRead: the operation would block when reading the pipe.
             WouldBlockOnWrite: the operation would block when writing on the pipe.
+            UnsupportedOperation: This transport does not have ancillary data support.
 
         Returns:
             a tuple with the number of bytes written and the ancillary data.
 
             Returning ``0`` for a non-zero buffer indicates an EOF.
         """
-        raise NotImplementedError("This transport does not have ancillary data support.")
+        from ....exceptions import UnsupportedOperation
+
+        raise UnsupportedOperation("This transport does not have ancillary data support.")
 
     def recv_with_ancillary_into(self, buffer: WriteableBuffer, ancillary_bufsize: int, timeout: float) -> tuple[int, Any]:
         """
@@ -358,8 +364,11 @@ class SelectorStreamWriteTransport(SelectorBaseTransport, transports.StreamWrite
             OSError: Data too big to be sent at once.
             WouldBlockOnRead: the operation would block when reading the pipe.
             WouldBlockOnWrite: the operation would block when writing on the pipe.
+            UnsupportedOperation: This transport does not have ancillary data support.
         """
-        raise NotImplementedError("This transport does not have ancillary data support.")
+        from ....exceptions import UnsupportedOperation
+
+        raise UnsupportedOperation("This transport does not have ancillary data support.")
 
     def send_all_with_ancillary(
         self,
@@ -432,11 +441,14 @@ class SelectorDatagramReadTransport(SelectorBaseTransport, transports.DatagramRe
             ValueError: Negative `ancillary_bufsize`.
             WouldBlockOnRead: the operation would block when reading the pipe.
             WouldBlockOnWrite: the operation would block when writing on the pipe.
+            UnsupportedOperation: This transport does not have ancillary data support.
 
         Returns:
             a tuple with some :class:`bytes` and the ancillary data.
         """
-        raise NotImplementedError("This transport does not have ancillary data support.")
+        from ....exceptions import UnsupportedOperation
+
+        raise UnsupportedOperation("This transport does not have ancillary data support.")
 
     def recv_with_ancillary(self, ancillary_bufsize: int, timeout: float) -> tuple[bytes, Any]:
         """
@@ -492,8 +504,11 @@ class SelectorDatagramWriteTransport(SelectorBaseTransport, transports.DatagramW
         Raises:
             WouldBlockOnRead: the operation would block when reading the pipe.
             WouldBlockOnWrite: the operation would block when writing on the pipe.
+            UnsupportedOperation: This transport does not have ancillary data support.
         """
-        raise NotImplementedError("This transport does not have ancillary data support.")
+        from ....exceptions import UnsupportedOperation
+
+        raise UnsupportedOperation("This transport does not have ancillary data support.")
 
     def send_with_ancillary(self, data: bytes | bytearray | memoryview, ancillary_data: Any, timeout: float) -> None:
         """

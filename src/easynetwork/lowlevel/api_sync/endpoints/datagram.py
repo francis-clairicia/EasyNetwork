@@ -134,6 +134,7 @@ class DatagramReceiverEndpoint(_transports.BaseTransport, Generic[_T_ReceivedPac
         Raises:
             TimeoutError: the receive operation does not end up after `timeout` seconds.
             DatagramProtocolParseError: invalid data received.
+            UnsupportedOperation: This transport does not have ancillary data support.
 
         Returns:
             the received packet.
@@ -247,6 +248,7 @@ class DatagramSenderEndpoint(_transports.BaseTransport, Generic[_T_SentPacket]):
         Raises:
             TimeoutError: the send operation does not end up after `timeout` seconds.
             OSError: Data too big to be sent at once.
+            UnsupportedOperation: This transport does not have ancillary data support.
         """
         sender = self.__sender
 
@@ -359,6 +361,7 @@ class DatagramEndpoint(_transports.BaseTransport, Generic[_T_SentPacket, _T_Rece
         Raises:
             TimeoutError: the send operation does not end up after `timeout` seconds.
             OSError: Data too big to be sent at once.
+            UnsupportedOperation: This transport does not have ancillary data support.
         """
         sender = self.__sender
 
@@ -412,6 +415,7 @@ class DatagramEndpoint(_transports.BaseTransport, Generic[_T_SentPacket, _T_Rece
         Raises:
             TimeoutError: the receive operation does not end up after `timeout` seconds.
             DatagramProtocolParseError: invalid data received.
+            UnsupportedOperation: This transport does not have ancillary data support.
 
         Returns:
             the received packet.

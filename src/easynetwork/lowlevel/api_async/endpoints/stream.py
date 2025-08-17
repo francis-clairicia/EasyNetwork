@@ -138,6 +138,7 @@ class AsyncStreamReceiverEndpoint(_transports.AsyncBaseTransport, Generic[_T_Rec
             ConnectionAbortedError: the read end of the stream is closed.
             EOFError: could not deserialize packet because of partial chunk reception.
             StreamProtocolParseError: invalid data received.
+            UnsupportedOperation: This transport does not have ancillary data support.
 
         Returns:
             the received packet.
@@ -244,6 +245,7 @@ class AsyncStreamSenderEndpoint(_transports.AsyncBaseTransport, Generic[_T_SentP
 
         Raises:
             OSError: Data too big to be sent at once.
+            UnsupportedOperation: This transport does not have ancillary data support.
         """
         with self.__send_guard:
             sender = self.__sender
@@ -371,6 +373,7 @@ class AsyncStreamEndpoint(_transports.AsyncBaseTransport, Generic[_T_SentPacket,
         Raises:
             RuntimeError: :meth:`send_eof` has been called earlier.
             OSError: Data too big to be sent at once.
+            UnsupportedOperation: This transport does not have ancillary data support.
         """
         with self.__send_guard:
             if self.__eof_sent:
@@ -431,6 +434,7 @@ class AsyncStreamEndpoint(_transports.AsyncBaseTransport, Generic[_T_SentPacket,
             ConnectionAbortedError: the read end of the stream is closed.
             EOFError: could not deserialize packet because of partial chunk reception.
             StreamProtocolParseError: invalid data received.
+            UnsupportedOperation: This transport does not have ancillary data support.
 
         Returns:
             the received packet.
