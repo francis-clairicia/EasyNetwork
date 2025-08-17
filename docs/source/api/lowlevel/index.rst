@@ -16,5 +16,6 @@ Low-level API
    :maxdepth: 1
 
    socket
+   request_handler
    futures
    typed_attr

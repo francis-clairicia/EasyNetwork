@@ -336,7 +336,7 @@ class AsyncDatagramWriteTransport(AsyncBaseTransport):
         ancillary_data: Any,
     ) -> None:  # pragma: no cover
         """
-        Send the `data` bytes with ancillary data to the remote peer.
+        Send the `data` bytes to the remote peer with ancillary data.
 
         .. versionadded:: NEXT_VERSION
 
@@ -405,6 +405,33 @@ class AsyncDatagramListener(AsyncBaseTransport, Generic[_T_Address]):
         """
         raise NotImplementedError
 
+    async def serve_with_ancillary(
+        self,
+        handler: Callable[[bytes, Any | None, _T_Address], Coroutine[Any, Any, None]],
+        ancillary_bufsize: int,
+        task_group: TaskGroup | None = None,
+    ) -> NoReturn:  # pragma: no cover
+        """
+        Receive incoming datagrams with ancillary data as they come in and start tasks to handle them.
+
+        .. versionadded:: NEXT_VERSION
+
+        Important:
+            The implementation must ensure that datagrams are processed in the order in which they are received.
+
+        Parameters:
+            handler: a callable that will be used to handle each received datagram.
+                     The ancillary data can be :data:`None` if there is none.
+            ancillary_bufsize: the maximum buffer size for ancillary data.
+            task_group: the task group that will be used to start tasks for handling each received datagram.
+
+        Raises:
+            UnsupportedOperation: This transport does not have ancillary data support.
+        """
+        from ....exceptions import UnsupportedOperation
+
+        raise UnsupportedOperation("This transport does not have ancillary data support.")
+
     @abstractmethod
     async def send_to(self, data: bytes | bytearray | memoryview, address: _T_Address) -> None:
         """
@@ -421,3 +448,28 @@ class AsyncDatagramListener(AsyncBaseTransport, Generic[_T_Address]):
             OSError: Data too big to be sent at once.
         """
         raise NotImplementedError
+
+    async def send_with_ancillary_to(
+        self,
+        data: bytes | bytearray | memoryview,
+        ancillary_data: Any,
+        address: _T_Address,
+    ) -> None:  # pragma: no cover
+        """
+        Send the `data` bytes to the remote peer `address` with ancillary data.
+
+        Important:
+            This method should be safe to call from multiple tasks.
+
+        Parameters:
+            data: the bytes to send.
+            ancillary_data: The ancillary data to send along with the message.
+            address: the remote peer.
+
+        Raises:
+            OSError: Data too big to be sent at once.
+            UnsupportedOperation: This transport does not have ancillary data support.
+        """
+        from ....exceptions import UnsupportedOperation
+
+        raise UnsupportedOperation("This transport does not have ancillary data support.")

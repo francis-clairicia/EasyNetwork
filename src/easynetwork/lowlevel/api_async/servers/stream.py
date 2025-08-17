@@ -31,6 +31,7 @@ from typing import Any, Generic, NoReturn, assert_never
 from ...._typevars import _T_Request, _T_Response
 from ....protocol import AnyStreamProtocolType
 from ... import _stream, _utils
+from ...request_handler import RecvAncillaryDataParams, RecvParams
 from ..backend.abc import AsyncBackend, TaskGroup
 from ..transports import abc as _transports, utils as _transports_utils
 
@@ -92,6 +93,27 @@ class ConnectedStreamClient(_transports.AsyncBaseTransport, Generic[_T_Response]
         """
         with self.__send_guard:
             await self.__transport.send_all_from_iterable(self.__producer.generate(packet))
+
+    async def send_packet_with_ancillary(self, packet: _T_Response, ancillary_data: Any) -> None:
+        """
+        Sends `packet` to the remote endpoint with ancillary data.
+
+        .. versionadded:: NEXT_VERSION
+
+        Warning:
+            In the case of a cancellation, it is impossible to know if all the packet data has been sent.
+            This would leave the connection in an inconsistent state.
+
+        Parameters:
+            packet: the Python object to send.
+            ancillary_data: The ancillary data to send along with the message.
+
+        Raises:
+            OSError: Data too big to be sent at once.
+            UnsupportedOperation: This transport does not have ancillary data support.
+        """
+        with self.__send_guard:
+            await self.__transport.send_all_with_ancillary(self.__producer.generate(packet), ancillary_data)
 
     @_utils.inherit_doc(_transports.AsyncBaseTransport)
     def backend(self) -> AsyncBackend:
@@ -172,13 +194,18 @@ class AsyncStreamServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T_R
 
     async def serve(
         self,
-        client_connected_cb: Callable[[ConnectedStreamClient[_T_Response]], AsyncGenerator[float | None, _T_Request]],
+        client_connected_cb: Callable[
+            [ConnectedStreamClient[_T_Response]], AsyncGenerator[float | RecvParams | None, _T_Request]
+        ],
         task_group: TaskGroup | None = None,
         *,
         disconnect_error_filter: Callable[[Exception], bool] | None = None,
     ) -> NoReturn:
         """
         Accept incoming connections as they come in and start tasks to handle them.
+
+        .. versionchanged:: NEXT_VERSION
+            `client_connected_cb` may yield a :class:`.RecvParams` object.
 
         Parameters:
             client_connected_cb: a callable that will be used to handle each accepted connection.
@@ -191,7 +218,9 @@ class AsyncStreamServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T_R
 
     async def __client_coroutine(
         self,
-        client_connected_cb: Callable[[ConnectedStreamClient[_T_Response]], AsyncGenerator[float | None, _T_Request]],
+        client_connected_cb: Callable[
+            [ConnectedStreamClient[_T_Response]], AsyncGenerator[float | RecvParams | None, _T_Request]
+        ],
         disconnect_error_filter: Callable[[Exception], bool] | None,
         transport: _transports.AsyncStreamTransport,
     ) -> None:
@@ -241,33 +270,43 @@ class AsyncStreamServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T_R
                 )
             )
 
-            timeout: float | None
+            del producer, consumer
+
+            timeout: float
+            recv_params: RecvParams
             try:
-                timeout = await anext(request_handler_generator)
+                recv_params = _rcv(await anext(request_handler_generator))
             except StopAsyncIteration:
                 return
             else:
                 try:
                     request: _T_Request | None
                     _timeout_scope_ctx = self.backend().timeout
+                    _no_timeout_scope = contextlib.nullcontext()
                     _validate_timeout_delay = _utils.validate_optional_timeout_delay
                     _transport_is_closing = transport.is_closing
                     _next_packet = request_receiver.next
+                    _next_packet_with_ancillary = request_receiver.next_with_ancillary
                     _request_handler_generator_asend = request_handler_generator.asend
                     while not _transport_is_closing():
                         try:
-                            match _validate_timeout_delay(timeout, positive_check=True):
+                            match _validate_timeout_delay(recv_params.timeout, positive_check=True):
                                 case math.inf:
-                                    request = await _next_packet()
+                                    timeout_scope = _no_timeout_scope
                                 case timeout:
-                                    with _timeout_scope_ctx(timeout):
-                                        request = await _next_packet()
+                                    timeout_scope = _timeout_scope_ctx(timeout)
+                            ancillary_data_params: RecvAncillaryDataParams | None = recv_params.recv_with_ancillary
+                            with timeout_scope:
+                                if ancillary_data_params is None:
+                                    request = await _next_packet()
+                                else:
+                                    request = await _next_packet_with_ancillary(ancillary_data_params)
                         except StopAsyncIteration:
                             raise
                         except BaseException as exc:
-                            timeout = await request_handler_generator.athrow(exc)
+                            recv_params = _rcv(await request_handler_generator.athrow(exc))
                         else:
-                            timeout = await _request_handler_generator_asend(request)
+                            recv_params = _rcv(await _request_handler_generator_asend(request))
                         finally:
                             request = None
                 except StopAsyncIteration:
@@ -340,6 +379,40 @@ class _RequestReceiver(Generic[_T_Request]):
 
         raise StopAsyncIteration
 
+    async def next_with_ancillary(self, ancillary_data_params: RecvAncillaryDataParams) -> _T_Request:
+        consumer = self.consumer
+        try:
+            request = consumer.next(None)
+        except StopIteration:
+            pass
+        else:
+            await self.__backend.cancel_shielded_coro_yield()
+            return request
+
+        data: bytes
+        try:
+            data, ancdata = await self.transport.recv_with_ancillary(self.max_recv_size, ancillary_data_params.bufsize)
+        except Exception as exc:
+            if self.disconnect_error_filter is None or not self.disconnect_error_filter(exc):
+                raise
+            raise StopAsyncIteration from None
+
+        if not data:
+            del ancdata
+            raise StopAsyncIteration
+
+        try:
+            try:
+                ancillary_data_params.data_received(ancdata)
+            except Exception as exc:
+                raise RuntimeError("RecvAncillaryDataParams.data_received() crashed") from exc
+            try:
+                return consumer.next(data)
+            except StopIteration:
+                raise EOFError("Received partial packet data") from None
+        finally:
+            del ancdata, data
+
 
 @dataclasses.dataclass(kw_only=True, eq=False, slots=True)
 class _BufferedRequestReceiver(Generic[_T_Request]):
@@ -378,3 +451,45 @@ class _BufferedRequestReceiver(Generic[_T_Request]):
                 pass
 
         raise StopAsyncIteration
+
+    async def next_with_ancillary(self, ancillary_data_params: RecvAncillaryDataParams) -> _T_Request:
+        consumer = self.consumer
+        try:
+            request = consumer.next(None)
+        except StopIteration:
+            pass
+        else:
+            await self.__backend.cancel_shielded_coro_yield()
+            return request
+
+        nbytes: int
+        with consumer.get_write_buffer() as buffer:
+            try:
+                nbytes, ancdata = await self.transport.recv_with_ancillary_into(buffer, ancillary_data_params.bufsize)
+            except Exception as exc:
+                if self.disconnect_error_filter is None or not self.disconnect_error_filter(exc):
+                    raise
+                raise StopAsyncIteration from None
+
+        if not nbytes:
+            del ancdata
+            raise StopAsyncIteration
+
+        try:
+            ancillary_data_params.data_received(ancdata)
+        except Exception as exc:
+            raise RuntimeError("RecvAncillaryDataParams.data_received() crashed") from exc
+        finally:
+            del ancdata
+        try:
+            return consumer.next(nbytes)
+        except StopIteration:
+            raise EOFError("Received partial packet data") from None
+
+
+def _rcv(param: float | RecvParams | None, /) -> RecvParams:
+    match param:
+        case RecvParams():
+            return param
+        case _:
+            return RecvParams(timeout=param)

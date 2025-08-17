@@ -395,7 +395,7 @@ class DatagramWriteTransport(BaseTransport):
         timeout: float,
     ) -> None:  # pragma: no cover
         """
-        Send the `data` bytes with ancillary data to the remote peer.
+        Send the `data` bytes to the remote peer with ancillary data.
 
         .. versionadded:: NEXT_VERSION
 

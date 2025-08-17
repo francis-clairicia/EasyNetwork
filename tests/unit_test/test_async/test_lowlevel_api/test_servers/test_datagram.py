@@ -395,19 +395,23 @@ class TestClientData:
         client_data._queue_condition = queue_condition
 
         # Act
-        n = await client_data.push_datagram(b"datagram_1")
+        n = await client_data.push_datagram(b"datagram_1", mocker.sentinel.ancdata_1)
         assert n == 1
         if notify:
             client_data.mark_pending()
-        n = await client_data.push_datagram(b"datagram_2")
+        n = await client_data.push_datagram(b"datagram_2", mocker.sentinel.ancdata_2)
         assert n == 2
         if notify:
             client_data.mark_running()
-        n = await client_data.push_datagram(b"datagram_3")
+        n = await client_data.push_datagram(b"datagram_3", mocker.sentinel.ancdata_3)
         assert n == 3
 
         # Assert
-        assert list(client_data._datagram_queue) == [b"datagram_1", b"datagram_2", b"datagram_3"]
+        assert list(client_data._datagram_queue) == [
+            (b"datagram_1", mocker.sentinel.ancdata_1),
+            (b"datagram_2", mocker.sentinel.ancdata_2),
+            (b"datagram_3", mocker.sentinel.ancdata_3),
+        ]
         if notify:
             assert queue_condition.notify.call_count == 2
         else:
@@ -419,19 +423,26 @@ class TestClientData:
         self,
         no_wait: bool,
         client_data: _ClientData,
+        mocker: MockerFixture,
     ) -> None:
         # Arrange
-        client_data._datagram_queue = deque([b"datagram_1", b"datagram_2", b"datagram_3"])
+        client_data._datagram_queue = deque(
+            [
+                (b"datagram_1", mocker.sentinel.ancdata_1),
+                (b"datagram_2", mocker.sentinel.ancdata_2),
+                (b"datagram_3", mocker.sentinel.ancdata_3),
+            ]
+        )
 
         # Act
         if no_wait:
-            assert client_data.pop_datagram_no_wait() == b"datagram_1"
-            assert client_data.pop_datagram_no_wait() == b"datagram_2"
-            assert client_data.pop_datagram_no_wait() == b"datagram_3"
+            assert client_data.pop_datagram_no_wait() == (b"datagram_1", mocker.sentinel.ancdata_1)
+            assert client_data.pop_datagram_no_wait() == (b"datagram_2", mocker.sentinel.ancdata_2)
+            assert client_data.pop_datagram_no_wait() == (b"datagram_3", mocker.sentinel.ancdata_3)
         else:
-            assert (await client_data.pop_datagram()) == b"datagram_1"
-            assert (await client_data.pop_datagram()) == b"datagram_2"
-            assert (await client_data.pop_datagram()) == b"datagram_3"
+            assert (await client_data.pop_datagram()) == (b"datagram_1", mocker.sentinel.ancdata_1)
+            assert (await client_data.pop_datagram()) == (b"datagram_2", mocker.sentinel.ancdata_2)
+            assert (await client_data.pop_datagram()) == (b"datagram_3", mocker.sentinel.ancdata_3)
 
         # Assert
         assert len(client_data._datagram_queue) == 0
@@ -459,7 +470,7 @@ class TestClientData:
         assert not pop_datagram_task.done()
 
         # Act
-        await client_data.push_datagram(b"datagram_1")
+        await client_data.push_datagram(b"datagram_1", None)
 
         # Assert
-        assert (await pop_datagram_task) == b"datagram_1"
+        assert (await pop_datagram_task) == (b"datagram_1", None)
