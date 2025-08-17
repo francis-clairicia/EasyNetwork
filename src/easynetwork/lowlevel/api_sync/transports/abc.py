@@ -143,13 +143,16 @@ class StreamReadTransport(BaseTransport):
             ValueError: Negative `ancillary_bufsize`.
             ValueError: Negative `timeout`.
             TimeoutError: Operation timed out.
+            UnsupportedOperation: This transport does not have ancillary data support.
 
         Returns:
             a tuple with some :class:`bytes` and the ancillary data.
 
             If `bufsize` is greater than zero and an empty byte buffer is returned, this indicates an EOF.
         """
-        raise NotImplementedError("This transport does not have ancillary data support.")
+        from ....exceptions import UnsupportedOperation
+
+        raise UnsupportedOperation("This transport does not have ancillary data support.")
 
     def recv_with_ancillary_into(
         self,
@@ -171,13 +174,16 @@ class StreamReadTransport(BaseTransport):
             ValueError: Negative `ancillary_bufsize`.
             ValueError: Negative `timeout`.
             TimeoutError: Operation timed out.
+            UnsupportedOperation: This transport does not have ancillary data support.
 
         Returns:
             a tuple with the number of bytes written and the ancillary data.
 
             Returning ``0`` for a non-zero buffer indicates an EOF.
         """
-        raise NotImplementedError("This transport does not have ancillary data support.")
+        from ....exceptions import UnsupportedOperation
+
+        raise UnsupportedOperation("This transport does not have ancillary data support.")
 
 
 class StreamWriteTransport(BaseTransport):
@@ -287,8 +293,11 @@ class StreamWriteTransport(BaseTransport):
             ValueError: Negative `timeout`.
             TimeoutError: Operation timed out.
             OSError: Data too big to be sent at once.
+            UnsupportedOperation: This transport does not have ancillary data support.
         """
-        raise NotImplementedError("This transport does not have ancillary data support.")
+        from ....exceptions import UnsupportedOperation
+
+        raise UnsupportedOperation("This transport does not have ancillary data support.")
 
 
 class StreamTransport(StreamWriteTransport, StreamReadTransport):
@@ -346,11 +355,14 @@ class DatagramReadTransport(BaseTransport):
             ValueError: Negative `ancillary_bufsize`.
             ValueError: Negative `timeout`.
             TimeoutError: Operation timed out.
+            UnsupportedOperation: This transport does not have ancillary data support.
 
         Returns:
             a tuple with some :class:`bytes` and the ancillary data.
         """
-        raise NotImplementedError("This transport does not have ancillary data support.")
+        from ....exceptions import UnsupportedOperation
+
+        raise UnsupportedOperation("This transport does not have ancillary data support.")
 
 
 class DatagramWriteTransport(BaseTransport):
@@ -396,8 +408,11 @@ class DatagramWriteTransport(BaseTransport):
             ValueError: Negative `timeout`.
             TimeoutError: Operation timed out.
             OSError: Data too big to be sent at once.
+            UnsupportedOperation: This transport does not have ancillary data support.
         """
-        raise NotImplementedError("This transport does not have ancillary data support.")
+        from ....exceptions import UnsupportedOperation
+
+        raise UnsupportedOperation("This transport does not have ancillary data support.")
 
 
 class DatagramTransport(DatagramWriteTransport, DatagramReadTransport):

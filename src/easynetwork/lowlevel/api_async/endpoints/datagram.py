@@ -122,6 +122,7 @@ class AsyncDatagramReceiverEndpoint(_transports.AsyncBaseTransport, Generic[_T_R
 
         Raises:
             DatagramProtocolParseError: invalid data received.
+            UnsupportedOperation: This transport does not have ancillary data support.
 
         Returns:
             the received packet.
@@ -227,6 +228,7 @@ class AsyncDatagramSenderEndpoint(_transports.AsyncBaseTransport, Generic[_T_Sen
 
         Raises:
             OSError: Data too big to be sent at once.
+            UnsupportedOperation: This transport does not have ancillary data support.
         """
         with self.__send_guard:
             sender = self.__sender
@@ -333,6 +335,7 @@ class AsyncDatagramEndpoint(_transports.AsyncBaseTransport, Generic[_T_SentPacke
 
         Raises:
             OSError: Data too big to be sent at once.
+            UnsupportedOperation: This transport does not have ancillary data support.
         """
         with self.__send_guard:
             sender = self.__sender
@@ -370,6 +373,7 @@ class AsyncDatagramEndpoint(_transports.AsyncBaseTransport, Generic[_T_SentPacke
 
         Raises:
             DatagramProtocolParseError: invalid data received.
+            UnsupportedOperation: This transport does not have ancillary data support.
 
         Returns:
             the received packet.

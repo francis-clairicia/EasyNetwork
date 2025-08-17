@@ -157,13 +157,16 @@ class AsyncStreamReadTransport(AsyncBaseTransport):
         Raises:
             ValueError: Negative `bufsize`.
             ValueError: Negative `ancillary_bufsize`.
+            UnsupportedOperation: This transport does not have ancillary data support.
 
         Returns:
             a tuple with some :class:`bytes` and the ancillary data.
 
             If `bufsize` is greater than zero and an empty byte buffer is returned, this indicates an EOF.
         """
-        raise NotImplementedError("This transport does not have ancillary data support.")
+        from ....exceptions import UnsupportedOperation
+
+        raise UnsupportedOperation("This transport does not have ancillary data support.")
 
     async def recv_with_ancillary_into(
         self,
@@ -181,13 +184,16 @@ class AsyncStreamReadTransport(AsyncBaseTransport):
 
         Raises:
             ValueError: Negative `ancillary_bufsize`.
+            UnsupportedOperation: This transport does not have ancillary data support.
 
         Returns:
             a tuple with the number of bytes written and the ancillary data.
 
             Returning ``0`` for a non-zero buffer indicates an EOF.
         """
-        raise NotImplementedError("This transport does not have ancillary data support.")
+        from ....exceptions import UnsupportedOperation
+
+        raise UnsupportedOperation("This transport does not have ancillary data support.")
 
 
 class AsyncStreamWriteTransport(AsyncBaseTransport):
@@ -244,8 +250,11 @@ class AsyncStreamWriteTransport(AsyncBaseTransport):
 
         Raises:
             OSError: Data too big to be sent at once.
+            UnsupportedOperation: This transport does not have ancillary data support.
         """
-        raise NotImplementedError("This transport does not have ancillary data support.")
+        from ....exceptions import UnsupportedOperation
+
+        raise UnsupportedOperation("This transport does not have ancillary data support.")
 
 
 class AsyncStreamTransport(AsyncStreamWriteTransport, AsyncStreamReadTransport):
@@ -291,11 +300,14 @@ class AsyncDatagramReadTransport(AsyncBaseTransport):
 
         Raises:
             ValueError: Negative `ancillary_bufsize`.
+            UnsupportedOperation: This transport does not have ancillary data support.
 
         Returns:
             a tuple with some :class:`bytes` and the ancillary data.
         """
-        raise NotImplementedError("This transport does not have ancillary data support.")
+        from ....exceptions import UnsupportedOperation
+
+        raise UnsupportedOperation("This transport does not have ancillary data support.")
 
 
 class AsyncDatagramWriteTransport(AsyncBaseTransport):
@@ -334,8 +346,11 @@ class AsyncDatagramWriteTransport(AsyncBaseTransport):
 
         Raises:
             OSError: Data too big to be sent at once.
+            UnsupportedOperation: This transport does not have ancillary data support.
         """
-        raise NotImplementedError("This transport does not have ancillary data support.")
+        from ....exceptions import UnsupportedOperation
+
+        raise UnsupportedOperation("This transport does not have ancillary data support.")
 
 
 class AsyncDatagramTransport(AsyncDatagramWriteTransport, AsyncDatagramReadTransport):
