@@ -41,6 +41,10 @@ def _retry_side_effect(self: Any, callback: Callable[[], Any], timeout: float) -
             pass
 
 
+_SUPPORTS_ANCILLARY = ("AF_UNIX",)
+_ANCILLARY_UNSUPPORTED = ("AF_INET",)
+
+
 class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG):
     @pytest.fixture(autouse=True)
     @staticmethod
@@ -274,6 +278,7 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
         assert exc_info.value.fileno is mock_stream_socket.fileno.return_value
 
     @PlatformMarkers.supports_socket_recvmsg
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
     def test____recv_noblock_with_ancillary____default(
         self,
         transport: SocketStreamTransport,
@@ -293,6 +298,26 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
         assert ancdata is mocker.sentinel.ancdata
 
     @PlatformMarkers.supports_socket_recvmsg
+    @pytest.mark.parametrize("socket_family_name", _ANCILLARY_UNSUPPORTED, indirect=True)
+    def test____recv_noblock_with_ancillary____unsupported(
+        self,
+        transport: SocketStreamTransport,
+        mock_stream_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_stream_socket.recvmsg.return_value = (mocker.sentinel.bytes, mocker.sentinel.ancdata, 0, mocker.sentinel.addr)
+
+        # Act
+        with pytest.raises(UnsupportedOperation):
+            transport.recv_noblock_with_ancillary(mocker.sentinel.bufsize, mocker.sentinel.ancbufsize)
+
+        # Assert
+        mock_stream_socket.recvmsg.assert_not_called()
+        mock_stream_socket.fileno.assert_not_called()
+
+    @PlatformMarkers.supports_socket_recvmsg
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
     @pytest.mark.parametrize("error", [BlockingIOError, InterruptedError])
     def test____recv_noblock_with_ancillary____blocking_error(
         self,
@@ -314,6 +339,7 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
         assert exc_info.value.fileno is mock_stream_socket.fileno.return_value
 
     @PlatformMarkers.supports_socket_recvmsg_into
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
     def test____recv_noblock_with_ancillary_into____default(
         self,
         transport: SocketStreamTransport,
@@ -337,7 +363,32 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
         assert result is mocker.sentinel.nb_bytes_written
         assert ancdata is mocker.sentinel.ancdata
 
+    @PlatformMarkers.supports_socket_recvmsg
+    @pytest.mark.parametrize("socket_family_name", _ANCILLARY_UNSUPPORTED, indirect=True)
+    def test____recv_noblock_with_ancillary_into____unsupported(
+        self,
+        transport: SocketStreamTransport,
+        mock_stream_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_stream_socket.recvmsg_into.return_value = (
+            mocker.sentinel.nb_bytes_written,
+            mocker.sentinel.ancdata,
+            0,
+            mocker.sentinel.addr,
+        )
+
+        # Act
+        with pytest.raises(UnsupportedOperation):
+            transport.recv_noblock_with_ancillary_into(mocker.sentinel.buffer, mocker.sentinel.ancbufsize)
+
+        # Assert
+        mock_stream_socket.recvmsg_into.assert_not_called()
+        mock_stream_socket.fileno.assert_not_called()
+
     @PlatformMarkers.supports_socket_recvmsg_into
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
     @pytest.mark.parametrize("error", [BlockingIOError, InterruptedError])
     def test____recv_noblock_with_ancillary_into____blocking_error(
         self,
@@ -396,6 +447,7 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
         assert exc_info.value.fileno is mock_stream_socket.fileno.return_value
 
     @PlatformMarkers.supports_socket_sendmsg
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
     def test____send_all_noblock_with_ancillary____default(
         self,
         transport: SocketStreamTransport,
@@ -421,6 +473,34 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
         assert chunks == [[b"data", b"to", b"send"]]
 
     @PlatformMarkers.supports_socket_sendmsg
+    @pytest.mark.parametrize("socket_family_name", _ANCILLARY_UNSUPPORTED, indirect=True)
+    def test____send_all_noblock_with_ancillary____unsupported(
+        self,
+        transport: SocketStreamTransport,
+        mock_stream_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        chunks: list[list[bytes]] = []
+
+        def sendmsg_side_effect(buffers: Iterable[ReadableBuffer], *args: Any) -> int:
+            buffers = list(buffers)
+            chunks.append(list(map(bytes, buffers)))
+            return sum(memoryview(v).nbytes for v in buffers)
+
+        mock_stream_socket.sendmsg.side_effect = sendmsg_side_effect
+
+        # Act
+        with pytest.raises(UnsupportedOperation):
+            transport.send_all_noblock_with_ancillary(iter([b"data", b"to", b"send"]), mocker.sentinel.ancdata)
+
+        # Assert
+        mock_stream_socket.sendmsg.assert_not_called()
+        mock_stream_socket.fileno.assert_not_called()
+        assert chunks == []
+
+    @PlatformMarkers.supports_socket_sendmsg
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
     def test____send_all_noblock_with_ancillary____message_too_long(
         self,
         transport: SocketStreamTransport,
@@ -446,6 +526,8 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
         mock_stream_socket.fileno.assert_not_called()
         assert chunks == [[b"data", b"to", b"send"]]
 
+    @PlatformMarkers.supports_socket_sendmsg
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
     @pytest.mark.parametrize("error", [BlockingIOError, InterruptedError])
     def test____send_all_noblock_with_ancillary____blocking_error(
         self,
@@ -467,6 +549,7 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
         assert exc_info.value.fileno is mock_stream_socket.fileno.return_value
 
     @PlatformMarkers.supports_socket_sendmsg
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
     @pytest.mark.parametrize("data_is_iterator", [False, True], ids=lambda p: f"data_is_iterator=={p}")
     @pytest.mark.parametrize("ancillary_data_is_iterator", [False, True], ids=lambda p: f"ancillary_data_is_iterator=={p}")
     @pytest.mark.parametrize("error", [BlockingIOError, InterruptedError])
@@ -1584,6 +1667,7 @@ class TestSocketDatagramTransport(BaseTestSocketTransport):
         assert exc_info.value.fileno is mock_datagram_socket.fileno.return_value
 
     @PlatformMarkers.supports_socket_recvmsg
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
     @pytest.mark.parametrize("max_datagram_size", [None, 1024], ids=lambda p: f"max_datagram_size=={p}", indirect=True)
     def test____recv_noblock_with_ancillary____default(
         self,
@@ -1608,6 +1692,26 @@ class TestSocketDatagramTransport(BaseTestSocketTransport):
         assert ancdata is mocker.sentinel.ancdata
 
     @PlatformMarkers.supports_socket_recvmsg
+    @pytest.mark.parametrize("socket_family_name", _ANCILLARY_UNSUPPORTED, indirect=True)
+    def test____recv_noblock_with_ancillary____unsupported(
+        self,
+        transport: SocketDatagramTransport,
+        mock_datagram_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_datagram_socket.recvmsg.return_value = (mocker.sentinel.bytes, mocker.sentinel.ancdata, 0, mocker.sentinel.addr)
+
+        # Act
+        with pytest.raises(UnsupportedOperation):
+            transport.recv_noblock_with_ancillary(mocker.sentinel.ancbufsize)
+
+        # Assert
+        mock_datagram_socket.recvmsg.assert_not_called()
+        mock_datagram_socket.fileno.assert_not_called()
+
+    @PlatformMarkers.supports_socket_recvmsg
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
     @pytest.mark.parametrize("error", [BlockingIOError, InterruptedError])
     @pytest.mark.parametrize("max_datagram_size", [None, 1024], ids=lambda p: f"max_datagram_size=={p}", indirect=True)
     def test____recv_noblock_with_ancillary____blocking_error(
@@ -1671,6 +1775,7 @@ class TestSocketDatagramTransport(BaseTestSocketTransport):
         assert exc_info.value.fileno is mock_datagram_socket.fileno.return_value
 
     @PlatformMarkers.supports_socket_sendmsg
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
     def test____send_noblock_with_ancillary____default(
         self,
         transport: SocketDatagramTransport,
@@ -1689,6 +1794,26 @@ class TestSocketDatagramTransport(BaseTestSocketTransport):
         assert result is None
 
     @PlatformMarkers.supports_socket_sendmsg
+    @pytest.mark.parametrize("socket_family_name", _ANCILLARY_UNSUPPORTED, indirect=True)
+    def test____send_noblock_with_ancillary____unsupported(
+        self,
+        transport: SocketDatagramTransport,
+        mock_datagram_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_datagram_socket.sendmsg.return_value = mocker.sentinel.nb_bytes_sent
+
+        # Act
+        with pytest.raises(UnsupportedOperation):
+            transport.send_noblock_with_ancillary(mocker.sentinel.data, mocker.sentinel.ancdata)
+
+        # Assert
+        mock_datagram_socket.sendmsg.assert_not_called()
+        mock_datagram_socket.fileno.assert_not_called()
+
+    @PlatformMarkers.supports_socket_sendmsg
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
     @pytest.mark.parametrize("error", [BlockingIOError, InterruptedError])
     def test____send_noblock_with_ancillary____blocking_error(
         self,
@@ -1710,6 +1835,7 @@ class TestSocketDatagramTransport(BaseTestSocketTransport):
         assert exc_info.value.fileno is mock_datagram_socket.fileno.return_value
 
     @PlatformMarkers.supports_socket_sendmsg
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
     @pytest.mark.parametrize("ancillary_data_is_iterator", [False, True], ids=lambda p: f"ancillary_data_is_iterator=={p}")
     @pytest.mark.parametrize("error", [BlockingIOError, InterruptedError])
     def test____send_with_ancillary____correctly_handle_iterables(

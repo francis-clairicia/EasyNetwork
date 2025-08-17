@@ -42,7 +42,7 @@ else:
     del ssl
 
 from ....exceptions import UnsupportedOperation
-from ... import _utils, constants, socket as socket_tools
+from ... import _unix_utils, _utils, constants, socket as socket_tools
 from . import base_selector
 
 if TYPE_CHECKING:
@@ -129,6 +129,8 @@ class SocketStreamTransport(base_selector.SelectorStreamTransport):
 
         @_utils.inherit_doc(base_selector.SelectorStreamTransport)
         def recv_noblock_with_ancillary(self, bufsize: int, ancillary_bufsize: int) -> tuple[bytes, list[tuple[int, int, bytes]]]:
+            if not _unix_utils.is_unix_socket_family(self.__socket.family):
+                return super().recv_noblock_with_ancillary(bufsize, ancillary_bufsize)
             try:
                 msg, ancdata, _, _ = self.__socket.recvmsg(bufsize, ancillary_bufsize)
             except (BlockingIOError, InterruptedError):
@@ -144,6 +146,8 @@ class SocketStreamTransport(base_selector.SelectorStreamTransport):
             buffer: WriteableBuffer,
             ancillary_bufsize: int,
         ) -> tuple[int, list[tuple[int, int, bytes]]]:
+            if not _unix_utils.is_unix_socket_family(self.__socket.family):
+                return super().recv_noblock_with_ancillary_into(buffer, ancillary_bufsize)
             try:
                 nbytes, ancdata, _, _ = self.__socket.recvmsg_into([buffer], ancillary_bufsize)
             except (BlockingIOError, InterruptedError):
@@ -166,6 +170,8 @@ class SocketStreamTransport(base_selector.SelectorStreamTransport):
             iterable_of_data: Iterable[bytes | bytearray | memoryview],
             ancillary_data: Iterable[tuple[int, int, ReadableBuffer]],
         ) -> None:
+            if not _unix_utils.is_unix_socket_family(self.__socket.family):
+                return super().send_all_noblock_with_ancillary(iterable_of_data, ancillary_data)
             buffers: deque[memoryview] = deque(map(memoryview, iterable_of_data))  # type: ignore[arg-type]
             del iterable_of_data
             try:
@@ -454,6 +460,8 @@ class SocketDatagramTransport(base_selector.SelectorDatagramTransport):
 
         @_utils.inherit_doc(base_selector.SelectorDatagramTransport)
         def recv_noblock_with_ancillary(self, ancillary_bufsize: int) -> tuple[bytes, list[tuple[int, int, bytes]]]:
+            if not _unix_utils.is_unix_socket_family(self.__socket.family):
+                return super().recv_noblock_with_ancillary(ancillary_bufsize)
             max_datagram_size: int = self.__max_datagram_size
             try:
                 msg, ancdata, _, _ = self.__socket.recvmsg(max_datagram_size, ancillary_bufsize)
@@ -477,6 +485,8 @@ class SocketDatagramTransport(base_selector.SelectorDatagramTransport):
             data: bytes | bytearray | memoryview,
             ancillary_data: Iterable[tuple[int, int, ReadableBuffer]],
         ) -> None:
+            if not _unix_utils.is_unix_socket_family(self.__socket.family):
+                return super().send_noblock_with_ancillary(data, ancillary_data)
             try:
                 self.__socket.sendmsg([data], ancillary_data)
             except (BlockingIOError, InterruptedError):

@@ -145,6 +145,7 @@ class StreamReceiverEndpoint(_transports.BaseTransport, Generic[_T_ReceivedPacke
             ConnectionAbortedError: the read end of the stream is closed.
             EOFError: could not deserialize packet because of partial chunk reception.
             StreamProtocolParseError: invalid data received.
+            UnsupportedOperation: This transport does not have ancillary data support.
 
         Returns:
             the received packet.
@@ -256,6 +257,7 @@ class StreamSenderEndpoint(_transports.BaseTransport, Generic[_T_SentPacket]):
         Raises:
             TimeoutError: the send operation does not end up after `timeout` seconds.
             OSError: Data too big to be sent at once.
+            UnsupportedOperation: This transport does not have ancillary data support.
         """
         sender = self.__sender
 
@@ -383,6 +385,7 @@ class StreamEndpoint(_transports.BaseTransport, Generic[_T_SentPacket, _T_Receiv
             TimeoutError: the send operation does not end up after `timeout` seconds.
             RuntimeError: :meth:`send_eof` has been called earlier.
             OSError: Data too big to be sent at once.
+            UnsupportedOperation: This transport does not have ancillary data support.
         """
         if self.__eof_sent:
             raise RuntimeError("send_eof() has been called earlier")
@@ -458,6 +461,7 @@ class StreamEndpoint(_transports.BaseTransport, Generic[_T_SentPacket, _T_Receiv
             ConnectionAbortedError: the read end of the stream is closed.
             EOFError: could not deserialize packet because of partial chunk reception.
             StreamProtocolParseError: invalid data received.
+            UnsupportedOperation: This transport does not have ancillary data support.
 
         Returns:
             the received packet.
