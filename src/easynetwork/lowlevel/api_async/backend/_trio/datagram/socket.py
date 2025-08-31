@@ -20,17 +20,21 @@ __all__ = ["TrioDatagramSocketAdapter"]
 
 import errno as _errno
 import socket as _socket
+import sys
 import warnings
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from types import MappingProxyType
-from typing import Any, final
+from typing import TYPE_CHECKING, Any, final
 
 import trio
 
-from ..... import _utils, socket as socket_tools
+from ..... import _unix_utils, _utils, socket as socket_tools
 from ....transports.abc import AsyncDatagramTransport
 from ...abc import AsyncBackend
 from .._trio_utils import convert_trio_resource_errors
+
+if TYPE_CHECKING:
+    from _typeshed import ReadableBuffer
 
 
 @final
@@ -73,9 +77,33 @@ class TrioDatagramSocketAdapter(AsyncDatagramTransport):
         with convert_trio_resource_errors(broken_resource_errno=_errno.EBADF):
             return await self.__socket.recv(self.MAX_DATAGRAM_BUFSIZE)
 
+    if sys.platform != "win32" or (not TYPE_CHECKING and hasattr(trio.socket.SocketType, "recvmsg")):
+
+        async def recv_with_ancillary(self, ancillary_bufsize: int) -> tuple[bytes, list[tuple[int, int, bytes]]]:
+            if not _unix_utils.is_unix_socket_family((socket := self.__socket).family):
+                return await super().recv_with_ancillary(ancillary_bufsize)
+            msg, ancdata, _, _ = await socket.recvmsg(self.MAX_DATAGRAM_BUFSIZE, ancillary_bufsize)
+            return msg, ancdata
+
     async def send(self, data: bytes | bytearray | memoryview) -> None:
         with convert_trio_resource_errors(broken_resource_errno=_errno.EBADF):
             await self.__socket.send(data)
+
+    if sys.platform != "win32" or (not TYPE_CHECKING and hasattr(trio.socket.SocketType, "sendmsg")):
+
+        async def send_with_ancillary(
+            self,
+            data: bytes | bytearray | memoryview,
+            ancillary_data: Iterable[tuple[int, int, ReadableBuffer]],
+        ) -> None:
+            if not _unix_utils.is_unix_socket_family((socket := self.__socket).family):
+                return await super().send_with_ancillary(data, ancillary_data)
+            if hasattr(ancillary_data, "__next__"):
+                # Do not send the iterator directly because if sendmsg() blocks,
+                # it would retry with an already consumed iterator.
+                ancillary_data = list(ancillary_data)
+
+            await socket.sendmsg([data], ancillary_data)
 
     def backend(self) -> AsyncBackend:
         return self.__backend
