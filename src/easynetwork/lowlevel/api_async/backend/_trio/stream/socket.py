@@ -29,13 +29,13 @@ from typing import TYPE_CHECKING, Any, final
 
 import trio
 
-from ..... import _utils, constants, socket as socket_tools
+from ..... import _unix_utils, _utils, constants, socket as socket_tools
 from ....transports.abc import AsyncStreamTransport
 from ...abc import AsyncBackend
 from .._trio_utils import convert_trio_resource_errors
 
 if TYPE_CHECKING:
-    from _typeshed import WriteableBuffer
+    from _typeshed import ReadableBuffer, WriteableBuffer
 
 
 @final
@@ -77,6 +77,26 @@ class TrioStreamSocketAdapter(AsyncStreamTransport):
         with convert_trio_resource_errors(broken_resource_errno=_errno.ECONNABORTED):
             return await self.__stream.socket.recv_into(buffer)
 
+    if sys.platform != "win32" or (not TYPE_CHECKING and hasattr(trio.socket.SocketType, "recvmsg")):
+
+        async def recv_with_ancillary(self, bufsize: int, ancillary_bufsize: int) -> tuple[bytes, list[tuple[int, int, bytes]]]:
+            if not _unix_utils.is_unix_socket_family((socket := self.__stream.socket).family):
+                return await super().recv_with_ancillary(bufsize, ancillary_bufsize)
+            msg, ancdata, _, _ = await socket.recvmsg(bufsize, ancillary_bufsize)
+            return msg, ancdata
+
+    if sys.platform != "win32" or (not TYPE_CHECKING and hasattr(trio.socket.SocketType, "recvmsg_into")):
+
+        async def recv_with_ancillary_into(
+            self,
+            buffer: WriteableBuffer,
+            ancillary_bufsize: int,
+        ) -> tuple[int, list[tuple[int, int, bytes]]]:
+            if not _unix_utils.is_unix_socket_family((socket := self.__stream.socket).family):
+                return await super().recv_with_ancillary_into(buffer, ancillary_bufsize)
+            msg, ancdata, _, _ = await socket.recvmsg_into([buffer], ancillary_bufsize)
+            return msg, ancdata
+
     async def send_all(self, data: bytes | bytearray | memoryview) -> None:
         with convert_trio_resource_errors(broken_resource_errno=_errno.ECONNABORTED):
             return await self.__stream.send_all(data)
@@ -84,6 +104,27 @@ class TrioStreamSocketAdapter(AsyncStreamTransport):
     if sys.platform != "win32" or (not TYPE_CHECKING and hasattr(trio.socket.SocketType, "sendmsg")):
 
         if constants.SC_IOV_MAX > 0:  # pragma: no branch
+
+            async def send_all_with_ancillary(
+                self,
+                iterable_of_data: Iterable[bytes | bytearray | memoryview],
+                ancillary_data: Iterable[tuple[int, int, ReadableBuffer]],
+            ) -> None:
+                if not _unix_utils.is_unix_socket_family((socket := self.__stream.socket).family):
+                    return await super().send_all_with_ancillary(iterable_of_data, ancillary_data)
+                buffers: deque[memoryview] = deque(map(memoryview, iterable_of_data))  # type: ignore[arg-type]
+                del iterable_of_data
+                if hasattr(ancillary_data, "__next__"):
+                    # Do not send the iterator directly because if sendmsg() blocks,
+                    # it would retry with an already consumed iterator.
+                    ancillary_data = list(ancillary_data)
+
+                # Do not send the islice directly because if sendmsg() blocks,
+                # it would retry with an already consumed iterator.
+                sent = await socket.sendmsg(list(itertools.islice(buffers, constants.SC_IOV_MAX)), ancillary_data)
+                _utils.adjust_leftover_buffer(buffers, sent)
+                if buffers:
+                    raise _utils.error_from_errno(_errno.EMSGSIZE)
 
             async def send_all_from_iterable(self, iterable_of_data: Iterable[bytes | bytearray | memoryview]) -> None:
                 buffers: deque[memoryview] = deque(map(memoryview, iterable_of_data))  # type: ignore[arg-type]

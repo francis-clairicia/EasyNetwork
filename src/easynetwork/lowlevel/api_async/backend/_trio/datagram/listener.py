@@ -22,14 +22,15 @@ import contextlib
 import errno as _errno
 import logging
 import socket as _socket
+import sys
 import warnings
-from collections.abc import Awaitable, Callable, Coroutine, Mapping
+from collections.abc import Awaitable, Callable, Coroutine, Iterable, Mapping
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, NoReturn, final
 
 import trio
 
-from ..... import _utils, socket as socket_tools
+from ..... import _unix_utils, _utils, socket as socket_tools
 from ....transports.abc import AsyncDatagramListener
 from ...abc import AsyncBackend, ILock, TaskGroup
 from .._trio_utils import (
@@ -41,6 +42,8 @@ from .._trio_utils import (
 
 if TYPE_CHECKING:
     from socket import _Address, _RetAddress
+
+    from _typeshed import ReadableBuffer
 
 
 @final
@@ -137,6 +140,48 @@ class TrioDatagramListenerSocketAdapter(AsyncDatagramListener["_RetAddress"]):
 
         raise AssertionError("Expected code to be unreachable.")
 
+    if sys.platform != "win32" or (not TYPE_CHECKING and hasattr(trio.socket.SocketType, "recvmsg")):
+
+        async def serve_with_ancillary(
+            self,
+            handler: Callable[[bytes, list[tuple[int, int, bytes]] | None, _RetAddress], Coroutine[Any, Any, None]],
+            ancillary_bufsize: int,
+            task_group: TaskGroup | None = None,
+        ) -> NoReturn:
+            if not _unix_utils.is_unix_socket_family((listener := self.__listener).family):
+                await super().serve_with_ancillary(handler, ancillary_bufsize, task_group)
+                raise AssertionError("Expected code to be unreachable.")
+
+            async with contextlib.AsyncExitStack() as stack:
+                stack.enter_context(self.__serve_guard)
+                if task_group is None:
+                    task_group = await stack.enter_async_context(self.__backend.create_task_group())
+
+                MAX_DATAGRAM_BUFSIZE = self.MAX_DATAGRAM_BUFSIZE
+                wait_readable = self.__wait_readable
+                logger = logging.getLogger(__name__)
+
+                while True:
+                    try:
+                        datagram, ancdata, _, client_address = await _retry_socket_method(
+                            wait_readable,
+                            listener,
+                            lambda: listener.recvmsg(MAX_DATAGRAM_BUFSIZE, ancillary_bufsize),
+                            always_yield=True,
+                        )
+                    except OSError as exc:
+                        logger.warning(
+                            "Unrelated error occurred on datagram reception: %s: %s",
+                            type(exc).__name__,
+                            exc,
+                            exc_info=exc,
+                        )
+                        continue
+
+                    task_group.start_soon(handler, datagram, ancdata, client_address)
+                    # Always drop references on loop end
+                    del datagram, ancdata, client_address
+
     async def send_to(self, data: bytes | bytearray | memoryview, address: _Address) -> None:
         async with self.__send_lock:
             with convert_trio_resource_errors(broken_resource_errno=_errno.EBADF):
@@ -144,6 +189,30 @@ class TrioDatagramListenerSocketAdapter(AsyncDatagramListener["_RetAddress"]):
                     self.__wait_writable,
                     (listener := self.__listener),
                     lambda: listener.sendto(data, address),
+                    always_yield=False,
+                    checkpoint_if_cancelled=False,  # <- Already checked by send_lock
+                )
+
+    if sys.platform != "win32" or (not TYPE_CHECKING and hasattr(trio.socket.SocketType, "sendmsg")):
+
+        async def send_with_ancillary_to(
+            self,
+            data: bytes | bytearray | memoryview,
+            ancillary_data: Iterable[tuple[int, int, ReadableBuffer]],
+            address: _Address,
+        ) -> None:
+            if not _unix_utils.is_unix_socket_family((listener := self.__listener).family):
+                return await super().send_with_ancillary_to(data, ancillary_data, address)
+
+            if hasattr(ancillary_data, "__next__"):
+                # Do not send the iterator directly because if sendmsg() blocks,
+                # it would retry with an already consumed iterator.
+                ancillary_data = list(ancillary_data)
+            async with self.__send_lock:
+                await _retry_socket_method(
+                    self.__wait_writable,
+                    listener,
+                    lambda: listener.sendmsg([data], ancillary_data, 0, address),
                     always_yield=False,
                     checkpoint_if_cancelled=False,  # <- Already checked by send_lock
                 )
