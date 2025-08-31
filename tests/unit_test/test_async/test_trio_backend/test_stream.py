@@ -7,6 +7,7 @@ import os
 from collections.abc import AsyncIterator, Callable, Coroutine, Iterable, Iterator
 from typing import TYPE_CHECKING, Any
 
+from easynetwork.exceptions import UnsupportedOperation
 from easynetwork.lowlevel.api_async.backend._trio.backend import TrioBackend
 from easynetwork.lowlevel.api_async.backend.abc import TaskGroup
 from easynetwork.lowlevel.constants import ACCEPT_CAPACITY_ERRNOS, CLOSED_SOCKET_ERRNOS
@@ -28,6 +29,10 @@ if TYPE_CHECKING:
 
     from _typeshed import ReadableBuffer
     from pytest_mock import MockerFixture
+
+
+_SUPPORTS_ANCILLARY = ("AF_UNIX",)
+_ANCILLARY_UNSUPPORTED = ("AF_INET",)
 
 
 class BaseTestTrioSocketStream(BaseTestSocketTransport):
@@ -254,6 +259,121 @@ class TestTrioStreamSocketAdapter(BaseTestTrioSocketStream, MixinTestSocketSendM
         with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EBADF):
             _ = await transport.recv_into(bytearray(4))
 
+    @PlatformMarkers.supports_socket_recvmsg
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
+    async def test____recv_with_ancillary____read_from_reader(
+        self,
+        transport: TrioStreamSocketAdapter,
+        mock_trio_socket_stream: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_trio_socket_stream.socket.recvmsg.return_value = (b"data", mocker.sentinel.ancdata, 0, None)
+
+        # Act
+        data, ancdata = await transport.recv_with_ancillary(1024, 2048)
+
+        # Assert
+        mock_trio_socket_stream.socket.recvmsg.assert_awaited_once_with(1024, 2048)
+        assert data == b"data"
+        assert ancdata is mocker.sentinel.ancdata
+
+    @PlatformMarkers.supports_socket_recvmsg
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
+    async def test____recv_with_ancillary____null_bufsize(
+        self,
+        transport: TrioStreamSocketAdapter,
+        mock_trio_socket_stream: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_trio_socket_stream.socket.recvmsg.return_value = (b"", mocker.sentinel.ancdata, 0, None)
+
+        # Act
+        data, ancdata = await transport.recv_with_ancillary(0, 2048)
+
+        # Assert
+        mock_trio_socket_stream.socket.recvmsg.assert_awaited_once_with(0, 2048)
+        assert data == b""
+        assert ancdata is mocker.sentinel.ancdata
+
+    @PlatformMarkers.supports_socket_recvmsg
+    @pytest.mark.parametrize("socket_family_name", _ANCILLARY_UNSUPPORTED, indirect=True)
+    async def test____recv_with_ancillary____socket_family_unsupported(
+        self,
+        transport: TrioStreamSocketAdapter,
+        mock_trio_socket_stream: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_trio_socket_stream.socket.recvmsg.return_value = (b"data", mocker.sentinel.ancdata, 0, None)
+
+        # Act
+        with pytest.raises(UnsupportedOperation):
+            await transport.recv_with_ancillary(1024, 2048)
+
+        # Assert
+        mock_trio_socket_stream.socket.recvmsg.assert_not_called()
+
+    @PlatformMarkers.supports_socket_recvmsg_into
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
+    async def test____recv_with_ancillary_into____read_from_reader(
+        self,
+        transport: TrioStreamSocketAdapter,
+        mock_trio_socket_stream: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_trio_socket_stream.socket.recvmsg_into.return_value = (4, mocker.sentinel.ancdata, 0, None)
+        buffer = bytearray(4)
+
+        # Act
+        nbytes, ancdata = await transport.recv_with_ancillary_into(buffer, 2048)
+
+        # Assert
+        mock_trio_socket_stream.socket.recvmsg_into.assert_awaited_once_with([buffer], 2048)
+        assert nbytes == 4
+        assert ancdata is mocker.sentinel.ancdata
+
+    @PlatformMarkers.supports_socket_recvmsg_into
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
+    async def test____recv_with_ancillary_into____null_buffer(
+        self,
+        transport: TrioStreamSocketAdapter,
+        mock_trio_socket_stream: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_trio_socket_stream.socket.recvmsg_into.return_value = (0, mocker.sentinel.ancdata, 0, None)
+        buffer = bytearray()
+
+        # Act
+        nbytes, ancdata = await transport.recv_with_ancillary_into(buffer, 2048)
+
+        # Assert
+        mock_trio_socket_stream.socket.recvmsg_into.assert_awaited_once_with([buffer], 2048)
+        assert nbytes == 0
+        assert ancdata is mocker.sentinel.ancdata
+
+    @PlatformMarkers.supports_socket_recvmsg
+    @pytest.mark.parametrize("socket_family_name", _ANCILLARY_UNSUPPORTED, indirect=True)
+    async def test____recv_with_ancillary_into____socket_family_unsupported(
+        self,
+        transport: TrioStreamSocketAdapter,
+        mock_trio_socket_stream: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_trio_socket_stream.socket.recvmsg_into.return_value = (4, mocker.sentinel.ancdata, 0, None)
+        buffer = bytearray(4)
+
+        # Act
+        with pytest.raises(UnsupportedOperation):
+            await transport.recv_with_ancillary_into(buffer, 2048)
+
+        # Assert
+        mock_trio_socket_stream.socket.recvmsg_into.assert_not_called()
+
     async def test____send_all____use_stream_send_all(
         self,
         transport: TrioStreamSocketAdapter,
@@ -306,6 +426,122 @@ class TestTrioStreamSocketAdapter(BaseTestTrioSocketStream, MixinTestSocketSendM
         # Act & Assert
         with pytest.raises(OSError, check=lambda exc: exc.errno == connection_error_errno):
             await transport.send_all(b"data to send")
+
+    @PlatformMarkers.supports_socket_sendmsg
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
+    async def test____send_all_with_ancillary____default(
+        self,
+        transport: TrioStreamSocketAdapter,
+        mock_trio_socket_stream: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        chunks: list[list[bytes]] = []
+
+        def sendmsg_side_effect(buffers: Iterable[ReadableBuffer], *args: Any) -> int:
+            buffers = list(buffers)
+            chunks.append(list(map(bytes, buffers)))
+            return sum(memoryview(v).nbytes for v in buffers)
+
+        mock_trio_socket_stream.socket.sendmsg.side_effect = sendmsg_side_effect
+
+        # Act
+        await transport.send_all_with_ancillary(iter([b"data", b"to", b"send"]), mocker.sentinel.ancdata)
+
+        # Assert
+        mock_trio_socket_stream.socket.sendmsg.assert_awaited_once_with(mocker.ANY, mocker.sentinel.ancdata)
+        assert chunks == [[b"data", b"to", b"send"]]
+
+    @PlatformMarkers.supports_socket_sendmsg
+    @pytest.mark.parametrize("socket_family_name", _ANCILLARY_UNSUPPORTED, indirect=True)
+    async def test____send_all_with_ancillary____socket_family_unsupported(
+        self,
+        transport: TrioStreamSocketAdapter,
+        mock_trio_socket_stream: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        chunks: list[list[bytes]] = []
+
+        def sendmsg_side_effect(buffers: Iterable[ReadableBuffer], *args: Any) -> int:
+            buffers = list(buffers)
+            chunks.append(list(map(bytes, buffers)))
+            return sum(memoryview(v).nbytes for v in buffers)
+
+        mock_trio_socket_stream.socket.sendmsg.side_effect = sendmsg_side_effect
+
+        # Act
+        with pytest.raises(UnsupportedOperation):
+            await transport.send_all_with_ancillary(iter([b"data", b"to", b"send"]), mocker.sentinel.ancdata)
+
+        # Assert
+        mock_trio_socket_stream.socket.sendmsg.assert_not_called()
+        assert chunks == []
+
+    @PlatformMarkers.supports_socket_sendmsg
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
+    async def test____send_all_with_ancillary____message_too_long(
+        self,
+        transport: TrioStreamSocketAdapter,
+        mock_trio_socket_stream: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        chunks: list[list[bytes]] = []
+
+        def sendmsg_side_effect(buffers: Iterable[ReadableBuffer], *args: Any) -> int:
+            buffers = list(buffers)
+            chunks.append(list(map(bytes, buffers)))
+            return min(sum(memoryview(v).nbytes for v in buffers), 3)
+
+        mock_trio_socket_stream.socket.sendmsg.side_effect = sendmsg_side_effect
+
+        # Act
+        with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EMSGSIZE):
+            await transport.send_all_with_ancillary(iter([b"data", b"to", b"send"]), mocker.sentinel.ancdata)
+
+        # Assert
+        mock_trio_socket_stream.socket.sendmsg.assert_awaited_once_with(mocker.ANY, mocker.sentinel.ancdata)
+        assert chunks == [[b"data", b"to", b"send"]]
+
+    @PlatformMarkers.supports_socket_sendmsg
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
+    @pytest.mark.parametrize("data_is_iterator", [False, True], ids=lambda p: f"data_is_iterator=={p}")
+    @pytest.mark.parametrize("ancillary_data_is_iterator", [False, True], ids=lambda p: f"ancillary_data_is_iterator=={p}")
+    async def test____send_all_with_ancillary____correctly_handle_iterables(
+        self,
+        data_is_iterator: bool,
+        ancillary_data_is_iterator: bool,
+        transport: TrioStreamSocketAdapter,
+        mock_trio_socket_stream: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        chunks: list[list[bytes]] = []
+        ancillary_data_sent: list[list[Any]] = []
+
+        def sendmsg_side_effect(buffers: Iterable[ReadableBuffer], ancdata: Iterable[Any]) -> int:
+            for _ in range(2):
+                chunks.append(list(map(bytes, buffers)))
+                ancillary_data_sent.append(list(ancdata))
+            return sum(memoryview(v).nbytes for v in buffers)
+
+        mock_trio_socket_stream.socket.sendmsg.side_effect = sendmsg_side_effect
+
+        data: Iterable[bytes] = [b"data"]
+        if data_is_iterator:
+            data = iter(data)
+        ancillary_data: Iterable[Any] = [mocker.sentinel.ancdata]
+        if ancillary_data_is_iterator:
+            ancillary_data = iter(ancillary_data)
+
+        # Act
+        await transport.send_all_with_ancillary(data, ancillary_data)
+
+        # Assert
+        assert mock_trio_socket_stream.socket.sendmsg.await_count == 1
+        assert chunks == [[b"data"], [b"data"]]
+        assert ancillary_data_sent == [[mocker.sentinel.ancdata], [mocker.sentinel.ancdata]]
 
     @PlatformMarkers.supports_socket_sendmsg
     async def test____send_all_from_iterable____use_socket_sendmsg_when_available(

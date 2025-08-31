@@ -299,7 +299,7 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
 
     @PlatformMarkers.supports_socket_recvmsg
     @pytest.mark.parametrize("socket_family_name", _ANCILLARY_UNSUPPORTED, indirect=True)
-    def test____recv_noblock_with_ancillary____unsupported(
+    def test____recv_noblock_with_ancillary____socket_family_unsupported(
         self,
         transport: SocketStreamTransport,
         mock_stream_socket: MagicMock,
@@ -365,7 +365,7 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
 
     @PlatformMarkers.supports_socket_recvmsg
     @pytest.mark.parametrize("socket_family_name", _ANCILLARY_UNSUPPORTED, indirect=True)
-    def test____recv_noblock_with_ancillary_into____unsupported(
+    def test____recv_noblock_with_ancillary_into____socket_family_unsupported(
         self,
         transport: SocketStreamTransport,
         mock_stream_socket: MagicMock,
@@ -474,7 +474,7 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
 
     @PlatformMarkers.supports_socket_sendmsg
     @pytest.mark.parametrize("socket_family_name", _ANCILLARY_UNSUPPORTED, indirect=True)
-    def test____send_all_noblock_with_ancillary____unsupported(
+    def test____send_all_noblock_with_ancillary____socket_family_unsupported(
         self,
         transport: SocketStreamTransport,
         mock_stream_socket: MagicMock,
@@ -569,11 +569,12 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
         ancillary_data_sent: list[list[Any]] = []
 
         def sendmsg_side_effect(buffers: Iterable[ReadableBuffer], ancdata: Iterable[Any]) -> int:
+            buffers = list(buffers)
+            ancdata = list(ancdata)
             if to_raise:
                 raise to_raise.pop(0)
-            buffers = list(buffers)
             chunks.append(list(map(bytes, buffers)))
-            ancillary_data_sent.append(list(ancdata))
+            ancillary_data_sent.append(ancdata)
             return sum(memoryview(v).nbytes for v in buffers)
 
         mock_stream_socket.sendmsg.side_effect = sendmsg_side_effect
@@ -1693,7 +1694,7 @@ class TestSocketDatagramTransport(BaseTestSocketTransport):
 
     @PlatformMarkers.supports_socket_recvmsg
     @pytest.mark.parametrize("socket_family_name", _ANCILLARY_UNSUPPORTED, indirect=True)
-    def test____recv_noblock_with_ancillary____unsupported(
+    def test____recv_noblock_with_ancillary____socket_family_unsupported(
         self,
         transport: SocketDatagramTransport,
         mock_datagram_socket: MagicMock,
@@ -1795,7 +1796,7 @@ class TestSocketDatagramTransport(BaseTestSocketTransport):
 
     @PlatformMarkers.supports_socket_sendmsg
     @pytest.mark.parametrize("socket_family_name", _ANCILLARY_UNSUPPORTED, indirect=True)
-    def test____send_noblock_with_ancillary____unsupported(
+    def test____send_noblock_with_ancillary____socket_family_unsupported(
         self,
         transport: SocketDatagramTransport,
         mock_datagram_socket: MagicMock,
@@ -1853,11 +1854,12 @@ class TestSocketDatagramTransport(BaseTestSocketTransport):
         ancillary_data_sent: list[list[Any]] = []
 
         def sendmsg_side_effect(buffers: Iterable[ReadableBuffer], ancdata: Iterable[Any]) -> int:
+            buffers = list(buffers)
+            ancdata = list(ancdata)
             if to_raise:
                 raise to_raise.pop(0)
-            buffers = list(buffers)
             chunks.append(list(map(bytes, buffers)))
-            ancillary_data_sent.append(list(ancdata))
+            ancillary_data_sent.append(ancdata)
             return sum(memoryview(v).nbytes for v in buffers)
 
         mock_datagram_socket.sendmsg.side_effect = sendmsg_side_effect
