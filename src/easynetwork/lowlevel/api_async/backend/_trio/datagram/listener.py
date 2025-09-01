@@ -140,7 +140,7 @@ class TrioDatagramListenerSocketAdapter(AsyncDatagramListener["_RetAddress"]):
 
         raise AssertionError("Expected code to be unreachable.")
 
-    if sys.platform != "win32" or (not TYPE_CHECKING and hasattr(trio.socket.SocketType, "recvmsg")):
+    if sys.platform != "win32" and hasattr(trio.socket.SocketType, "recvmsg"):
 
         async def serve_with_ancillary(
             self,
@@ -193,7 +193,7 @@ class TrioDatagramListenerSocketAdapter(AsyncDatagramListener["_RetAddress"]):
                     checkpoint_if_cancelled=False,  # <- Already checked by send_lock
                 )
 
-    if sys.platform != "win32" or (not TYPE_CHECKING and hasattr(trio.socket.SocketType, "sendmsg")):
+    if sys.platform != "win32" and hasattr(trio.socket.SocketType, "sendmsg"):
 
         async def send_with_ancillary_to(
             self,

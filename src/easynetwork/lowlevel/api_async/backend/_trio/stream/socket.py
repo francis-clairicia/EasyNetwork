@@ -77,7 +77,7 @@ class TrioStreamSocketAdapter(AsyncStreamTransport):
         with convert_trio_resource_errors(broken_resource_errno=_errno.ECONNABORTED):
             return await self.__stream.socket.recv_into(buffer)
 
-    if sys.platform != "win32" or (not TYPE_CHECKING and hasattr(trio.socket.SocketType, "recvmsg")):
+    if sys.platform != "win32" and hasattr(trio.socket.SocketType, "recvmsg"):
 
         async def recv_with_ancillary(self, bufsize: int, ancillary_bufsize: int) -> tuple[bytes, list[tuple[int, int, bytes]]]:
             if not _unix_utils.is_unix_socket_family((socket := self.__stream.socket).family):
@@ -85,7 +85,7 @@ class TrioStreamSocketAdapter(AsyncStreamTransport):
             msg, ancdata, _, _ = await socket.recvmsg(bufsize, ancillary_bufsize)
             return msg, ancdata
 
-    if sys.platform != "win32" or (not TYPE_CHECKING and hasattr(trio.socket.SocketType, "recvmsg_into")):
+    if sys.platform != "win32" and hasattr(trio.socket.SocketType, "recvmsg_into"):
 
         async def recv_with_ancillary_into(
             self,
@@ -101,7 +101,7 @@ class TrioStreamSocketAdapter(AsyncStreamTransport):
         with convert_trio_resource_errors(broken_resource_errno=_errno.ECONNABORTED):
             return await self.__stream.send_all(data)
 
-    if sys.platform != "win32" or (not TYPE_CHECKING and hasattr(trio.socket.SocketType, "sendmsg")):
+    if sys.platform != "win32" and hasattr(trio.socket.SocketType, "sendmsg"):
 
         if constants.SC_IOV_MAX > 0:  # pragma: no branch
 
