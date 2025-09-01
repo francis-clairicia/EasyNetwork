@@ -24,7 +24,6 @@ __all__ = [
 
 import asyncio
 import asyncio.base_events
-import asyncio.trsock
 import errno as _errno
 import socket as _socket
 import traceback
