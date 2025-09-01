@@ -74,7 +74,7 @@ class TrioDatagramSocketAdapter(AsyncDatagramTransport):
     async def recv(self) -> bytes:
         return await self.__socket.recv(self.MAX_DATAGRAM_BUFSIZE)
 
-    if sys.platform != "win32" or (not TYPE_CHECKING and hasattr(trio.socket.SocketType, "recvmsg")):
+    if sys.platform != "win32" and hasattr(trio.socket.SocketType, "recvmsg"):
 
         async def recv_with_ancillary(self, ancillary_bufsize: int) -> tuple[bytes, list[tuple[int, int, bytes]]]:
             if not _unix_utils.is_unix_socket_family((socket := self.__socket).family):
@@ -85,7 +85,7 @@ class TrioDatagramSocketAdapter(AsyncDatagramTransport):
     async def send(self, data: bytes | bytearray | memoryview) -> None:
         await self.__socket.send(data)
 
-    if sys.platform != "win32" or (not TYPE_CHECKING and hasattr(trio.socket.SocketType, "sendmsg")):
+    if sys.platform != "win32" and hasattr(trio.socket.SocketType, "sendmsg"):
 
         async def send_with_ancillary(
             self,
