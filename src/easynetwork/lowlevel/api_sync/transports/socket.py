@@ -125,7 +125,7 @@ class SocketStreamTransport(base_selector.SelectorStreamTransport):
         except (BlockingIOError, InterruptedError):
             raise base_selector.WouldBlockOnRead(self.__socket.fileno()) from None
 
-    if sys.platform != "win32" or (not TYPE_CHECKING and hasattr(socket.socket, "recvmsg")):
+    if sys.platform != "win32" and hasattr(socket.socket, "recvmsg"):
 
         @_utils.inherit_doc(base_selector.SelectorStreamTransport)
         def recv_noblock_with_ancillary(self, bufsize: int, ancillary_bufsize: int) -> tuple[bytes, list[tuple[int, int, bytes]]]:
@@ -138,7 +138,7 @@ class SocketStreamTransport(base_selector.SelectorStreamTransport):
             else:
                 return msg, ancdata
 
-    if sys.platform != "win32" or (not TYPE_CHECKING and hasattr(socket.socket, "recvmsg_into")):
+    if sys.platform != "win32" and hasattr(socket.socket, "recvmsg_into"):
 
         @_utils.inherit_doc(base_selector.SelectorStreamTransport)
         def recv_noblock_with_ancillary_into(
@@ -162,7 +162,7 @@ class SocketStreamTransport(base_selector.SelectorStreamTransport):
         except (BlockingIOError, InterruptedError):
             raise base_selector.WouldBlockOnWrite(self.__socket.fileno()) from None
 
-    if sys.platform != "win32" or (not TYPE_CHECKING and hasattr(socket.socket, "sendmsg")):
+    if sys.platform != "win32" and hasattr(socket.socket, "sendmsg"):
 
         if constants.SC_IOV_MAX > 0:  # pragma: no branch
 
@@ -456,7 +456,7 @@ class SocketDatagramTransport(base_selector.SelectorDatagramTransport):
         except (BlockingIOError, InterruptedError):
             raise base_selector.WouldBlockOnRead(self.__socket.fileno()) from None
 
-    if sys.platform != "win32" or (not TYPE_CHECKING and hasattr(socket.socket, "recvmsg")):
+    if sys.platform != "win32" and hasattr(socket.socket, "recvmsg"):
 
         @_utils.inherit_doc(base_selector.SelectorDatagramTransport)
         def recv_noblock_with_ancillary(self, ancillary_bufsize: int) -> tuple[bytes, list[tuple[int, int, bytes]]]:
@@ -477,7 +477,7 @@ class SocketDatagramTransport(base_selector.SelectorDatagramTransport):
         except (BlockingIOError, InterruptedError):
             raise base_selector.WouldBlockOnWrite(self.__socket.fileno()) from None
 
-    if sys.platform != "win32" or (not TYPE_CHECKING and hasattr(socket.socket, "sendmsg")):
+    if sys.platform != "win32" and hasattr(socket.socket, "sendmsg"):
 
         @_utils.inherit_doc(base_selector.SelectorDatagramTransport)
         def send_noblock_with_ancillary(
