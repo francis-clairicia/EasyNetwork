@@ -20,6 +20,8 @@ __all__ = ["AsyncioTransportDatagramSocketAdapter"]
 
 import asyncio
 import asyncio.trsock
+import socket as _socket
+import sys
 import warnings
 from collections.abc import Callable, Mapping
 from types import MappingProxyType
@@ -87,3 +89,65 @@ class AsyncioTransportDatagramSocketAdapter(AsyncDatagramTransport):
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         return self.__extra_attributes
+
+
+if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
+
+    __all__ += ["RawUnixDatagramSocketAdapter"]
+
+    from collections.abc import Iterable
+    from typing import TYPE_CHECKING
+
+    from ..... import _unix_utils, constants
+    from .. import _base_raw_transport
+
+    if TYPE_CHECKING:
+        from _typeshed import ReadableBuffer
+
+    @final
+    class RawUnixDatagramSocketAdapter(AsyncDatagramTransport, _base_raw_transport.BaseRawSocketTransport):
+        __slots__ = ()
+
+        def __init__(
+            self,
+            backend: AsyncBackend,
+            socket: _socket.socket,
+        ) -> None:
+            _unix_utils.check_unix_socket_family(socket.family)
+            if socket.type != _socket.SOCK_DGRAM:
+                raise ValueError("A 'SOCK_DGRAM' socket is expected")
+
+            super().__init__(backend, socket)
+
+        async def recv(self) -> bytes:
+            return await self._sock_recv(
+                "recv",
+                try_async_recv=lambda loop, sock: loop.sock_recv(sock, constants.MAX_DATAGRAM_BUFSIZE),
+                recv=lambda sock: sock.recv(constants.MAX_DATAGRAM_BUFSIZE),
+            )
+
+        if hasattr(_socket.socket, "recvmsg"):  # pragma: no branch
+
+            async def recv_with_ancillary(self, ancillary_bufsize: int) -> tuple[bytes, list[tuple[int, int, bytes]]]:
+                msg, ancdata, _, _ = await self._sock_recv(
+                    "recv_with_ancillary",
+                    recv=lambda sock: sock.recvmsg(constants.MAX_DATAGRAM_BUFSIZE, ancillary_bufsize),
+                )
+                return msg, ancdata
+
+        async def send(self, data: bytes | bytearray | memoryview) -> None:
+            await self._sock_send("send", send=lambda sock: sock.send(data))
+
+        if hasattr(_socket.socket, "sendmsg"):  # pragma: no branch
+
+            async def send_with_ancillary(
+                self,
+                data: bytes | bytearray | memoryview,
+                ancillary_data: Iterable[tuple[int, int, ReadableBuffer]],
+            ) -> None:
+                if hasattr(ancillary_data, "__next__"):
+                    # Do not send the iterator directly because if sendmsg() blocks,
+                    # it would retry with an already consumed iterator.
+                    ancillary_data = list(ancillary_data)
+
+                await self._sock_send("send_with_ancillary", send=lambda sock: sock.sendmsg([data], ancillary_data))
