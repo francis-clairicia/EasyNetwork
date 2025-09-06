@@ -25,13 +25,15 @@ import contextlib
 import dataclasses
 import errno as _errno
 import logging
+import socket as _socket
+import sys
 import warnings
 from collections.abc import Callable, Coroutine, Mapping
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, NoReturn, final
 
 from ..... import _utils, socket as socket_tools
-from ....transports import abc as transports
+from ....transports.abc import AsyncDatagramListener
 from ...abc import AsyncBackend, TaskGroup
 from .._flow_control import WriteFlowControl
 from .endpoint import _monkeypatch_transport
@@ -41,7 +43,7 @@ if TYPE_CHECKING:
 
 
 @final
-class DatagramListenerSocketAdapter(transports.AsyncDatagramListener["_RetAddress"]):
+class DatagramListenerSocketAdapter(AsyncDatagramListener["_RetAddress"]):
     __slots__ = (
         "__backend",
         "__transport",
@@ -108,6 +110,142 @@ class DatagramListenerSocketAdapter(transports.AsyncDatagramListener["_RetAddres
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         return self.__extra_attributes
+
+
+if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
+
+    __all__ += ["RawUnixDatagramListenerAdapter"]
+
+    from collections.abc import Iterable
+    from typing import TYPE_CHECKING
+
+    from ..... import _unix_utils, constants
+    from .. import _base_raw_transport
+
+    if TYPE_CHECKING:
+        from _typeshed import ReadableBuffer
+
+    @final
+    class RawUnixDatagramListenerAdapter(AsyncDatagramListener["_RetAddress"], _base_raw_transport.BaseRawSocketTransport):
+        __slots__ = (
+            "__send_lock",
+            "__serve_guard",
+        )
+
+        def __init__(
+            self,
+            backend: AsyncBackend,
+            socket: _socket.socket,
+        ) -> None:
+            _unix_utils.check_unix_socket_family(socket.family)
+            if socket.type != _socket.SOCK_DGRAM:
+                raise ValueError("A 'SOCK_DGRAM' socket is expected")
+
+            super().__init__(backend, socket)
+
+            self.__send_lock: asyncio.Lock = asyncio.Lock()
+            self.__serve_guard: _utils.ResourceGuard = _utils.ResourceGuard(f"{self.__class__.__name__}.serve() awaited twice.")
+
+        async def serve(
+            self,
+            handler: Callable[[bytes, _RetAddress], Coroutine[Any, Any, None]],
+            task_group: TaskGroup | None = None,
+        ) -> NoReturn:
+            async with contextlib.AsyncExitStack() as stack:
+                stack.enter_context(self.__serve_guard)
+                if task_group is None:
+                    task_group = await stack.enter_async_context(self.__backend.create_task_group())
+
+                MAX_DATAGRAM_BUFSIZE = constants.MAX_DATAGRAM_BUFSIZE
+
+                def listener_ready(listener: _socket.socket) -> None:
+                    datagram, client_address = listener.recvfrom(MAX_DATAGRAM_BUFSIZE)
+                    task_group.start_soon(handler, datagram, client_address)
+
+                await self.__infinite_serve(stack.enter_context(self._read_task_context("serve")), listener_ready)
+
+        if hasattr(_socket.socket, "recvmsg"):  # pragma: no branch
+
+            async def serve_with_ancillary(
+                self,
+                handler: Callable[[bytes, list[tuple[int, int, bytes]] | None, _RetAddress], Coroutine[Any, Any, None]],
+                ancillary_bufsize: int,
+                task_group: TaskGroup | None = None,
+            ) -> NoReturn:
+                async with contextlib.AsyncExitStack() as stack:
+                    stack.enter_context(self.__serve_guard)
+                    if task_group is None:
+                        task_group = await stack.enter_async_context(self.__backend.create_task_group())
+
+                    MAX_DATAGRAM_BUFSIZE = constants.MAX_DATAGRAM_BUFSIZE
+
+                    def listener_ready(listener: _socket.socket) -> None:
+                        datagram, ancdata, _, client_address = listener.recvmsg(MAX_DATAGRAM_BUFSIZE, ancillary_bufsize)
+                        task_group.start_soon(handler, datagram, ancdata, client_address)
+
+                    await self.__infinite_serve(
+                        stack.enter_context(self._read_task_context("serve_with_ancillary")),
+                        listener_ready,
+                    )
+
+        def __infinite_serve(
+            self,
+            listener_sock: _socket.socket,
+            listener_ready_callback: Callable[[_socket.socket], None],
+        ) -> asyncio.Future[NoReturn]:
+            loop = asyncio.get_running_loop()
+            logger = logging.getLogger(__name__)
+
+            def on_fut_done(f: asyncio.Future[NoReturn]) -> None:
+                loop.remove_reader(listener_sock)
+
+            def listener_ready(f: asyncio.Future[NoReturn]) -> None:
+                if f.done():
+                    # I/O callbacks are always called before asyncio.Future done callbacks.
+                    return
+                try:
+                    listener_ready_callback(listener_sock)
+                except (BlockingIOError, InterruptedError):
+                    return
+                except OSError as exc:
+                    message = "Unrelated error occurred on datagram reception: %s: %s"
+                    logger.warning(message, type(exc).__name__, exc, exc_info=exc)
+                except BaseException as exc:
+                    f.set_exception(exc)
+                    # Break reference cycle with exception set.
+                    del f
+
+            f: asyncio.Future[NoReturn] = loop.create_future()
+            loop.add_reader(listener_sock, listener_ready, f)
+
+            f.add_done_callback(on_fut_done)
+            return f
+
+        async def send_to(self, data: bytes | bytearray | memoryview, address: _Address) -> None:
+            async with self.__send_lock:
+                await self._sock_send(
+                    "send_to",
+                    try_async_send=lambda loop, sock: loop.sock_sendto(sock, data, address),
+                    send=lambda sock: sock.sendto(data, address),
+                )
+
+        if hasattr(_socket.socket, "sendmsg"):  # pragma: no branch
+
+            async def send_with_ancillary_to(
+                self,
+                data: bytes | bytearray | memoryview,
+                ancillary_data: Iterable[tuple[int, int, ReadableBuffer]],
+                address: _Address,
+            ) -> None:
+                if hasattr(ancillary_data, "__next__"):
+                    # Do not send the iterator directly because if sendmsg() blocks,
+                    # it would retry with an already consumed iterator.
+                    ancillary_data = list(ancillary_data)
+                async with self.__send_lock:
+                    await self._sock_send(
+                        "send_with_ancillary_to",
+                        send=lambda sock: sock.sendmsg([data], ancillary_data, 0, address),
+                    )
 
 
 @dataclasses.dataclass(eq=False, frozen=True, slots=True)
