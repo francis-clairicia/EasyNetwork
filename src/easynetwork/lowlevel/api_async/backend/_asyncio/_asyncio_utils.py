@@ -29,12 +29,8 @@ def wait_until_readable(sock: _socket.socket, loop: asyncio.AbstractEventLoop) -
     def on_fut_done(f: asyncio.Future[None]) -> None:
         loop.remove_reader(sock)
 
-    def wakeup(f: asyncio.Future[None]) -> None:
-        if not f.done():
-            f.set_result(None)
-
     f = loop.create_future()
-    loop.add_reader(sock, wakeup, f)
+    loop.add_reader(sock, _wakeup_future, f)
     f.add_done_callback(on_fut_done)
     return f
 
@@ -43,11 +39,12 @@ def wait_until_writable(sock: _socket.socket, loop: asyncio.AbstractEventLoop) -
     def on_fut_done(f: asyncio.Future[None]) -> None:
         loop.remove_writer(sock)
 
-    def wakeup(f: asyncio.Future[None]) -> None:
-        if not f.done():
-            f.set_result(None)
-
     f = loop.create_future()
-    loop.add_writer(sock, wakeup, f)
+    loop.add_writer(sock, _wakeup_future, f)
     f.add_done_callback(on_fut_done)
     return f
+
+
+def _wakeup_future(f: asyncio.Future[None]) -> None:
+    if not f.done():
+        f.set_result(None)
