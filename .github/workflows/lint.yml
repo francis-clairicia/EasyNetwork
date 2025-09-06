@@ -58,7 +58,7 @@ jobs:
         os: [ubuntu-24.04, windows-2022, macos-14]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - name: Setup tox
@@ -76,7 +76,7 @@ jobs:
 
     name: type-hinting (freebsd-14.1)
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - name: Launch checks
@@ -97,7 +97,7 @@ jobs:
 
     name: type-hinting (openbsd-7.6)
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - name: Launch checks
@@ -126,7 +126,7 @@ jobs:
 
     name: type-hinting (netbsd-10.0)
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - name: Launch checks
