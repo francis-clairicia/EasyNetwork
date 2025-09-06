@@ -24,13 +24,13 @@ import os
 import socket as _socket
 import sys
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from .socket import ISocket
 
 if sys.platform == "win32" or (not TYPE_CHECKING and not hasattr(_socket, "AF_UNIX")):
 
-    def is_unix_socket_family(family: int, /) -> bool:
+    def is_unix_socket_family(family: int, /) -> Literal[False]:
         return False
 
 else:
