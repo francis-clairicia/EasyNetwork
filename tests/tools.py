@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import dataclasses
 import importlib
 import os
 import sys
@@ -10,6 +11,7 @@ from collections.abc import Callable, Generator, Iterator
 from typing import TYPE_CHECKING, Any, Literal, TypeAlias, TypeVar, TypeVarTuple, assert_never, final
 
 import pytest
+import sniffio
 
 if TYPE_CHECKING:
     import trio
@@ -201,6 +203,84 @@ def temporary_task_factory(
         stack.callback(event_loop.set_task_factory, event_loop.get_task_factory())
         event_loop.set_task_factory(task_factory)
         yield
+
+
+@dataclasses.dataclass(eq=False, frozen=True, slots=True)
+class AsyncEventHandle:
+    @dataclasses.dataclass(eq=False, frozen=True, slots=True, match_args=True)
+    class _AsyncIOHandle:
+        handle: asyncio.Handle
+
+    @dataclasses.dataclass(eq=False, frozen=True, slots=True, match_args=True)
+    class _TrioHandle:
+        scope: trio.CancelScope
+
+    _inner: _AsyncIOHandle | _TrioHandle
+
+    def cancel(self) -> None:
+        match self._inner:
+            case self._AsyncIOHandle(handle):
+                handle.cancel()
+            case self._TrioHandle(scope):
+                scope.cancel()
+            case _:
+                assert_never(self._inner)
+
+    def cancelled(self) -> bool:
+        match self._inner:
+            case self._AsyncIOHandle(handle):
+                return handle.cancelled()
+            case self._TrioHandle(scope):
+                return scope.cancelled_caught
+            case _:
+                assert_never(self._inner)
+
+
+class AsyncEventScheduling:
+
+    @staticmethod
+    def call_soon(func: Callable[[*_T_Args], Any], /, *args: *_T_Args) -> AsyncEventHandle:
+        match sniffio.current_async_library():
+            case "asyncio":
+                loop = asyncio.get_running_loop()
+                handle = loop.call_soon(func, *args)
+                return AsyncEventHandle(AsyncEventHandle._AsyncIOHandle(handle))
+            case "trio":
+                import trio
+
+                scope = trio.CancelScope()
+
+                async def in_nursery_task(func: Callable[[*_T_Args], Any], /, *args: *_T_Args) -> None:
+                    with scope:
+                        await trio.lowlevel.checkpoint_if_cancelled()
+                        func(*args)
+
+                trio.lowlevel.spawn_system_task(in_nursery_task, func, *args)
+                return AsyncEventHandle(AsyncEventHandle._TrioHandle(scope))
+            case lib_name:
+                raise NotImplementedError(lib_name)
+
+    @staticmethod
+    def call_later(delay: float, func: Callable[[*_T_Args], Any], /, *args: *_T_Args) -> AsyncEventHandle:
+        match sniffio.current_async_library():
+            case "asyncio":
+                loop = asyncio.get_running_loop()
+                handle = loop.call_later(delay, func, *args)
+                return AsyncEventHandle(AsyncEventHandle._AsyncIOHandle(handle))
+            case "trio":
+                import trio
+
+                scope = trio.CancelScope()
+
+                async def in_nursery_task(func: Callable[[*_T_Args], Any], /, *args: *_T_Args) -> None:
+                    with scope:
+                        await trio.sleep(delay)
+                        func(*args)
+
+                trio.lowlevel.spawn_system_task(in_nursery_task, func, *args)
+                return AsyncEventHandle(AsyncEventHandle._TrioHandle(scope))
+            case lib_name:
+                raise NotImplementedError(lib_name)
 
 
 def call_later_with_nursery(

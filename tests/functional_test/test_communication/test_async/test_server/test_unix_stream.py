@@ -456,7 +456,7 @@ if sys.platform != "win32":
 
                         sock.setblocking(False)
                         await event_loop.sock_connect(sock, server_address.as_raw())
-                        reader, writer = await asyncio.open_unix_connection(sock=sock)  # type: ignore[attr-defined,unused-ignore]
+                        reader, writer = await asyncio.open_unix_connection(sock=sock)
                         stack.push_async_callback(lambda: asyncio.wait_for(writer.wait_closed(), 3))
                         stack.callback(writer.close)
                     return reader, writer
@@ -716,8 +716,8 @@ if sys.platform != "win32":
                     assert peer_credentials.pid == os.getpid()
                 else:
                     assert peer_credentials.pid is None
-                assert peer_credentials.uid == os.geteuid()  # type: ignore[attr-defined, unused-ignore]
-                assert peer_credentials.gid == os.getegid()  # type: ignore[attr-defined, unused-ignore]
+                assert peer_credentials.uid == os.geteuid()
+                assert peer_credentials.gid == os.getegid()
 
                 # Credentials should be retrieved once.
                 assert connected_client.extra(UNIXClientAttribute.peer_credentials) is peer_credentials

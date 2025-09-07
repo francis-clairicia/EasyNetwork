@@ -216,10 +216,10 @@ if sys.platform != "win32":
     class TestUnixStreamClientConnection:
         @pytest.fixture(autouse=True)
         @classmethod
-        def server(cls, unix_socket_path_factory: UnixSocketPathFactory) -> Iterator[socketserver.UnixStreamServer]:  # type: ignore[name-defined,unused-ignore]
+        def server(cls, unix_socket_path_factory: UnixSocketPathFactory) -> Iterator[socketserver.UnixStreamServer]:
             from threading import Thread
 
-            with socketserver.UnixStreamServer(unix_socket_path_factory(), EchoRequestHandler) as server:  # type: ignore[attr-defined,unused-ignore]
+            with socketserver.UnixStreamServer(unix_socket_path_factory(), EchoRequestHandler) as server:
                 server_thread = Thread(target=server.serve_forever, daemon=True)
                 server_thread.start()
                 yield server
@@ -228,7 +228,7 @@ if sys.platform != "win32":
 
         @pytest.fixture
         @staticmethod
-        def remote_address(server: socketserver.UnixStreamServer) -> str | bytes:  # type: ignore[name-defined,unused-ignore]
+        def remote_address(server: socketserver.UnixStreamServer) -> str | bytes:
             return cast(str | bytes, server.server_address)
 
         def test____dunder_init____connect_to_server(
@@ -262,8 +262,8 @@ if sys.platform != "win32":
                     assert peer_credentials.pid == os.getpid()
                 else:
                     assert peer_credentials.pid is None
-                assert peer_credentials.uid == os.geteuid()  # type: ignore[attr-defined, unused-ignore]
-                assert peer_credentials.gid == os.getegid()  # type: ignore[attr-defined, unused-ignore]
+                assert peer_credentials.uid == os.geteuid()
+                assert peer_credentials.gid == os.getegid()
 
         def test____get_peer_credentials____cached_result(
             self,

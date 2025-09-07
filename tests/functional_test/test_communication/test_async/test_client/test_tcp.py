@@ -4,7 +4,8 @@ import asyncio
 import contextlib
 import ssl
 from collections.abc import AsyncIterator
-from socket import AF_INET, IPPROTO_TCP, SHUT_WR, TCP_NODELAY, socket as Socket
+from socket import AF_INET, socket as Socket
+from typing import TYPE_CHECKING
 
 from easynetwork.clients.async_tcp import AsyncTCPNetworkClient
 from easynetwork.exceptions import ClientClosedError, StreamProtocolParseError
@@ -14,32 +15,19 @@ from easynetwork.protocol import AnyStreamProtocolType
 import pytest
 import pytest_asyncio
 
+from .....fixtures.trio import trio_fixture
+from .....tools import AsyncEventScheduling
 from .._utils import delay
+from ..socket import AsyncStreamSocket
 from .common import sock_readline
 
+if TYPE_CHECKING:
+    import trio
 
-@pytest.mark.asyncio
+
 @pytest.mark.usefixtures("simulate_no_ssl_module")
 @pytest.mark.flaky(retries=3, delay=0.1)
-class TestAsyncTCPNetworkClient:
-    @pytest.fixture
-    @staticmethod
-    def server(inet_socket_pair: tuple[Socket, Socket]) -> Socket:
-        server = inet_socket_pair[0]
-        server.setsockopt(IPPROTO_TCP, TCP_NODELAY, 1)
-        server.setblocking(False)
-        return server
-
-    @pytest_asyncio.fixture
-    @staticmethod
-    async def client(
-        inet_socket_pair: tuple[Socket, Socket],
-        stream_protocol: AnyStreamProtocolType[str, str],
-    ) -> AsyncIterator[AsyncTCPNetworkClient[str, str]]:
-        async with AsyncTCPNetworkClient(inet_socket_pair[1], stream_protocol, "asyncio") as client:
-            assert client.is_connected()
-            yield client
-
+class _BaseTestAsyncTCPNetworkClient:
     @pytest.fixture
     @staticmethod
     def is_buffered_protocol(stream_protocol: AnyStreamProtocolType[str, str]) -> bool:
@@ -57,12 +45,10 @@ class TestAsyncTCPNetworkClient:
     async def test____send_packet____default(
         self,
         client: AsyncTCPNetworkClient[str, str],
-        server: Socket,
+        server: AsyncStreamSocket,
     ) -> None:
-        event_loop = asyncio.get_running_loop()
-
         await client.send_packet("ABCDEF")
-        assert await sock_readline(event_loop, server) == b"ABCDEF\n"
+        assert await sock_readline(server) == b"ABCDEF\n"
 
     async def test____send_packet____closed_client(self, client: AsyncTCPNetworkClient[str, str]) -> None:
         await client.aclose()
@@ -80,15 +66,13 @@ class TestAsyncTCPNetworkClient:
     async def test____send_eof____close_write_stream(
         self,
         client: AsyncTCPNetworkClient[str, str],
-        server: Socket,
+        server: AsyncStreamSocket,
     ) -> None:
-        event_loop = asyncio.get_running_loop()
-
         await client.send_eof()
-        assert await sock_readline(event_loop, server) == b""
+        assert await sock_readline(server) == b""
         with pytest.raises(RuntimeError):
             await client.send_packet("ABC")
-        await event_loop.sock_sendall(server, b"ABCDEF\n")
+        await server.send_all(b"ABCDEF\n")
         assert await client.recv_packet() == "ABCDEF"
 
     async def test____send_eof____closed_client(
@@ -101,61 +85,59 @@ class TestAsyncTCPNetworkClient:
     async def test____send_eof____idempotent(
         self,
         client: AsyncTCPNetworkClient[str, str],
-        server: Socket,
+        server: AsyncStreamSocket,
     ) -> None:
-        event_loop = asyncio.get_running_loop()
-
         await client.send_eof()
-        assert await sock_readline(event_loop, server) == b""
+        assert await sock_readline(server) == b""
         await client.send_eof()
         await client.send_eof()
 
     async def test____recv_packet____default(
         self,
         client: AsyncTCPNetworkClient[str, str],
-        server: Socket,
+        server: AsyncStreamSocket,
     ) -> None:
-        event_loop = asyncio.get_running_loop()
-
-        await event_loop.sock_sendall(server, b"ABCDEF\n")
+        await server.send_all(b"ABCDEF\n")
         assert await client.recv_packet() == "ABCDEF"
 
     async def test____recv_packet____partial(
         self,
         client: AsyncTCPNetworkClient[str, str],
-        server: Socket,
+        server: AsyncStreamSocket,
     ) -> None:
-        event_loop = asyncio.get_running_loop()
-
-        await event_loop.sock_sendall(server, b"ABC")
-        event_loop.call_later(0.5, server.sendall, b"DEF\n")
-        assert await client.recv_packet() == "ABCDEF"
+        async with client.backend().create_task_group() as tg:
+            await server.send_all(b"ABC")
+            tg.start_soon(delay, 0.5, server.send_all, b"DEF\n")
+            assert await client.recv_packet() == "ABCDEF"
 
     async def test____recv_packet____buffer(
         self,
         client: AsyncTCPNetworkClient[str, str],
-        server: Socket,
+        server: AsyncStreamSocket,
     ) -> None:
-        event_loop = asyncio.get_running_loop()
-
-        await event_loop.sock_sendall(server, b"A\nB\nC\nD\n")
+        await server.send_all(b"A\nB\nC\nD\n")
         assert await client.recv_packet() == "A"
         assert await client.recv_packet() == "B"
         assert await client.recv_packet() == "C"
         assert await client.recv_packet() == "D"
-        await event_loop.sock_sendall(server, b"E\nF\nG\nH\nI")
+        await server.send_all(b"E\nF\nG\nH\nI")
         assert await client.recv_packet() == "E"
         assert await client.recv_packet() == "F"
         assert await client.recv_packet() == "G"
         assert await client.recv_packet() == "H"
 
-        task = asyncio.create_task(client.recv_packet())
-        await asyncio.sleep(0)
-        assert not task.done()
-        await event_loop.sock_sendall(server, b"J\n")
-        assert await task == "IJ"
+        async with client.backend().create_task_group() as tg:
+            task = await tg.start(client.recv_packet)
+            assert not task.done()
+            await server.send_all(b"J\n")
 
-    async def test____recv_packet____eof____closed_remote(self, client: AsyncTCPNetworkClient[str, str], server: Socket) -> None:
+        assert await task.join() == "IJ"
+
+    async def test____recv_packet____eof____closed_remote(
+        self,
+        client: AsyncTCPNetworkClient[str, str],
+        server: AsyncStreamSocket,
+    ) -> None:
         server.close()
         with pytest.raises(ConnectionAbortedError):
             await client.recv_packet()
@@ -163,16 +145,14 @@ class TestAsyncTCPNetworkClient:
     async def test____recv_packet____eof____shutdown_write_only(
         self,
         client: AsyncTCPNetworkClient[str, str],
-        server: Socket,
+        server: AsyncStreamSocket,
     ) -> None:
-        event_loop = asyncio.get_running_loop()
-
-        server.shutdown(SHUT_WR)
+        await server.send_eof()
         with pytest.raises(ConnectionAbortedError):
             await client.recv_packet()
 
         await client.send_packet("ABCDEF")
-        assert await sock_readline(event_loop, server) == b"ABCDEF\n"
+        assert await sock_readline(server) == b"ABCDEF\n"
 
     async def test____recv_packet____client_close_error(
         self,
@@ -194,11 +174,9 @@ class TestAsyncTCPNetworkClient:
     async def test____recv_packet____invalid_data(
         self,
         client: AsyncTCPNetworkClient[str, str],
-        server: Socket,
+        server: AsyncStreamSocket,
     ) -> None:
-        event_loop = asyncio.get_running_loop()
-
-        await event_loop.sock_sendall(server, "\u00e9\nvalid\n".encode("latin-1"))
+        await server.send_all("\u00e9\nvalid\n".encode("latin-1"))
         with pytest.raises(StreamProtocolParseError):
             await client.recv_packet()
         assert await client.recv_packet() == "valid"
@@ -215,29 +193,24 @@ class TestAsyncTCPNetworkClient:
         self,
         is_buffered_protocol: bool,
         client: AsyncTCPNetworkClient[str, str],
-        server: Socket,
+        server: AsyncStreamSocket,
     ) -> None:
-        event_loop = asyncio.get_running_loop()
-
         expected_pattern: str
         if is_buffered_protocol:
             expected_pattern = r"^protocol\.build_packet_from_buffer\(\) crashed$"
         else:
             expected_pattern = r"^protocol\.build_packet_from_chunks\(\) crashed$"
-        await event_loop.sock_sendall(server, b"ABCDEF\n")
+        await server.send_all(b"ABCDEF\n")
         with pytest.raises(RuntimeError, match=expected_pattern):
             await client.recv_packet()
 
     async def test____iter_received_packets____yields_available_packets_until_eof(
         self,
         client: AsyncTCPNetworkClient[str, str],
-        server: Socket,
+        server: AsyncStreamSocket,
     ) -> None:
-        event_loop = asyncio.get_running_loop()
-
-        await event_loop.sock_sendall(server, b"A\nB\nC\nD\nE\nF")
-        event_loop.call_soon(server.shutdown, SHUT_WR)
-        event_loop.call_soon(server.close)
+        await server.send_all(b"A\nB\nC\nD\nE\nF")
+        AsyncEventScheduling.call_soon(server.close)
         assert [p async for p in client.iter_received_packets(timeout=None)] == ["A", "B", "C", "D", "E"]
 
     async def test____iter_received_packets____yields_available_packets_until_close(
@@ -256,15 +229,17 @@ class TestAsyncTCPNetworkClient:
     async def test____iter_received_packets____yields_available_packets_until_timeout(
         self,
         client: AsyncTCPNetworkClient[str, str],
-        server: Socket,
+        server: AsyncStreamSocket,
     ) -> None:
-        event_loop = asyncio.get_running_loop()
-
-        await event_loop.sock_sendall(server, b"A\nB\nC\nD\nE\n")
-        await event_loop.sock_sendall(server, b"F\n")
+        await server.send_all(b"A\nB\nC\nD\nE\n")
+        await server.send_all(b"F\n")
         assert [p async for p in client.iter_received_packets(timeout=1)] == ["A", "B", "C", "D", "E", "F"]
 
-    async def test____get_local_address____consistency(self, socket_family: int, client: AsyncTCPNetworkClient[str, str]) -> None:
+    async def test____get_local_address____consistency(
+        self,
+        socket_family: int,
+        client: AsyncTCPNetworkClient[str, str],
+    ) -> None:
         address = client.get_local_address()
         if socket_family == AF_INET:
             assert isinstance(address, IPv4SocketAddress)
@@ -286,9 +261,168 @@ class TestAsyncTCPNetworkClient:
 
 
 @pytest.mark.asyncio
+class TestAsyncTCPNetworkClientWithAsyncIO(_BaseTestAsyncTCPNetworkClient):
+    @pytest_asyncio.fixture
+    @staticmethod
+    async def server(inet_socket_pair: tuple[Socket, Socket]) -> AsyncStreamSocket:
+        return await AsyncStreamSocket.from_connected_stdlib_socket(inet_socket_pair[0])
+
+    @pytest_asyncio.fixture
+    @staticmethod
+    async def client(
+        inet_socket_pair: tuple[Socket, Socket],
+        stream_protocol: AnyStreamProtocolType[str, str],
+    ) -> AsyncIterator[AsyncTCPNetworkClient[str, str]]:
+        async with AsyncTCPNetworkClient(inet_socket_pair[1], stream_protocol, "asyncio") as client:
+            assert client.is_connected()
+            yield client
+
+
+@pytest.mark.feature_trio(async_test_auto_mark=True)
+class TestAsyncTCPNetworkClientWithTrio(_BaseTestAsyncTCPNetworkClient):
+    @trio_fixture
+    @staticmethod
+    async def server(inet_socket_pair: tuple[Socket, Socket]) -> AsyncStreamSocket:
+        return await AsyncStreamSocket.from_connected_stdlib_socket(inet_socket_pair[0])
+
+    @trio_fixture
+    @staticmethod
+    async def client(
+        inet_socket_pair: tuple[Socket, Socket],
+        stream_protocol: AnyStreamProtocolType[str, str],
+    ) -> AsyncIterator[AsyncTCPNetworkClient[str, str]]:
+        async with AsyncTCPNetworkClient(inet_socket_pair[1], stream_protocol, "trio") as client:
+            assert client.is_connected()
+            yield client
+
+
 @pytest.mark.usefixtures("simulate_no_ssl_module")
-class TestAsyncTCPNetworkClientConnection:
-    @pytest_asyncio.fixture(autouse=True)
+class _BaseTestAsyncTCPNetworkClientConnection:
+
+    async def test____dunder_init____connect_to_server(
+        self,
+        remote_address: tuple[str, int],
+        stream_protocol: AnyStreamProtocolType[str, str],
+    ) -> None:
+        async with AsyncTCPNetworkClient(remote_address, stream_protocol) as client:
+            assert client.is_connected()
+            await client.send_packet("Test")
+            assert await client.recv_packet() == "Test"
+
+    async def test____dunder_init____with_local_address(
+        self,
+        localhost_ip: str,
+        remote_address: tuple[str, int],
+        stream_protocol: AnyStreamProtocolType[str, str],
+    ) -> None:
+        async with AsyncTCPNetworkClient(remote_address, stream_protocol, local_address=(localhost_ip, 0)) as client:
+            assert client.is_connected()
+            assert client.get_local_address().host == localhost_ip
+            assert client.get_local_address().port > 0
+
+            await client.send_packet("Test")
+            assert await client.recv_packet() == "Test"
+
+    async def test____wait_connected____idempotent(
+        self,
+        remote_address: tuple[str, int],
+        stream_protocol: AnyStreamProtocolType[str, str],
+    ) -> None:
+        async with contextlib.aclosing(AsyncTCPNetworkClient(remote_address, stream_protocol)) as client:
+            assert not client.is_connected()
+            await client.wait_connected()
+            assert client.is_connected()
+            await client.wait_connected()
+            assert client.is_connected()
+
+    async def test____wait_connected____simultaneous(
+        self,
+        remote_address: tuple[str, int],
+        stream_protocol: AnyStreamProtocolType[str, str],
+    ) -> None:
+        async with contextlib.aclosing(AsyncTCPNetworkClient(remote_address, stream_protocol)) as client:
+            await client.backend().gather(*[client.wait_connected() for _ in range(5)])
+            assert client.is_connected()
+
+    async def test____wait_connected____is_closing____connection_not_performed_yet(
+        self,
+        remote_address: tuple[str, int],
+        stream_protocol: AnyStreamProtocolType[str, str],
+    ) -> None:
+        async with contextlib.aclosing(AsyncTCPNetworkClient(remote_address, stream_protocol)) as client:
+            assert not client.is_connected()
+            assert not client.is_closing()
+            await client.wait_connected()
+            assert client.is_connected()
+            assert not client.is_closing()
+
+    async def test____wait_connected____close_before_trying_to_connect(
+        self,
+        remote_address: tuple[str, int],
+        stream_protocol: AnyStreamProtocolType[str, str],
+    ) -> None:
+        client = AsyncTCPNetworkClient(remote_address, stream_protocol)
+        await client.aclose()
+        with pytest.raises(ClientClosedError):
+            await client.wait_connected()
+
+    async def test____socket_property____connection_not_performed_yet(
+        self,
+        remote_address: tuple[str, int],
+        stream_protocol: AnyStreamProtocolType[str, str],
+    ) -> None:
+        async with contextlib.aclosing(AsyncTCPNetworkClient(remote_address, stream_protocol)) as client:
+            with pytest.raises(AttributeError):
+                _ = client.socket
+
+            await client.wait_connected()
+
+            assert isinstance(client.socket, SocketProxy)
+            assert client.socket is client.socket
+
+    async def test____get_local_address____connection_not_performed_yet(
+        self,
+        remote_address: tuple[str, int],
+        stream_protocol: AnyStreamProtocolType[str, str],
+    ) -> None:
+        async with contextlib.aclosing(AsyncTCPNetworkClient(remote_address, stream_protocol)) as client:
+            with pytest.raises(OSError):
+                _ = client.get_local_address()
+
+            await client.wait_connected()
+
+            _ = client.get_local_address()
+
+    async def test____get_remote_address____connection_not_performed_yet(
+        self,
+        remote_address: tuple[str, int],
+        stream_protocol: AnyStreamProtocolType[str, str],
+    ) -> None:
+        async with contextlib.aclosing(AsyncTCPNetworkClient(remote_address, stream_protocol)) as client:
+            with pytest.raises(OSError):
+                _ = client.get_remote_address()
+
+            await client.wait_connected()
+
+            assert client.get_remote_address()[:2] == remote_address
+
+    async def test____send_packet____recv_packet____implicit_connection(
+        self,
+        remote_address: tuple[str, int],
+        stream_protocol: AnyStreamProtocolType[str, str],
+    ) -> None:
+        async with contextlib.aclosing(AsyncTCPNetworkClient(remote_address, stream_protocol)) as client:
+            assert not client.is_connected()
+
+            await client.send_packet("Connected")
+            assert await client.recv_packet() == "Connected"
+
+            assert client.is_connected()
+
+
+@pytest.mark.asyncio
+class TestAsyncTCPNetworkClientConnectionWithAsyncIO(_BaseTestAsyncTCPNetworkClientConnection):
+    @pytest_asyncio.fixture
     @staticmethod
     async def server(localhost_ip: str, socket_family: int) -> AsyncIterator[asyncio.Server]:
         async def client_connected_cb(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
@@ -305,7 +439,6 @@ class TestAsyncTCPNetworkClientConnection:
             port=0,
             family=socket_family,
         ) as server:
-            await asyncio.sleep(0.01)
             yield server
 
     @pytest.fixture
@@ -313,135 +446,140 @@ class TestAsyncTCPNetworkClientConnection:
     def remote_address(server: asyncio.Server) -> tuple[str, int]:
         return server.sockets[0].getsockname()[:2]
 
-    async def test____dunder_init____connect_to_server(
-        self,
-        remote_address: tuple[str, int],
-        stream_protocol: AnyStreamProtocolType[str, str],
-    ) -> None:
-        async with AsyncTCPNetworkClient(remote_address, stream_protocol, "asyncio") as client:
-            assert client.is_connected()
-            await client.send_packet("Test")
-            assert await client.recv_packet() == "Test"
 
-    async def test____dunder_init____with_local_address(
-        self,
+@pytest.mark.feature_trio(async_test_auto_mark=True)
+class TestAsyncTCPNetworkClientConnectionWithTrio(_BaseTestAsyncTCPNetworkClientConnection):
+    @trio_fixture
+    @staticmethod
+    async def servers(
         localhost_ip: str,
+        nursery: trio.Nursery,
+    ) -> AsyncIterator[list[trio.SocketListener]]:
+        import trio
+
+        from ..trio_stream import TrioStreamLineReader
+
+        async def client_connected_cb(stream: trio.SocketStream) -> None:
+            async with stream:
+                data: bytes = await TrioStreamLineReader(stream).readline()
+                await stream.send_all(data)
+
+        servers = await trio.open_tcp_listeners(host=localhost_ip, port=0)
+        await nursery.start(trio.serve_listeners, client_connected_cb, servers)
+        yield servers
+
+    @pytest.fixture
+    @staticmethod
+    def remote_address(servers: list[trio.SocketListener]) -> tuple[str, int]:
+        return servers[0].socket.getsockname()[:2]
+
+
+class _BaseTestAsyncSSLOverTCPNetworkClient:
+
+    async def test____dunder_init____handshake_and_shutdown(
+        self,
         remote_address: tuple[str, int],
         stream_protocol: AnyStreamProtocolType[str, str],
+        client_ssl_context: ssl.SSLContext,
     ) -> None:
+        # Arrange
+
+        # Act & Assert
         async with AsyncTCPNetworkClient(
             remote_address,
             stream_protocol,
-            "asyncio",
-            local_address=(localhost_ip, 0),
+            ssl=client_ssl_context,
+            server_hostname="test.example.com",
         ) as client:
-            assert client.is_connected()
-            assert client.get_local_address().host == localhost_ip
-            assert client.get_local_address().port > 0
+            await client.send_packet("Test")
+            assert await client.recv_packet() == "Test"
+
+    async def test____dunder_init____use_default_context(
+        self,
+        remote_address: tuple[str, int],
+        stream_protocol: AnyStreamProtocolType[str, str],
+        client_ssl_context: ssl.SSLContext,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # Arrange
+        monkeypatch.setattr(ssl, "create_default_context", lambda *args, **kwargs: client_ssl_context)
+
+        # Act & Assert
+        async with AsyncTCPNetworkClient(
+            remote_address,
+            stream_protocol,
+            ssl=True,
+            server_hostname="test.example.com",
+        ) as client:
+            await client.send_packet("Test")
+            assert await client.recv_packet() == "Test"
+
+    async def test____dunder_init____use_default_context____disable_hostname_check(
+        self,
+        remote_address: tuple[str, int],
+        stream_protocol: AnyStreamProtocolType[str, str],
+        client_ssl_context: ssl.SSLContext,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # Arrange
+        check_hostname_by_default: bool = client_ssl_context.check_hostname
+        assert check_hostname_by_default
+        monkeypatch.setattr(ssl, "create_default_context", lambda *args, **kwargs: client_ssl_context)
+
+        # Act & Assert
+        async with AsyncTCPNetworkClient(
+            remote_address,
+            stream_protocol,
+            ssl=True,
+            server_hostname="",
+        ) as client:
+            assert not client_ssl_context.check_hostname  # It must be set to False if server_hostname is an empty string
+            await client.send_packet("Test")
+            assert await client.recv_packet() == "Test"
+
+    @pytest.mark.usefixtures("simulate_no_ssl_module")
+    async def test____dunder_init____no_ssl_module_available(
+        self,
+        remote_address: tuple[str, int],
+        stream_protocol: AnyStreamProtocolType[str, str],
+        client_ssl_context: ssl.SSLContext,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        with pytest.raises(RuntimeError, match=r"^stdlib ssl module not available$"):
+            _ = AsyncTCPNetworkClient(
+                remote_address,
+                stream_protocol,
+                ssl=client_ssl_context,
+                server_hostname="test.example.com",
+            )
+
+    async def test____send_eof____not_supported(
+        self,
+        remote_address: tuple[str, int],
+        stream_protocol: AnyStreamProtocolType[str, str],
+        client_ssl_context: ssl.SSLContext,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        async with AsyncTCPNetworkClient(
+            remote_address,
+            stream_protocol,
+            ssl=client_ssl_context,
+            server_hostname="test.example.com",
+        ) as client:
+            with pytest.raises(NotImplementedError):
+                await client.send_eof()
 
             await client.send_packet("Test")
             assert await client.recv_packet() == "Test"
 
-    async def test____wait_connected____idempotent(
-        self,
-        remote_address: tuple[str, int],
-        stream_protocol: AnyStreamProtocolType[str, str],
-    ) -> None:
-        async with contextlib.aclosing(AsyncTCPNetworkClient(remote_address, stream_protocol, "asyncio")) as client:
-            assert not client.is_connected()
-            await client.wait_connected()
-            assert client.is_connected()
-            await client.wait_connected()
-            assert client.is_connected()
-
-    async def test____wait_connected____simultaneous(
-        self,
-        remote_address: tuple[str, int],
-        stream_protocol: AnyStreamProtocolType[str, str],
-    ) -> None:
-        async with contextlib.aclosing(AsyncTCPNetworkClient(remote_address, stream_protocol, "asyncio")) as client:
-            await asyncio.gather(*[client.wait_connected() for _ in range(5)])
-            assert client.is_connected()
-
-    async def test____wait_connected____is_closing____connection_not_performed_yet(
-        self,
-        remote_address: tuple[str, int],
-        stream_protocol: AnyStreamProtocolType[str, str],
-    ) -> None:
-        async with contextlib.aclosing(AsyncTCPNetworkClient(remote_address, stream_protocol, "asyncio")) as client:
-            assert not client.is_connected()
-            assert not client.is_closing()
-            await client.wait_connected()
-            assert client.is_connected()
-            assert not client.is_closing()
-
-    async def test____wait_connected____close_before_trying_to_connect(
-        self,
-        remote_address: tuple[str, int],
-        stream_protocol: AnyStreamProtocolType[str, str],
-    ) -> None:
-        client = AsyncTCPNetworkClient(remote_address, stream_protocol, "asyncio")
-        await client.aclose()
-        with pytest.raises(ClientClosedError):
-            await client.wait_connected()
-
-    async def test____socket_property____connection_not_performed_yet(
-        self,
-        remote_address: tuple[str, int],
-        stream_protocol: AnyStreamProtocolType[str, str],
-    ) -> None:
-        async with contextlib.aclosing(AsyncTCPNetworkClient(remote_address, stream_protocol, "asyncio")) as client:
-            with pytest.raises(AttributeError):
-                _ = client.socket
-
-            await client.wait_connected()
-
-            assert isinstance(client.socket, SocketProxy)
-            assert client.socket is client.socket
-
-    async def test____get_local_address____connection_not_performed_yet(
-        self,
-        remote_address: tuple[str, int],
-        stream_protocol: AnyStreamProtocolType[str, str],
-    ) -> None:
-        async with contextlib.aclosing(AsyncTCPNetworkClient(remote_address, stream_protocol, "asyncio")) as client:
-            with pytest.raises(OSError):
-                _ = client.get_local_address()
-
-            await client.wait_connected()
-
-            _ = client.get_local_address()
-
-    async def test____get_remote_address____connection_not_performed_yet(
-        self,
-        remote_address: tuple[str, int],
-        stream_protocol: AnyStreamProtocolType[str, str],
-    ) -> None:
-        async with contextlib.aclosing(AsyncTCPNetworkClient(remote_address, stream_protocol, "asyncio")) as client:
-            with pytest.raises(OSError):
-                _ = client.get_remote_address()
-
-            await client.wait_connected()
-
-            assert client.get_remote_address()[:2] == remote_address
-
-    async def test____send_packet____recv_packet____implicit_connection(
-        self,
-        remote_address: tuple[str, int],
-        stream_protocol: AnyStreamProtocolType[str, str],
-    ) -> None:
-        async with contextlib.aclosing(AsyncTCPNetworkClient(remote_address, stream_protocol, "asyncio")) as client:
-            assert not client.is_connected()
-
-            await client.send_packet("Connected")
-            assert await client.recv_packet() == "Connected"
-
-            assert client.is_connected()
-
 
 @pytest.mark.asyncio
-class TestAsyncSSLOverTCPNetworkClient:
-    @pytest_asyncio.fixture(autouse=True)
+class TestAsyncSSLOverTCPNetworkClientWithAsyncIO(_BaseTestAsyncSSLOverTCPNetworkClient):
+    @pytest_asyncio.fixture
     @staticmethod
     async def server(
         localhost_ip: str,
@@ -466,7 +604,6 @@ class TestAsyncSSLOverTCPNetworkClient:
             family=socket_family,
             ssl=server_ssl_context,
         ) as server:
-            await asyncio.sleep(0.01)
             yield server
 
     @pytest.fixture
@@ -474,129 +611,37 @@ class TestAsyncSSLOverTCPNetworkClient:
     def remote_address(server: asyncio.Server) -> tuple[str, int]:
         return server.sockets[0].getsockname()[:2]
 
-    async def test____dunder_init____handshake_and_shutdown(
-        self,
-        remote_address: tuple[str, int],
-        stream_protocol: AnyStreamProtocolType[str, str],
-        client_ssl_context: ssl.SSLContext,
-    ) -> None:
-        # Arrange
 
-        # Act & Assert
-        async with AsyncTCPNetworkClient(
-            remote_address,
-            stream_protocol,
-            "asyncio",
-            ssl=client_ssl_context,
-            server_hostname="test.example.com",
-        ) as client:
-            await client.send_packet("Test")
-            assert await client.recv_packet() == "Test"
+@pytest.mark.feature_trio(async_test_auto_mark=True)
+class TestAsyncSSLOverTCPNetworkClientWithTrio(_BaseTestAsyncSSLOverTCPNetworkClient):
+    @trio_fixture
+    @staticmethod
+    async def servers(
+        localhost_ip: str,
+        server_ssl_context: ssl.SSLContext | None,
+        nursery: trio.Nursery,
+    ) -> AsyncIterator[list[trio.SSLListener[trio.SocketStream]]]:
+        if server_ssl_context is None:
+            pytest.skip("trustme is not installed")
 
-    async def test____dunder_init____use_default_context(
-        self,
-        remote_address: tuple[str, int],
-        stream_protocol: AnyStreamProtocolType[str, str],
-        client_ssl_context: ssl.SSLContext,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        # Arrange
-        monkeypatch.setattr(ssl, "create_default_context", lambda *args, **kwargs: client_ssl_context)
+        import trio
 
-        # Act & Assert
-        async with AsyncTCPNetworkClient(
-            remote_address,
-            stream_protocol,
-            "asyncio",
-            ssl=True,
-            server_hostname="test.example.com",
-        ) as client:
-            await client.send_packet("Test")
-            assert await client.recv_packet() == "Test"
+        from ..trio_stream import TrioStreamLineReader
 
-    async def test____dunder_init____use_default_context____disable_hostname_check(
-        self,
-        remote_address: tuple[str, int],
-        stream_protocol: AnyStreamProtocolType[str, str],
-        client_ssl_context: ssl.SSLContext,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        # Arrange
-        check_hostname_by_default: bool = client_ssl_context.check_hostname
-        assert check_hostname_by_default
-        monkeypatch.setattr(ssl, "create_default_context", lambda *args, **kwargs: client_ssl_context)
+        async def client_connected_cb(stream: trio.SSLStream[trio.SocketStream]) -> None:
+            async with stream:
+                data: bytes = await TrioStreamLineReader(stream).readline()
+                await stream.send_all(data)
 
-        # Act & Assert
-        async with AsyncTCPNetworkClient(
-            remote_address,
-            stream_protocol,
-            "asyncio",
-            ssl=True,
-            server_hostname="",
-        ) as client:
-            assert not client_ssl_context.check_hostname  # It must be set to False if server_hostname is an empty string
-            await client.send_packet("Test")
-            assert await client.recv_packet() == "Test"
+        servers = await trio.open_ssl_over_tcp_listeners(host=localhost_ip, port=0, ssl_context=server_ssl_context)
+        await nursery.start(trio.serve_listeners, client_connected_cb, servers)
+        yield servers
 
-    @pytest.mark.usefixtures("simulate_no_ssl_module")
-    async def test____dunder_init____no_ssl_module_available(
-        self,
-        remote_address: tuple[str, int],
-        stream_protocol: AnyStreamProtocolType[str, str],
-        client_ssl_context: ssl.SSLContext,
-    ) -> None:
-        # Arrange
+    @pytest.fixture
+    @staticmethod
+    def remote_address(servers: list[trio.SSLListener[trio.SocketStream]]) -> tuple[str, int]:
+        import trio
 
-        # Act & Assert
-        with pytest.raises(RuntimeError, match=r"^stdlib ssl module not available$"):
-            _ = AsyncTCPNetworkClient(
-                remote_address,
-                stream_protocol,
-                "asyncio",
-                ssl=client_ssl_context,
-                server_hostname="test.example.com",
-            )
-
-    async def test____recv_packet____client_close_while_waiting(
-        self,
-        remote_address: tuple[str, int],
-        stream_protocol: AnyStreamProtocolType[str, str],
-        client_ssl_context: ssl.SSLContext,
-    ) -> None:
-        # Arrange
-
-        # Act & Assert
-        async with (
-            AsyncTCPNetworkClient(
-                remote_address,
-                stream_protocol,
-                ssl=client_ssl_context,
-                server_hostname="test.example.com",
-            ) as client,
-            client.backend().create_task_group() as tg,
-        ):
-            await tg.start(delay, 0.5, client.aclose)
-            with client.backend().timeout(5), pytest.raises(ClientClosedError):
-                assert await client.recv_packet()
-
-    async def test____send_eof____not_supported(
-        self,
-        remote_address: tuple[str, int],
-        stream_protocol: AnyStreamProtocolType[str, str],
-        client_ssl_context: ssl.SSLContext,
-    ) -> None:
-        # Arrange
-
-        # Act & Assert
-        async with AsyncTCPNetworkClient(
-            remote_address,
-            stream_protocol,
-            "asyncio",
-            ssl=client_ssl_context,
-            server_hostname="test.example.com",
-        ) as client:
-            with pytest.raises(NotImplementedError):
-                await client.send_eof()
-
-            await client.send_packet("Test")
-            assert await client.recv_packet() == "Test"
+        listener = servers[0].transport_listener
+        assert isinstance(listener, trio.SocketListener)
+        return listener.socket.getsockname()[:2]
