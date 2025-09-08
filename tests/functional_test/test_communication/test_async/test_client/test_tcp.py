@@ -216,14 +216,12 @@ class _BaseTestAsyncTCPNetworkClient:
     async def test____iter_received_packets____yields_available_packets_until_close(
         self,
         client: AsyncTCPNetworkClient[str, str],
-        server: Socket,
+        server: AsyncStreamSocket,
     ) -> None:
-        event_loop = asyncio.get_running_loop()
-
-        await event_loop.sock_sendall(server, b"A\nB\nC\nD\nE\n")
+        await server.send_all(b"A\nB\nC\nD\nE\n")
         async with client.backend().create_task_group() as tg:
             await tg.start(delay, 0.5, client.aclose)
-            await tg.start(delay, 0.1, event_loop.sock_sendall, server, b"F\n")
+            await tg.start(delay, 0.1, server.send_all, b"F\n")
             assert [p async for p in client.iter_received_packets(timeout=None)] == ["A", "B", "C", "D", "E", "F"]
 
     async def test____iter_received_packets____yields_available_packets_until_timeout(
@@ -556,6 +554,28 @@ class _BaseTestAsyncSSLOverTCPNetworkClient:
                 ssl=client_ssl_context,
                 server_hostname="test.example.com",
             )
+
+    async def test____recv_packet____client_close_while_waiting(
+        self,
+        remote_address: tuple[str, int],
+        stream_protocol: AnyStreamProtocolType[str, str],
+        client_ssl_context: ssl.SSLContext,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        async with (
+            AsyncTCPNetworkClient(
+                remote_address,
+                stream_protocol,
+                ssl=client_ssl_context,
+                server_hostname="test.example.com",
+            ) as client,
+            client.backend().create_task_group() as tg,
+        ):
+            await tg.start(delay, 0.5, client.aclose)
+            with client.backend().timeout(5), pytest.raises(ClientClosedError):
+                assert await client.recv_packet()
 
     async def test____send_eof____not_supported(
         self,
