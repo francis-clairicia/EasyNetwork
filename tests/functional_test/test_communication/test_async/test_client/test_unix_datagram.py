@@ -1,27 +1,28 @@
 from __future__ import annotations
 
-import asyncio
-import contextlib
-import functools
-import inspect
-import pathlib
 import sys
-from collections.abc import AsyncIterator, Awaitable, Callable
-from socket import socket as Socket
-from typing import TYPE_CHECKING, Any
-
-import pytest
-import pytest_asyncio
-
-from .....tools import PlatformMarkers, is_uvloop_event_loop
-from .._utils import delay
 
 if sys.platform != "win32":
+    import asyncio
+    import contextlib
+    import functools
+    import inspect
+    import pathlib
+    from collections.abc import AsyncIterator, Awaitable, Callable
+    from socket import socket as Socket
+    from typing import TYPE_CHECKING, Any
+
     from easynetwork.clients.async_unix_datagram import AsyncUnixDatagramClient
     from easynetwork.exceptions import ClientClosedError, DatagramProtocolParseError
     from easynetwork.lowlevel.api_async.backend._asyncio.datagram.endpoint import DatagramEndpoint, create_datagram_endpoint
     from easynetwork.lowlevel.socket import SocketProxy
     from easynetwork.protocol import DatagramProtocol
+
+    import pytest
+    import pytest_asyncio
+
+    from .....tools import PlatformMarkers, is_uvloop_event_loop
+    from .._utils import delay
 
     if TYPE_CHECKING:
         from .....pytest_plugins.unix_sockets import UnixSocketPathFactory
@@ -69,7 +70,11 @@ if sys.platform != "win32":
         unix_datagram_socket_factory: Callable[[], Socket],
     ) -> AsyncIterator[Callable[[], Awaitable[DatagramEndpoint]]]:
         async with contextlib.AsyncExitStack() as stack:
-            stack.enter_context(contextlib.suppress(OSError))
+
+            async def _close_endpoint(endpoint: DatagramEndpoint) -> None:
+                with contextlib.suppress(TimeoutError):
+                    async with asyncio.timeout(3):
+                        await endpoint.aclose()
 
             async def factory() -> DatagramEndpoint:
                 # Caveat: uvloop does not support having a UNIX socket address for "local_addr" parameter.
@@ -77,7 +82,7 @@ if sys.platform != "win32":
                 sock = unix_datagram_socket_factory()
                 sock.setblocking(False)
                 endpoint = await create_datagram_endpoint(sock=sock)
-                stack.push_async_callback(lambda: asyncio.wait_for(endpoint.aclose(), 3))
+                stack.push_async_callback(_close_endpoint, endpoint)
                 return endpoint
 
             yield factory
@@ -147,7 +152,7 @@ if sys.platform != "win32":
             async with asyncio.timeout(3):
                 assert await client.recv_packet() == "ABCDEF"
 
-        async def test____recv_packet____client_close_error(
+        async def test____recv_packet____closed_client(
             self,
             client: AsyncUnixDatagramClient[str, str],
         ) -> None:

@@ -219,14 +219,12 @@ if sys.platform != "win32":
         async def test____iter_received_packets____yields_available_packets_until_close(
             self,
             client: AsyncUnixStreamClient[str, str],
-            server: Socket,
+            server: AsyncStreamSocket,
         ) -> None:
-            event_loop = asyncio.get_running_loop()
-
-            await event_loop.sock_sendall(server, b"A\nB\nC\nD\nE\n")
+            await server.send_all(b"A\nB\nC\nD\nE\n")
             async with client.backend().create_task_group() as tg:
                 await tg.start(delay, 0.5, client.aclose)
-                await tg.start(delay, 0.1, event_loop.sock_sendall, server, b"F\n")
+                await tg.start(delay, 0.1, server.send_all, b"F\n")
                 assert [p async for p in client.iter_received_packets(timeout=None)] == ["A", "B", "C", "D", "E", "F"]
 
         async def test____iter_received_packets____yields_available_packets_until_timeout(
