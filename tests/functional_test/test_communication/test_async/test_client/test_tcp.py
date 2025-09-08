@@ -264,8 +264,9 @@ class _BaseTestAsyncTCPNetworkClient:
 class TestAsyncTCPNetworkClientWithAsyncIO(_BaseTestAsyncTCPNetworkClient):
     @pytest_asyncio.fixture
     @staticmethod
-    async def server(inet_socket_pair: tuple[Socket, Socket]) -> AsyncStreamSocket:
-        return await AsyncStreamSocket.from_connected_stdlib_socket(inet_socket_pair[0])
+    async def server(inet_socket_pair: tuple[Socket, Socket]) -> AsyncIterator[AsyncStreamSocket]:
+        async with await AsyncStreamSocket.from_connected_stdlib_socket(inet_socket_pair[0]) as server:
+            yield server
 
     @pytest_asyncio.fixture
     @staticmethod
@@ -282,8 +283,9 @@ class TestAsyncTCPNetworkClientWithAsyncIO(_BaseTestAsyncTCPNetworkClient):
 class TestAsyncTCPNetworkClientWithTrio(_BaseTestAsyncTCPNetworkClient):
     @trio_fixture
     @staticmethod
-    async def server(inet_socket_pair: tuple[Socket, Socket]) -> AsyncStreamSocket:
-        return await AsyncStreamSocket.from_connected_stdlib_socket(inet_socket_pair[0])
+    async def server(inet_socket_pair: tuple[Socket, Socket]) -> AsyncIterator[AsyncStreamSocket]:
+        async with await AsyncStreamSocket.from_connected_stdlib_socket(inet_socket_pair[0]) as server:
+            yield server
 
     @trio_fixture
     @staticmethod

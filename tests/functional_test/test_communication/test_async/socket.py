@@ -7,7 +7,7 @@ import contextlib
 import dataclasses
 import socket
 import ssl
-from typing import TYPE_CHECKING, Self, assert_never
+from typing import TYPE_CHECKING, Any, Self, assert_never
 
 from easynetwork.lowlevel.api_async.backend.utils import new_builtin_backend
 
@@ -101,6 +101,13 @@ class AsyncStreamSocket:
     def __del__(self) -> None:
         with contextlib.suppress(Exception):
             self.close()
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(self, *args: Any) -> None:
+        del args
+        await self.aclose()
 
     def close(self) -> None:
         match self._impl:
