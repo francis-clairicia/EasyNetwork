@@ -262,8 +262,9 @@ if sys.platform != "win32":
     class TestAsyncUnixStreamClientWithAsyncIO(_BaseTestAsyncUnixStreamClient):
         @pytest_asyncio.fixture
         @staticmethod
-        async def server(unix_socket_pair: tuple[Socket, Socket]) -> AsyncStreamSocket:
-            return await AsyncStreamSocket.from_connected_stdlib_socket(unix_socket_pair[0])
+        async def server(unix_socket_pair: tuple[Socket, Socket]) -> AsyncIterator[AsyncStreamSocket]:
+            async with await AsyncStreamSocket.from_connected_stdlib_socket(unix_socket_pair[0]) as server:
+                yield server
 
         @pytest_asyncio.fixture
         @staticmethod
@@ -279,8 +280,9 @@ if sys.platform != "win32":
     class TestAsyncUnixStreamClientWithTrio(_BaseTestAsyncUnixStreamClient):
         @trio_fixture
         @staticmethod
-        async def server(unix_socket_pair: tuple[Socket, Socket]) -> AsyncStreamSocket:
-            return await AsyncStreamSocket.from_connected_stdlib_socket(unix_socket_pair[0])
+        async def server(unix_socket_pair: tuple[Socket, Socket]) -> AsyncIterator[AsyncStreamSocket]:
+            async with await AsyncStreamSocket.from_connected_stdlib_socket(unix_socket_pair[0]) as server:
+                yield server
 
         @trio_fixture
         @staticmethod
