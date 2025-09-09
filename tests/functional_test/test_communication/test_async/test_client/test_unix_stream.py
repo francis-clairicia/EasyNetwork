@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 import pytest
 import pytest_asyncio
 
+from .._utils import delay
 from .common import sock_readline
 
 if sys.platform != "win32":
@@ -178,10 +179,22 @@ if sys.platform != "win32":
             await client.send_packet("ABCDEF")
             assert await sock_readline(event_loop, server) == b"ABCDEF\n"
 
-        async def test____recv_packet____client_close_error(self, client: AsyncUnixStreamClient[str, str]) -> None:
+        async def test____recv_packet____client_close_error(
+            self,
+            client: AsyncUnixStreamClient[str, str],
+        ) -> None:
             await client.aclose()
             with pytest.raises(ClientClosedError):
                 await client.recv_packet()
+
+        async def test____recv_packet____client_close_while_waiting(
+            self,
+            client: AsyncUnixStreamClient[str, str],
+        ) -> None:
+            async with client.backend().create_task_group() as tg:
+                await tg.start(delay, 0.5, client.aclose)
+                with client.backend().timeout(5), pytest.raises(ClientClosedError):
+                    assert await client.recv_packet()
 
         async def test____recv_packet____invalid_data(
             self,
@@ -231,6 +244,19 @@ if sys.platform != "win32":
             event_loop.call_soon(server.shutdown, SHUT_WR)
             event_loop.call_soon(server.close)
             assert [p async for p in client.iter_received_packets(timeout=None)] == ["A", "B", "C", "D", "E"]
+
+        async def test____iter_received_packets____yields_available_packets_until_close(
+            self,
+            client: AsyncUnixStreamClient[str, str],
+            server: Socket,
+        ) -> None:
+            event_loop = asyncio.get_running_loop()
+
+            await event_loop.sock_sendall(server, b"A\nB\nC\nD\nE\n")
+            async with client.backend().create_task_group() as tg:
+                await tg.start(delay, 0.5, client.aclose)
+                await tg.start(delay, 0.1, event_loop.sock_sendall, server, b"F\n")
+                assert [p async for p in client.iter_received_packets(timeout=None)] == ["A", "B", "C", "D", "E", "F"]
 
         async def test____iter_received_packets____yields_available_packets_until_timeout(
             self,

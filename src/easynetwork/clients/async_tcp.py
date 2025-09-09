@@ -545,6 +545,9 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         try:
             yield
         except ConnectionError as exc:
+            if endpoint is not None and endpoint.is_closing():
+                # aclose() called while recv_packet() is awaiting...
+                raise cls.__closed() from exc
             raise cls.__abort() from exc
         except _ssl_module.SSLError if _ssl_module else () as exc:
             if _utils.is_ssl_eof_error(exc):

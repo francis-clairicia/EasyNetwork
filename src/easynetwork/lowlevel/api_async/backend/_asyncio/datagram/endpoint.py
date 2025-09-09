@@ -24,7 +24,6 @@ __all__ = [
 
 import asyncio
 import asyncio.base_events
-import asyncio.trsock
 import errno as _errno
 import socket as _socket
 import traceback
@@ -119,7 +118,7 @@ class DatagramEndpoint:
                 data_and_address = None
             if data_and_address is None:
                 self.__check_exceptions()
-                raise _utils.error_from_errno(_errno.ECONNABORTED)
+                raise _utils.error_from_errno(_errno.EBADF)
         else:
             data_and_address = await self.__recv_queue.get()
             if data_and_address is None:
@@ -128,7 +127,7 @@ class DatagramEndpoint:
 
                 # Connection lost otherwise
                 assert self.__transport.is_closing()  # nosec assert_used
-                raise _utils.error_from_errno(_errno.ECONNABORTED)
+                raise _utils.error_from_errno(_errno.EBADF)
         return data_and_address
 
     async def sendto(self, data: bytes | bytearray | memoryview, address: _Address | None = None, /) -> None:
@@ -183,7 +182,7 @@ class DatagramEndpointProtocol(asyncio.DatagramProtocol):
         assert not self.__connection_lost, "connection_lost() was called"  # nosec assert_used
         assert self.__transport is None, "Transport already set"  # nosec assert_used
         self.__transport = transport
-        self.__write_flow = WriteFlowControl(self.__transport, self.__loop)
+        self.__write_flow = WriteFlowControl(self.__transport, self.__loop, connection_lost_errno=_errno.EBADF)
         _monkeypatch_transport(transport, self.__loop)
 
     def connection_lost(self, exc: Exception | None) -> None:

@@ -1245,6 +1245,30 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         mock_stream_endpoint.aclose.assert_not_called()
         mock_tcp_socket.getsockopt.assert_not_called()
 
+    async def test____send_packet____catch_connection_errors_on_close(
+        self,
+        client_connected_or_not: AsyncTCPNetworkClient[Any, Any],
+        mock_tcp_socket: MagicMock,
+        mock_stream_endpoint: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+
+        async def send_packet_side_effect(*args: Any, **kwargs: Any) -> None:
+            mock_stream_endpoint.is_closing.return_value = True
+            raise ConnectionError
+
+        mock_stream_endpoint.send_packet.side_effect = send_packet_side_effect
+
+        # Act
+        with pytest.raises(ClientClosedError):
+            await client_connected_or_not.send_packet(mocker.sentinel.packet)
+
+        # Assert
+        mock_stream_endpoint.send_packet.assert_awaited_once_with(mocker.sentinel.packet)
+        mock_stream_endpoint.aclose.assert_not_called()
+        mock_tcp_socket.getsockopt.assert_not_called()
+
     @pytest.mark.parametrize("closed_socket_errno", sorted(CLOSED_SOCKET_ERRNOS), ids=errno.errorcode.__getitem__)
     async def test____send_packet____convert_closed_socket_error(
         self,
@@ -1413,6 +1437,26 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
 
         # Assert
         mock_stream_endpoint.recv_packet.assert_not_awaited()
+
+    async def test____recv_packet____catch_connection_errors_on_close(
+        self,
+        client_connected_or_not: AsyncTCPNetworkClient[Any, Any],
+        mock_stream_endpoint: MagicMock,
+    ) -> None:
+        # Arrange
+
+        async def recv_packet_side_effect(*args: Any, **kwargs: Any) -> None:
+            mock_stream_endpoint.is_closing.return_value = True
+            raise ConnectionError
+
+        mock_stream_endpoint.recv_packet.side_effect = recv_packet_side_effect
+
+        # Act
+        with pytest.raises(ClientClosedError):
+            _ = await client_connected_or_not.recv_packet()
+
+        # Assert
+        mock_stream_endpoint.recv_packet.assert_awaited_once_with()
 
     async def test____recv_packet____convert_connection_errors(
         self,
