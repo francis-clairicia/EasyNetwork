@@ -140,10 +140,22 @@ class TestAsyncUDPNetworkClient:
         with pytest.raises(TimeoutError):
             await asyncio.wait_for(client.recv_packet(), timeout=0.1)
 
-    async def test____recv_packet____closed_client(self, client: AsyncUDPNetworkClient[str, str]) -> None:
+    async def test____recv_packet____client_close_error(
+        self,
+        client: AsyncUDPNetworkClient[str, str],
+    ) -> None:
         await client.aclose()
         with pytest.raises(ClientClosedError):
             await client.recv_packet()
+
+    async def test____recv_packet____client_close_while_waiting(
+        self,
+        client: AsyncUDPNetworkClient[str, str],
+    ) -> None:
+        async with client.backend().create_task_group() as tg:
+            await tg.start(delay, 0.5, client.aclose)
+            with client.backend().timeout(5), pytest.raises(ClientClosedError):
+                assert await client.recv_packet()
 
     async def test____recv_packet____invalid_data(
         self, client: AsyncUDPNetworkClient[str, str], server: DatagramEndpoint
@@ -176,7 +188,7 @@ class TestAsyncUDPNetworkClient:
         for p in [b"A", b"B", b"C", b"D", b"E", b"F"]:
             await server.sendto(p, client.get_local_address())
 
-        close_task = asyncio.create_task(delay(client.aclose, 0.5))
+        close_task = asyncio.create_task(delay(0.5, client.aclose))
         await asyncio.sleep(0)
         try:
             # NOTE: Comparison using set because equality check does not verify order

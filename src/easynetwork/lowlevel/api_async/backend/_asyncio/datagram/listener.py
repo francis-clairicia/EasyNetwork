@@ -23,6 +23,7 @@ import asyncio.trsock
 import collections
 import contextlib
 import dataclasses
+import errno as _errno
 import logging
 import warnings
 from collections.abc import Callable, Coroutine, Mapping
@@ -151,7 +152,7 @@ class DatagramListenerProtocol(asyncio.DatagramProtocol):
         assert not self.__connection_lost, "connection_lost() was called"  # nosec assert_used
         assert self.__transport is None, "Transport already set"  # nosec assert_used
         self.__transport = transport
-        self.__write_flow = WriteFlowControl(self.__transport, self.__loop)
+        self.__write_flow = WriteFlowControl(self.__transport, self.__loop, connection_lost_errno=_errno.EBADF)
         _monkeypatch_transport(self.__transport, self.__loop)
 
     def connection_lost(self, exc: Exception | None) -> None:

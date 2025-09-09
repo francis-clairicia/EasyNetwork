@@ -4,7 +4,7 @@ import asyncio
 import contextlib
 import logging
 from collections.abc import AsyncIterator, Callable, Iterator
-from errno import ECONNABORTED
+from errno import EBADF
 from socket import AI_PASSIVE
 from typing import TYPE_CHECKING, Any, Literal, cast
 
@@ -327,9 +327,8 @@ class TestDatagramEndpoint:
 
         # Act & Assert
         if exception is None:
-            with pytest.raises(OSError) as exc_info:
+            with pytest.raises(OSError, check=lambda exc: exc.errno == EBADF):
                 await endpoint.recvfrom()
-            assert exc_info.value.errno == ECONNABORTED
         else:
             with pytest.raises(exception):
                 await endpoint.recvfrom()
@@ -347,18 +346,15 @@ class TestDatagramEndpoint:
         mock_asyncio_exception_queue: MagicMock,
     ) -> None:
         # Arrange
-        from errno import ECONNABORTED
-
         mock_asyncio_recv_queue.get.return_value = None  # None is sent to queue when readers must wake up
         mock_asyncio_exception_queue.get_nowait.side_effect = asyncio.QueueEmpty
         mock_asyncio_transport.is_closing.side_effect = [False, True]  # 1st call OK, 2nd not so much
 
         # Act
-        with pytest.raises(OSError) as exc_info:
+        with pytest.raises(OSError, check=lambda exc: exc.errno == EBADF):
             await endpoint.recvfrom()
 
         # Assert
-        assert exc_info.value.errno == ECONNABORTED
         mock_asyncio_exception_queue.get_nowait.assert_called_once_with()
         mock_asyncio_recv_queue.get.assert_awaited_once_with()
 
@@ -632,15 +628,11 @@ class TestDatagramEndpointProtocol:
         # Arrange
         assert not protocol._writing_paused()
 
-        from errno import ECONNABORTED
-
         protocol.connection_lost(None)
 
         # Act & Assert
-        with pytest.raises(OSError) as exc_info:
+        with pytest.raises(OSError, check=lambda exc: exc.errno == EBADF):
             await protocol._drain_helper()
-
-        assert exc_info.value.errno == ECONNABORTED
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("cancel_tasks", [False, True], ids=lambda p: f"cancel_tasks_before=={p}")
@@ -668,9 +660,9 @@ class TestDatagramEndpointProtocol:
 
         # Assert
         if cancel_tasks:
-            assert all(t.done() and t.cancelled() for t in tasks)
+            assert all(t.done() and t.cancelled() for t in tasks), tasks
         else:
-            assert all(t.done() and t.exception() is None and t.result() is None for t in tasks)
+            assert all(t.done() and t.exception() is None and t.result() is None for t in tasks), tasks
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("exception", [None, OSError("Something bad happen")])
@@ -701,11 +693,11 @@ class TestDatagramEndpointProtocol:
 
         # Assert
         if cancel_tasks:
-            assert all(t.done() and t.cancelled() for t in tasks)
+            assert all(t.done() and t.cancelled() for t in tasks), tasks
         elif exception is None:
-            assert all(t.done() and isinstance(t.exception(), ConnectionAbortedError) for t in tasks), tasks
+            assert all(t.done() and isinstance((exc := t.exception()), OSError) and exc.errno == EBADF for t in tasks), tasks
         else:
-            assert all(t.done() and t.exception() is exception for t in tasks)
+            assert all(t.done() and t.exception() is exception for t in tasks), tasks
 
 
 @pytest.mark.asyncio
@@ -1318,15 +1310,11 @@ class TestDatagramListenerProtocol:
         # Arrange
         assert not protocol._writing_paused()
 
-        from errno import ECONNABORTED
-
         protocol.connection_lost(None)
 
         # Act & Assert
-        with pytest.raises(OSError) as exc_info:
+        with pytest.raises(OSError, check=lambda exc: exc.errno == EBADF):
             await protocol.writer_drain()
-
-        assert exc_info.value.errno == ECONNABORTED
 
     @pytest.mark.asyncio
     async def test____drain_helper____raise_given_exception_if_connection_is_lost(
@@ -1340,10 +1328,8 @@ class TestDatagramListenerProtocol:
         protocol.connection_lost(error)
 
         # Act & Assert
-        with pytest.raises(OSError) as exc_info:
+        with pytest.raises(OSError, check=lambda exc: exc is error):
             await protocol.writer_drain()
-
-        assert exc_info.value is error
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("cancel_tasks", [False, True], ids=lambda p: f"cancel_tasks_before=={p}")
@@ -1371,9 +1357,9 @@ class TestDatagramListenerProtocol:
 
         # Assert
         if cancel_tasks:
-            assert all(t.done() and t.cancelled() for t in tasks)
+            assert all(t.done() and t.cancelled() for t in tasks), tasks
         else:
-            assert all(t.done() and t.exception() is None and t.result() is None for t in tasks)
+            assert all(t.done() and t.exception() is None and t.result() is None for t in tasks), tasks
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("exception", [None, OSError("Something bad happen")])
@@ -1404,8 +1390,8 @@ class TestDatagramListenerProtocol:
 
         # Assert
         if cancel_tasks:
-            assert all(t.done() and t.cancelled() for t in tasks)
+            assert all(t.done() and t.cancelled() for t in tasks), tasks
         elif exception is None:
-            assert all(t.done() and isinstance(t.exception(), ConnectionAbortedError) for t in tasks), tasks
+            assert all(t.done() and isinstance((exc := t.exception()), OSError) and exc.errno == EBADF for t in tasks), tasks
         else:
-            assert all(t.done() and t.exception() is exception for t in tasks)
+            assert all(t.done() and t.exception() is exception for t in tasks), tasks

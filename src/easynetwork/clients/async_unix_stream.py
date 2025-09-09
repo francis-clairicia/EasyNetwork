@@ -393,6 +393,9 @@ else:
             try:
                 yield
             except ConnectionError as exc:
+                if endpoint is not None and endpoint.is_closing():
+                    # aclose() called while recv_packet() is awaiting...
+                    raise cls.__closed() from exc
                 raise cls.__abort() from exc
             except OSError as exc:
                 if exc.errno in constants.CLOSED_SOCKET_ERRNOS:
