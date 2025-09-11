@@ -1,63 +1,48 @@
 from __future__ import annotations
 
+import asyncio
+import contextlib
+import pathlib
 import sys
+from collections.abc import AsyncIterator, Callable
+from socket import socket as Socket
+from typing import TYPE_CHECKING, Any, NoReturn
+
+import pytest
+import pytest_asyncio
+import sniffio
+
+from .....fixtures.trio import trio_fixture
+from .....tools import PlatformMarkers, is_uvloop_event_loop
+from .._utils import delay
+from ..socket import AsyncDatagramSocket
 
 if sys.platform != "win32":
-    import asyncio
-    import contextlib
-    import functools
-    import inspect
-    import pathlib
-    from collections.abc import AsyncIterator, Awaitable, Callable
-    from socket import socket as Socket
-    from typing import TYPE_CHECKING, Any
-
     from easynetwork.clients.async_unix_datagram import AsyncUnixDatagramClient
     from easynetwork.exceptions import ClientClosedError, DatagramProtocolParseError
-    from easynetwork.lowlevel.api_async.backend._asyncio.datagram.endpoint import DatagramEndpoint, create_datagram_endpoint
     from easynetwork.lowlevel.socket import SocketProxy
     from easynetwork.protocol import DatagramProtocol
 
-    import pytest
-    import pytest_asyncio
-
-    from .....tools import PlatformMarkers, is_uvloop_event_loop
-    from .._utils import delay
-
     if TYPE_CHECKING:
+        import trio
+
         from .....pytest_plugins.unix_sockets import UnixSocketPathFactory
 
-    @pytest_asyncio.fixture
-    async def unix_datagram_socket_factory(
+    @pytest.fixture
+    def bound_unix_datagram_socket_factory(
         request: pytest.FixtureRequest,
         unix_datagram_socket_factory: Callable[[], Socket],
         unix_socket_path_factory: UnixSocketPathFactory,
     ) -> Callable[[], Socket]:
+        use_unix_address_type: str | None = getattr(request, "param", None)
 
-        from easynetwork.lowlevel import _unix_utils
-
-        event_loop = asyncio.get_running_loop()
-
-        @functools.wraps(unix_datagram_socket_factory)
         def bound_unix_datagram_socket_factory() -> Socket:
             sock = unix_datagram_socket_factory()
-            sock.settimeout(3)
-            match getattr(request, "param", None):
-                case "PATHNAME":
-                    sock.bind(unix_socket_path_factory(reuse_old_socket=False))
+            match use_unix_address_type:
+                case "PATHNAME" | None:
+                    sock.bind(unix_socket_path_factory())
                 case "ABSTRACT":
-                    if is_uvloop_event_loop(event_loop):
-                        # Addresses received through uvloop transports contains extra NULL bytes because the creation of
-                        # the bytes object from the sockaddr_un structure does not take into account the real addrlen.
-                        # https://github.com/MagicStack/uvloop/blob/v0.21.0/uvloop/includes/compat.h#L34-L55
-                        sock.close()
-                        pytest.xfail("uvloop translation of abstract unix sockets to python object is wrong.")
                     sock.bind("")
-                case None:
-                    if _unix_utils.platform_supports_automatic_socket_bind() and not is_uvloop_event_loop(event_loop):
-                        sock.bind("")
-                    else:
-                        sock.bind(unix_socket_path_factory(reuse_old_socket=False))
                 case _:
                     sock.close()
                     pytest.fail(f"Invalid use_unix_address_type parameter: {request.param}")
@@ -65,59 +50,9 @@ if sys.platform != "win32":
 
         return bound_unix_datagram_socket_factory
 
-    @pytest_asyncio.fixture
-    async def datagram_endpoint_factory(
-        unix_datagram_socket_factory: Callable[[], Socket],
-    ) -> AsyncIterator[Callable[[], Awaitable[DatagramEndpoint]]]:
-        async with contextlib.AsyncExitStack() as stack:
-
-            async def _close_endpoint(endpoint: DatagramEndpoint) -> None:
-                with contextlib.suppress(TimeoutError):
-                    async with asyncio.timeout(3):
-                        await endpoint.aclose()
-
-            async def factory() -> DatagramEndpoint:
-                # Caveat: uvloop does not support having a UNIX socket address for "local_addr" parameter.
-                # The socket must be created manually.
-                sock = unix_datagram_socket_factory()
-                sock.setblocking(False)
-                endpoint = await create_datagram_endpoint(sock=sock)
-                stack.push_async_callback(_close_endpoint, endpoint)
-                return endpoint
-
-            yield factory
-
-    @pytest.mark.asyncio
     @pytest.mark.flaky(retries=3, delay=0.1)
-    class TestAsyncUnixDatagramClient:
-        @pytest_asyncio.fixture
-        @staticmethod
-        async def server(datagram_endpoint_factory: Callable[[], Awaitable[DatagramEndpoint]]) -> DatagramEndpoint:
-            return await datagram_endpoint_factory()
+    class _BaseTestAsyncUnixDatagramClient:
 
-        @pytest_asyncio.fixture
-        @staticmethod
-        async def client(
-            server: DatagramEndpoint,
-            unix_datagram_socket_factory: Callable[[], Socket],
-            datagram_protocol: DatagramProtocol[str, str],
-        ) -> AsyncIterator[AsyncUnixDatagramClient[str, str]]:
-            remote_address: str | bytes = server.get_extra_info("sockname")
-            socket = unix_datagram_socket_factory()
-            socket.connect(remote_address)
-
-            async with AsyncUnixDatagramClient(socket, datagram_protocol, "asyncio") as client:
-                assert client.is_connected()
-                yield client
-
-        @pytest.mark.parametrize(
-            "unix_datagram_socket_factory",
-            [
-                pytest.param("PATHNAME"),
-                pytest.param("ABSTRACT", marks=PlatformMarkers.supports_abstract_sockets),
-            ],
-            indirect=True,
-        )
         async def test____aclose____idempotent(self, client: AsyncUnixDatagramClient[str, str]) -> None:
             assert not client.is_closing()
             await client.aclose()
@@ -126,13 +61,18 @@ if sys.platform != "win32":
             assert client.is_closing()
 
         async def test____send_packet____default(
-            self, client: AsyncUnixDatagramClient[str, str], server: DatagramEndpoint
+            self,
+            client: AsyncUnixDatagramClient[str, str],
+            server: AsyncDatagramSocket,
         ) -> None:
             await client.send_packet("ABCDEF")
-            async with asyncio.timeout(3):
+            with client.backend().timeout(3):
                 assert await server.recvfrom() == (b"ABCDEF", client.get_local_name().as_raw())
 
-        async def test____send_packet____closed_client(self, client: AsyncUnixDatagramClient[str, str]) -> None:
+        async def test____send_packet____closed_client(
+            self,
+            client: AsyncUnixDatagramClient[str, str],
+        ) -> None:
             await client.aclose()
             with pytest.raises(ClientClosedError):
                 await client.send_packet("ABCDEF")
@@ -146,10 +86,12 @@ if sys.platform != "win32":
                 await client.send_packet("ABCDEF")
 
         async def test____recv_packet____default(
-            self, client: AsyncUnixDatagramClient[str, str], server: DatagramEndpoint
+            self,
+            client: AsyncUnixDatagramClient[str, str],
+            server: AsyncDatagramSocket,
         ) -> None:
             await server.sendto(b"ABCDEF", client.get_local_name().as_raw())
-            async with asyncio.timeout(3):
+            with client.backend().timeout(3):
                 assert await client.recv_packet() == "ABCDEF"
 
         async def test____recv_packet____closed_client(
@@ -170,18 +112,18 @@ if sys.platform != "win32":
                     assert await client.recv_packet()
 
         async def test____recv_packet____invalid_data(
-            self, client: AsyncUnixDatagramClient[str, str], server: DatagramEndpoint
+            self, client: AsyncUnixDatagramClient[str, str], server: AsyncDatagramSocket
         ) -> None:
             await server.sendto("\u00e9".encode("latin-1"), client.get_local_name().as_raw())
             with pytest.raises(DatagramProtocolParseError):
-                async with asyncio.timeout(3):
+                with client.backend().timeout(3):
                     await client.recv_packet()
 
         @pytest.mark.parametrize("datagram_protocol", [pytest.param("invalid", id="serializer_crash")], indirect=True)
         async def test____recv_packet____protocol_crashed(
             self,
             client: AsyncUnixDatagramClient[str, str],
-            server: DatagramEndpoint,
+            server: AsyncDatagramSocket,
         ) -> None:
             await server.sendto(b"ABCDEF", client.get_local_name().as_raw())
             try:
@@ -195,24 +137,20 @@ if sys.platform != "win32":
         async def test____iter_received_packets____yields_available_packets_until_close(
             self,
             client: AsyncUnixDatagramClient[str, str],
-            server: DatagramEndpoint,
+            server: AsyncDatagramSocket,
         ) -> None:
             for p in [b"A", b"B", b"C", b"D", b"E", b"F"]:
                 await server.sendto(p, client.get_local_name().as_raw())
 
-            close_task = asyncio.create_task(delay(0.5, client.aclose))
-            await asyncio.sleep(0)
-            try:
+            async with client.backend().create_task_group() as tg:
+                await tg.start(delay, 0.5, client.aclose)
                 # NOTE: Comparison using set because equality check does not verify order
                 assert {p async for p in client.iter_received_packets(timeout=None)} == {"A", "B", "C", "D", "E", "F"}
-            finally:
-                close_task.cancel()
-                await asyncio.wait({close_task})
 
         async def test____iter_received_packets____yields_available_packets_until_timeout(
             self,
             client: AsyncUnixDatagramClient[str, str],
-            server: DatagramEndpoint,
+            server: AsyncDatagramSocket,
         ) -> None:
             for p in [b"A", b"B", b"C", b"D", b"E", b"F"]:
                 await server.sendto(p, client.get_local_name().as_raw())
@@ -235,7 +173,286 @@ if sys.platform != "win32":
             assert address.as_raw() == client.socket.getpeername()
 
     @pytest.mark.asyncio
-    class TestAsyncUnixDatagramClientConnection:
+    class TestAsyncUnixDatagramClientWithAsyncIO(_BaseTestAsyncUnixDatagramClient):
+        @pytest_asyncio.fixture
+        @staticmethod
+        async def server(bound_unix_datagram_socket_factory: Callable[[], Socket]) -> AsyncIterator[AsyncDatagramSocket]:
+            async with await AsyncDatagramSocket.from_stdlib_socket(bound_unix_datagram_socket_factory()) as server:
+                yield server
+
+        @pytest_asyncio.fixture
+        @staticmethod
+        async def client(
+            server: AsyncDatagramSocket,
+            bound_unix_datagram_socket_factory: Callable[[], Socket],
+            datagram_protocol: DatagramProtocol[str, str],
+        ) -> AsyncIterator[AsyncUnixDatagramClient[str, str]]:
+            remote_address: str | bytes = server.getsockname()
+            socket = bound_unix_datagram_socket_factory()
+            socket.connect(remote_address)
+
+            async with AsyncUnixDatagramClient(socket, datagram_protocol, "asyncio") as client:
+                assert client.is_connected()
+                yield client
+
+    @pytest.mark.feature_trio(async_test_auto_mark=True)
+    class TestAsyncUnixDatagramClientWithTrio(_BaseTestAsyncUnixDatagramClient):
+        @trio_fixture
+        @staticmethod
+        async def server(bound_unix_datagram_socket_factory: Callable[[], Socket]) -> AsyncIterator[AsyncDatagramSocket]:
+            async with await AsyncDatagramSocket.from_stdlib_socket(bound_unix_datagram_socket_factory()) as server:
+                yield server
+
+        @trio_fixture
+        @staticmethod
+        async def client(
+            server: AsyncDatagramSocket,
+            bound_unix_datagram_socket_factory: Callable[[], Socket],
+            datagram_protocol: DatagramProtocol[str, str],
+        ) -> AsyncIterator[AsyncUnixDatagramClient[str, str]]:
+            remote_address: str | bytes = server.getsockname()
+            socket = bound_unix_datagram_socket_factory()
+            socket.connect(remote_address)
+
+            async with AsyncUnixDatagramClient(socket, datagram_protocol, "trio") as client:
+                assert client.is_connected()
+                yield client
+
+    @pytest.mark.parametrize(
+        "bound_unix_datagram_socket_factory",
+        [
+            pytest.param("PATHNAME"),
+            pytest.param("ABSTRACT", marks=PlatformMarkers.supports_abstract_sockets),
+        ],
+        indirect=True,
+    )
+    class _BaseTestAsyncUnixDatagramClientConnection:
+
+        @pytest.fixture
+        @staticmethod
+        def local_path(unix_socket_path_factory: UnixSocketPathFactory) -> str:
+            return unix_socket_path_factory()
+
+        @PlatformMarkers.supports_abstract_sockets
+        async def test____dunder_init____automatic_local_name(
+            self,
+            remote_address: str | bytes,
+            datagram_protocol: DatagramProtocol[str, str],
+        ) -> None:
+            if sniffio.current_async_library() == "asyncio" and is_uvloop_event_loop(asyncio.get_running_loop()):
+                # Addresses received through uvloop transports contains extra NULL bytes because the creation of
+                # the bytes object from the sockaddr_un structure does not take into account the real addrlen.
+                # https://github.com/MagicStack/uvloop/blob/v0.21.0/uvloop/includes/compat.h#L34-L55
+                pytest.xfail("uvloop translation of abstract unix sockets to python object is wrong.")
+
+            async with AsyncUnixDatagramClient(remote_address, datagram_protocol) as client:
+                assert client.is_connected()
+                assert not client.get_local_name().is_unnamed()
+
+                with client.backend().timeout(3):
+                    await client.send_packet("Test")
+                    assert await client.recv_packet() == "Test"
+
+        @PlatformMarkers.abstract_sockets_unsupported
+        async def test____dunder_init____automatic_local_name____unsupported_by_current_platform(
+            self,
+            remote_address: str | bytes,
+            datagram_protocol: DatagramProtocol[str, str],
+        ) -> None:
+            with pytest.raises(
+                ValueError,
+                match=r"^local_path parameter is required on this platform and cannot be an empty string\.",
+            ):
+                _ = AsyncUnixDatagramClient(remote_address, datagram_protocol)
+
+        async def test____dunder_init____with_local_name(
+            self,
+            local_path: str,
+            remote_address: str | bytes,
+            datagram_protocol: DatagramProtocol[str, str],
+        ) -> None:
+            async with AsyncUnixDatagramClient(remote_address, datagram_protocol, local_path=local_path) as client:
+                assert client.is_connected()
+                assert client.get_local_name().as_pathname() == pathlib.Path(local_path)
+
+                with client.backend().timeout(5):
+                    await client.send_packet("Test")
+                    assert await client.recv_packet() == "Test"
+
+        async def test____dunder_init____peer_name____not_set(
+            self,
+            bound_unix_datagram_socket_factory: Callable[[], Socket],
+            datagram_protocol: DatagramProtocol[str, str],
+        ) -> None:
+            from easynetwork.clients.async_unix_datagram import AsyncUnixDatagramClient
+
+            with pytest.raises(OSError):
+                _ = AsyncUnixDatagramClient(bound_unix_datagram_socket_factory(), datagram_protocol)
+
+        async def test____dunder_init____local_name____not_set(
+            self,
+            remote_address: str | bytes,
+            unix_datagram_socket_factory: Callable[[], Socket],
+            datagram_protocol: DatagramProtocol[str, str],
+        ) -> None:
+            sock = unix_datagram_socket_factory()
+            sock.connect(remote_address)
+            assert not sock.getsockname()
+            with pytest.raises(ValueError, match=r"^AsyncUnixDatagramClient requires the socket to be named.$"):
+                _ = AsyncUnixDatagramClient(sock, datagram_protocol)
+
+        async def test____wait_connected____idempotent(
+            self,
+            local_path: str,
+            remote_address: str | bytes,
+            datagram_protocol: DatagramProtocol[str, str],
+        ) -> None:
+            async with contextlib.aclosing(
+                AsyncUnixDatagramClient(
+                    remote_address,
+                    datagram_protocol,
+                    local_path=local_path,
+                )
+            ) as client:
+                await client.wait_connected()
+                assert client.is_connected()
+                await client.wait_connected()
+                assert client.is_connected()
+
+        async def test____wait_connected____simultaneous(
+            self,
+            local_path: str,
+            remote_address: str | bytes,
+            datagram_protocol: DatagramProtocol[str, str],
+        ) -> None:
+            async with contextlib.aclosing(
+                AsyncUnixDatagramClient(
+                    remote_address,
+                    datagram_protocol,
+                    local_path=local_path,
+                )
+            ) as client:
+                await client.backend().gather(*[client.wait_connected() for _ in range(5)])
+                assert client.is_connected()
+
+        async def test____wait_connected____is_closing____connection_not_performed_yet(
+            self,
+            local_path: str,
+            remote_address: str | bytes,
+            datagram_protocol: DatagramProtocol[str, str],
+        ) -> None:
+            async with contextlib.aclosing(
+                AsyncUnixDatagramClient(
+                    remote_address,
+                    datagram_protocol,
+                    local_path=local_path,
+                )
+            ) as client:
+                assert not client.is_connected()
+                assert not client.is_closing()
+                await client.wait_connected()
+                assert client.is_connected()
+                assert not client.is_closing()
+
+        async def test____wait_connected____close_before_trying_to_connect(
+            self,
+            local_path: str,
+            remote_address: str | bytes,
+            datagram_protocol: DatagramProtocol[str, str],
+        ) -> None:
+            client = AsyncUnixDatagramClient(
+                remote_address,
+                datagram_protocol,
+                local_path=local_path,
+            )
+            await client.aclose()
+            with pytest.raises(ClientClosedError):
+                await client.wait_connected()
+
+        async def test____socket_property____connection_not_performed_yet(
+            self,
+            local_path: str,
+            remote_address: str | bytes,
+            datagram_protocol: DatagramProtocol[str, str],
+        ) -> None:
+            async with contextlib.aclosing(
+                AsyncUnixDatagramClient(
+                    remote_address,
+                    datagram_protocol,
+                    local_path=local_path,
+                )
+            ) as client:
+                with pytest.raises(AttributeError):
+                    _ = client.socket
+
+                await client.wait_connected()
+
+                assert isinstance(client.socket, SocketProxy)
+                assert client.socket is client.socket
+
+        async def test____get_local_name____connection_not_performed_yet(
+            self,
+            local_path: str,
+            remote_address: str | bytes,
+            datagram_protocol: DatagramProtocol[str, str],
+        ) -> None:
+            async with contextlib.aclosing(
+                AsyncUnixDatagramClient(
+                    remote_address,
+                    datagram_protocol,
+                    local_path=local_path,
+                )
+            ) as client:
+                with pytest.raises(OSError):
+                    _ = client.get_local_name()
+
+                await client.wait_connected()
+
+                assert client.get_local_name().as_raw() == local_path
+
+        async def test____get_peer_name____connection_not_performed_yet(
+            self,
+            local_path: str,
+            remote_address: str | bytes,
+            datagram_protocol: DatagramProtocol[str, str],
+        ) -> None:
+            async with contextlib.aclosing(
+                AsyncUnixDatagramClient(
+                    remote_address,
+                    datagram_protocol,
+                    local_path=local_path,
+                )
+            ) as client:
+                with pytest.raises(OSError):
+                    _ = client.get_peer_name()
+
+                await client.wait_connected()
+
+                assert client.get_peer_name().as_raw() == remote_address
+
+        async def test____send_packet____recv_packet____implicit_connection(
+            self,
+            local_path: str,
+            remote_address: str | bytes,
+            datagram_protocol: DatagramProtocol[str, str],
+        ) -> None:
+            async with contextlib.aclosing(
+                AsyncUnixDatagramClient(
+                    remote_address,
+                    datagram_protocol,
+                    local_path=local_path,
+                )
+            ) as client:
+                assert not client.is_connected()
+
+                with client.backend().timeout(3):
+                    await client.send_packet("Connected")
+                    assert await client.recv_packet() == "Connected"
+
+                assert client.is_connected()
+
+    @pytest.mark.asyncio
+    class TestAsyncUnixDatagramClientConnectionWithAsyncIO(_BaseTestAsyncUnixDatagramClientConnection):
         class EchoProtocol(asyncio.DatagramProtocol):
             transport: asyncio.DatagramTransport | None = None
 
@@ -258,19 +475,30 @@ if sys.platform != "win32":
         @classmethod
         async def server(
             cls,
-            unix_datagram_socket_factory: Callable[[], Socket],
+            bound_unix_datagram_socket_factory: Callable[[], Socket],
         ) -> AsyncIterator[asyncio.DatagramTransport]:
             event_loop = asyncio.get_running_loop()
 
             # Caveat: uvloop does not support having a UNIX socket address for "local_addr" parameter.
             # The socket must be created manually.
-            sock = unix_datagram_socket_factory()
-            sock.setblocking(False)
+            sock = bound_unix_datagram_socket_factory()
+            try:
+                from easynetwork.lowlevel.socket import UnixSocketAddress
+
+                local_addr = UnixSocketAddress.from_raw(sock.getsockname())
+                if sys.platform == "linux" and local_addr.as_abstract_name() and is_uvloop_event_loop(asyncio.get_running_loop()):
+                    # Addresses received through uvloop transports contains extra NULL bytes because the creation of
+                    # the bytes object from the sockaddr_un structure does not take into account the real addrlen.
+                    # https://github.com/MagicStack/uvloop/blob/v0.21.0/uvloop/includes/compat.h#L34-L55
+                    pytest.xfail("uvloop translation of abstract unix sockets to python object is wrong.")
+                sock.setblocking(False)
+            except BaseException:
+                sock.close()
+                raise
             transport, protocol = await event_loop.create_datagram_endpoint(cls.EchoProtocol, sock=sock)
             del sock
             try:
                 with contextlib.closing(transport):
-                    await asyncio.sleep(0.01)
                     yield transport
             finally:
                 await protocol.connection_lost_event.wait()
@@ -280,240 +508,28 @@ if sys.platform != "win32":
         def remote_address(server: asyncio.DatagramTransport) -> str | bytes:
             return server.get_extra_info("sockname")
 
+    @pytest.mark.feature_trio(async_test_auto_mark=True)
+    class TestAsyncUnixDatagramClientConnectionWithTrio(_BaseTestAsyncUnixDatagramClientConnection):
+        @trio_fixture
+        @classmethod
+        async def server(
+            cls,
+            bound_unix_datagram_socket_factory: Callable[[], Socket],
+            nursery: trio.Nursery,
+        ) -> AsyncIterator[trio.socket.SocketType]:
+            import trio
+
+            async def echo_server(*, task_status: trio.TaskStatus[trio.socket.SocketType] = trio.TASK_STATUS_IGNORED) -> NoReturn:
+                with trio.socket.from_stdlib_socket(bound_unix_datagram_socket_factory()) as server:
+                    task_status.started(server)
+                    while True:
+                        data, addr = await server.recvfrom(65536)
+                        await server.sendto(data, addr)
+                        del data, addr
+
+            yield await nursery.start(echo_server)
+
         @pytest.fixture
         @staticmethod
-        def local_path(unix_socket_path_factory: UnixSocketPathFactory) -> str:
-            return unix_socket_path_factory()
-
-        @PlatformMarkers.supports_abstract_sockets
-        async def test____dunder_init____automatic_local_name(
-            self,
-            remote_address: str | bytes,
-            datagram_protocol: DatagramProtocol[str, str],
-        ) -> None:
-            event_loop = asyncio.get_running_loop()
-            if is_uvloop_event_loop(event_loop):
-                # Addresses received through uvloop transports contains extra NULL bytes because the creation of
-                # the bytes object from the sockaddr_un structure does not take into account the real addrlen.
-                # https://github.com/MagicStack/uvloop/blob/v0.21.0/uvloop/includes/compat.h#L34-L55
-                pytest.xfail("uvloop translation of abstract unix sockets to python object is wrong.")
-
-            async with AsyncUnixDatagramClient(remote_address, datagram_protocol, "asyncio") as client:
-                assert client.is_connected()
-                assert not client.get_local_name().is_unnamed()
-
-                async with asyncio.timeout(3):
-                    await client.send_packet("Test")
-                    assert await client.recv_packet() == "Test"
-
-        @PlatformMarkers.abstract_sockets_unsupported
-        async def test____dunder_init____automatic_local_name____unsupported_by_current_platform(
-            self,
-            remote_address: str | bytes,
-            datagram_protocol: DatagramProtocol[str, str],
-        ) -> None:
-            with pytest.raises(
-                ValueError,
-                match=r"^local_path parameter is required on this platform and cannot be an empty string\.",
-            ):
-                _ = AsyncUnixDatagramClient(remote_address, datagram_protocol, "asyncio")
-
-        async def test____dunder_init____with_local_name(
-            self,
-            local_path: str,
-            remote_address: str | bytes,
-            datagram_protocol: DatagramProtocol[str, str],
-        ) -> None:
-            async with AsyncUnixDatagramClient(
-                remote_address,
-                datagram_protocol,
-                "asyncio",
-                local_path=local_path,
-            ) as client:
-                assert client.is_connected()
-                assert client.get_local_name().as_pathname() == pathlib.Path(local_path)
-
-                async with asyncio.timeout(5):
-                    await client.send_packet("Test")
-                    assert await client.recv_packet() == "Test"
-
-        async def test____dunder_init____peer_name____not_set(
-            self,
-            unix_datagram_socket_factory: Callable[[], Socket],
-            datagram_protocol: DatagramProtocol[str, str],
-        ) -> None:
-            from easynetwork.clients.async_unix_datagram import AsyncUnixDatagramClient
-
-            with pytest.raises(OSError):
-                _ = AsyncUnixDatagramClient(unix_datagram_socket_factory(), datagram_protocol, "asyncio")
-
-        async def test____dunder_init____local_name____not_set(
-            self,
-            remote_address: str | bytes,
-            unix_datagram_socket_factory: Callable[[], Socket],
-            datagram_protocol: DatagramProtocol[str, str],
-        ) -> None:
-            unix_datagram_socket_factory = inspect.unwrap(unix_datagram_socket_factory)
-            sock = unix_datagram_socket_factory()
-            sock.connect(remote_address)
-            assert not sock.getsockname()
-            with pytest.raises(ValueError, match=r"^AsyncUnixDatagramClient requires the socket to be named.$"):
-                _ = AsyncUnixDatagramClient(sock, datagram_protocol, "asyncio")
-
-        async def test____wait_connected____idempotent(
-            self,
-            local_path: str,
-            remote_address: str | bytes,
-            datagram_protocol: DatagramProtocol[str, str],
-        ) -> None:
-            async with contextlib.aclosing(
-                AsyncUnixDatagramClient(
-                    remote_address,
-                    datagram_protocol,
-                    "asyncio",
-                    local_path=local_path,
-                )
-            ) as client:
-                await client.wait_connected()
-                assert client.is_connected()
-                await client.wait_connected()
-                assert client.is_connected()
-
-        async def test____wait_connected____simultaneous(
-            self,
-            local_path: str,
-            remote_address: str | bytes,
-            datagram_protocol: DatagramProtocol[str, str],
-        ) -> None:
-            async with contextlib.aclosing(
-                AsyncUnixDatagramClient(
-                    remote_address,
-                    datagram_protocol,
-                    "asyncio",
-                    local_path=local_path,
-                )
-            ) as client:
-                await asyncio.gather(*[client.wait_connected() for _ in range(5)])
-                assert client.is_connected()
-
-        async def test____wait_connected____is_closing____connection_not_performed_yet(
-            self,
-            local_path: str,
-            remote_address: str | bytes,
-            datagram_protocol: DatagramProtocol[str, str],
-        ) -> None:
-            async with contextlib.aclosing(
-                AsyncUnixDatagramClient(
-                    remote_address,
-                    datagram_protocol,
-                    "asyncio",
-                    local_path=local_path,
-                )
-            ) as client:
-                assert not client.is_connected()
-                assert not client.is_closing()
-                await client.wait_connected()
-                assert client.is_connected()
-                assert not client.is_closing()
-
-        async def test____wait_connected____close_before_trying_to_connect(
-            self,
-            local_path: str,
-            remote_address: str | bytes,
-            datagram_protocol: DatagramProtocol[str, str],
-        ) -> None:
-            client = AsyncUnixDatagramClient(
-                remote_address,
-                datagram_protocol,
-                "asyncio",
-                local_path=local_path,
-            )
-            await client.aclose()
-            with pytest.raises(ClientClosedError):
-                await client.wait_connected()
-
-        async def test____socket_property____connection_not_performed_yet(
-            self,
-            local_path: str,
-            remote_address: str | bytes,
-            datagram_protocol: DatagramProtocol[str, str],
-        ) -> None:
-            async with contextlib.aclosing(
-                AsyncUnixDatagramClient(
-                    remote_address,
-                    datagram_protocol,
-                    "asyncio",
-                    local_path=local_path,
-                )
-            ) as client:
-                with pytest.raises(AttributeError):
-                    _ = client.socket
-
-                await client.wait_connected()
-
-                assert isinstance(client.socket, SocketProxy)
-                assert client.socket is client.socket
-
-        async def test____get_local_name____connection_not_performed_yet(
-            self,
-            local_path: str,
-            remote_address: str | bytes,
-            datagram_protocol: DatagramProtocol[str, str],
-        ) -> None:
-            async with contextlib.aclosing(
-                AsyncUnixDatagramClient(
-                    remote_address,
-                    datagram_protocol,
-                    "asyncio",
-                    local_path=local_path,
-                )
-            ) as client:
-                with pytest.raises(OSError):
-                    _ = client.get_local_name()
-
-                await client.wait_connected()
-
-                assert client.get_local_name().as_raw() == local_path
-
-        async def test____get_peer_name____connection_not_performed_yet(
-            self,
-            local_path: str,
-            remote_address: str | bytes,
-            datagram_protocol: DatagramProtocol[str, str],
-        ) -> None:
-            async with contextlib.aclosing(
-                AsyncUnixDatagramClient(
-                    remote_address,
-                    datagram_protocol,
-                    "asyncio",
-                    local_path=local_path,
-                )
-            ) as client:
-                with pytest.raises(OSError):
-                    _ = client.get_peer_name()
-
-                await client.wait_connected()
-
-                assert client.get_peer_name().as_raw() == remote_address
-
-        async def test____send_packet____recv_packet____implicit_connection(
-            self,
-            local_path: str,
-            remote_address: str | bytes,
-            datagram_protocol: DatagramProtocol[str, str],
-        ) -> None:
-            async with contextlib.aclosing(
-                AsyncUnixDatagramClient(
-                    remote_address,
-                    datagram_protocol,
-                    "asyncio",
-                    local_path=local_path,
-                )
-            ) as client:
-                assert not client.is_connected()
-
-                async with asyncio.timeout(3):
-                    await client.send_packet("Connected")
-                    assert await client.recv_packet() == "Connected"
-
-                assert client.is_connected()
+        def remote_address(server: trio.socket.SocketType) -> str | bytes:
+            return server.getsockname()

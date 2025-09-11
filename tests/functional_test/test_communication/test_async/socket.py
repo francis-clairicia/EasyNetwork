@@ -228,7 +228,11 @@ class AsyncDatagramSocket:
                     from easynetwork.lowlevel.socket import UnixSocketAddress
 
                     local_addr = UnixSocketAddress.from_raw(sock.getsockname())
-                    if local_addr.as_abstract_name() and is_uvloop_event_loop(asyncio.get_running_loop()):
+                    if (
+                        sys.platform == "linux"
+                        and local_addr.as_abstract_name()
+                        and is_uvloop_event_loop(asyncio.get_running_loop())
+                    ):
                         # Addresses received through uvloop transports contains extra NULL bytes because the creation of
                         # the bytes object from the sockaddr_un structure does not take into account the real addrlen.
                         # https://github.com/MagicStack/uvloop/blob/v0.21.0/uvloop/includes/compat.h#L34-L55
