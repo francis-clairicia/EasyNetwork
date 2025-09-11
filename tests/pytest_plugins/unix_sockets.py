@@ -17,17 +17,12 @@ class UnixSocketPathFactory:
     _cache: set[pathlib.Path] = dataclasses.field(default_factory=set)
     _lock: threading.Lock = dataclasses.field(default_factory=threading.Lock)
 
-    def __call__(self, *, reuse_old_socket: bool = True) -> str:
+    def __call__(self) -> str:
         with self._lock:
-            if reuse_old_socket:
-                for unix_socket_path in self._cache:
-                    if not unix_socket_path.exists():
-                        return os.fspath(unix_socket_path)
-
-            while (unix_socket_path := self._tmp_dir / f"tmp-{secrets.token_hex(3)}.sock").exists():
+            while (path := self._tmp_dir / f"{secrets.token_hex(3)}.sock").exists() or path in self._cache:
                 continue
-            self._cache.add(unix_socket_path)
-            return os.fspath(unix_socket_path)
+            self._cache.add(path)
+            return os.fspath(path)
 
 
 @pytest.fixture(scope="session")

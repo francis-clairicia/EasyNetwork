@@ -1,28 +1,27 @@
 from __future__ import annotations
 
+import asyncio
+import contextlib
+import os
 import sys
+from collections.abc import AsyncIterator, Callable
+from socket import socket as Socket
+from typing import TYPE_CHECKING, Literal, assert_never
+
+import pytest
+import pytest_asyncio
+
+from .....fixtures.trio import trio_fixture
+from .....tools import AsyncEventScheduling, PlatformMarkers, is_uvloop_event_loop
+from .._utils import delay
+from ..socket import AsyncStreamSocket
+from .common import sock_readline
 
 if sys.platform != "win32":
-    import asyncio
-    import contextlib
-    import os
-    from collections.abc import AsyncIterator
-    from socket import socket as Socket
-    from typing import TYPE_CHECKING
-
     from easynetwork.clients.async_unix_stream import AsyncUnixStreamClient
     from easynetwork.exceptions import ClientClosedError, StreamProtocolParseError
     from easynetwork.lowlevel.socket import SocketProxy
     from easynetwork.protocol import AnyStreamProtocolType
-
-    import pytest
-    import pytest_asyncio
-
-    from .....fixtures.trio import trio_fixture
-    from .....tools import AsyncEventScheduling
-    from .._utils import delay
-    from ..socket import AsyncStreamSocket
-    from .common import sock_readline
 
     if TYPE_CHECKING:
         import trio
@@ -293,10 +292,20 @@ if sys.platform != "win32":
                 yield client
 
     class _BaseTestAsyncUnixStreamClientConnection:
+        @pytest.fixture(
+            params=[
+                pytest.param("PATHNAME"),
+                pytest.param("ABSTRACT", marks=PlatformMarkers.supports_abstract_sockets),
+            ]
+        )
+        @staticmethod
+        def unix_socket_address_type(request: pytest.FixtureRequest) -> Literal["PATHNAME", "ABSTRACT"]:
+            assert request.param in {"PATHNAME", "ABSTRACT"}
+            return request.param
 
         async def test____dunder_init____connect_to_server(
             self,
-            remote_address: str,
+            remote_address: str | bytes,
             stream_protocol: AnyStreamProtocolType[str, str],
         ) -> None:
             async with AsyncUnixStreamClient(remote_address, stream_protocol) as client:
@@ -306,7 +315,7 @@ if sys.platform != "win32":
 
         async def test____wait_connected____idempotent(
             self,
-            remote_address: str,
+            remote_address: str | bytes,
             stream_protocol: AnyStreamProtocolType[str, str],
         ) -> None:
             async with contextlib.aclosing(AsyncUnixStreamClient(remote_address, stream_protocol)) as client:
@@ -318,7 +327,7 @@ if sys.platform != "win32":
 
         async def test____wait_connected____simultaneous(
             self,
-            remote_address: str,
+            remote_address: str | bytes,
             stream_protocol: AnyStreamProtocolType[str, str],
         ) -> None:
             async with contextlib.aclosing(AsyncUnixStreamClient(remote_address, stream_protocol)) as client:
@@ -327,7 +336,7 @@ if sys.platform != "win32":
 
         async def test____wait_connected____is_closing____connection_not_performed_yet(
             self,
-            remote_address: str,
+            remote_address: str | bytes,
             stream_protocol: AnyStreamProtocolType[str, str],
         ) -> None:
             async with contextlib.aclosing(AsyncUnixStreamClient(remote_address, stream_protocol)) as client:
@@ -339,7 +348,7 @@ if sys.platform != "win32":
 
         async def test____wait_connected____close_before_trying_to_connect(
             self,
-            remote_address: str,
+            remote_address: str | bytes,
             stream_protocol: AnyStreamProtocolType[str, str],
         ) -> None:
             client = AsyncUnixStreamClient(remote_address, stream_protocol)
@@ -349,7 +358,7 @@ if sys.platform != "win32":
 
         async def test____socket_property____connection_not_performed_yet(
             self,
-            remote_address: str,
+            remote_address: str | bytes,
             stream_protocol: AnyStreamProtocolType[str, str],
         ) -> None:
             async with contextlib.aclosing(AsyncUnixStreamClient(remote_address, stream_protocol)) as client:
@@ -363,7 +372,7 @@ if sys.platform != "win32":
 
         async def test____get_local_name____connection_not_performed_yet(
             self,
-            remote_address: str,
+            remote_address: str | bytes,
             stream_protocol: AnyStreamProtocolType[str, str],
         ) -> None:
             async with contextlib.aclosing(AsyncUnixStreamClient(remote_address, stream_protocol)) as client:
@@ -376,7 +385,7 @@ if sys.platform != "win32":
 
         async def test____get_peer_name____connection_not_performed_yet(
             self,
-            remote_address: str,
+            remote_address: str | bytes,
             stream_protocol: AnyStreamProtocolType[str, str],
         ) -> None:
             async with contextlib.aclosing(AsyncUnixStreamClient(remote_address, stream_protocol)) as client:
@@ -389,7 +398,7 @@ if sys.platform != "win32":
 
         async def test____get_peer_credentials____consistency(
             self,
-            remote_address: str,
+            remote_address: str | bytes,
             stream_protocol: AnyStreamProtocolType[str, str],
         ) -> None:
             async with AsyncUnixStreamClient(remote_address, stream_protocol) as client:
@@ -405,7 +414,7 @@ if sys.platform != "win32":
 
         async def test____get_peer_credentials____cached_result(
             self,
-            remote_address: str,
+            remote_address: str | bytes,
             stream_protocol: AnyStreamProtocolType[str, str],
         ) -> None:
             async with AsyncUnixStreamClient(remote_address, stream_protocol) as client:
@@ -414,7 +423,7 @@ if sys.platform != "win32":
 
         async def test____get_peer_credentials____connection_not_performed_yet(
             self,
-            remote_address: str,
+            remote_address: str | bytes,
             stream_protocol: AnyStreamProtocolType[str, str],
         ) -> None:
             async with contextlib.aclosing(AsyncUnixStreamClient(remote_address, stream_protocol)) as client:
@@ -427,7 +436,7 @@ if sys.platform != "win32":
 
         async def test____send_packet____recv_packet____implicit_connection(
             self,
-            remote_address: str,
+            remote_address: str | bytes,
             stream_protocol: AnyStreamProtocolType[str, str],
         ) -> None:
             async with contextlib.aclosing(AsyncUnixStreamClient(remote_address, stream_protocol)) as client:
@@ -442,7 +451,11 @@ if sys.platform != "win32":
     class TestAsyncUnixStreamClientConnectionWithAsyncIO(_BaseTestAsyncUnixStreamClientConnection):
         @pytest_asyncio.fixture
         @staticmethod
-        async def server(unix_socket_path_factory: UnixSocketPathFactory) -> AsyncIterator[asyncio.Server]:
+        async def server(
+            unix_socket_address_type: Literal["PATHNAME", "ABSTRACT"],
+            unix_socket_path_factory: UnixSocketPathFactory,
+            unix_stream_socket_factory: Callable[[], Socket],
+        ) -> AsyncIterator[asyncio.Server]:
             async def client_connected_cb(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
                 with contextlib.closing(writer):
                     data: bytes = await reader.readline()
@@ -451,15 +464,32 @@ if sys.platform != "win32":
 
                 await writer.wait_closed()
 
-            async with await asyncio.start_unix_server(
-                client_connected_cb,
-                path=unix_socket_path_factory(),
-            ) as server:
+            sock = unix_stream_socket_factory()
+            try:
+                match unix_socket_address_type:
+                    case "ABSTRACT" if is_uvloop_event_loop(asyncio.get_running_loop()):
+                        # Addresses received through uvloop transports contains extra NULL bytes because the creation of
+                        # the bytes object from the sockaddr_un structure does not take into account the real addrlen.
+                        # https://github.com/MagicStack/uvloop/blob/v0.21.0/uvloop/includes/compat.h#L34-L55
+                        pytest.xfail("uvloop translation of abstract unix sockets to python object is wrong.")
+                    case "ABSTRACT":
+                        # Automatic socket binding
+                        sock.bind("")
+                    case "PATHNAME":
+                        sock.bind(unix_socket_path_factory())
+                    case _:
+                        assert_never(unix_socket_address_type)
+                sock.setblocking(False)
+            except BaseException:
+                sock.close()
+                raise
+
+            async with await asyncio.start_unix_server(client_connected_cb, sock=sock) as server:
                 yield server
 
         @pytest.fixture
         @staticmethod
-        def remote_address(server: asyncio.Server) -> str:
+        def remote_address(server: asyncio.Server) -> str | bytes:
             return server.sockets[0].getsockname()
 
     @pytest.mark.feature_trio(async_test_auto_mark=True)
@@ -467,11 +497,11 @@ if sys.platform != "win32":
         @trio_fixture
         @staticmethod
         async def server(
+            unix_socket_address_type: Literal["PATHNAME", "ABSTRACT"],
             unix_socket_path_factory: UnixSocketPathFactory,
+            unix_stream_socket_factory: Callable[[], Socket],
             nursery: trio.Nursery,
         ) -> AsyncIterator[trio.SocketListener]:
-            from socket import AF_UNIX, SOCK_STREAM
-
             import trio
 
             from ..trio_stream import TrioStreamLineReader
@@ -481,15 +511,23 @@ if sys.platform != "win32":
                     data: bytes = await TrioStreamLineReader(stream).readline()
                     await stream.send_all(data)
 
-            server_socket = trio.socket.socket(AF_UNIX, SOCK_STREAM, 0)
+            sock = unix_stream_socket_factory()
             try:
-                await server_socket.bind(unix_socket_path_factory())
-                server_socket.listen()
+                match unix_socket_address_type:
+                    case "ABSTRACT":
+                        # Automatic socket binding
+                        sock.bind("")
+                    case "PATHNAME":
+                        sock.bind(unix_socket_path_factory())
+                    case _:
+                        assert_never(unix_socket_address_type)
+                sock.listen()
+                sock.setblocking(False)
             except BaseException:
-                server_socket.close()
+                sock.close()
                 raise
 
-            server = trio.SocketListener(server_socket)
+            server = trio.SocketListener(trio.socket.from_stdlib_socket(sock))
             await nursery.start(trio.serve_listeners, client_connected_cb, [server])
             yield server
 

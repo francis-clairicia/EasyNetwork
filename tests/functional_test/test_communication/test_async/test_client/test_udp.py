@@ -4,7 +4,7 @@ import asyncio
 import contextlib
 import functools
 from collections.abc import AsyncIterator, Callable
-from socket import AF_INET, SOCK_DGRAM, socket as Socket
+from socket import AF_INET, socket as Socket
 from typing import TYPE_CHECKING, NoReturn
 
 from easynetwork.clients.async_udp import AsyncUDPNetworkClient
@@ -33,7 +33,6 @@ def udp_socket_factory(
     @functools.wraps(udp_socket_factory)
     def bound_udp_socket_factory() -> Socket:
         sock = udp_socket_factory()
-        sock.settimeout(3)
         sock.bind((localhost_ip, 0))
         return sock
 
@@ -403,15 +402,13 @@ class TestAsyncUDPNetworkClientConnectionWithAsyncIO(_BaseTestAsyncUDPNetworkCli
     @classmethod
     async def server(
         cls,
-        localhost_ip: str,
-        socket_family: int,
+        udp_socket_factory: Callable[[], Socket],
     ) -> AsyncIterator[asyncio.DatagramTransport]:
         event_loop = asyncio.get_running_loop()
 
         transport, protocol = await event_loop.create_datagram_endpoint(
             cls.EchoProtocol,
-            local_addr=(localhost_ip, 0),
-            family=socket_family,
+            sock=udp_socket_factory(),
         )
         try:
             with contextlib.closing(transport):
@@ -431,15 +428,13 @@ class TestAsyncUDPNetworkClientConnectionWithTrio(_BaseTestAsyncUDPNetworkClient
     @classmethod
     async def server(
         cls,
-        localhost_ip: str,
-        socket_family: int,
+        udp_socket_factory: Callable[[], Socket],
         nursery: trio.Nursery,
     ) -> AsyncIterator[trio.socket.SocketType]:
         import trio
 
         async def echo_server(*, task_status: trio.TaskStatus[trio.socket.SocketType] = trio.TASK_STATUS_IGNORED) -> NoReturn:
-            with trio.socket.socket(socket_family, SOCK_DGRAM) as server:
-                await server.bind((localhost_ip, 0))
+            with trio.socket.from_stdlib_socket(udp_socket_factory()) as server:
                 task_status.started(server)
                 while True:
                     data, addr = await server.recvfrom(65536)
