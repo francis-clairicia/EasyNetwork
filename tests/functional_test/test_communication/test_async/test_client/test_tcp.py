@@ -16,10 +16,8 @@ import pytest
 import pytest_asyncio
 
 from .....fixtures.trio import trio_fixture
-from .....tools import AsyncEventScheduling
 from .._utils import delay
 from ..socket import AsyncStreamSocket
-from .common import sock_readline
 
 if TYPE_CHECKING:
     import trio
@@ -48,7 +46,7 @@ class _BaseTestAsyncTCPNetworkClient:
         server: AsyncStreamSocket,
     ) -> None:
         await client.send_packet("ABCDEF")
-        assert await sock_readline(server) == b"ABCDEF\n"
+        assert await server.readline() == b"ABCDEF\n"
 
     async def test____send_packet____closed_client(self, client: AsyncTCPNetworkClient[str, str]) -> None:
         await client.aclose()
@@ -69,7 +67,7 @@ class _BaseTestAsyncTCPNetworkClient:
         server: AsyncStreamSocket,
     ) -> None:
         await client.send_eof()
-        assert await sock_readline(server) == b""
+        assert await server.readline() == b""
         with pytest.raises(RuntimeError):
             await client.send_packet("ABC")
         await server.send_all(b"ABCDEF\n")
@@ -88,7 +86,7 @@ class _BaseTestAsyncTCPNetworkClient:
         server: AsyncStreamSocket,
     ) -> None:
         await client.send_eof()
-        assert await sock_readline(server) == b""
+        assert await server.readline() == b""
         await client.send_eof()
         await client.send_eof()
 
@@ -138,7 +136,7 @@ class _BaseTestAsyncTCPNetworkClient:
         client: AsyncTCPNetworkClient[str, str],
         server: AsyncStreamSocket,
     ) -> None:
-        server.close()
+        await server.aclose()
         with pytest.raises(ConnectionAbortedError):
             await client.recv_packet()
 
@@ -152,7 +150,7 @@ class _BaseTestAsyncTCPNetworkClient:
             await client.recv_packet()
 
         await client.send_packet("ABCDEF")
-        assert await sock_readline(server) == b"ABCDEF\n"
+        assert await server.readline() == b"ABCDEF\n"
 
     async def test____recv_packet____client_close_error(
         self,
@@ -210,8 +208,9 @@ class _BaseTestAsyncTCPNetworkClient:
         server: AsyncStreamSocket,
     ) -> None:
         await server.send_all(b"A\nB\nC\nD\nE\nF")
-        AsyncEventScheduling.call_soon(server.close)
-        assert [p async for p in client.iter_received_packets(timeout=None)] == ["A", "B", "C", "D", "E"]
+        async with client.backend().create_task_group() as tg:
+            tg.start_soon(server.aclose)
+            assert [p async for p in client.iter_received_packets(timeout=None)] == ["A", "B", "C", "D", "E"]
 
     async def test____iter_received_packets____yields_available_packets_until_close(
         self,
@@ -457,11 +456,11 @@ class TestAsyncTCPNetworkClientConnectionWithTrio(_BaseTestAsyncTCPNetworkClient
     ) -> AsyncIterator[list[trio.SocketListener]]:
         import trio
 
-        from ..trio_stream import TrioStreamLineReader
+        from ..socket import _TrioStream
 
         async def client_connected_cb(stream: trio.SocketStream) -> None:
             async with stream:
-                data: bytes = await TrioStreamLineReader(stream).readline()
+                data: bytes = await _TrioStream(stream).readline()
                 await stream.send_all(data)
 
         servers = await trio.open_tcp_listeners(host=localhost_ip, port=0)
@@ -648,11 +647,11 @@ class TestAsyncSSLOverTCPNetworkClientWithTrio(_BaseTestAsyncSSLOverTCPNetworkCl
 
         import trio
 
-        from ..trio_stream import TrioStreamLineReader
+        from ..socket import _TrioStream
 
         async def client_connected_cb(stream: trio.SSLStream[trio.SocketStream]) -> None:
             async with stream:
-                data: bytes = await TrioStreamLineReader(stream).readline()
+                data: bytes = await _TrioStream(stream).readline()
                 await stream.send_all(data)
 
         servers = await trio.open_ssl_over_tcp_listeners(host=localhost_ip, port=0, ssl_context=server_ssl_context)
