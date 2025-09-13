@@ -12,10 +12,9 @@ import pytest
 import pytest_asyncio
 
 from .....fixtures.trio import trio_fixture
-from .....tools import AsyncEventScheduling, PlatformMarkers, is_uvloop_event_loop
+from .....tools import PlatformMarkers, is_uvloop_event_loop
 from .._utils import delay
 from ..socket import AsyncStreamSocket
-from .common import sock_readline
 
 if sys.platform != "win32":
     from easynetwork.clients.async_unix_stream import AsyncUnixStreamClient
@@ -50,7 +49,7 @@ if sys.platform != "win32":
             server: AsyncStreamSocket,
         ) -> None:
             await client.send_packet("ABCDEF")
-            assert await sock_readline(server) == b"ABCDEF\n"
+            assert await server.readline() == b"ABCDEF\n"
 
         async def test____send_packet____closed_client(self, client: AsyncUnixStreamClient[str, str]) -> None:
             await client.aclose()
@@ -71,7 +70,7 @@ if sys.platform != "win32":
             server: AsyncStreamSocket,
         ) -> None:
             await client.send_eof()
-            assert await sock_readline(server) == b""
+            assert await server.readline() == b""
             with pytest.raises(RuntimeError):
                 await client.send_packet("ABC")
             await server.send_all(b"ABCDEF\n")
@@ -90,7 +89,7 @@ if sys.platform != "win32":
             server: AsyncStreamSocket,
         ) -> None:
             await client.send_eof()
-            assert await sock_readline(server) == b""
+            assert await server.readline() == b""
             await client.send_eof()
             await client.send_eof()
 
@@ -140,7 +139,7 @@ if sys.platform != "win32":
             client: AsyncUnixStreamClient[str, str],
             server: AsyncStreamSocket,
         ) -> None:
-            server.close()
+            await server.aclose()
             with pytest.raises(ConnectionAbortedError):
                 await client.recv_packet()
 
@@ -154,7 +153,7 @@ if sys.platform != "win32":
                 await client.recv_packet()
 
             await client.send_packet("ABCDEF")
-            assert await sock_readline(server) == b"ABCDEF\n"
+            assert await server.readline() == b"ABCDEF\n"
 
         async def test____recv_packet____client_close_error(
             self,
@@ -212,8 +211,9 @@ if sys.platform != "win32":
             server: AsyncStreamSocket,
         ) -> None:
             await server.send_all(b"A\nB\nC\nD\nE\nF")
-            AsyncEventScheduling.call_soon(server.close)
-            assert [p async for p in client.iter_received_packets(timeout=None)] == ["A", "B", "C", "D", "E"]
+            async with client.backend().create_task_group() as tg:
+                tg.start_soon(server.aclose)
+                assert [p async for p in client.iter_received_packets(timeout=None)] == ["A", "B", "C", "D", "E"]
 
         async def test____iter_received_packets____yields_available_packets_until_close(
             self,
@@ -504,11 +504,11 @@ if sys.platform != "win32":
         ) -> AsyncIterator[trio.SocketListener]:
             import trio
 
-            from ..trio_stream import TrioStreamLineReader
+            from ..socket import _TrioStream
 
             async def client_connected_cb(stream: trio.SocketStream) -> None:
                 async with stream:
-                    data: bytes = await TrioStreamLineReader(stream).readline()
+                    data: bytes = await _TrioStream(stream).readline()
                     await stream.send_all(data)
 
             sock = unix_stream_socket_factory()

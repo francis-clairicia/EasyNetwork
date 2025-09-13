@@ -14,6 +14,7 @@ from easynetwork.lowlevel._unix_utils import is_unix_socket_family
 from easynetwork.lowlevel.api_async.backend._asyncio.datagram.endpoint import DatagramEndpoint as _AsyncIODatagramEndpoint
 from easynetwork.lowlevel.api_async.backend.utils import new_builtin_backend
 from easynetwork.lowlevel.constants import MAX_DATAGRAM_BUFSIZE
+from easynetwork.serializers.tools import GeneratorStreamReader
 
 import pytest
 import sniffio
@@ -33,6 +34,32 @@ class _AsyncIOStream:
 @dataclasses.dataclass(eq=False, slots=True, match_args=True)
 class _TrioStream:
     stream: trio.SocketStream | trio.SSLStream[trio.SocketStream]
+    _buffered_stream_reader: GeneratorStreamReader = dataclasses.field(init=False, default_factory=GeneratorStreamReader)
+
+    async def read(self, bufsize: int) -> bytes:
+        with contextlib.closing(self._buffered_stream_reader.read(bufsize)) as generator:
+            try:
+                next(generator)
+                while True:
+                    data = await self.stream.receive_some(bufsize)
+                    if not data:
+                        return b""
+                    generator.send(bytes(data))
+            except StopIteration as exc:
+                return exc.value
+
+    async def readline(self) -> bytes:
+        with contextlib.closing(self._buffered_stream_reader.read_until(b"\n", limit=65536)) as generator:
+            try:
+                next(generator)
+                while True:
+                    data = await self.stream.receive_some(1024)
+                    if not data:
+                        generator.close()
+                        return self._buffered_stream_reader.read_all()
+                    generator.send(bytes(data))
+            except StopIteration as exc:
+                return exc.value
 
 
 @dataclasses.dataclass(kw_only=True, eq=False, frozen=True, slots=True)
@@ -107,7 +134,17 @@ class AsyncStreamSocket:
 
     def __del__(self) -> None:
         with contextlib.suppress(Exception):
-            self.close()
+            match self._impl:
+                case _AsyncIOStream(writer=writer):
+                    writer.close()
+                case _TrioStream(trio_stream):
+                    import trio
+
+                    if isinstance(trio_stream, trio.SSLStream):
+                        trio_stream = trio_stream.transport_stream
+                    trio_stream.socket.close()
+                case _:
+                    assert_never(self._impl)
 
     async def __aenter__(self) -> Self:
         return self
@@ -115,19 +152,6 @@ class AsyncStreamSocket:
     async def __aexit__(self, *args: Any) -> None:
         del args
         await self.aclose()
-
-    def close(self) -> None:
-        match self._impl:
-            case _AsyncIOStream(writer=writer):
-                writer.close()
-            case _TrioStream(trio_stream):
-                import trio
-
-                if isinstance(trio_stream, trio.SSLStream):
-                    trio_stream = trio_stream.transport_stream
-                trio_stream.socket.close()
-            case _:
-                assert_never(self._impl)
 
     async def aclose(self) -> None:
         match self._impl:
@@ -143,8 +167,17 @@ class AsyncStreamSocket:
         match self._impl:
             case _AsyncIOStream(reader=reader):
                 return await reader.read(bufsize)
-            case _TrioStream(trio_stream):
-                return bytes(await trio_stream.receive_some(bufsize))
+            case _TrioStream() as reader:
+                return await reader.read(bufsize)
+            case _:
+                assert_never(self._impl)
+
+    async def readline(self) -> bytes:
+        match self._impl:
+            case _AsyncIOStream(reader=reader):
+                return await reader.readline()
+            case _TrioStream() as reader:
+                return await reader.readline()
             case _:
                 assert_never(self._impl)
 
@@ -286,7 +319,13 @@ class AsyncDatagramSocket:
 
     def __del__(self) -> None:
         with contextlib.suppress(Exception):
-            self.close()
+            match self._impl:
+                case _AsyncIODatagram(endpoint):
+                    endpoint.close_nowait()
+                case _TrioDatagram(sock):
+                    sock.close()
+                case _:
+                    assert_never(self._impl)
 
     async def __aenter__(self) -> Self:
         return self
@@ -294,15 +333,6 @@ class AsyncDatagramSocket:
     async def __aexit__(self, *args: Any) -> None:
         del args
         await self.aclose()
-
-    def close(self) -> None:
-        match self._impl:
-            case _AsyncIODatagram(endpoint):
-                endpoint.close_nowait()
-            case _TrioDatagram(sock):
-                sock.close()
-            case _:
-                assert_never(self._impl)
 
     async def aclose(self) -> None:
         match self._impl:
