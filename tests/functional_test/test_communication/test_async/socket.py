@@ -3,12 +3,14 @@ from __future__ import annotations
 __all__ = ["AsyncDatagramSocket", "AsyncStreamSocket"]
 
 import asyncio
+import asyncio.trsock
 import contextlib
 import dataclasses
 import socket
 import ssl
 import sys
-from typing import TYPE_CHECKING, Any, Self, assert_never
+from errno import ECONNRESET
+from typing import TYPE_CHECKING, Any, Self, assert_never, overload
 
 from easynetwork.lowlevel._unix_utils import is_unix_socket_family
 from easynetwork.lowlevel.api_async.backend._asyncio.datagram.endpoint import DatagramEndpoint as _AsyncIODatagramEndpoint
@@ -34,6 +36,7 @@ class _AsyncIOStream:
 @dataclasses.dataclass(eq=False, slots=True, match_args=True)
 class _TrioStream:
     stream: trio.SocketStream | trio.SSLStream[trio.SocketStream]
+    ssl_shutdown_timeout: float | None = None
     _buffered_stream_reader: GeneratorStreamReader = dataclasses.field(init=False, default_factory=GeneratorStreamReader)
 
     async def read(self, bufsize: int) -> bytes:
@@ -92,6 +95,7 @@ class AsyncStreamSocket:
         ssl: ssl.SSLContext | None = None,
         server_hostname: str | None = None,
         ssl_handshake_timeout: float | None = None,
+        ssl_shutdown_timeout: float | None = None,
     ) -> Self:
         match sniffio.current_async_library():
             case "asyncio":
@@ -104,13 +108,19 @@ class AsyncStreamSocket:
                     ssl=ssl,
                     server_hostname=server_hostname,
                     ssl_handshake_timeout=ssl_handshake_timeout,
+                    ssl_shutdown_timeout=ssl_shutdown_timeout,
                 )
                 return cls(_impl=_AsyncIOStream(reader, writer))
             case "trio":
                 import trio
 
+                from easynetwork.lowlevel.api_async.backend._trio.dns_resolver import TrioDNSResolver
+
+                backend = new_builtin_backend("trio")
+                sock = await TrioDNSResolver().create_stream_connection(backend, host, port)
+
                 stream: trio.SocketStream | trio.SSLStream[trio.SocketStream]
-                stream = await trio.open_tcp_stream(host, port)
+                stream = trio.SocketStream(trio.socket.from_stdlib_socket(sock))
                 if ssl is None:
                     return cls(_impl=_TrioStream(stream))
                 try:
@@ -119,12 +129,13 @@ class AsyncStreamSocket:
                         ssl,
                         server_side=False,
                         server_hostname=host if server_hostname is None else server_hostname,
+                        https_compatible=True,  # <- Suppress ragged EOF errors
                     )
                     with (
                         trio.fail_after(ssl_handshake_timeout) if ssl_handshake_timeout is not None else contextlib.nullcontext()
                     ):
                         await stream.do_handshake()
-                        return cls(_impl=_TrioStream(stream))
+                        return cls(_impl=_TrioStream(stream, ssl_shutdown_timeout=ssl_shutdown_timeout))
                     raise AssertionError("Expected code to be unreachable.")
                 except BaseException:
                     await trio.aclose_forcefully(stream)
@@ -158,8 +169,11 @@ class AsyncStreamSocket:
             case _AsyncIOStream(writer=writer):
                 writer.close()
                 await writer.wait_closed()
-            case _TrioStream(trio_stream):
-                await trio_stream.aclose()
+            case _TrioStream(trio_stream, ssl_shutdown_timeout=ssl_shutdown_timeout):
+                import trio
+
+                with contextlib.nullcontext() if ssl_shutdown_timeout is None else trio.move_on_after(ssl_shutdown_timeout):
+                    await trio_stream.aclose()
             case _:
                 assert_never(self._impl)
 
@@ -168,7 +182,10 @@ class AsyncStreamSocket:
             case _AsyncIOStream(reader=reader):
                 return await reader.read(bufsize)
             case _TrioStream() as reader:
-                return await reader.read(bufsize)
+                from easynetwork.lowlevel.api_async.backend._trio._trio_utils import convert_trio_resource_errors
+
+                with convert_trio_resource_errors(broken_resource_errno=ECONNRESET):
+                    return await reader.read(bufsize)
             case _:
                 assert_never(self._impl)
 
@@ -177,7 +194,10 @@ class AsyncStreamSocket:
             case _AsyncIOStream(reader=reader):
                 return await reader.readline()
             case _TrioStream() as reader:
-                return await reader.readline()
+                from easynetwork.lowlevel.api_async.backend._trio._trio_utils import convert_trio_resource_errors
+
+                with convert_trio_resource_errors(broken_resource_errno=ECONNRESET):
+                    return await reader.readline()
             case _:
                 assert_never(self._impl)
 
@@ -187,7 +207,10 @@ class AsyncStreamSocket:
                 writer.write(data)
                 await writer.drain()
             case _TrioStream(trio_stream):
-                await trio_stream.send_all(data)
+                from easynetwork.lowlevel.api_async.backend._trio._trio_utils import convert_trio_resource_errors
+
+                with convert_trio_resource_errors(broken_resource_errno=ECONNRESET):
+                    await trio_stream.send_all(data)
             case _:
                 assert_never(self._impl)
 
@@ -201,7 +224,11 @@ class AsyncStreamSocket:
 
                 if isinstance(trio_stream, trio.SSLStream):
                     raise NotImplementedError
-                await trio_stream.send_eof()
+
+                from easynetwork.lowlevel.api_async.backend._trio._trio_utils import convert_trio_resource_errors
+
+                with convert_trio_resource_errors(broken_resource_errno=ECONNRESET):
+                    await trio_stream.send_eof()
             case _:
                 assert_never(self._impl)
 
@@ -228,6 +255,46 @@ class AsyncStreamSocket:
                 if isinstance(trio_stream, trio.SSLStream):
                     trio_stream = trio_stream.transport_stream
                 return trio_stream.socket.getpeername()
+            case _:
+                assert_never(self._impl)
+
+    @overload
+    def getsockopt(self, level: int, optname: int, /) -> int: ...
+
+    @overload
+    def getsockopt(self, level: int, optname: int, buflen: int, /) -> bytes: ...
+
+    def getsockopt(self, *args: Any) -> int | bytes:
+        match self._impl:
+            case _AsyncIOStream(writer=writer):
+                trsock: asyncio.trsock.TransportSocket = writer.get_extra_info("socket")
+                return trsock.getsockopt(*args)
+            case _TrioStream(trio_stream):
+                import trio
+
+                if isinstance(trio_stream, trio.SSLStream):
+                    trio_stream = trio_stream.transport_stream
+                return trio_stream.socket.getsockopt(*args)
+            case _:
+                assert_never(self._impl)
+
+    @overload
+    def setsockopt(self, level: int, optname: int, value: int | bytes, /) -> None: ...
+
+    @overload
+    def setsockopt(self, level: int, optname: int, value: None, optlen: int, /) -> None: ...
+
+    def setsockopt(self, *args: Any) -> None:
+        match self._impl:
+            case _AsyncIOStream(writer=writer):
+                trsock: asyncio.trsock.TransportSocket = writer.get_extra_info("socket")
+                trsock.setsockopt(*args)
+            case _TrioStream(trio_stream):
+                import trio
+
+                if isinstance(trio_stream, trio.SSLStream):
+                    trio_stream = trio_stream.transport_stream
+                trio_stream.socket.setsockopt(*args)
             case _:
                 assert_never(self._impl)
 

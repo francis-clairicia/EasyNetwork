@@ -18,7 +18,7 @@ import pytest
 import pytest_asyncio
 
 from .....tools import PlatformMarkers
-from .base import BaseTestAsyncServer
+from .base import BaseTestAsyncServer, BaseTestAsyncServerWithAsyncIO
 
 if TYPE_CHECKING:
     from pytest_mock import MockerFixture
@@ -35,6 +35,7 @@ if sys.platform != "win32":
     )
     from easynetwork.lowlevel._utils import remove_traceback_frames_in_place
     from easynetwork.lowlevel.api_async.backend._asyncio.backend import AsyncIOBackend
+    from easynetwork.lowlevel.api_async.backend.abc import IEvent, Task
     from easynetwork.lowlevel.api_async.transports.utils import aclose_forcefully
     from easynetwork.lowlevel.socket import SocketProxy, UnixSocketAddress, enable_socket_linger
     from easynetwork.protocol import AnyStreamProtocolType
@@ -319,7 +320,7 @@ if sys.platform != "win32":
     _UnixAddressTypeLiteral = Literal["PATHNAME", "ABSTRACT"]
 
     @pytest.mark.flaky(retries=3, delay=0.1)
-    class TestAsyncUnixStreamServer(BaseTestAsyncServer):
+    class TestAsyncUnixStreamServer(BaseTestAsyncServerWithAsyncIO, BaseTestAsyncServer):
         @pytest.fixture(
             params=[
                 pytest.param("PATHNAME"),
@@ -415,7 +416,7 @@ if sys.platform != "win32":
 
         @pytest_asyncio.fixture
         @staticmethod
-        async def server_address(run_server: asyncio.Event, server: MyAsyncUnixStreamServer) -> UnixSocketAddress:
+        async def server_address(run_server: IEvent, server: MyAsyncUnixStreamServer) -> UnixSocketAddress:
             async with asyncio.timeout(1):
                 await run_server.wait()
             assert server.is_serving()
@@ -508,7 +509,7 @@ if sys.platform != "win32":
         async def test____server_close____while_server_is_running(
             self,
             server: MyAsyncUnixStreamServer,
-            run_server: asyncio.Event,
+            run_server: IEvent,
             server_address: UnixSocketAddress,
         ) -> None:
             unix_socket_path = server_address.as_pathname()
@@ -524,7 +525,7 @@ if sys.platform != "win32":
         async def test____server_close____while_server_is_running____closed_forcefully(
             self,
             server: MyAsyncUnixStreamServer,
-            run_server: asyncio.Event,
+            run_server: IEvent,
             server_address: UnixSocketAddress,
         ) -> None:
             unix_socket_path = server_address.as_pathname()
@@ -594,11 +595,11 @@ if sys.platform != "win32":
                 mocker.stop(mocked_func)
 
             assert len(caplog.records) == 1
-            assert caplog.records[0].levelno == logging.ERROR
             assert (
                 caplog.records[0].getMessage()
                 == f"Unable to clean up listening Unix socket {os.fspath(unix_socket_path)!r}: [Errno 1] Operation not permitted"
             )
+            assert caplog.records[0].levelno == logging.ERROR
             assert unix_socket_path.exists()
 
         @pytest.mark.usefixtures("run_server_and_wait")
@@ -929,11 +930,11 @@ if sys.platform != "win32":
             await asyncio.sleep(0.1)
 
             assert len(caplog.records) == 1
-            assert caplog.records[0].levelno == logging.ERROR
             assert (
                 caplog.records[0].getMessage()
                 == "RuntimeError: protocol.generate_chunks() crashed (caused by SystemError: CRASH)"
             )
+            assert caplog.records[0].levelno == logging.ERROR
 
         async def test____serve_forever____os_error(
             self,
@@ -974,8 +975,8 @@ if sys.platform != "win32":
             await asyncio.sleep(0.1)
 
             assert len(caplog.records) == 1
-            assert caplog.records[0].levelno == logging.WARNING
             assert caplog.records[0].message.startswith("There have been attempts to do operation on closed client")
+            assert caplog.records[0].levelno == logging.WARNING
 
         async def test____serve_forever____connection_error_in_request_handler(
             self,
@@ -1007,8 +1008,8 @@ if sys.platform != "win32":
 
             # ECONNRESET not logged
             assert len(caplog.records) == 1
-            assert caplog.records[0].levelno == logging.WARNING
             assert caplog.records[0].getMessage() == "ConnectionError raised in request_handler.on_disconnection()"
+            assert caplog.records[0].levelno == logging.WARNING
 
         @pytest.mark.parametrize("forcefully_closed", [False, True], ids=lambda p: f"forcefully_closed=={p}")
         async def test____serve_forever____explicitly_closed_by_request_handler(
@@ -1028,7 +1029,7 @@ if sys.platform != "win32":
         async def test____serve_forever____request_handler_ask_to_stop_accepting_new_connections(
             self,
             client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
-            server_task: asyncio.Task[None],
+            server_task: Task[None],
             server: MyAsyncUnixStreamServer,
         ) -> None:
             reader, writer = await client_factory()
@@ -1048,7 +1049,7 @@ if sys.platform != "win32":
             writer.close()
             await writer.wait_closed()
             async with asyncio.timeout(5):
-                await asyncio.wait({server_task})
+                await server_task.wait()
 
         async def test____serve_forever____close_client_on_connection_hook(
             self,
