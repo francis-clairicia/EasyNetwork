@@ -4,14 +4,13 @@ import asyncio
 import collections
 import contextlib
 import logging
-from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Sequence
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
 from typing import Any
 
 from easynetwork.exceptions import BaseProtocolParseError, ClientClosedError, DatagramProtocolParseError, DeserializeError
 from easynetwork.lowlevel._utils import remove_traceback_frames_in_place
 from easynetwork.lowlevel.api_async.backend._asyncio.backend import AsyncIOBackend
 from easynetwork.lowlevel.api_async.backend._asyncio.datagram.endpoint import DatagramEndpoint, create_datagram_endpoint
-from easynetwork.lowlevel.api_async.backend._asyncio.datagram.listener import DatagramListenerSocketAdapter
 from easynetwork.lowlevel.socket import SocketAddress, SocketProxy
 from easynetwork.protocol import DatagramProtocol
 from easynetwork.servers.async_udp import AsyncUDPNetworkServer
@@ -20,18 +19,7 @@ from easynetwork.servers.handlers import AsyncDatagramClient, AsyncDatagramReque
 import pytest
 import pytest_asyncio
 
-from .base import BaseTestAsyncServer
-
-
-class NoListenerErrorBackend(AsyncIOBackend):
-    async def create_udp_listeners(
-        self,
-        host: str | Sequence[str] | None,
-        port: int,
-        *,
-        reuse_port: bool = False,
-    ) -> Sequence[DatagramListenerSocketAdapter]:
-        return []
+from .base import BaseTestAsyncServer, BaseTestAsyncServerWithAsyncIO
 
 
 class RandomError(Exception):
@@ -271,7 +259,7 @@ class MyAsyncUDPServer(AsyncUDPNetworkServer[str, str]):
 
 
 @pytest.mark.flaky(retries=3, delay=0.1)
-class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
+class TestAsyncUDPNetworkServer(BaseTestAsyncServerWithAsyncIO, BaseTestAsyncServer):
     @pytest.fixture
     @staticmethod
     def request_handler(request: pytest.FixtureRequest) -> AsyncDatagramRequestHandler[str, str]:
@@ -377,20 +365,6 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         async with asyncio.timeout(1):
             pong, _ = await endpoint.recvfrom()
             assert pong == b"pong"
-
-    async def test____serve_forever____empty_listener_list(
-        self,
-        request_handler: MyDatagramRequestHandler,
-        datagram_protocol: DatagramProtocol[str, str],
-    ) -> None:
-        s = MyAsyncUDPServer(None, 0, datagram_protocol, request_handler, NoListenerErrorBackend())
-        try:
-            with pytest.raises(OSError, match=r"^empty listeners list$"):
-                await s.serve_forever()
-
-            assert not s.get_sockets()
-        finally:
-            await s.server_close()
 
     @pytest.mark.usefixtures("run_server_and_wait")
     async def test____serve_forever____server_assignment(
@@ -608,8 +582,8 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
             await asyncio.sleep(0.2)
 
         assert len(caplog.records) == 1
-        assert caplog.records[0].levelno == logging.ERROR
         assert caplog.records[0].getMessage() == "RuntimeError: protocol.make_datagram() crashed (caused by SystemError: CRASH)"
+        assert caplog.records[0].levelno == logging.ERROR
 
     async def test____serve_forever____os_error(
         self,
@@ -648,8 +622,8 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         await asyncio.sleep(0.2)
 
         assert len(caplog.records) == 1
-        assert caplog.records[0].levelno == logging.WARNING
         assert caplog.records[0].getMessage() == f"There have been attempts to do operation on closed client ({host!r}, {port})"
+        assert caplog.records[0].levelno == logging.WARNING
 
     @pytest.mark.parametrize("request_handler", [TimeoutYieldedRequestHandler, TimeoutContextRequestHandler], indirect=True)
     @pytest.mark.parametrize("request_timeout", [0.0, 1.0], ids=lambda p: f"timeout=={p}")

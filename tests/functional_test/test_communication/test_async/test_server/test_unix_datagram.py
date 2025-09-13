@@ -16,7 +16,7 @@ import pytest
 import pytest_asyncio
 
 from .....tools import PlatformMarkers, is_uvloop_event_loop
-from .base import BaseTestAsyncServer
+from .base import BaseTestAsyncServer, BaseTestAsyncServerWithAsyncIO
 
 if TYPE_CHECKING:
     from pytest_mock import MockerFixture
@@ -268,7 +268,7 @@ if sys.platform != "win32":
     _UnixAddressTypeLiteral = Literal["PATHNAME", "ABSTRACT"]
 
     @pytest.mark.flaky(retries=3, delay=0.1)
-    class TestAsyncUnixDatagramServer(BaseTestAsyncServer):
+    class TestAsyncUnixDatagramServer(BaseTestAsyncServerWithAsyncIO, BaseTestAsyncServer):
         @pytest_asyncio.fixture(
             params=[
                 pytest.param("PATHNAME"),
@@ -520,11 +520,11 @@ if sys.platform != "win32":
                 mocker.stop(mocked_func)
 
             assert len(caplog.records) == 1
-            assert caplog.records[0].levelno == logging.ERROR
             assert (
                 caplog.records[0].getMessage()
                 == f"Unable to clean up listening Unix socket {os.fspath(unix_socket_path)!r}: [Errno 1] Operation not permitted"
             )
+            assert caplog.records[0].levelno == logging.ERROR
             assert unix_socket_path.exists()
 
         @pytest.mark.usefixtures("run_server_and_wait")
@@ -600,21 +600,21 @@ if sys.platform != "win32":
                     assert request_handler.request_count[""] == 0
                     assert "" not in request_handler.request_received
                     assert len(caplog.records) == 1
-                    assert caplog.records[0].levelno == logging.WARNING
                     assert (
                         caplog.records[0].getMessage() == "A datagram received from an unbound UNIX datagram socket was dropped."
                     )
+                    assert caplog.records[0].levelno == logging.WARNING
                     assert caplog.records[0].exc_info is None
                 case "handle":
                     logger_crash_maximum_nb_lines[LOGGER.name] = 1
                     assert request_handler.request_count[""] == 1
                     assert request_handler.request_received[""] == ["hello, world."]
                     assert len(caplog.records) == 1
-                    assert caplog.records[0].levelno == logging.ERROR
                     assert (
                         caplog.records[0].getMessage()
                         == f"OSError: [Errno {errno.EINVAL}] Cannot send a datagram to an unnamed address."
                     )
+                    assert caplog.records[0].levelno == logging.ERROR
                     assert caplog.records[0].exc_info is not None
 
         async def test____serve_forever____client_extra_attributes(
@@ -799,10 +799,10 @@ if sys.platform != "win32":
                 await asyncio.sleep(0.2)
 
             assert len(caplog.records) == 1
-            assert caplog.records[0].levelno == logging.ERROR
             assert (
                 caplog.records[0].getMessage() == "RuntimeError: protocol.make_datagram() crashed (caused by SystemError: CRASH)"
             )
+            assert caplog.records[0].levelno == logging.ERROR
 
         async def test____serve_forever____os_error(
             self,
@@ -840,8 +840,8 @@ if sys.platform != "win32":
             await asyncio.sleep(0.2)
 
             assert len(caplog.records) == 1
-            assert caplog.records[0].levelno == logging.WARNING
             assert caplog.records[0].message.startswith("There have been attempts to do operation on closed client")
+            assert caplog.records[0].levelno == logging.WARNING
 
         @pytest.mark.parametrize("request_handler", [TimeoutYieldedRequestHandler, TimeoutContextRequestHandler], indirect=True)
         @pytest.mark.parametrize("request_timeout", [0.0, 1.0], ids=lambda p: f"timeout=={p}")
