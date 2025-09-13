@@ -15,16 +15,12 @@ def pytest_runtest_call(item: pytest.Item) -> Generator[None]:
             return (yield)
         except BaseExceptionGroup as excgrp:
             if "nursery" in excgrp.message.lower() and len(excgrp.exceptions) == 1:
-                raise excgrp.exceptions[0] from None
-            raise
-
-    if item.get_closest_marker("asyncio"):
-        # Some tests are under an asyncio.TaskGroup scope.
-        try:
-            return (yield)
-        except* AssertionError as excgrp:
-            if "TaskGroup" in excgrp.message and len(excgrp.exceptions) == 1:
-                raise excgrp.exceptions[0] from None
+                old_context = excgrp.exceptions[0].__context__
+                try:
+                    raise excgrp.exceptions[0]
+                finally:
+                    excgrp.exceptions[0].__context__ = old_context
+                    old_context = None
             raise
 
     return (yield)

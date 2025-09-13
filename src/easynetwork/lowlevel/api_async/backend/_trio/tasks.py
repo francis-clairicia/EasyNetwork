@@ -134,6 +134,16 @@ class TaskGroup(AbstractTaskGroup):
             if exc_val is not None and len(exc_grp.exceptions) == 1 and exc_grp.exceptions[0] is exc_val:
                 # Do not raise inner exception within a group.
                 return
+            cancellation_exc, exc_grp = exc_grp.split(trio.Cancelled)
+            if exc_grp is None and cancellation_exc:
+                if isinstance(exc_val, trio.Cancelled):
+                    # Simply re-raise inner exception.
+                    return
+                try:
+                    raise (await self.__obtain_cancellation_exc())
+                except BaseException as new_exc:
+                    new_exc.__context__ = None
+                    raise
             raise
         finally:
             del exc_val, exc_tb, nursery_ctx, self
@@ -162,6 +172,22 @@ class TaskGroup(AbstractTaskGroup):
             name = TaskUtils.compute_task_name_from_func(coro_func)
 
         return await nursery.start(self.__task_coroutine, coro_func, args, name=name)
+
+    @staticmethod
+    async def __obtain_cancellation_exc() -> trio.Cancelled:
+        # trio.Cancelled does not have a public constructor, so we must do some magic trick in order not to rely to private
+        # implementation.
+        cancel_outcome: outcome.Outcome[Any] | None = None
+        with trio.CancelScope(shield=True) as scope:
+            scope.cancel()
+            cancel_outcome = await outcome.acapture(trio.lowlevel.checkpoint_if_cancelled)
+        match cancel_outcome:
+            case outcome.Error(trio.Cancelled() as exc):
+                exc.__context__ = exc.__cause__ = None
+                exc.__suppress_context__ = False
+                return exc.with_traceback(None)
+            case _:  # pragma: no cover
+                raise AssertionError(f"Did not obtain the cancellation exception, but {cancel_outcome!r}")
 
     def __check_nursery_started(self) -> trio.Nursery:
         if (n := self.__nursery) is None:

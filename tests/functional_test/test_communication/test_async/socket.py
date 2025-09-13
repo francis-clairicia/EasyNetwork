@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, Self, assert_never, overload
 
 from easynetwork.lowlevel._unix_utils import is_unix_socket_family
 from easynetwork.lowlevel.api_async.backend._asyncio.datagram.endpoint import DatagramEndpoint as _AsyncIODatagramEndpoint
+from easynetwork.lowlevel.api_async.backend.abc import AsyncBackend
 from easynetwork.lowlevel.api_async.backend.utils import new_builtin_backend
 from easynetwork.lowlevel.constants import MAX_DATAGRAM_BUFSIZE
 from easynetwork.serializers.tools import GeneratorStreamReader
@@ -68,6 +69,7 @@ class _TrioStream:
 @dataclasses.dataclass(kw_only=True, eq=False, frozen=True, slots=True)
 class AsyncStreamSocket:
     _impl: _AsyncIOStream | _TrioStream
+    _backend: AsyncBackend
 
     @classmethod
     async def from_connected_stdlib_socket(
@@ -77,12 +79,12 @@ class AsyncStreamSocket:
         match sniffio.current_async_library():
             case "asyncio":
                 reader, writer = await asyncio.open_connection(sock=sock)
-                return cls(_impl=_AsyncIOStream(reader, writer))
+                return cls(_impl=_AsyncIOStream(reader, writer), _backend=new_builtin_backend("asyncio"))
             case "trio":
                 import trio
 
                 stream = trio.SocketStream(trio.socket.from_stdlib_socket(sock))
-                return cls(_impl=_TrioStream(stream))
+                return cls(_impl=_TrioStream(stream), _backend=new_builtin_backend("trio"))
             case lib_name:
                 raise NotImplementedError(lib_name)
 
@@ -110,7 +112,7 @@ class AsyncStreamSocket:
                     ssl_handshake_timeout=ssl_handshake_timeout,
                     ssl_shutdown_timeout=ssl_shutdown_timeout,
                 )
-                return cls(_impl=_AsyncIOStream(reader, writer))
+                return cls(_impl=_AsyncIOStream(reader, writer), _backend=backend)
             case "trio":
                 import trio
 
@@ -122,7 +124,7 @@ class AsyncStreamSocket:
                 stream: trio.SocketStream | trio.SSLStream[trio.SocketStream]
                 stream = trio.SocketStream(trio.socket.from_stdlib_socket(sock))
                 if ssl is None:
-                    return cls(_impl=_TrioStream(stream))
+                    return cls(_impl=_TrioStream(stream), _backend=backend)
                 try:
                     stream = trio.SSLStream(
                         stream,
@@ -135,13 +137,47 @@ class AsyncStreamSocket:
                         trio.fail_after(ssl_handshake_timeout) if ssl_handshake_timeout is not None else contextlib.nullcontext()
                     ):
                         await stream.do_handshake()
-                        return cls(_impl=_TrioStream(stream, ssl_shutdown_timeout=ssl_shutdown_timeout))
+                        return cls(_impl=_TrioStream(stream, ssl_shutdown_timeout=ssl_shutdown_timeout), _backend=backend)
                     raise AssertionError("Expected code to be unreachable.")
                 except BaseException:
                     await trio.aclose_forcefully(stream)
                     raise
             case lib_name:
                 raise NotImplementedError(lib_name)
+
+    if sys.platform != "win32":
+
+        @classmethod
+        async def open_unix_connection(
+            cls,
+            path: str | bytes,
+            *,
+            local_path: str | bytes | None = None,
+        ) -> Self:
+            sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            try:
+                if local_path is not None:
+                    sock.bind(local_path)
+
+                sock.setblocking(False)
+                match sniffio.current_async_library():
+                    case "asyncio":
+                        event_loop = asyncio.get_running_loop()
+                        await event_loop.sock_connect(sock, path)
+
+                        reader, writer = await asyncio.open_unix_connection(sock=sock)
+                        return cls(_impl=_AsyncIOStream(reader, writer), _backend=new_builtin_backend("asyncio"))
+                    case "trio":
+                        import trio
+
+                        stream = trio.SocketStream(trio.socket.from_stdlib_socket(sock))
+                        await stream.socket.connect(path)
+                        return cls(_impl=_TrioStream(stream), _backend=new_builtin_backend("trio"))
+                    case lib_name:
+                        raise NotImplementedError(lib_name)
+            except BaseException:
+                sock.close()
+                raise
 
     def __del__(self) -> None:
         with contextlib.suppress(Exception):
@@ -163,6 +199,9 @@ class AsyncStreamSocket:
     async def __aexit__(self, *args: Any) -> None:
         del args
         await self.aclose()
+
+    def backend(self) -> AsyncBackend:
+        return self._backend
 
     async def aclose(self) -> None:
         match self._impl:

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import collections
 import contextlib
 import errno
@@ -17,8 +16,10 @@ from weakref import WeakValueDictionary
 import pytest
 import pytest_asyncio
 
+from .....fixtures.trio import trio_fixture
 from .....tools import PlatformMarkers
-from .base import BaseTestAsyncServer, BaseTestAsyncServerWithAsyncIO
+from ..socket import AsyncStreamSocket
+from .base import BaseTestAsyncServer, BaseTestAsyncServerWithAsyncIO, BaseTestAsyncServerWithTrio
 
 if TYPE_CHECKING:
     from pytest_mock import MockerFixture
@@ -34,7 +35,6 @@ if sys.platform != "win32":
         StreamProtocolParseError,
     )
     from easynetwork.lowlevel._utils import remove_traceback_frames_in_place
-    from easynetwork.lowlevel.api_async.backend._asyncio.backend import AsyncIOBackend
     from easynetwork.lowlevel.api_async.backend.abc import IEvent, Task
     from easynetwork.lowlevel.api_async.transports.utils import aclose_forcefully
     from easynetwork.lowlevel.socket import SocketProxy, UnixSocketAddress, enable_socket_linger
@@ -212,7 +212,8 @@ if sys.platform != "win32":
 
         async def handle(self, client: AsyncStreamClient[str]) -> AsyncGenerator[None, str]:
             yield
-            raise asyncio.CancelledError()
+            await client.send_packet("response")
+            await client.backend().sleep(3600)
 
     class InitialHandshakeRequestHandler(AsyncStreamRequestHandler[str, str]):
         bypass_handshake: bool = False
@@ -265,7 +266,7 @@ if sys.platform != "win32":
 
         async def handle(self, client: AsyncStreamClient[str]) -> AsyncGenerator[None, str]:
             if self.request_count[client] >= self.refuse_after:
-                await asyncio.sleep(0.2)
+                await client.backend().sleep(0.2)
                 return
             request = yield
             self.request_count[client] += 1
@@ -309,7 +310,7 @@ if sys.platform != "win32":
             await client.send_packet("milk")
 
         async def handle(self, client: AsyncStreamClient[str]) -> AsyncGenerator[None, str]:
-            await asyncio.sleep(0.2)
+            await client.backend().sleep(0.2)
             raise RandomError("An error occurred")
             request = yield  # type: ignore[unreachable]
             await client.send_packet(request)
@@ -320,7 +321,7 @@ if sys.platform != "win32":
     _UnixAddressTypeLiteral = Literal["PATHNAME", "ABSTRACT"]
 
     @pytest.mark.flaky(retries=3, delay=0.1)
-    class TestAsyncUnixStreamServer(BaseTestAsyncServerWithAsyncIO, BaseTestAsyncServer):
+    class _BaseTestAsyncUnixStreamServer(BaseTestAsyncServer):
         @pytest.fixture(
             params=[
                 pytest.param("PATHNAME"),
@@ -330,9 +331,7 @@ if sys.platform != "win32":
         @staticmethod
         def use_unix_address_type(request: pytest.FixtureRequest) -> _UnixAddressTypeLiteral:
             match request.param:
-                case "PATHNAME" as param:
-                    return param
-                case "ABSTRACT" as param:
+                case "PATHNAME" | "ABSTRACT" as param:
                     return param
                 case _:
                     pytest.fail(f"Invalid use_unix_address_type parameter: {request.param}")
@@ -348,139 +347,36 @@ if sys.platform != "win32":
         def log_client_connection(request: pytest.FixtureRequest) -> bool | None:
             return getattr(request, "param", None)
 
-        @pytest.fixture
+        @pytest.fixture(autouse=True)
         @staticmethod
-        def asyncio_backend() -> AsyncIOBackend:
-            return AsyncIOBackend()
-
-        @pytest_asyncio.fixture
-        @staticmethod
-        async def server_not_activated(
-            asyncio_backend: AsyncIOBackend,
-            request_handler: MyStreamRequestHandler,
-            unix_socket_path_factory: UnixSocketPathFactory,
-            stream_protocol: AnyStreamProtocolType[str, str],
+        def set_default_logger_level(
             caplog: pytest.LogCaptureFixture,
             logger_crash_threshold_level: dict[str, int],
-        ) -> AsyncIterator[MyAsyncUnixStreamServer]:
-            server = MyAsyncUnixStreamServer(
-                unix_socket_path_factory(),
-                stream_protocol,
-                request_handler,
-                asyncio_backend,
-                backlog=1,
-                logger=LOGGER,
-            )
-            try:
-                assert not server.is_listening()
-                assert not server.get_sockets()
-                assert not server.get_addresses()
-                caplog.set_level(logging.INFO, LOGGER.name)
-                logger_crash_threshold_level[LOGGER.name] = logging.WARNING
-                yield server
-            finally:
-                await server.server_close()
-
-        @pytest_asyncio.fixture
-        @staticmethod
-        async def server(
-            use_unix_address_type: _UnixAddressTypeLiteral,
-            asyncio_backend: AsyncIOBackend,
-            request_handler: MyStreamRequestHandler,
-            unix_socket_path_factory: UnixSocketPathFactory,
-            stream_protocol: AnyStreamProtocolType[str, str],
-            log_client_connection: bool | None,
-            caplog: pytest.LogCaptureFixture,
-            logger_crash_threshold_level: dict[str, int],
-        ) -> AsyncIterator[MyAsyncUnixStreamServer]:
-            if use_unix_address_type == "ABSTRACT":
-                # Let the kernel assign us an abstract socket address.
-                path = ""
-            else:
-                path = unix_socket_path_factory()
-            async with MyAsyncUnixStreamServer(
-                path,
-                stream_protocol,
-                request_handler,
-                asyncio_backend,
-                backlog=1,
-                log_client_connection=log_client_connection,
-                logger=LOGGER,
-            ) as server:
-                assert server.is_listening()
-                assert server.get_sockets()
-                assert server.get_addresses()
-                caplog.set_level(logging.INFO, LOGGER.name)
-                logger_crash_threshold_level[LOGGER.name] = logging.WARNING
-                yield server
-
-        @pytest_asyncio.fixture
-        @staticmethod
-        async def server_address(run_server: IEvent, server: MyAsyncUnixStreamServer) -> UnixSocketAddress:
-            async with asyncio.timeout(1):
-                await run_server.wait()
-            assert server.is_serving()
-            server_addresses = server.get_addresses()
-            assert len(server_addresses) == 1
-            return server_addresses[0]
+        ) -> None:
+            caplog.set_level(logging.WARNING, LOGGER.name)
+            logger_crash_threshold_level[LOGGER.name] = logging.WARNING
 
         @pytest.fixture
         @staticmethod
         def run_server_and_wait(run_server: None, server_address: Any) -> None:
             pass
 
-        @pytest_asyncio.fixture
-        @staticmethod
-        async def client_factory_no_handshake(
-            use_unix_address_type: _UnixAddressTypeLiteral,
-            unix_socket_path_factory: UnixSocketPathFactory,
-            server_address: UnixSocketAddress,
-        ) -> AsyncIterator[Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]]]:
-            from socket import SOCK_STREAM, socket as SocketType
-
-            async with contextlib.AsyncExitStack() as stack:
-                stack.enter_context(contextlib.suppress(OSError))
-
-                async def factory() -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
-                    event_loop = asyncio.get_running_loop()
-                    async with asyncio.timeout(30):
-                        sock = SocketType(AF_UNIX, SOCK_STREAM)
-                        # By default, a Unix socket does not have a local name when connecting to a listener.
-                        # We need an identifier to recognize them in test cases.
-                        if use_unix_address_type == "ABSTRACT":
-                            # Let the kernel assign us an abstract socket address.
-                            sock.bind("")
-                        else:
-                            # We must assign it to a filepath, even if it will never be used.
-                            path = unix_socket_path_factory()
-                            sock.bind(path)
-
-                        sock.setblocking(False)
-                        await event_loop.sock_connect(sock, server_address.as_raw())
-                        reader, writer = await asyncio.open_unix_connection(sock=sock)
-                        stack.push_async_callback(lambda: asyncio.wait_for(writer.wait_closed(), 3))
-                        stack.callback(writer.close)
-                    return reader, writer
-
-                yield factory
-
         @pytest.fixture
         @staticmethod
         def client_factory(
-            client_factory_no_handshake: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
-        ) -> Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]]:
-            async def factory() -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
-                reader, writer = await client_factory_no_handshake()
-                assert await reader.readline() == b"milk\n"
-                return reader, writer
+            client_factory_no_handshake: Callable[[], Awaitable[AsyncStreamSocket]],
+        ) -> Callable[[], Awaitable[AsyncStreamSocket]]:
+            async def factory() -> AsyncStreamSocket:
+                sock = await client_factory_no_handshake()
+                assert await sock.readline() == b"milk\n"
+                return sock
 
             return factory
 
         @staticmethod
-        async def _wait_client_disconnected(writer: asyncio.StreamWriter) -> None:
-            writer.close()
-            await writer.wait_closed()
-            await asyncio.sleep(0.1)
+        async def _wait_client_disconnected(client: AsyncStreamSocket) -> None:
+            await client.aclose()
+            await client.backend().sleep(0.1)
 
         @pytest.mark.parametrize(
             "max_recv_size",
@@ -495,14 +391,12 @@ if sys.platform != "win32":
             max_recv_size: int,
             request_handler: MyStreamRequestHandler,
             stream_protocol: AnyStreamProtocolType[str, str],
-            asyncio_backend: AsyncIOBackend,
         ) -> None:
             with pytest.raises(ValueError, match=r"^'max_recv_size' must be a strictly positive integer$"):
                 _ = MyAsyncUnixStreamServer(
                     unix_socket_path_factory(),
                     stream_protocol,
                     request_handler,
-                    asyncio_backend,
                     max_recv_size=max_recv_size,
                 )
 
@@ -581,9 +475,11 @@ if sys.platform != "win32":
             func_with_error: str,
             server: MyAsyncUnixStreamServer,
             caplog: pytest.LogCaptureFixture,
+            logger_crash_maximum_nb_lines: dict[str, int],
             mocker: MockerFixture,
         ) -> None:
             caplog.set_level(logging.WARNING, LOGGER.name)
+            logger_crash_maximum_nb_lines[LOGGER.name] = 1
 
             unix_socket_path = server.get_addresses()[0].as_pathname()
             assert unix_socket_path is not None and unix_socket_path.exists()
@@ -620,7 +516,7 @@ if sys.platform != "win32":
         async def test____serve_forever____accept_client(
             self,
             log_client_connection: bool | None,
-            client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+            client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
             request_handler: MyStreamRequestHandler,
             caplog: pytest.LogCaptureFixture,
         ) -> None:
@@ -628,18 +524,18 @@ if sys.platform != "win32":
             if log_client_connection is None:
                 # Should be True by default
                 log_client_connection = True
-            reader, writer = await client_factory()
-            client_address = UnixSocketAddress.from_raw(writer.get_extra_info("sockname"))
+            client = await client_factory()
+            client_address = UnixSocketAddress.from_raw(client.getsockname())
             assert not client_address.is_unnamed()
 
             assert client_address.as_raw() in request_handler.connected_clients
 
-            writer.write(b"hello, world.\n")
-            assert await reader.readline() == b"HELLO, WORLD.\n"
+            await client.send_all(b"hello, world.\n")
+            assert await client.readline() == b"HELLO, WORLD.\n"
 
             assert request_handler.request_received[client_address.as_raw()] == ["hello, world."]
 
-            await self._wait_client_disconnected(writer)
+            await self._wait_client_disconnected(client)
             assert client_address not in request_handler.connected_clients
 
             expected_accept_message = f"Accepted new connection (address = {client_address})"
@@ -656,6 +552,7 @@ if sys.platform != "win32":
 
         async def test____serve_forever____accept_client____client_closed_right_after_accept(
             self,
+            server: MyAsyncUnixStreamServer,
             server_address: UnixSocketAddress,
             caplog: pytest.LogCaptureFixture,
         ) -> None:
@@ -674,7 +571,7 @@ if sys.platform != "win32":
             # *This does not happen on all OS*
             # The server will accept a socket which is already in a "Not connected" state
             # and will fail at client initialization when calling socket.getpeername() (errno.ENOTCONN will be raised)
-            await asyncio.sleep(0.1)
+            await server.backend().sleep(0.1)
 
             assert len(caplog.records) == 0
 
@@ -691,25 +588,25 @@ if sys.platform != "win32":
                 client_address: str | bytes = socket.getsockname()
                 assert client_address not in request_handler.connected_clients
 
-                async with asyncio.timeout(1):
+                with server.backend().timeout(1):
                     await server.shutdown()
 
         async def test____serve_forever____client_extra_attributes(
             self,
-            client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+            client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
             request_handler: MyStreamRequestHandler,
         ) -> None:
 
-            all_writers: list[asyncio.StreamWriter] = [(await client_factory())[1] for _ in range(3)]
+            all_clients: list[AsyncStreamSocket] = [await client_factory() for _ in range(3)]
             assert len(request_handler.connected_clients) == 3
 
-            for writer in all_writers:
-                client_address: str | bytes = writer.get_extra_info("sockname")
+            for client in all_clients:
+                client_address: str | bytes = client.getsockname()
                 connected_client: AsyncStreamClient[str] = request_handler.connected_clients[client_address]
 
                 assert isinstance(connected_client.extra(UNIXClientAttribute.socket), SocketProxy)
                 assert connected_client.extra(UNIXClientAttribute.peer_name).as_raw() == client_address
-                assert connected_client.extra(UNIXClientAttribute.local_name).as_raw() == writer.get_extra_info("peername")
+                assert connected_client.extra(UNIXClientAttribute.local_name).as_raw() == client.getpeername()
 
                 peer_credentials = connected_client.extra(UNIXClientAttribute.peer_credentials)
 
@@ -726,85 +623,86 @@ if sys.platform != "win32":
         async def test____serve_forever____shutdown_during_loop____kill_client_tasks(
             self,
             server: MyAsyncUnixStreamServer,
-            client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+            client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
         ) -> None:
-            reader, _ = await client_factory()
+            client = await client_factory()
 
             await server.shutdown()
-            await asyncio.sleep(0.3)
+            await client.backend().sleep(0.3)
 
             with contextlib.suppress(ConnectionError):
-                assert await reader.read() == b""
+                assert await client.recv(1024) == b""
 
         async def test____serve_forever____partial_request(
             self,
-            client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+            server: MyAsyncUnixStreamServer,
+            client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
             request_handler: MyStreamRequestHandler,
         ) -> None:
-            reader, writer = await client_factory()
-            client_address: str | bytes = writer.get_extra_info("sockname")
+            client = await client_factory()
+            client_address: str | bytes = client.getsockname()
 
-            writer.write(b"hello")
-            await asyncio.sleep(0.1)
+            await client.send_all(b"hello")
+            await client.backend().sleep(0.1)
 
-            writer.write(b", world!\n")
+            await client.send_all(b", world!\n")
 
-            assert await reader.readline() == b"HELLO, WORLD!\n"
+            assert await client.readline() == b"HELLO, WORLD!\n"
             assert request_handler.request_received[client_address] == ["hello, world!"]
 
         async def test____serve_forever____several_requests_at_same_time(
             self,
-            client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+            client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
             request_handler: MyStreamRequestHandler,
         ) -> None:
-            reader, writer = await client_factory()
-            client_address: str | bytes = writer.get_extra_info("sockname")
+            client = await client_factory()
+            client_address: str | bytes = client.getsockname()
 
-            writer.write(b"hello\nworld\n")
+            await client.send_all(b"hello\nworld\n")
 
-            assert await reader.readline() == b"HELLO\n"
-            assert await reader.readline() == b"WORLD\n"
+            assert await client.readline() == b"HELLO\n"
+            assert await client.readline() == b"WORLD\n"
             assert request_handler.request_received[client_address] == ["hello", "world"]
 
         async def test____serve_forever____several_requests_at_same_time____close_between(
             self,
-            client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+            client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
             request_handler: MyStreamRequestHandler,
         ) -> None:
-            reader, writer = await client_factory()
-            client_address: str | bytes = writer.get_extra_info("sockname")
+            client = await client_factory()
+            client_address: str | bytes = client.getsockname()
             request_handler.close_client_after_n_request = 1
 
-            writer.write(b"hello\nworld\n")
+            await client.send_all(b"hello\nworld\n")
 
-            assert await reader.readline() == b"HELLO\n"
-            assert await reader.read() == b""
+            assert await client.readline() == b"HELLO\n"
+            assert await client.recv(1024) == b""
             assert request_handler.request_received[client_address] == ["hello"]
 
         async def test____serve_forever____save_request_handler_context(
             self,
-            client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+            client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
             request_handler: MyStreamRequestHandler,
         ) -> None:
-            reader, writer = await client_factory()
-            client_address: str | bytes = writer.get_extra_info("sockname")
+            client = await client_factory()
+            client_address: str | bytes = client.getsockname()
 
-            writer.write(b"__wait__\nhello, world!\n")
+            await client.send_all(b"__wait__\nhello, world!\n")
 
-            assert await reader.readline() == b"After wait: hello, world!\n"
+            assert await client.readline() == b"After wait: hello, world!\n"
             assert request_handler.request_received[client_address] == ["hello, world!"]
 
         async def test____serve_forever____bad_request(
             self,
-            client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+            client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
             request_handler: MyStreamRequestHandler,
         ) -> None:
-            reader, writer = await client_factory()
-            client_address: str | bytes = writer.get_extra_info("sockname")
+            client = await client_factory()
+            client_address: str | bytes = client.getsockname()
 
-            writer.write("\u00e9\n".encode("latin-1"))  # StringSerializer does not accept unicode
+            await client.send_all("\u00e9\n".encode("latin-1"))  # StringSerializer does not accept unicode
 
-            assert await reader.readline() == b"wrong encoding man.\n"
+            assert await client.readline() == b"wrong encoding man.\n"
             assert request_handler.request_received[client_address] == []
             assert isinstance(request_handler.bad_request_received[client_address][0], StreamProtocolParseError)
             assert isinstance(request_handler.bad_request_received[client_address][0].error, IncrementalDeserializeError)
@@ -819,15 +717,15 @@ if sys.platform != "win32":
         )
         async def test____serve_forever____connection_reset_error(
             self,
-            client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+            client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
             caplog: pytest.LogCaptureFixture,
         ) -> None:
             caplog.set_level(logging.WARNING, LOGGER.name)
-            _, writer = await client_factory()
+            client = await client_factory()
 
-            enable_socket_linger(writer.get_extra_info("socket"), timeout=0)
+            enable_socket_linger(client, timeout=0)
 
-            await self._wait_client_disconnected(writer)
+            await self._wait_client_disconnected(client)
 
             # ECONNRESET not logged
             assert len(caplog.records) == 0
@@ -847,8 +745,9 @@ if sys.platform != "win32":
             self,
             mute_thrown_exception: bool,
             read_on_connection: bool,
+            server: MyAsyncUnixStreamServer,
             request_handler: ErrorInRequestHandler,
-            client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+            client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
             caplog: pytest.LogCaptureFixture,
             logger_crash_maximum_nb_lines: dict[str, int],
         ) -> None:
@@ -857,26 +756,26 @@ if sys.platform != "win32":
                 logger_crash_maximum_nb_lines[LOGGER.name] = 3
             request_handler.mute_thrown_exception = mute_thrown_exception
             request_handler.read_on_connection = read_on_connection
-            reader, writer = await client_factory()
+            client = await client_factory()
 
             expected_messages = {
                 b"RuntimeError: protocol.build_packet_from_buffer() crashed (caused by SystemError: CRASH)\n",
                 b"RuntimeError: protocol.build_packet_from_chunks() crashed (caused by SystemError: CRASH)\n",
             }
 
-            writer.write(b"something\n")
+            await client.send_all(b"something\n")
 
             if mute_thrown_exception:
-                assert await reader.readline() in expected_messages
-                writer.write(b"something\n")
-                assert await reader.readline() in expected_messages
-                await asyncio.sleep(0.1)
+                assert await client.readline() in expected_messages
+                await client.send_all(b"something\n")
+                assert await client.readline() in expected_messages
+                await client.backend().sleep(0.1)
                 assert len(caplog.records) == 0  # After two attempts
             else:
                 with contextlib.suppress(ConnectionError):
-                    assert await reader.readline() in expected_messages
-                    assert await reader.read() == b""
-                await asyncio.sleep(0.1)
+                    assert await client.readline() in expected_messages
+                    assert await client.recv(1024) == b""
+                await client.backend().sleep(0.1)
                 assert len(caplog.records) == 3
                 assert caplog.records[1].exc_info is not None
                 assert type(caplog.records[1].exc_info[1]) is RuntimeError
@@ -885,21 +784,22 @@ if sys.platform != "win32":
         async def test____serve_forever____unexpected_error_during_process(
             self,
             excgrp: bool,
-            client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+            server: MyAsyncUnixStreamServer,
+            client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
             caplog: pytest.LogCaptureFixture,
             logger_crash_maximum_nb_lines: dict[str, int],
         ) -> None:
             caplog.set_level(logging.ERROR, LOGGER.name)
             logger_crash_maximum_nb_lines[LOGGER.name] = 3
-            reader, writer = await client_factory()
+            client = await client_factory()
 
             if excgrp:
-                writer.write(b"__error_excgrp__\n")
+                await client.send_all(b"__error_excgrp__\n")
             else:
-                writer.write(b"__error__\n")
+                await client.send_all(b"__error__\n")
             with contextlib.suppress(ConnectionError):
-                assert await reader.read() == b""
-            await asyncio.sleep(0.1)
+                assert await client.recv(1024) == b""
+            await client.backend().sleep(0.1)
 
             assert len(caplog.records) == 3
             assert caplog.records[1].exc_info is not None
@@ -912,7 +812,8 @@ if sys.platform != "win32":
         @pytest.mark.parametrize("stream_protocol", [pytest.param("bad_serialize", id="serializer_crash")], indirect=True)
         async def test____serve_forever____unexpected_error_during_response_serialization(
             self,
-            client_factory_no_handshake: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+            server: MyAsyncUnixStreamServer,
+            client_factory_no_handshake: Callable[[], Awaitable[AsyncStreamSocket]],
             caplog: pytest.LogCaptureFixture,
             logger_crash_maximum_nb_lines: dict[str, int],
             request_handler: MyStreamRequestHandler,
@@ -920,14 +821,14 @@ if sys.platform != "win32":
             request_handler.milk_handshake = False
             caplog.set_level(logging.ERROR, LOGGER.name)
             logger_crash_maximum_nb_lines[LOGGER.name] = 1
-            reader, writer = await client_factory_no_handshake()
+            client = await client_factory_no_handshake()
 
             while not request_handler.connected_clients:
-                await asyncio.sleep(0.1)
+                await client.backend().sleep(0.1)
 
-            writer.write(b"request\n")
-            assert await reader.read() == b""
-            await asyncio.sleep(0.1)
+            await client.send_all(b"request\n")
+            assert await client.recv(1024) == b""
+            await client.backend().sleep(0.1)
 
             assert len(caplog.records) == 1
             assert (
@@ -938,18 +839,19 @@ if sys.platform != "win32":
 
         async def test____serve_forever____os_error(
             self,
+            server: MyAsyncUnixStreamServer,
             caplog: pytest.LogCaptureFixture,
             logger_crash_maximum_nb_lines: dict[str, int],
-            client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+            client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
         ) -> None:
             caplog.set_level(logging.ERROR, LOGGER.name)
             logger_crash_maximum_nb_lines[LOGGER.name] = 3
-            reader, writer = await client_factory()
+            client = await client_factory()
 
-            writer.write(b"__os_error__\n")
+            await client.send_all(b"__os_error__\n")
             with contextlib.suppress(ConnectionError):
-                assert await reader.read() == b""
-            await asyncio.sleep(0.1)
+                assert await client.recv(1024) == b""
+            await client.backend().sleep(0.1)
 
             assert len(caplog.records) == 3
             assert caplog.records[1].exc_info is not None
@@ -959,20 +861,21 @@ if sys.platform != "win32":
         async def test____serve_forever____use_of_a_closed_client_in_request_handler(
             self,
             excgrp: bool,
-            client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+            server: MyAsyncUnixStreamServer,
+            client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
             caplog: pytest.LogCaptureFixture,
             logger_crash_maximum_nb_lines: dict[str, int],
         ) -> None:
             caplog.set_level(logging.WARNING, LOGGER.name)
             logger_crash_maximum_nb_lines[LOGGER.name] = 1
-            reader, writer = await client_factory()
+            client = await client_factory()
 
             if excgrp:
-                writer.write(b"__closed_client_error_excgrp__\n")
+                await client.send_all(b"__closed_client_error_excgrp__\n")
             else:
-                writer.write(b"__closed_client_error__\n")
-            assert await reader.read() == b""
-            await asyncio.sleep(0.1)
+                await client.send_all(b"__closed_client_error__\n")
+            assert await client.recv(1024) == b""
+            await client.backend().sleep(0.1)
 
             assert len(caplog.records) == 1
             assert caplog.records[0].message.startswith("There have been attempts to do operation on closed client")
@@ -980,31 +883,32 @@ if sys.platform != "win32":
 
         async def test____serve_forever____connection_error_in_request_handler(
             self,
-            client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+            server: MyAsyncUnixStreamServer,
+            client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
             caplog: pytest.LogCaptureFixture,
         ) -> None:
             caplog.set_level(logging.WARNING, LOGGER.name)
-            reader, writer = await client_factory()
+            client = await client_factory()
 
-            writer.write(b"__connection_error__\n")
-            assert await reader.read() == b""
-            await asyncio.sleep(0.1)
+            await client.send_all(b"__connection_error__\n")
+            assert await client.recv(1024) == b""
+            await client.backend().sleep(0.1)
 
             assert len(caplog.records) == 0
 
         async def test____serve_forever____connection_error_in_disconnect_hook(
             self,
-            client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+            client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
             request_handler: MyStreamRequestHandler,
             caplog: pytest.LogCaptureFixture,
             logger_crash_maximum_nb_lines: dict[str, int],
         ) -> None:
             caplog.set_level(logging.WARNING, LOGGER.name)
             logger_crash_maximum_nb_lines[LOGGER.name] = 1
-            _, writer = await client_factory()
+            client = await client_factory()
             request_handler.fail_on_disconnection = True
 
-            await self._wait_client_disconnected(writer)
+            await self._wait_client_disconnected(client)
 
             # ECONNRESET not logged
             assert len(caplog.records) == 1
@@ -1015,29 +919,29 @@ if sys.platform != "win32":
         async def test____serve_forever____explicitly_closed_by_request_handler(
             self,
             forcefully_closed: bool,
-            client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+            client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
         ) -> None:
-            reader, writer = await client_factory()
+            client = await client_factory()
 
             if forcefully_closed:
-                writer.write(b"__close_forcefully__\n")
+                await client.send_all(b"__close_forcefully__\n")
             else:
-                writer.write(b"__close__\n")
+                await client.send_all(b"__close__\n")
 
-            assert await reader.read() == b""
+            assert await client.recv(1024) == b""
 
         async def test____serve_forever____request_handler_ask_to_stop_accepting_new_connections(
             self,
-            client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+            client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
             server_task: Task[None],
             server: MyAsyncUnixStreamServer,
         ) -> None:
-            reader, writer = await client_factory()
+            client = await client_factory()
 
-            writer.write(b"__stop_listening__\n")
+            await client.send_all(b"__stop_listening__\n")
 
-            assert await reader.readline() == b"successfully stop listening\n"
-            await asyncio.sleep(0.1)
+            assert await client.readline() == b"successfully stop listening\n"
+            await client.backend().sleep(0.1)
 
             assert not server.is_serving()
 
@@ -1046,20 +950,19 @@ if sys.platform != "win32":
             with pytest.raises((FileNotFoundError, ConnectionError)):
                 await client_factory()
 
-            writer.close()
-            await writer.wait_closed()
-            async with asyncio.timeout(5):
+            await client.aclose()
+            with client.backend().timeout(5):
                 await server_task.wait()
 
         async def test____serve_forever____close_client_on_connection_hook(
             self,
-            client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+            client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
             request_handler: MyStreamRequestHandler,
         ) -> None:
             request_handler.close_all_clients_on_connection = True
-            reader, _ = await client_factory()
+            client = await client_factory()
 
-            assert await reader.read() == b""
+            assert await client.recv(1024) == b""
 
         @pytest.mark.parametrize("request_handler", [TimeoutYieldedRequestHandler, TimeoutContextRequestHandler], indirect=True)
         @pytest.mark.parametrize("request_timeout", [0.0, 1.0], ids=lambda p: f"timeout=={p}")
@@ -1069,44 +972,50 @@ if sys.platform != "win32":
             request_timeout: float,
             timeout_on_second_yield: bool,
             request_handler: TimeoutYieldedRequestHandler | TimeoutContextRequestHandler,
-            client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+            client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
         ) -> None:
             request_handler.request_timeout = request_timeout
             request_handler.timeout_on_second_yield = timeout_on_second_yield
-            reader, writer = await client_factory()
+            client = await client_factory()
 
             if timeout_on_second_yield:
-                writer.write(b"something\n")
-                assert await reader.readline() == b"something\n"
+                await client.send_all(b"something\n")
+                assert await client.readline() == b"something\n"
 
-            assert await reader.readline() == b"successfully timed out\n"
+            assert await client.readline() == b"successfully timed out\n"
 
         @pytest.mark.parametrize("request_handler", [CancellationRequestHandler], indirect=True)
         async def test____serve_forever____request_handler_is_cancelled(
             self,
-            client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+            server: MyAsyncUnixStreamServer,
+            client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
         ) -> None:
-            reader, writer = await client_factory()
+            client = await client_factory()
 
-            writer.write(b"something\n")
+            await client.send_all(b"something\n")
+            assert await client.readline() == b"response\n"
+
+            with client.backend().timeout(1):
+                await server.shutdown()
 
             with contextlib.suppress(ConnectionError):
-                assert await reader.read() == b""
+                assert await client.recv(1024) == b""
 
         @pytest.mark.parametrize("request_handler", [ErrorBeforeYieldHandler], indirect=True)
         async def test____serve_forever____request_handler_crashed_before_yield(
             self,
+            server: MyAsyncUnixStreamServer,
             caplog: pytest.LogCaptureFixture,
             logger_crash_maximum_nb_lines: dict[str, int],
-            client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+            client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
         ) -> None:
             caplog.set_level(logging.ERROR, LOGGER.name)
             logger_crash_maximum_nb_lines[LOGGER.name] = 3
 
             with contextlib.suppress(ConnectionError):
-                reader, _ = await client_factory()
-                assert await reader.read() == b""
-            await asyncio.sleep(0.1)
+                client = await client_factory()
+                assert await client.recv(1024) == b""
+            await server.backend().sleep(0.1)
             assert len(caplog.records) == 3
             assert caplog.records[1].exc_info is not None
             assert type(caplog.records[1].exc_info[1]) is RandomError
@@ -1116,92 +1025,273 @@ if sys.platform != "win32":
         async def test____serve_forever____request_handler_did_not_yield(
             self,
             refuse_after: int,
+            server: MyAsyncUnixStreamServer,
             request_handler: RequestRefusedHandler,
             caplog: pytest.LogCaptureFixture,
-            client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+            client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
         ) -> None:
             request_handler.refuse_after = refuse_after
             caplog.set_level(logging.ERROR, LOGGER.name)
 
             with contextlib.suppress(ConnectionError):
                 # If refuse after is equal to zero, client_factory() can raise ConnectionResetError
-                reader, writer = await client_factory()
+                client = await client_factory()
 
                 for _ in range(refuse_after):
-                    writer.write(b"something\n")
-                    assert await reader.readline() == b"something\n"
+                    await client.send_all(b"something\n")
+                    assert await client.readline() == b"something\n"
 
-                assert await reader.read() == b""
+                assert await client.recv(1024) == b""
 
-            await asyncio.sleep(0.1)
+            await server.backend().sleep(0.1)
             assert len(caplog.records) == 0
 
         @pytest.mark.parametrize("request_handler", [InitialHandshakeRequestHandler], indirect=True)
         @pytest.mark.parametrize("handshake_2fa", [True, False], ids=lambda p: f"handshake_2fa=={p}")
         async def test____serve_forever____request_handler_on_connection_is_async_gen(
             self,
-            client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+            client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
             handshake_2fa: bool,
             request_handler: InitialHandshakeRequestHandler,
         ) -> None:
             request_handler.handshake_2fa = handshake_2fa
-            reader, writer = await client_factory()
+            client = await client_factory()
 
-            writer.write(b"chocolate\n")
+            await client.send_all(b"chocolate\n")
             if handshake_2fa:
-                assert await reader.readline() == b"2FA code needed\n"
-                writer.write(b"42\n")
+                assert await client.readline() == b"2FA code needed\n"
+                await client.send_all(b"42\n")
 
-            assert await reader.readline() == b"you can enter\n"
-            writer.write(b"something\n")
-            assert await reader.readline() == b"something\n"
+            assert await client.readline() == b"you can enter\n"
+            await client.send_all(b"something\n")
+            assert await client.readline() == b"something\n"
 
         @pytest.mark.parametrize("request_handler", [InitialHandshakeRequestHandler], indirect=True)
         @pytest.mark.parametrize("handshake_2fa", [True, False], ids=lambda p: f"handshake_2fa=={p}")
         async def test____serve_forever____request_handler_on_connection_is_async_gen____close_connection(
             self,
-            client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+            client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
             handshake_2fa: bool,
             request_handler: InitialHandshakeRequestHandler,
         ) -> None:
             request_handler.handshake_2fa = handshake_2fa
-            reader, writer = await client_factory()
+            client = await client_factory()
 
             if handshake_2fa:
-                writer.write(b"chocolate\n")
-                assert await reader.readline() == b"2FA code needed\n"
-                writer.write(b"123\n")
-                assert await reader.readline() == b"wrong code\n"
+                await client.send_all(b"chocolate\n")
+                assert await client.readline() == b"2FA code needed\n"
+                await client.send_all(b"123\n")
+                assert await client.readline() == b"wrong code\n"
             else:
-                writer.write(b"something_else\n")
-                assert await reader.readline() == b"wrong password\n"
-            assert await reader.read() == b""
+                await client.send_all(b"something_else\n")
+                assert await client.readline() == b"wrong password\n"
+            assert await client.recv(1024) == b""
 
         @pytest.mark.parametrize("request_handler", [InitialHandshakeRequestHandler], indirect=True)
         @pytest.mark.parametrize("handshake_2fa", [True, False], ids=lambda p: f"handshake_2fa=={p}")
         async def test____serve_forever____request_handler_on_connection_is_async_gen____throw_cancel_error_within_generator(
             self,
-            client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+            client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
             handshake_2fa: bool,
             request_handler: InitialHandshakeRequestHandler,
         ) -> None:
             request_handler.handshake_2fa = handshake_2fa
-            reader, writer = await client_factory()
+            client = await client_factory()
 
             if handshake_2fa:
-                writer.write(b"chocolate\n")
-                assert await reader.readline() == b"2FA code needed\n"
+                await client.send_all(b"chocolate\n")
+                assert await client.readline() == b"2FA code needed\n"
 
-            assert await reader.readline() == b"timeout error\n"
+            assert await client.readline() == b"timeout error\n"
 
         @pytest.mark.parametrize("request_handler", [InitialHandshakeRequestHandler], indirect=True)
         async def test____serve_forever____request_handler_on_connection_is_async_gen____exit_before_first_yield(
             self,
             request_handler: InitialHandshakeRequestHandler,
-            client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+            client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
         ) -> None:
             request_handler.bypass_handshake = True
-            reader, writer = await client_factory()
+            client = await client_factory()
 
-            writer.write(b"something_else\n")
-            assert await reader.readline() == b"something_else\n"
+            await client.send_all(b"something_else\n")
+            assert await client.readline() == b"something_else\n"
+
+    class TestAsyncUnixStreamServerWithAsyncIO(_BaseTestAsyncUnixStreamServer, BaseTestAsyncServerWithAsyncIO):
+        @pytest_asyncio.fixture
+        @staticmethod
+        async def server_not_activated(
+            request_handler: MyStreamRequestHandler,
+            unix_socket_path_factory: UnixSocketPathFactory,
+            stream_protocol: AnyStreamProtocolType[str, str],
+        ) -> AsyncIterator[MyAsyncUnixStreamServer]:
+            server = MyAsyncUnixStreamServer(
+                unix_socket_path_factory(),
+                stream_protocol,
+                request_handler,
+                backend="asyncio",
+                backlog=1,
+                logger=LOGGER,
+            )
+            try:
+                assert not server.is_listening()
+                assert not server.get_sockets()
+                assert not server.get_addresses()
+                yield server
+            finally:
+                await server.server_close()
+
+        @pytest_asyncio.fixture
+        @staticmethod
+        async def server(
+            use_unix_address_type: _UnixAddressTypeLiteral,
+            request_handler: MyStreamRequestHandler,
+            unix_socket_path_factory: UnixSocketPathFactory,
+            stream_protocol: AnyStreamProtocolType[str, str],
+            log_client_connection: bool | None,
+        ) -> AsyncIterator[MyAsyncUnixStreamServer]:
+            if use_unix_address_type == "ABSTRACT":
+                # Let the kernel assign us an abstract socket address.
+                path = ""
+            else:
+                path = unix_socket_path_factory()
+            async with MyAsyncUnixStreamServer(
+                path,
+                stream_protocol,
+                request_handler,
+                backend="asyncio",
+                backlog=1,
+                log_client_connection=log_client_connection,
+                logger=LOGGER,
+            ) as server:
+                assert server.is_listening()
+                assert server.get_sockets()
+                assert server.get_addresses()
+                yield server
+
+        @pytest_asyncio.fixture
+        @staticmethod
+        async def server_address(run_server: IEvent, server: MyAsyncUnixStreamServer) -> UnixSocketAddress:
+            with server.backend().timeout(1):
+                await run_server.wait()
+            assert server.is_serving()
+            server_addresses = server.get_addresses()
+            assert len(server_addresses) == 1
+            return server_addresses[0]
+
+        @pytest_asyncio.fixture
+        @staticmethod
+        async def client_factory_no_handshake(
+            use_unix_address_type: _UnixAddressTypeLiteral,
+            unix_socket_path_factory: UnixSocketPathFactory,
+            server_address: UnixSocketAddress,
+        ) -> AsyncIterator[Callable[[], Awaitable[AsyncStreamSocket]]]:
+            import asyncio
+
+            async with contextlib.AsyncExitStack() as stack:
+
+                async def factory() -> AsyncStreamSocket:
+                    async with asyncio.timeout(30):
+                        # By default, a Unix socket does not have a local name when connecting to a listener.
+                        # We need an identifier to recognize them in test cases.
+                        if use_unix_address_type == "ABSTRACT":
+                            # Let the kernel assign us an abstract socket address.
+                            local_path = ""
+                        else:
+                            # We must assign it to a filepath, even if it will never be used.
+                            local_path = unix_socket_path_factory()
+
+                        sock = await AsyncStreamSocket.open_unix_connection(server_address.as_raw(), local_path=local_path)
+                        await stack.enter_async_context(sock)
+                    return sock
+
+                yield factory
+
+    class TestAsyncUnixStreamServerWithTrio(_BaseTestAsyncUnixStreamServer, BaseTestAsyncServerWithTrio):
+        @trio_fixture
+        @staticmethod
+        async def server_not_activated(
+            request_handler: MyStreamRequestHandler,
+            unix_socket_path_factory: UnixSocketPathFactory,
+            stream_protocol: AnyStreamProtocolType[str, str],
+        ) -> AsyncIterator[MyAsyncUnixStreamServer]:
+            server = MyAsyncUnixStreamServer(
+                unix_socket_path_factory(),
+                stream_protocol,
+                request_handler,
+                backend="trio",
+                backlog=1,
+                logger=LOGGER,
+            )
+            try:
+                assert not server.is_listening()
+                assert not server.get_sockets()
+                assert not server.get_addresses()
+                yield server
+            finally:
+                await server.server_close()
+
+        @trio_fixture
+        @staticmethod
+        async def server(
+            use_unix_address_type: _UnixAddressTypeLiteral,
+            request_handler: MyStreamRequestHandler,
+            unix_socket_path_factory: UnixSocketPathFactory,
+            stream_protocol: AnyStreamProtocolType[str, str],
+            log_client_connection: bool | None,
+        ) -> AsyncIterator[MyAsyncUnixStreamServer]:
+            if use_unix_address_type == "ABSTRACT":
+                # Let the kernel assign us an abstract socket address.
+                path = ""
+            else:
+                path = unix_socket_path_factory()
+            async with MyAsyncUnixStreamServer(
+                path,
+                stream_protocol,
+                request_handler,
+                backend="trio",
+                backlog=1,
+                log_client_connection=log_client_connection,
+                logger=LOGGER,
+            ) as server:
+                assert server.is_listening()
+                assert server.get_sockets()
+                assert server.get_addresses()
+                yield server
+
+        @trio_fixture
+        @staticmethod
+        async def server_address(run_server: IEvent, server: MyAsyncUnixStreamServer) -> UnixSocketAddress:
+            with server.backend().timeout(1):
+                await run_server.wait()
+            assert server.is_serving()
+            server_addresses = server.get_addresses()
+            assert len(server_addresses) == 1
+            return server_addresses[0]
+
+        @trio_fixture
+        @staticmethod
+        async def client_factory_no_handshake(
+            use_unix_address_type: _UnixAddressTypeLiteral,
+            unix_socket_path_factory: UnixSocketPathFactory,
+            server_address: UnixSocketAddress,
+        ) -> AsyncIterator[Callable[[], Awaitable[AsyncStreamSocket]]]:
+            import trio
+
+            async with contextlib.AsyncExitStack() as stack:
+
+                async def factory() -> AsyncStreamSocket:
+                    with trio.fail_after(30):
+                        # By default, a Unix socket does not have a local name when connecting to a listener.
+                        # We need an identifier to recognize them in test cases.
+                        if use_unix_address_type == "ABSTRACT":
+                            # Let the kernel assign us an abstract socket address.
+                            local_path = ""
+                        else:
+                            # We must assign it to a filepath, even if it will never be used.
+                            local_path = unix_socket_path_factory()
+
+                        sock = await AsyncStreamSocket.open_unix_connection(server_address.as_raw(), local_path=local_path)
+                        await stack.enter_async_context(sock)
+                    return sock
+
+                yield factory
