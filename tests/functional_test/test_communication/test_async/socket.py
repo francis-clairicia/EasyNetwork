@@ -40,12 +40,24 @@ class _TrioStream:
     ssl_shutdown_timeout: float | None = None
     _buffered_stream_reader: GeneratorStreamReader = dataclasses.field(init=False, default_factory=GeneratorStreamReader)
 
+    async def _recv_from_stream(self, bufsize: int) -> bytes:
+        from easynetwork.lowlevel.api_async.backend._trio._trio_utils import convert_trio_resource_errors
+
+        try:
+            with convert_trio_resource_errors(broken_resource_errno=ECONNRESET):
+                data = await self.stream.receive_some(bufsize)
+        except ssl.SSLEOFError:
+            data = b""
+        else:
+            data = bytes(data)
+        return data
+
     async def read(self, bufsize: int) -> bytes:
         with contextlib.closing(self._buffered_stream_reader.read(bufsize)) as generator:
             try:
                 next(generator)
                 while True:
-                    data = await self.stream.receive_some(bufsize)
+                    data = await self._recv_from_stream(bufsize)
                     if not data:
                         return b""
                     generator.send(bytes(data))
@@ -57,7 +69,7 @@ class _TrioStream:
             try:
                 next(generator)
                 while True:
-                    data = await self.stream.receive_some(1024)
+                    data = await self._recv_from_stream(1024)
                     if not data:
                         generator.close()
                         return self._buffered_stream_reader.read_all()
@@ -131,7 +143,6 @@ class AsyncStreamSocket:
                         ssl,
                         server_side=False,
                         server_hostname=host if server_hostname is None else server_hostname,
-                        https_compatible=True,  # <- Suppress ragged EOF errors
                     )
                     with (
                         trio.fail_after(ssl_handshake_timeout) if ssl_handshake_timeout is not None else contextlib.nullcontext()
@@ -221,10 +232,7 @@ class AsyncStreamSocket:
             case _AsyncIOStream(reader=reader):
                 return await reader.read(bufsize)
             case _TrioStream() as reader:
-                from easynetwork.lowlevel.api_async.backend._trio._trio_utils import convert_trio_resource_errors
-
-                with convert_trio_resource_errors(broken_resource_errno=ECONNRESET):
-                    return await reader.read(bufsize)
+                return await reader.read(bufsize)
             case _:
                 assert_never(self._impl)
 
@@ -233,10 +241,7 @@ class AsyncStreamSocket:
             case _AsyncIOStream(reader=reader):
                 return await reader.readline()
             case _TrioStream() as reader:
-                from easynetwork.lowlevel.api_async.backend._trio._trio_utils import convert_trio_resource_errors
-
-                with convert_trio_resource_errors(broken_resource_errno=ECONNRESET):
-                    return await reader.readline()
+                return await reader.readline()
             case _:
                 assert_never(self._impl)
 

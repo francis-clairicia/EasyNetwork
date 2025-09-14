@@ -843,7 +843,7 @@ class _BaseTestAsyncTCPNetworkServer(BaseTestAsyncServer):
 
         await client.send_all(b"__closed_client_error_excgrp__\n" if excgrp else b"__closed_client_error__\n")
         assert await client.recv(1024) == b""
-        await client.backend().sleep(0.1)
+        await self._wait_client_disconnected(client)
 
         assert len(caplog.records) == 1
         assert caplog.records[0].getMessage() == f"There have been attempts to do operation on closed client ({host!r}, {port})"

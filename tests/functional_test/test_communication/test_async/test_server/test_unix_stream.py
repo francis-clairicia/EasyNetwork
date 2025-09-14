@@ -870,7 +870,7 @@ if sys.platform != "win32":
             else:
                 await client.send_all(b"__closed_client_error__\n")
             assert await client.recv(1024) == b""
-            await client.backend().sleep(0.1)
+            await self._wait_client_disconnected(client)
 
             assert len(caplog.records) == 1
             assert caplog.records[0].message.startswith("There have been attempts to do operation on closed client")
