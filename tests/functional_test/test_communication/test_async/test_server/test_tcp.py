@@ -320,6 +320,15 @@ class MyAsyncTCPServer(AsyncTCPNetworkServer[str, str]):
 
 @pytest.mark.flaky(retries=3, delay=0.1)
 class _BaseTestAsyncTCPNetworkServer(BaseTestAsyncServer):
+    @pytest.fixture(autouse=True)
+    @staticmethod
+    def set_default_logger_level(
+        caplog: pytest.LogCaptureFixture,
+        logger_crash_threshold_level: dict[str, int],
+    ) -> None:
+        caplog.set_level(logging.WARNING, LOGGER.name)
+        logger_crash_threshold_level[LOGGER.name] = logging.WARNING
+
     @pytest.fixture(params=["NO_SSL", "USE_SSL"])
     @staticmethod
     def use_ssl(request: pytest.FixtureRequest) -> bool:
@@ -378,20 +387,6 @@ class _BaseTestAsyncTCPNetworkServer(BaseTestAsyncServer):
     @staticmethod
     def log_client_connection(request: pytest.FixtureRequest) -> bool | None:
         return getattr(request, "param", None)
-
-    @pytest.fixture(autouse=True)
-    @staticmethod
-    def set_default_logger_level(
-        caplog: pytest.LogCaptureFixture,
-        logger_crash_threshold_level: dict[str, int],
-    ) -> None:
-        caplog.set_level(logging.WARNING, LOGGER.name)
-        logger_crash_threshold_level[LOGGER.name] = logging.WARNING
-
-    @pytest.fixture
-    @staticmethod
-    def run_server_and_wait(run_server: Any, server_address: Any) -> None:
-        pass
 
     @pytest.fixture
     @staticmethod
@@ -470,12 +465,13 @@ class _BaseTestAsyncTCPNetworkServer(BaseTestAsyncServer):
         with pytest.raises(ValueError, match=r"^'max_recv_size' must be a strictly positive integer$"):
             _ = MyAsyncTCPServer(None, 0, stream_protocol, request_handler, max_recv_size=max_recv_size)
 
-    @pytest.mark.usefixtures("run_server_and_wait")
     async def test____serve_forever____server_assignment(
         self,
         server: MyAsyncTCPServer,
+        run_server: IEvent,
         request_handler: MyStreamRequestHandler,
     ) -> None:
+        await run_server.wait()
         assert request_handler.server == server
 
     @pytest.mark.parametrize(

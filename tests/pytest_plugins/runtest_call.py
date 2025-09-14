@@ -5,7 +5,7 @@ from collections.abc import Generator
 import pytest
 
 
-@pytest.hookimpl(wrapper=True)
+@pytest.hookimpl(wrapper=True, trylast=True)
 def pytest_runtest_call(item: pytest.Item) -> Generator[None]:
     __tracebackhide__ = True
 

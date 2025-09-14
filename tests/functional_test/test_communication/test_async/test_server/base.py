@@ -13,6 +13,7 @@ from easynetwork.servers.abc import AbstractAsyncNetworkServer
 
 import pytest
 import pytest_asyncio
+import sniffio
 
 from .....fixtures.trio import trio_fixture
 
@@ -70,9 +71,15 @@ class BaseTestAsyncServer:
         assert not server.is_serving()
         assert not server.is_listening()
 
-    @pytest.mark.usefixtures("run_server")
-    async def test____serve_forever____error_already_running(self, server: AbstractAsyncNetworkServer) -> None:
-        with pytest.raises(ServerAlreadyRunning), server.backend().timeout(0):
+    # pytest-trio does not support pytest.mark.usefixtures decorator... -_-'
+    # @pytest.mark.usefixtures("run_server")
+    async def test____serve_forever____error_already_running(
+        self,
+        server: AbstractAsyncNetworkServer,
+        run_server: IEvent,
+    ) -> None:
+        del run_server
+        with pytest.raises(ServerAlreadyRunning), server.backend().move_on_after(0):
             await server.serve_forever()
 
     async def test____serve_forever____error_closed_server(self, server: AbstractAsyncNetworkServer) -> None:
@@ -124,6 +131,9 @@ class BaseTestAsyncServer:
         self,
         server_not_activated: AbstractAsyncNetworkServer,
     ) -> None:
+        if sniffio.current_async_library() == "trio":
+            pytest.skip("flaky test because of trio's random scheduling method.")
+
         backend = server_not_activated.backend()
 
         assert not server_not_activated.is_listening()

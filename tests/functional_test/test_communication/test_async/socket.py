@@ -351,6 +351,7 @@ class _TrioDatagram:
 @dataclasses.dataclass(kw_only=True, eq=False, frozen=True, slots=True)
 class AsyncDatagramSocket:
     _impl: _AsyncIODatagram | _TrioDatagram
+    _backend: AsyncBackend
 
     @classmethod
     async def from_stdlib_socket(
@@ -363,27 +364,29 @@ class AsyncDatagramSocket:
             case "asyncio":
                 from easynetwork.lowlevel.api_async.backend._asyncio.datagram.endpoint import create_datagram_endpoint
 
-                if sys.platform != "win32" and is_unix_socket_family(sock.family):
+                if sys.platform == "linux" and is_unix_socket_family(sock.family):
                     from easynetwork.lowlevel.socket import UnixSocketAddress
 
-                    local_addr = UnixSocketAddress.from_raw(sock.getsockname())
-                    if (
-                        sys.platform == "linux"
-                        and local_addr.as_abstract_name()
-                        and is_uvloop_event_loop(asyncio.get_running_loop())
-                    ):
-                        # Addresses received through uvloop transports contains extra NULL bytes because the creation of
-                        # the bytes object from the sockaddr_un structure does not take into account the real addrlen.
-                        # https://github.com/MagicStack/uvloop/blob/v0.21.0/uvloop/includes/compat.h#L34-L55
-                        sock.close()
-                        pytest.xfail("uvloop translation of abstract unix sockets to python object is wrong.")
+                    addresses: list[str | bytes] = [sock.getsockname()]
+                    try:
+                        addresses.append(sock.getpeername())
+                    except OSError:
+                        pass
+
+                    for addr in map(UnixSocketAddress.from_raw, addresses):
+                        if addr.as_abstract_name() and is_uvloop_event_loop(asyncio.get_running_loop()):
+                            # Addresses received through uvloop transports contains extra NULL bytes because the creation of
+                            # the bytes object from the sockaddr_un structure does not take into account the real addrlen.
+                            # https://github.com/MagicStack/uvloop/blob/v0.21.0/uvloop/includes/compat.h#L34-L55
+                            sock.close()
+                            pytest.xfail("uvloop translation of abstract unix sockets to python object is wrong.")
 
                 endpoint = await create_datagram_endpoint(sock=sock)
-                return cls(_impl=_AsyncIODatagram(endpoint))
+                return cls(_impl=_AsyncIODatagram(endpoint), _backend=new_builtin_backend("asyncio"))
             case "trio":
                 import trio
 
-                return cls(_impl=_TrioDatagram(trio.socket.from_stdlib_socket(sock)))
+                return cls(_impl=_TrioDatagram(trio.socket.from_stdlib_socket(sock)), _backend=new_builtin_backend("trio"))
             case lib_name:
                 raise NotImplementedError(lib_name)
 
@@ -405,7 +408,7 @@ class AsyncDatagramSocket:
                     local_addr=local_address,
                     family=family,
                 )
-                return cls(_impl=_AsyncIODatagram(endpoint))
+                return cls(_impl=_AsyncIODatagram(endpoint), _backend=new_builtin_backend("asyncio"))
             case "trio":
                 import trio
 
@@ -419,9 +422,40 @@ class AsyncDatagramSocket:
                     local_address=local_address,
                     family=family,
                 )
-                return cls(_impl=_TrioDatagram(trio.socket.from_stdlib_socket(sock)))
+                return cls(_impl=_TrioDatagram(trio.socket.from_stdlib_socket(sock)), _backend=backend)
             case lib_name:
                 raise NotImplementedError(lib_name)
+
+    if sys.platform != "win32":
+
+        @classmethod
+        async def open_unix_connection(
+            cls,
+            path: str | bytes,
+            *,
+            local_path: str | bytes | None = None,
+        ) -> Self:
+            sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+            try:
+                if local_path is not None:
+                    sock.bind(local_path)
+
+                sock.setblocking(False)
+                match sniffio.current_async_library():
+                    case "asyncio":
+                        event_loop = asyncio.get_running_loop()
+                        await event_loop.sock_connect(sock, path)
+                    case "trio":
+                        from easynetwork.lowlevel.api_async.backend._trio._trio_utils import connect_sock_to_resolved_address
+
+                        await connect_sock_to_resolved_address(sock, path)
+                    case lib_name:
+                        raise NotImplementedError(lib_name)
+
+                return await cls.from_stdlib_socket(sock)
+            except BaseException:
+                sock.close()
+                raise
 
     def __del__(self) -> None:
         with contextlib.suppress(Exception):
@@ -439,6 +473,9 @@ class AsyncDatagramSocket:
     async def __aexit__(self, *args: Any) -> None:
         del args
         await self.aclose()
+
+    def backend(self) -> AsyncBackend:
+        return self._backend
 
     async def aclose(self) -> None:
         match self._impl:

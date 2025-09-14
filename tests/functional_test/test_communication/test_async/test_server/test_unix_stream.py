@@ -322,6 +322,15 @@ if sys.platform != "win32":
 
     @pytest.mark.flaky(retries=3, delay=0.1)
     class _BaseTestAsyncUnixStreamServer(BaseTestAsyncServer):
+        @pytest.fixture(autouse=True)
+        @staticmethod
+        def set_default_logger_level(
+            caplog: pytest.LogCaptureFixture,
+            logger_crash_threshold_level: dict[str, int],
+        ) -> None:
+            caplog.set_level(logging.WARNING, LOGGER.name)
+            logger_crash_threshold_level[LOGGER.name] = logging.WARNING
+
         @pytest.fixture(
             params=[
                 pytest.param("PATHNAME"),
@@ -346,20 +355,6 @@ if sys.platform != "win32":
         @staticmethod
         def log_client_connection(request: pytest.FixtureRequest) -> bool | None:
             return getattr(request, "param", None)
-
-        @pytest.fixture(autouse=True)
-        @staticmethod
-        def set_default_logger_level(
-            caplog: pytest.LogCaptureFixture,
-            logger_crash_threshold_level: dict[str, int],
-        ) -> None:
-            caplog.set_level(logging.WARNING, LOGGER.name)
-            logger_crash_threshold_level[LOGGER.name] = logging.WARNING
-
-        @pytest.fixture
-        @staticmethod
-        def run_server_and_wait(run_server: None, server_address: Any) -> None:
-            pass
 
         @pytest.fixture
         @staticmethod
@@ -498,14 +493,14 @@ if sys.platform != "win32":
             assert caplog.records[0].levelno == logging.ERROR
             assert unix_socket_path.exists()
 
-        @pytest.mark.usefixtures("run_server_and_wait")
         async def test____serve_forever____server_assignment(
             self,
             server: MyAsyncUnixStreamServer,
+            run_server: IEvent,
             request_handler: MyStreamRequestHandler,
         ) -> None:
+            await run_server.wait()
             assert request_handler.server == server
-            assert isinstance(request_handler.server, AsyncUnixStreamServer)
 
         @pytest.mark.parametrize(
             "log_client_connection",
