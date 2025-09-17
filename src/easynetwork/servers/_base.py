@@ -532,7 +532,7 @@ class ClientErrorHandler(Generic[_T_Address]):
         self.__logger.error("-" * 40)
 
     def __compute_client_address(self) -> _T_Address | Literal["<unknown>"]:
-        try:
-            return self.__client_address_cb()
-        except Exception:
-            return "<unknown>"
+        client_address: _T_Address | Literal["<unknown>"] = "<unknown>"
+        with contextlib.suppress(Exception):
+            client_address = self.__client_address_cb()
+        return client_address
