@@ -218,7 +218,8 @@ class AsyncStreamSocket:
         match self._impl:
             case _AsyncIOStream(writer=writer):
                 writer.close()
-                await writer.wait_closed()
+                with contextlib.suppress(ConnectionError):
+                    await writer.wait_closed()
             case _TrioStream(trio_stream, ssl_shutdown_timeout=ssl_shutdown_timeout):
                 import trio
 
