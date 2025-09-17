@@ -315,6 +315,20 @@ class TestTrioStreamSocketAdapter(BaseTestTrioSocketStream, MixinTestSocketSendM
         # Assert
         mock_trio_socket_stream.socket.recvmsg.assert_not_called()
 
+    @PlatformMarkers.supports_socket_recvmsg
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
+    async def test____recv_with_ancillary____convert_trio_ClosedResourceError(
+        self,
+        transport: TrioStreamSocketAdapter,
+        mock_trio_socket_stream: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_trio_socket_stream.socket.recvmsg.side_effect = self._make_closed_resource_error(None)
+
+        # Act & Assert
+        with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EBADF):
+            _ = await transport.recv_with_ancillary(1024, 2048)
+
     @PlatformMarkers.supports_socket_recvmsg_into
     @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
     async def test____recv_with_ancillary_into____read_from_reader(
@@ -373,6 +387,20 @@ class TestTrioStreamSocketAdapter(BaseTestTrioSocketStream, MixinTestSocketSendM
 
         # Assert
         mock_trio_socket_stream.socket.recvmsg_into.assert_not_called()
+
+    @PlatformMarkers.supports_socket_recvmsg
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
+    async def test____recv_with_ancillary_into____convert_trio_ClosedResourceError(
+        self,
+        transport: TrioStreamSocketAdapter,
+        mock_trio_socket_stream: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_trio_socket_stream.socket.recvmsg_into.side_effect = self._make_closed_resource_error(None)
+
+        # Act & Assert
+        with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EBADF):
+            _ = await transport.recv_with_ancillary_into(bytearray(4), 2048)
 
     async def test____send_all____use_stream_send_all(
         self,
@@ -503,6 +531,21 @@ class TestTrioStreamSocketAdapter(BaseTestTrioSocketStream, MixinTestSocketSendM
         # Assert
         mock_trio_socket_stream.socket.sendmsg.assert_awaited_once_with(mocker.ANY, mocker.sentinel.ancdata)
         assert chunks == [[b"data", b"to", b"send"]]
+
+    @PlatformMarkers.supports_socket_sendmsg
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
+    async def test____send_all_with_ancillary____convert_trio_ClosedResourceError(
+        self,
+        transport: TrioStreamSocketAdapter,
+        mock_trio_socket_stream: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_trio_socket_stream.socket.sendmsg.side_effect = self._make_closed_resource_error()
+
+        # Act & Assert
+        with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EBADF):
+            await transport.send_all_with_ancillary(iter([b"data", b"to", b"send"]), mocker.sentinel.ancdata)
 
     @PlatformMarkers.supports_socket_sendmsg
     @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
