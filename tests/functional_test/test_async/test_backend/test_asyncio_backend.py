@@ -832,6 +832,31 @@ class TestAsyncioBackend:
                 await backend.coro_yield()
                 raise ValueError("unwrapped exception")
 
+    async def test____create_task_group____do_not_wrap_CancelledError_from_within_context(
+        self,
+        backend: AsyncBackend,
+    ) -> None:
+        async def coroutine(value: int) -> int:
+            return await asyncio.sleep(5.0, value)
+
+        with backend.move_on_after(0.1), pytest.raises(asyncio.CancelledError):
+            async with backend.create_task_group() as task_group:
+                task_group.start_soon(coroutine, 42)
+                task_group.start_soon(coroutine, 54)
+                await asyncio.sleep(5.0)
+
+    async def test____create_task_group____raise_CancelledError_when_all_tasks_has_been_cancelled(
+        self,
+        backend: AsyncBackend,
+    ) -> None:
+        async def coroutine(value: int) -> int:
+            return await asyncio.sleep(5.0, value)
+
+        with backend.move_on_after(0.1), pytest.raises(asyncio.CancelledError):
+            async with backend.create_task_group() as task_group:
+                task_group.start_soon(coroutine, 42)
+                task_group.start_soon(coroutine, 54)
+
     async def test____run_in_thread____cannot_be_cancelled_by_default(
         self,
         backend: AsyncBackend,

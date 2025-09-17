@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import asyncio
 import collections
 import contextlib
+import functools
 import logging
 import ssl
-from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Sequence
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
 from socket import IPPROTO_TCP, TCP_NODELAY
 from typing import Any
 from weakref import WeakValueDictionary
@@ -17,9 +17,7 @@ from easynetwork.exceptions import (
     StreamProtocolParseError,
 )
 from easynetwork.lowlevel._utils import remove_traceback_frames_in_place
-from easynetwork.lowlevel.api_async.backend._asyncio.backend import AsyncIOBackend
-from easynetwork.lowlevel.api_async.backend._asyncio.dns_resolver import AsyncIODNSResolver
-from easynetwork.lowlevel.api_async.backend._asyncio.stream.listener import ListenerSocketAdapter
+from easynetwork.lowlevel.api_async.backend.abc import IEvent, Task
 from easynetwork.lowlevel.api_async.transports.utils import aclose_forcefully
 from easynetwork.lowlevel.socket import SocketAddress, SocketProxy, TLSAttribute, enable_socket_linger
 from easynetwork.protocol import AnyStreamProtocolType
@@ -29,20 +27,10 @@ from easynetwork.servers.handlers import AsyncStreamClient, AsyncStreamRequestHa
 import pytest
 import pytest_asyncio
 
+from .....fixtures.trio import trio_fixture
 from .....tools import PlatformMarkers
-from .base import BaseTestAsyncServer
-
-
-class NoListenerErrorBackend(AsyncIOBackend):
-    async def create_tcp_listeners(
-        self,
-        host: str | Sequence[str] | None,
-        port: int,
-        backlog: int,
-        *,
-        reuse_port: bool = False,
-    ) -> Sequence[ListenerSocketAdapter[Any]]:
-        return []
+from ..socket import AsyncStreamSocket
+from .base import BaseTestAsyncServer, BaseTestAsyncServerWithAsyncIO, BaseTestAsyncServerWithTrio
 
 
 def fetch_client_address(client: AsyncStreamClient[Any]) -> SocketAddress:
@@ -218,7 +206,8 @@ class CancellationRequestHandler(AsyncStreamRequestHandler[str, str]):
 
     async def handle(self, client: AsyncStreamClient[str]) -> AsyncGenerator[None, str]:
         yield
-        raise asyncio.CancelledError()
+        await client.send_packet("response")
+        await client.backend().sleep(3600)
 
 
 class InitialHandshakeRequestHandler(AsyncStreamRequestHandler[str, str]):
@@ -273,7 +262,7 @@ class RequestRefusedHandler(AsyncStreamRequestHandler[str, str]):
 
     async def handle(self, client: AsyncStreamClient[str]) -> AsyncGenerator[None, str]:
         if self.request_count[client] >= self.refuse_after:
-            await asyncio.sleep(0.2)
+            await client.backend().sleep(0.2)
             return
         request = yield
         self.request_count[client] += 1
@@ -319,7 +308,7 @@ class ErrorBeforeYieldHandler(AsyncStreamRequestHandler[str, str]):
         await client.send_packet("milk")
 
     async def handle(self, client: AsyncStreamClient[str]) -> AsyncGenerator[None, str]:
-        await asyncio.sleep(0.2)
+        await client.backend().sleep(0.2)
         raise RandomError("An error occurred")
         request = yield  # type: ignore[unreachable]
         await client.send_packet(request)
@@ -330,7 +319,16 @@ class MyAsyncTCPServer(AsyncTCPNetworkServer[str, str]):
 
 
 @pytest.mark.flaky(retries=3, delay=0.1)
-class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
+class _BaseTestAsyncTCPNetworkServer(BaseTestAsyncServer):
+    @pytest.fixture(autouse=True)
+    @staticmethod
+    def set_default_logger_level(
+        caplog: pytest.LogCaptureFixture,
+        logger_crash_threshold_level: dict[str, int],
+    ) -> None:
+        caplog.set_level(logging.WARNING, LOGGER.name)
+        logger_crash_threshold_level[LOGGER.name] = logging.WARNING
+
     @pytest.fixture(params=["NO_SSL", "USE_SSL"])
     @staticmethod
     def use_ssl(request: pytest.FixtureRequest) -> bool:
@@ -341,6 +339,33 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
                 return True
             case _:
                 pytest.fail(f"Invalid use_ssl parameter: {request.param}")
+
+    @pytest.fixture
+    @staticmethod
+    def client_ssl_context(
+        client_ssl_context: ssl.SSLContext | None,
+        use_ssl: bool,
+    ) -> ssl.SSLContext | None:
+        if not use_ssl:
+            return None
+        if client_ssl_context is None:
+            pytest.skip("trustme is not installed")
+        return client_ssl_context
+
+    @pytest.fixture
+    @staticmethod
+    def server_ssl_context(
+        server_ssl_context: ssl.SSLContext | None,
+        use_ssl: bool,
+    ) -> ssl.SSLContext | None:
+        if not use_ssl:
+            return None
+        if server_ssl_context is None:
+            pytest.skip("trustme is not installed")
+        elif hasattr(ssl, "OP_IGNORE_UNEXPECTED_EOF"):
+            # Remove this option for non-regression
+            server_ssl_context.options &= ~ssl.OP_IGNORE_UNEXPECTED_EOF
+        return server_ssl_context
 
     @pytest.fixture
     @staticmethod
@@ -365,141 +390,20 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
 
     @pytest.fixture
     @staticmethod
-    def asyncio_backend() -> AsyncIOBackend:
-        return AsyncIOBackend()
-
-    @pytest_asyncio.fixture
-    @staticmethod
-    async def server_not_activated(
-        asyncio_backend: AsyncIOBackend,
-        request_handler: MyStreamRequestHandler,
-        localhost_ip: str,
-        stream_protocol: AnyStreamProtocolType[str, str],
-        caplog: pytest.LogCaptureFixture,
-        logger_crash_threshold_level: dict[str, int],
-    ) -> AsyncIterator[MyAsyncTCPServer]:
-        server = MyAsyncTCPServer(
-            localhost_ip,
-            0,
-            stream_protocol,
-            request_handler,
-            asyncio_backend,
-            backlog=1,
-            logger=LOGGER,
-        )
-        try:
-            assert not server.is_listening()
-            assert not server.get_sockets()
-            assert not server.get_addresses()
-            caplog.set_level(logging.INFO, LOGGER.name)
-            logger_crash_threshold_level[LOGGER.name] = logging.WARNING
-            yield server
-        finally:
-            await server.server_close()
-
-    @pytest_asyncio.fixture
-    @staticmethod
-    async def server(
-        asyncio_backend: AsyncIOBackend,
-        request_handler: MyStreamRequestHandler,
-        localhost_ip: str,
-        stream_protocol: AnyStreamProtocolType[str, str],
-        use_ssl: bool,
-        server_ssl_context: ssl.SSLContext | None,
-        ssl_handshake_timeout: float | None,
-        ssl_standard_compatible: bool | None,
-        log_client_connection: bool | None,
-        caplog: pytest.LogCaptureFixture,
-        logger_crash_threshold_level: dict[str, int],
-    ) -> AsyncIterator[MyAsyncTCPServer]:
-        if server_ssl_context is None:
-            if use_ssl:
-                pytest.skip("trustme is not installed")
-        elif hasattr(ssl, "OP_IGNORE_UNEXPECTED_EOF"):
-            # Remove this option for non-regression
-            server_ssl_context.options &= ~ssl.OP_IGNORE_UNEXPECTED_EOF
-
-        async with MyAsyncTCPServer(
-            localhost_ip,
-            0,
-            stream_protocol,
-            request_handler,
-            asyncio_backend,
-            backlog=1,
-            ssl=server_ssl_context if use_ssl else None,
-            ssl_handshake_timeout=ssl_handshake_timeout,
-            ssl_standard_compatible=ssl_standard_compatible,
-            log_client_connection=log_client_connection,
-            logger=LOGGER,
-        ) as server:
-            assert server.is_listening()
-            assert server.get_sockets()
-            assert server.get_addresses()
-            caplog.set_level(logging.INFO, LOGGER.name)
-            logger_crash_threshold_level[LOGGER.name] = logging.WARNING
-            yield server
-
-    @pytest_asyncio.fixture
-    @staticmethod
-    async def server_address(run_server: asyncio.Event, server: MyAsyncTCPServer) -> tuple[str, int]:
-        async with asyncio.timeout(1):
-            await run_server.wait()
-        assert server.is_serving()
-        server_addresses = server.get_addresses()
-        assert len(server_addresses) == 1
-        return server_addresses[0].for_connection()
-
-    @pytest.fixture
-    @staticmethod
-    def run_server_and_wait(run_server: None, server_address: Any) -> None:
-        pass
-
-    @pytest_asyncio.fixture
-    @staticmethod
-    async def client_factory_no_handshake(
-        asyncio_backend: AsyncIOBackend,
-        server_address: tuple[str, int],
-        use_ssl: bool,
-        client_ssl_context: ssl.SSLContext | None,
-    ) -> AsyncIterator[Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]]]:
-        if client_ssl_context is None and use_ssl:
-            pytest.skip("trustme is not installed")
-
-        async with contextlib.AsyncExitStack() as stack:
-            stack.enter_context(contextlib.suppress(OSError))
-
-            async def factory() -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
-                async with asyncio.timeout(30):
-                    sock = await AsyncIODNSResolver().create_stream_connection(asyncio_backend, *server_address)
-                    reader, writer = await asyncio.open_connection(
-                        sock=sock,
-                        ssl=client_ssl_context if use_ssl else None,
-                        server_hostname="test.example.com" if use_ssl else None,
-                        ssl_handshake_timeout=1 if use_ssl else None,
-                    )
-                    stack.push_async_callback(lambda: asyncio.wait_for(writer.wait_closed(), 3))
-                    stack.callback(writer.close)
-                return reader, writer
-
-            yield factory
-
-    @pytest.fixture
-    @staticmethod
     def client_factory(
-        client_factory_no_handshake: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
-    ) -> Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]]:
-        async def factory() -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
-            reader, writer = await client_factory_no_handshake()
-            assert await reader.readline() == b"milk\n"
-            return reader, writer
+        client_factory_no_handshake: Callable[[], Awaitable[AsyncStreamSocket]],
+    ) -> Callable[[], Awaitable[AsyncStreamSocket]]:
+        async def factory() -> AsyncStreamSocket:
+            sock = await client_factory_no_handshake()
+            assert await sock.readline() == b"milk\n"
+            return sock
 
         return factory
 
     @staticmethod
-    async def _wait_client_disconnected(writer: asyncio.StreamWriter) -> None:
-        writer.close()
-        await writer.wait_closed()
-        await asyncio.sleep(0.1)
+    async def _wait_client_disconnected(client: AsyncStreamSocket) -> None:
+        await client.aclose()
+        await client.backend().sleep(0.1)
 
     @pytest.mark.parametrize("host", [None, ""], ids=repr)
     async def test____dunder_init____bind_to_all_available_interfaces(
@@ -507,37 +411,32 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         host: str | None,
         request_handler: MyStreamRequestHandler,
         stream_protocol: AnyStreamProtocolType[str, str],
-        asyncio_backend: AsyncIOBackend,
     ) -> None:
         async with MyAsyncTCPServer(
             host,
             0,
             stream_protocol,
             request_handler,
-            asyncio_backend,
             logger=LOGGER,
         ) as s:
-            is_up_event = asyncio.Event()
-            _ = asyncio.create_task(s.serve_forever(is_up_event=is_up_event))
-            async with asyncio.timeout(1):
-                await is_up_event.wait()
+            backend = s.backend()
+            is_up_event = backend.create_event()
+            async with backend.create_task_group() as tg:
+                await tg.start(functools.partial(s.serve_forever, is_up_event=is_up_event))
+                with backend.timeout(1):
+                    await is_up_event.wait()
 
-            try:
-                assert len(s.get_addresses()) > 0
-                assert len(s.get_sockets()) > 0
+                try:
+                    assert len(s.get_addresses()) > 0
+                    assert len(s.get_sockets()) > 0
 
-                port = s.get_addresses()[0].port
+                    port = s.get_addresses()[0].port
 
-                reader, writer = await asyncio.open_connection("localhost", port)
+                    async with await AsyncStreamSocket.open_tcp_connection("localhost", port) as client:
+                        assert await client.readline() == b"milk\n"
 
-                assert await reader.readline() == b"milk\n"
-
-                writer.close()
-                await writer.wait_closed()
-                await asyncio.sleep(0.1)
-
-            finally:
-                await s.shutdown()
+                finally:
+                    await s.shutdown()
 
     @pytest.mark.parametrize("ssl_parameter", ["ssl_handshake_timeout", "ssl_shutdown_timeout", "ssl_standard_compatible"])
     async def test____dunder_init____useless_parameter_if_no_ssl_context(
@@ -545,11 +444,10 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         ssl_parameter: str,
         request_handler: MyStreamRequestHandler,
         stream_protocol: AnyStreamProtocolType[str, str],
-        asyncio_backend: AsyncIOBackend,
     ) -> None:
         kwargs: dict[str, Any] = {ssl_parameter: 30}
         with pytest.raises(ValueError, match=rf"^{ssl_parameter} is only meaningful with ssl$"):
-            _ = MyAsyncTCPServer(None, 0, stream_protocol, request_handler, asyncio_backend, ssl=None, **kwargs)
+            _ = MyAsyncTCPServer(None, 0, stream_protocol, request_handler, ssl=None, **kwargs)
 
     @pytest.mark.parametrize(
         "max_recv_size",
@@ -563,31 +461,17 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         max_recv_size: int,
         request_handler: MyStreamRequestHandler,
         stream_protocol: AnyStreamProtocolType[str, str],
-        asyncio_backend: AsyncIOBackend,
     ) -> None:
         with pytest.raises(ValueError, match=r"^'max_recv_size' must be a strictly positive integer$"):
-            _ = MyAsyncTCPServer(None, 0, stream_protocol, request_handler, asyncio_backend, max_recv_size=max_recv_size)
+            _ = MyAsyncTCPServer(None, 0, stream_protocol, request_handler, max_recv_size=max_recv_size)
 
-    async def test____serve_forever____empty_listener_list(
-        self,
-        request_handler: MyStreamRequestHandler,
-        stream_protocol: AnyStreamProtocolType[str, str],
-    ) -> None:
-        s = MyAsyncTCPServer(None, 0, stream_protocol, request_handler, NoListenerErrorBackend())
-        try:
-            with pytest.raises(OSError, match=r"^empty listeners list$"):
-                await s.server_activate()
-
-            assert not s.get_sockets()
-        finally:
-            await s.server_close()
-
-    @pytest.mark.usefixtures("run_server_and_wait")
     async def test____serve_forever____server_assignment(
         self,
         server: MyAsyncTCPServer,
+        run_server: IEvent,
         request_handler: MyStreamRequestHandler,
     ) -> None:
+        await run_server.wait()
         assert request_handler.server == server
 
     @pytest.mark.parametrize(
@@ -599,7 +483,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     async def test____serve_forever____accept_client(
         self,
         log_client_connection: bool | None,
-        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+        client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
         request_handler: MyStreamRequestHandler,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
@@ -607,18 +491,18 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         if log_client_connection is None:
             # Should be True by default
             log_client_connection = True
-        reader, writer = await client_factory()
-        client_address: tuple[Any, ...] = writer.get_extra_info("sockname")
+        client = await client_factory()
+        client_address: tuple[Any, ...] = client.getsockname()
         client_host, client_port = client_address[:2]
 
         assert client_address in request_handler.connected_clients
 
-        writer.write(b"hello, world.\n")
-        assert await reader.readline() == b"HELLO, WORLD.\n"
+        await client.send_all(b"hello, world.\n")
+        assert await client.readline() == b"HELLO, WORLD.\n"
 
         assert request_handler.request_received[client_address] == ["hello, world."]
 
-        await self._wait_client_disconnected(writer)
+        await self._wait_client_disconnected(client)
         assert client_address not in request_handler.connected_clients
 
         expected_accept_message = f"Accepted new connection (address = ({client_host!r}, {client_port}))"
@@ -638,6 +522,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     @pytest.mark.parametrize("socket_family", ["AF_INET"], indirect=True)
     async def test____serve_forever____accept_client____client_sent_RST_packet_right_after_accept(
         self,
+        server: MyAsyncTCPServer,
         server_address: tuple[str, int],
         caplog: pytest.LogCaptureFixture,
     ) -> None:
@@ -655,7 +540,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
 
         # The server will accept a socket which is already in a "Not connected" state
         # and will fail at client initialization when calling socket.getpeername() (errno.ENOTCONN will be raised)
-        await asyncio.sleep(0.1)
+        await server.backend().sleep(0.1)
 
         # On Linux: ENOTCONN error should not create a big Traceback error
         # On BSD: ECONNABORTED error on accept() should not create a big Traceback error
@@ -675,25 +560,25 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
             client_address: tuple[Any, ...] = socket.getsockname()
             assert client_address not in request_handler.connected_clients
 
-            async with asyncio.timeout(1):
+            with server.backend().timeout(1):
                 await server.shutdown()
 
     async def test____serve_forever____client_extra_attributes(
         self,
-        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+        client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
         request_handler: MyStreamRequestHandler,
         use_ssl: bool,
     ) -> None:
-        all_writers: list[asyncio.StreamWriter] = [(await client_factory())[1] for _ in range(3)]
+        all_clients: list[AsyncStreamSocket] = [await client_factory() for _ in range(3)]
         assert len(request_handler.connected_clients) == 3
 
-        for writer in all_writers:
-            client_address: tuple[Any, ...] = writer.get_extra_info("sockname")
+        for client in all_clients:
+            client_address: tuple[Any, ...] = client.getsockname()
             connected_client: AsyncStreamClient[str] = request_handler.connected_clients[client_address]
 
             assert isinstance(connected_client.extra(INETClientAttribute.socket), SocketProxy)
             assert connected_client.extra(INETClientAttribute.remote_address) == client_address
-            assert connected_client.extra(INETClientAttribute.local_address) == writer.get_extra_info("peername")
+            assert connected_client.extra(INETClientAttribute.local_address) == client.getpeername()
 
             if use_ssl:
                 assert connected_client.extra(TLSAttribute.sslcontext, None) is not None
@@ -701,7 +586,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
 
     async def test____serve_forever____disable_nagle_algorithm(
         self,
-        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+        client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
         request_handler: MyStreamRequestHandler,
     ) -> None:
         for _ in range(3):
@@ -718,85 +603,85 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     async def test____serve_forever____shutdown_during_loop____kill_client_tasks(
         self,
         server: MyAsyncTCPServer,
-        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+        client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
     ) -> None:
-        reader, _ = await client_factory()
+        client = await client_factory()
 
         await server.shutdown()
-        await asyncio.sleep(0.3)
+        await client.backend().sleep(0.3)
 
         with contextlib.suppress(ConnectionError):
-            assert await reader.read() == b""
+            assert await client.recv(1024) == b""
 
     async def test____serve_forever____partial_request(
         self,
-        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+        client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
         request_handler: MyStreamRequestHandler,
     ) -> None:
-        reader, writer = await client_factory()
-        client_address: tuple[Any, ...] = writer.get_extra_info("sockname")
+        client = await client_factory()
+        client_address: tuple[Any, ...] = client.getsockname()
 
-        writer.write(b"hello")
-        await asyncio.sleep(0.1)
+        await client.send_all(b"hello")
+        await client.backend().sleep(0.1)
 
-        writer.write(b", world!\n")
+        await client.send_all(b", world!\n")
 
-        assert await reader.readline() == b"HELLO, WORLD!\n"
+        assert await client.readline() == b"HELLO, WORLD!\n"
         assert request_handler.request_received[client_address] == ["hello, world!"]
 
     async def test____serve_forever____several_requests_at_same_time(
         self,
-        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+        client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
         request_handler: MyStreamRequestHandler,
     ) -> None:
-        reader, writer = await client_factory()
-        client_address: tuple[Any, ...] = writer.get_extra_info("sockname")
+        client = await client_factory()
+        client_address: tuple[Any, ...] = client.getsockname()
 
-        writer.write(b"hello\nworld\n")
+        await client.send_all(b"hello\nworld\n")
 
-        assert await reader.readline() == b"HELLO\n"
-        assert await reader.readline() == b"WORLD\n"
+        assert await client.readline() == b"HELLO\n"
+        assert await client.readline() == b"WORLD\n"
         assert request_handler.request_received[client_address] == ["hello", "world"]
 
     async def test____serve_forever____several_requests_at_same_time____close_between(
         self,
-        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+        client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
         request_handler: MyStreamRequestHandler,
     ) -> None:
-        reader, writer = await client_factory()
-        client_address: tuple[Any, ...] = writer.get_extra_info("sockname")
+        client = await client_factory()
+        client_address: tuple[Any, ...] = client.getsockname()
         request_handler.close_client_after_n_request = 1
 
-        writer.write(b"hello\nworld\n")
+        await client.send_all(b"hello\nworld\n")
 
-        assert await reader.readline() == b"HELLO\n"
-        assert await reader.read() == b""
+        assert await client.readline() == b"HELLO\n"
+        assert await client.recv(1024) == b""
         assert request_handler.request_received[client_address] == ["hello"]
 
     async def test____serve_forever____save_request_handler_context(
         self,
-        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+        client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
         request_handler: MyStreamRequestHandler,
     ) -> None:
-        reader, writer = await client_factory()
-        client_address: tuple[Any, ...] = writer.get_extra_info("sockname")
+        client = await client_factory()
+        client_address: tuple[Any, ...] = client.getsockname()
 
-        writer.write(b"__wait__\nhello, world!\n")
+        await client.send_all(b"__wait__\nhello, world!\n")
 
-        assert await reader.readline() == b"After wait: hello, world!\n"
+        assert await client.readline() == b"After wait: hello, world!\n"
         assert request_handler.request_received[client_address] == ["hello, world!"]
 
     async def test____serve_forever____bad_request(
         self,
-        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+        client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
         request_handler: MyStreamRequestHandler,
     ) -> None:
-        reader, writer = await client_factory()
-        client_address: tuple[Any, ...] = writer.get_extra_info("sockname")
+        client = await client_factory()
+        client_address: tuple[Any, ...] = client.getsockname()
 
-        writer.write("\u00e9\n".encode("latin-1"))  # StringSerializer does not accept unicode
+        await client.send_all("\u00e9\n".encode("latin-1"))  # StringSerializer does not accept unicode
 
-        assert await reader.readline() == b"wrong encoding man.\n"
+        assert await client.readline() == b"wrong encoding man.\n"
         assert request_handler.request_received[client_address] == []
         assert isinstance(request_handler.bad_request_received[client_address][0], StreamProtocolParseError)
         assert isinstance(request_handler.bad_request_received[client_address][0].error, IncrementalDeserializeError)
@@ -813,15 +698,15 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     )
     async def test____serve_forever____connection_reset_error(
         self,
-        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+        client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         caplog.set_level(logging.WARNING, LOGGER.name)
-        _, writer = await client_factory()
+        client = await client_factory()
 
-        enable_socket_linger(writer.get_extra_info("socket"), timeout=0)
+        enable_socket_linger(client, timeout=0)
 
-        await self._wait_client_disconnected(writer)
+        await self._wait_client_disconnected(client)
 
         # ECONNRESET not logged
         assert len(caplog.records) == 0
@@ -842,7 +727,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         mute_thrown_exception: bool,
         read_on_connection: bool,
         request_handler: ErrorInRequestHandler,
-        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+        client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
         caplog: pytest.LogCaptureFixture,
         logger_crash_maximum_nb_lines: dict[str, int],
     ) -> None:
@@ -851,26 +736,26 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
             logger_crash_maximum_nb_lines[LOGGER.name] = 3
         request_handler.mute_thrown_exception = mute_thrown_exception
         request_handler.read_on_connection = read_on_connection
-        reader, writer = await client_factory()
+        client = await client_factory()
 
         expected_messages = {
             b"RuntimeError: protocol.build_packet_from_buffer() crashed (caused by SystemError: CRASH)\n",
             b"RuntimeError: protocol.build_packet_from_chunks() crashed (caused by SystemError: CRASH)\n",
         }
 
-        writer.write(b"something\n")
+        await client.send_all(b"something\n")
 
         if mute_thrown_exception:
-            assert await reader.readline() in expected_messages
-            writer.write(b"something\n")
-            assert await reader.readline() in expected_messages
-            await asyncio.sleep(0.1)
+            assert await client.readline() in expected_messages
+            await client.send_all(b"something\n")
+            assert await client.readline() in expected_messages
+            await client.backend().sleep(0.1)
             assert len(caplog.records) == 0  # After two attempts
         else:
             with contextlib.suppress(ConnectionError):
-                assert await reader.readline() in expected_messages
-                assert await reader.read() == b""
-            await asyncio.sleep(0.1)
+                assert await client.readline() in expected_messages
+                assert await client.recv(1024) == b""
+            await client.backend().sleep(0.1)
             assert len(caplog.records) == 3
             assert caplog.records[1].exc_info is not None
             assert type(caplog.records[1].exc_info[1]) is RuntimeError
@@ -879,21 +764,18 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     async def test____serve_forever____unexpected_error_during_process(
         self,
         excgrp: bool,
-        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+        client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
         caplog: pytest.LogCaptureFixture,
         logger_crash_maximum_nb_lines: dict[str, int],
     ) -> None:
         caplog.set_level(logging.ERROR, LOGGER.name)
         logger_crash_maximum_nb_lines[LOGGER.name] = 3
-        reader, writer = await client_factory()
+        client = await client_factory()
 
-        if excgrp:
-            writer.write(b"__error_excgrp__\n")
-        else:
-            writer.write(b"__error__\n")
+        await client.send_all(b"__error_excgrp__\n" if excgrp else b"__error__\n")
         with contextlib.suppress(ConnectionError):
-            assert await reader.read() == b""
-        await asyncio.sleep(0.1)
+            assert await client.recv(1024) == b""
+        await client.backend().sleep(0.1)
 
         assert len(caplog.records) == 3
         assert caplog.records[1].exc_info is not None
@@ -906,7 +788,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     @pytest.mark.parametrize("stream_protocol", [pytest.param("bad_serialize", id="serializer_crash")], indirect=True)
     async def test____serve_forever____unexpected_error_during_response_serialization(
         self,
-        client_factory_no_handshake: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+        client_factory_no_handshake: Callable[[], Awaitable[AsyncStreamSocket]],
         caplog: pytest.LogCaptureFixture,
         logger_crash_maximum_nb_lines: dict[str, int],
         request_handler: MyStreamRequestHandler,
@@ -914,33 +796,33 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         request_handler.milk_handshake = False
         caplog.set_level(logging.ERROR, LOGGER.name)
         logger_crash_maximum_nb_lines[LOGGER.name] = 1
-        reader, writer = await client_factory_no_handshake()
+        client = await client_factory_no_handshake()
 
         while not request_handler.connected_clients:
-            await asyncio.sleep(0.1)
+            await client.backend().sleep(0.1)
 
-        writer.write(b"request\n")
-        assert await reader.read() == b""
-        await asyncio.sleep(0.1)
+        await client.send_all(b"request\n")
+        assert await client.recv(1024) == b""
+        await client.backend().sleep(0.1)
 
         assert len(caplog.records) == 1
-        assert caplog.records[0].levelno == logging.ERROR
         assert caplog.records[0].getMessage() == "RuntimeError: protocol.generate_chunks() crashed (caused by SystemError: CRASH)"
+        assert caplog.records[0].levelno == logging.ERROR
 
     async def test____serve_forever____os_error(
         self,
         caplog: pytest.LogCaptureFixture,
         logger_crash_maximum_nb_lines: dict[str, int],
-        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+        client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
     ) -> None:
         caplog.set_level(logging.ERROR, LOGGER.name)
         logger_crash_maximum_nb_lines[LOGGER.name] = 3
-        reader, writer = await client_factory()
+        client = await client_factory()
 
-        writer.write(b"__os_error__\n")
+        await client.send_all(b"__os_error__\n")
         with contextlib.suppress(ConnectionError):
-            assert await reader.read() == b""
-        await asyncio.sleep(0.1)
+            assert await client.recv(1024) == b""
+        await client.backend().sleep(0.1)
 
         assert len(caplog.records) == 3
         assert caplog.records[1].exc_info is not None
@@ -950,106 +832,99 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     async def test____serve_forever____use_of_a_closed_client_in_request_handler(
         self,
         excgrp: bool,
-        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+        client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
         caplog: pytest.LogCaptureFixture,
         logger_crash_maximum_nb_lines: dict[str, int],
     ) -> None:
         caplog.set_level(logging.WARNING, LOGGER.name)
         logger_crash_maximum_nb_lines[LOGGER.name] = 1
-        reader, writer = await client_factory()
-        host, port = writer.get_extra_info("sockname")[:2]
+        client = await client_factory()
+        host, port = client.getsockname()[:2]
 
-        if excgrp:
-            writer.write(b"__closed_client_error_excgrp__\n")
-        else:
-            writer.write(b"__closed_client_error__\n")
-        assert await reader.read() == b""
-        await asyncio.sleep(0.1)
+        await client.send_all(b"__closed_client_error_excgrp__\n" if excgrp else b"__closed_client_error__\n")
+        assert await client.recv(1024) == b""
+        await self._wait_client_disconnected(client)
 
         assert len(caplog.records) == 1
-        assert caplog.records[0].levelno == logging.WARNING
         assert caplog.records[0].getMessage() == f"There have been attempts to do operation on closed client ({host!r}, {port})"
+        assert caplog.records[0].levelno == logging.WARNING
 
     async def test____serve_forever____connection_error_in_request_handler(
         self,
-        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+        client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         caplog.set_level(logging.WARNING, LOGGER.name)
-        reader, writer = await client_factory()
+        client = await client_factory()
 
-        writer.write(b"__connection_error__\n")
-        assert await reader.read() == b""
-        await asyncio.sleep(0.1)
+        await client.send_all(b"__connection_error__\n")
+        assert await client.recv(1024) == b""
+        await client.backend().sleep(0.1)
 
         assert len(caplog.records) == 0
 
     async def test____serve_forever____connection_error_in_disconnect_hook(
         self,
-        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+        client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
         request_handler: MyStreamRequestHandler,
         caplog: pytest.LogCaptureFixture,
         logger_crash_maximum_nb_lines: dict[str, int],
     ) -> None:
         caplog.set_level(logging.WARNING, LOGGER.name)
         logger_crash_maximum_nb_lines[LOGGER.name] = 1
-        _, writer = await client_factory()
+        client = await client_factory()
         request_handler.fail_on_disconnection = True
 
-        await self._wait_client_disconnected(writer)
+        await self._wait_client_disconnected(client)
 
         # ECONNRESET not logged
         assert len(caplog.records) == 1
-        assert caplog.records[0].levelno == logging.WARNING
         assert caplog.records[0].getMessage() == "ConnectionError raised in request_handler.on_disconnection()"
+        assert caplog.records[0].levelno == logging.WARNING
 
     @pytest.mark.parametrize("forcefully_closed", [False, True], ids=lambda p: f"forcefully_closed=={p}")
     async def test____serve_forever____explicitly_closed_by_request_handler(
         self,
         forcefully_closed: bool,
-        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+        client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
     ) -> None:
-        reader, writer = await client_factory()
+        client = await client_factory()
 
-        if forcefully_closed:
-            writer.write(b"__close_forcefully__\n")
-        else:
-            writer.write(b"__close__\n")
+        await client.send_all(b"__close_forcefully__\n" if forcefully_closed else b"__close__\n")
 
-        assert await reader.read() == b""
+        assert await client.recv(1024) == b""
 
     async def test____serve_forever____request_handler_ask_to_stop_accepting_new_connections(
         self,
-        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
-        server_task: asyncio.Task[None],
+        client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
+        server_task: Task[None],
         server: MyAsyncTCPServer,
     ) -> None:
-        reader, writer = await client_factory()
+        client = await client_factory()
 
-        writer.write(b"__stop_listening__\n")
+        await client.send_all(b"__stop_listening__\n")
 
-        assert await reader.readline() == b"successfully stop listening\n"
-        await asyncio.sleep(0.1)
+        assert await client.readline() == b"successfully stop listening\n"
+        await client.backend().sleep(0.1)
 
         assert not server.is_serving()
 
         with pytest.RaisesGroup(ConnectionError):
             await client_factory()
 
-        writer.close()
-        await writer.wait_closed()
-        async with asyncio.timeout(5):
-            await asyncio.wait({server_task})
+        await client.aclose()
+        with client.backend().timeout(5):
+            await server_task.wait()
 
     async def test____serve_forever____close_client_on_connection_hook(
         self,
-        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+        client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
         request_handler: MyStreamRequestHandler,
     ) -> None:
         request_handler.close_all_clients_on_connection = True
-        reader, _ = await client_factory()
+        client = await client_factory()
 
-        assert await reader.read() == b""
+        assert await client.recv(1024) == b""
 
     @pytest.mark.parametrize("request_handler", [TimeoutYieldedRequestHandler, TimeoutContextRequestHandler], indirect=True)
     @pytest.mark.parametrize("request_timeout", [0.0, 1.0], ids=lambda p: f"timeout=={p}")
@@ -1059,44 +934,50 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         request_timeout: float,
         timeout_on_second_yield: bool,
         request_handler: TimeoutYieldedRequestHandler | TimeoutContextRequestHandler,
-        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+        client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
     ) -> None:
         request_handler.request_timeout = request_timeout
         request_handler.timeout_on_second_yield = timeout_on_second_yield
-        reader, writer = await client_factory()
+        client = await client_factory()
 
         if timeout_on_second_yield:
-            writer.write(b"something\n")
-            assert await reader.readline() == b"something\n"
+            await client.send_all(b"something\n")
+            assert await client.readline() == b"something\n"
 
-        assert await reader.readline() == b"successfully timed out\n"
+        assert await client.readline() == b"successfully timed out\n"
 
     @pytest.mark.parametrize("request_handler", [CancellationRequestHandler], indirect=True)
     async def test____serve_forever____request_handler_is_cancelled(
         self,
-        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+        server: MyAsyncTCPServer,
+        client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
     ) -> None:
-        reader, writer = await client_factory()
+        client = await client_factory()
 
-        writer.write(b"something\n")
+        await client.send_all(b"something\n")
+        assert await client.readline() == b"response\n"
+
+        with client.backend().timeout(1):
+            await server.shutdown()
 
         with contextlib.suppress(ConnectionError):
-            assert await reader.read() == b""
+            assert await client.recv(1024) == b""
 
     @pytest.mark.parametrize("request_handler", [ErrorBeforeYieldHandler], indirect=True)
     async def test____serve_forever____request_handler_crashed_before_yield(
         self,
+        server: MyAsyncTCPServer,
         caplog: pytest.LogCaptureFixture,
         logger_crash_maximum_nb_lines: dict[str, int],
-        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+        client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
     ) -> None:
         caplog.set_level(logging.ERROR, LOGGER.name)
         logger_crash_maximum_nb_lines[LOGGER.name] = 3
 
         with contextlib.suppress(ConnectionError):
-            reader, _ = await client_factory()
-            assert await reader.read() == b""
-        await asyncio.sleep(0.1)
+            client = await client_factory()
+            assert await client.recv(1024) == b""
+        await server.backend().sleep(0.1)
         assert len(caplog.records) == 3
         assert caplog.records[1].exc_info is not None
         assert type(caplog.records[1].exc_info[1]) is RandomError
@@ -1106,119 +987,117 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     async def test____serve_forever____request_handler_did_not_yield(
         self,
         refuse_after: int,
+        server: MyAsyncTCPServer,
         request_handler: RequestRefusedHandler,
         caplog: pytest.LogCaptureFixture,
-        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+        client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
     ) -> None:
         request_handler.refuse_after = refuse_after
         caplog.set_level(logging.ERROR, LOGGER.name)
 
         with contextlib.suppress(ConnectionError):
             # If refuse after is equal to zero, client_factory() can raise ConnectionResetError
-            reader, writer = await client_factory()
+            client = await client_factory()
 
             for _ in range(refuse_after):
-                writer.write(b"something\n")
-                assert await reader.readline() == b"something\n"
+                await client.send_all(b"something\n")
+                assert await client.readline() == b"something\n"
 
-            assert await reader.read() == b""
+            assert await client.recv(1024) == b""
 
-        await asyncio.sleep(0.1)
+        await server.backend().sleep(0.1)
         assert len(caplog.records) == 0
 
     @pytest.mark.parametrize("request_handler", [InitialHandshakeRequestHandler], indirect=True)
     @pytest.mark.parametrize("handshake_2fa", [True, False], ids=lambda p: f"handshake_2fa=={p}")
     async def test____serve_forever____request_handler_on_connection_is_async_gen(
         self,
-        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+        client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
         handshake_2fa: bool,
         request_handler: InitialHandshakeRequestHandler,
     ) -> None:
         request_handler.handshake_2fa = handshake_2fa
-        reader, writer = await client_factory()
+        client = await client_factory()
 
-        writer.write(b"chocolate\n")
+        await client.send_all(b"chocolate\n")
         if handshake_2fa:
-            assert await reader.readline() == b"2FA code needed\n"
-            writer.write(b"42\n")
+            assert await client.readline() == b"2FA code needed\n"
+            await client.send_all(b"42\n")
 
-        assert await reader.readline() == b"you can enter\n"
-        writer.write(b"something\n")
-        assert await reader.readline() == b"something\n"
+        assert await client.readline() == b"you can enter\n"
+        await client.send_all(b"something\n")
+        assert await client.readline() == b"something\n"
 
     @pytest.mark.parametrize("request_handler", [InitialHandshakeRequestHandler], indirect=True)
     @pytest.mark.parametrize("handshake_2fa", [True, False], ids=lambda p: f"handshake_2fa=={p}")
     async def test____serve_forever____request_handler_on_connection_is_async_gen____close_connection(
         self,
-        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+        client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
         handshake_2fa: bool,
         request_handler: InitialHandshakeRequestHandler,
     ) -> None:
         request_handler.handshake_2fa = handshake_2fa
-        reader, writer = await client_factory()
+        client = await client_factory()
 
         if handshake_2fa:
-            writer.write(b"chocolate\n")
-            assert await reader.readline() == b"2FA code needed\n"
-            writer.write(b"123\n")
-            assert await reader.readline() == b"wrong code\n"
+            await client.send_all(b"chocolate\n")
+            assert await client.readline() == b"2FA code needed\n"
+            await client.send_all(b"123\n")
+            assert await client.readline() == b"wrong code\n"
         else:
-            writer.write(b"something_else\n")
-            assert await reader.readline() == b"wrong password\n"
-        assert await reader.read() == b""
+            await client.send_all(b"something_else\n")
+            assert await client.readline() == b"wrong password\n"
+        assert await client.recv(1024) == b""
 
     @pytest.mark.parametrize("request_handler", [InitialHandshakeRequestHandler], indirect=True)
     @pytest.mark.parametrize("handshake_2fa", [True, False], ids=lambda p: f"handshake_2fa=={p}")
     async def test____serve_forever____request_handler_on_connection_is_async_gen____throw_cancel_error_within_generator(
         self,
-        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+        client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
         handshake_2fa: bool,
         request_handler: InitialHandshakeRequestHandler,
     ) -> None:
         request_handler.handshake_2fa = handshake_2fa
-        reader, writer = await client_factory()
+        client = await client_factory()
 
         if handshake_2fa:
-            writer.write(b"chocolate\n")
-            assert await reader.readline() == b"2FA code needed\n"
+            await client.send_all(b"chocolate\n")
+            assert await client.readline() == b"2FA code needed\n"
 
-        assert await reader.readline() == b"timeout error\n"
+        assert await client.readline() == b"timeout error\n"
 
     @pytest.mark.parametrize("request_handler", [InitialHandshakeRequestHandler], indirect=True)
     async def test____serve_forever____request_handler_on_connection_is_async_gen____exit_before_first_yield(
         self,
         request_handler: InitialHandshakeRequestHandler,
-        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+        client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
     ) -> None:
         request_handler.bypass_handshake = True
-        reader, writer = await client_factory()
+        client = await client_factory()
 
-        writer.write(b"something_else\n")
-        assert await reader.readline() == b"something_else\n"
+        await client.send_all(b"something_else\n")
+        assert await client.readline() == b"something_else\n"
 
     @pytest.mark.parametrize("use_ssl", ["USE_SSL"], indirect=True)
     @pytest.mark.parametrize("ssl_handshake_timeout", [pytest.param(1, id="timeout==1sec")], indirect=True)
     async def test____serve_forever____ssl_handshake_timeout_error(
         self,
-        asyncio_backend: AsyncIOBackend,
+        server: MyAsyncTCPServer,
         server_address: tuple[str, int],
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        event_loop = asyncio.get_running_loop()
-
         caplog.set_level(logging.WARNING, LOGGER.name)
-        with (
-            await AsyncIODNSResolver().create_stream_connection(asyncio_backend, *server_address) as socket,
-            pytest.raises(OSError),
-        ):
-            # The SSL handshake expects the client to send the list of encryption algorithms.
-            # But we won't, so the server will close the connection after 1 second
-            # and raise a TimeoutError.
-            assert await event_loop.sock_recv(socket, 256 * 1024) == b""
-            # If sock_recv() did not raise, manually trigger the error
-            raise ConnectionAbortedError
 
-        await asyncio.sleep(0.1)
+        async with await AsyncStreamSocket.open_tcp_connection(*server_address) as socket:
+            with pytest.raises(OSError):
+                # The SSL handshake expects the client to send the list of encryption algorithms.
+                # But we won't, so the server will close the connection after 1 second
+                # and raise a TimeoutError.
+                assert await socket.recv(256 * 1024) == b""
+                # If sock_recv() did not raise, manually trigger the error
+                raise ConnectionAbortedError
+
+        await server.backend().sleep(0.1)
         assert len(caplog.records) == 0
 
     @pytest.mark.parametrize("use_ssl", ["USE_SSL"], indirect=True)
@@ -1243,7 +1122,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         caplog.set_level(logging.WARNING, LOGGER.name)
 
         if hasattr(ssl, "OP_IGNORE_UNEXPECTED_EOF"):
-            # This test must fail if this option was not unset when creating the server
+            # This test must fail if this option has not been unset when creating the server
             assert (server_ssl_context.options & ssl.OP_IGNORE_UNEXPECTED_EOF) == 0
 
         from easynetwork.lowlevel.api_async.transports.tls import AsyncTLSStreamTransport
@@ -1256,8 +1135,186 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
             server_hostname="test.example.com",
             handshake_timeout=1,
         )
-        await asyncio.sleep(0.1)
+        await server.backend().sleep(0.1)
         await transport.aclose()
 
-        await asyncio.sleep(0.1)
+        await server.backend().sleep(0.1)
         assert len(caplog.records) == 0
+
+
+class TestAsyncTCPNetworkServerWithAsyncIO(_BaseTestAsyncTCPNetworkServer, BaseTestAsyncServerWithAsyncIO):
+    @pytest_asyncio.fixture
+    @staticmethod
+    async def server_not_activated(
+        request_handler: MyStreamRequestHandler,
+        localhost_ip: str,
+        stream_protocol: AnyStreamProtocolType[str, str],
+    ) -> AsyncIterator[MyAsyncTCPServer]:
+        server = MyAsyncTCPServer(
+            localhost_ip,
+            0,
+            stream_protocol,
+            request_handler,
+            backend="asyncio",
+            backlog=1,
+            logger=LOGGER,
+        )
+        try:
+            assert not server.is_listening()
+            assert not server.get_sockets()
+            assert not server.get_addresses()
+            yield server
+        finally:
+            await server.server_close()
+
+    @pytest_asyncio.fixture
+    @staticmethod
+    async def server(
+        request_handler: MyStreamRequestHandler,
+        localhost_ip: str,
+        stream_protocol: AnyStreamProtocolType[str, str],
+        server_ssl_context: ssl.SSLContext | None,
+        ssl_handshake_timeout: float | None,
+        ssl_standard_compatible: bool | None,
+        log_client_connection: bool | None,
+    ) -> AsyncIterator[MyAsyncTCPServer]:
+        async with MyAsyncTCPServer(
+            localhost_ip,
+            0,
+            stream_protocol,
+            request_handler,
+            backend="asyncio",
+            backlog=1,
+            ssl=server_ssl_context,
+            ssl_handshake_timeout=ssl_handshake_timeout,
+            ssl_standard_compatible=ssl_standard_compatible,
+            log_client_connection=log_client_connection,
+            logger=LOGGER,
+        ) as server:
+            assert server.is_listening()
+            assert server.get_sockets()
+            assert server.get_addresses()
+            yield server
+
+    @pytest_asyncio.fixture
+    @staticmethod
+    async def server_address(run_server: IEvent, server: MyAsyncTCPServer) -> tuple[str, int]:
+        with server.backend().timeout(1):
+            await run_server.wait()
+        assert server.is_serving()
+        server_addresses = server.get_addresses()
+        assert len(server_addresses) == 1
+        return server_addresses[0].for_connection()
+
+    @pytest_asyncio.fixture
+    @staticmethod
+    async def client_factory_no_handshake(
+        server_address: tuple[str, int],
+        client_ssl_context: ssl.SSLContext | None,
+    ) -> AsyncIterator[Callable[[], Awaitable[AsyncStreamSocket]]]:
+        import asyncio
+
+        async with contextlib.AsyncExitStack() as stack:
+
+            async def factory() -> AsyncStreamSocket:
+                async with asyncio.timeout(30):
+                    sock = await AsyncStreamSocket.open_tcp_connection(
+                        *server_address,
+                        ssl=client_ssl_context,
+                        server_hostname="test.example.com" if client_ssl_context else None,
+                        ssl_handshake_timeout=1 if client_ssl_context else None,
+                        ssl_shutdown_timeout=1 if client_ssl_context else None,
+                    )
+                    await stack.enter_async_context(sock)
+                return sock
+
+            yield factory
+
+
+class TestAsyncTCPNetworkServerWithTrio(_BaseTestAsyncTCPNetworkServer, BaseTestAsyncServerWithTrio):
+    @trio_fixture
+    @staticmethod
+    async def server_not_activated(
+        request_handler: MyStreamRequestHandler,
+        localhost_ip: str,
+        stream_protocol: AnyStreamProtocolType[str, str],
+    ) -> AsyncIterator[MyAsyncTCPServer]:
+        server = MyAsyncTCPServer(
+            localhost_ip,
+            0,
+            stream_protocol,
+            request_handler,
+            backend="trio",
+            backlog=1,
+            logger=LOGGER,
+        )
+        try:
+            assert not server.is_listening()
+            assert not server.get_sockets()
+            assert not server.get_addresses()
+            yield server
+        finally:
+            await server.server_close()
+
+    @trio_fixture
+    @staticmethod
+    async def server(
+        request_handler: MyStreamRequestHandler,
+        localhost_ip: str,
+        stream_protocol: AnyStreamProtocolType[str, str],
+        server_ssl_context: ssl.SSLContext | None,
+        ssl_handshake_timeout: float | None,
+        ssl_standard_compatible: bool | None,
+        log_client_connection: bool | None,
+    ) -> AsyncIterator[MyAsyncTCPServer]:
+        async with MyAsyncTCPServer(
+            localhost_ip,
+            0,
+            stream_protocol,
+            request_handler,
+            backend="trio",
+            backlog=1,
+            ssl=server_ssl_context,
+            ssl_handshake_timeout=ssl_handshake_timeout,
+            ssl_standard_compatible=ssl_standard_compatible,
+            log_client_connection=log_client_connection,
+            logger=LOGGER,
+        ) as server:
+            assert server.is_listening()
+            assert server.get_sockets()
+            assert server.get_addresses()
+            yield server
+
+    @trio_fixture
+    @staticmethod
+    async def server_address(run_server: IEvent, server: MyAsyncTCPServer) -> tuple[str, int]:
+        with server.backend().timeout(1):
+            await run_server.wait()
+        assert server.is_serving()
+        server_addresses = server.get_addresses()
+        assert len(server_addresses) == 1
+        return server_addresses[0].for_connection()
+
+    @trio_fixture
+    @staticmethod
+    async def client_factory_no_handshake(
+        server_address: tuple[str, int],
+        client_ssl_context: ssl.SSLContext | None,
+    ) -> AsyncIterator[Callable[[], Awaitable[AsyncStreamSocket]]]:
+        import trio
+
+        async with contextlib.AsyncExitStack() as stack:
+
+            async def factory() -> AsyncStreamSocket:
+                with trio.fail_after(30):
+                    sock = await AsyncStreamSocket.open_tcp_connection(
+                        *server_address,
+                        ssl=client_ssl_context,
+                        server_hostname="test.example.com" if client_ssl_context else None,
+                        ssl_handshake_timeout=1 if client_ssl_context else None,
+                        ssl_shutdown_timeout=1 if client_ssl_context else None,
+                    )
+                    await stack.enter_async_context(sock)
+                return sock
+
+            yield factory

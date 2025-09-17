@@ -74,7 +74,8 @@ class TrioStreamSocketAdapter(AsyncStreamTransport):
             return await self.__stream.receive_some(bufsize)
 
     async def recv_into(self, buffer: WriteableBuffer) -> int:
-        return await self.__stream.socket.recv_into(buffer)
+        with convert_trio_resource_errors(broken_resource_errno=_errno.ECONNABORTED):
+            return await self.__stream.socket.recv_into(buffer)
 
     async def send_all(self, data: bytes | bytearray | memoryview) -> None:
         with convert_trio_resource_errors(broken_resource_errno=_errno.ECONNABORTED):
@@ -93,11 +94,12 @@ class TrioStreamSocketAdapter(AsyncStreamTransport):
 
                 socket_sendmsg = self.__stream.socket.sendmsg
 
-                while buffers:
-                    # Do not send the islice directly because if sendmsg() blocks,
-                    # it would retry with an already consumed iterator.
-                    sent = await socket_sendmsg(list(itertools.islice(buffers, constants.SC_IOV_MAX)))
-                    _utils.adjust_leftover_buffer(buffers, sent)
+                with convert_trio_resource_errors(broken_resource_errno=_errno.ECONNABORTED):
+                    while buffers:
+                        # Do not send the islice directly because if sendmsg() blocks,
+                        # it would retry with an already consumed iterator.
+                        sent = await socket_sendmsg(list(itertools.islice(buffers, constants.SC_IOV_MAX)))
+                        _utils.adjust_leftover_buffer(buffers, sent)
 
     async def send_eof(self) -> None:
         with convert_trio_resource_errors(broken_resource_errno=_errno.ECONNABORTED):

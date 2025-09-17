@@ -19,6 +19,7 @@ from __future__ import annotations
 __all__ = ["TrioDatagramListenerSocketAdapter"]
 
 import contextlib
+import errno as _errno
 import logging
 import socket as _socket
 import warnings
@@ -31,7 +32,12 @@ import trio
 from ..... import _utils, socket as socket_tools
 from ....transports.abc import AsyncDatagramListener
 from ...abc import AsyncBackend, ILock, TaskGroup
-from .._trio_utils import FastFIFOLock, close_socket_and_notify, retry_socket_method as _retry_socket_method
+from .._trio_utils import (
+    FastFIFOLock,
+    close_socket_and_notify,
+    convert_trio_resource_errors,
+    retry_socket_method as _retry_socket_method,
+)
 
 if TYPE_CHECKING:
     from socket import _Address, _RetAddress
@@ -101,6 +107,7 @@ class TrioDatagramListenerSocketAdapter(AsyncDatagramListener["_RetAddress"]):
             stack.enter_context(self.__serve_guard)
             if task_group is None:
                 task_group = await stack.enter_async_context(self.__backend.create_task_group())
+            stack.enter_context(convert_trio_resource_errors(broken_resource_errno=_errno.EBADF))
 
             MAX_DATAGRAM_BUFSIZE = self.MAX_DATAGRAM_BUFSIZE
             listener = self.__listener
@@ -132,13 +139,14 @@ class TrioDatagramListenerSocketAdapter(AsyncDatagramListener["_RetAddress"]):
 
     async def send_to(self, data: bytes | bytearray | memoryview, address: _Address) -> None:
         async with self.__send_lock:
-            await _retry_socket_method(
-                self.__wait_writable,
-                (listener := self.__listener),
-                lambda: listener.sendto(data, address),
-                always_yield=False,
-                checkpoint_if_cancelled=False,  # <- Already checked by send_lock
-            )
+            with convert_trio_resource_errors(broken_resource_errno=_errno.EBADF):
+                await _retry_socket_method(
+                    self.__wait_writable,
+                    (listener := self.__listener),
+                    lambda: listener.sendto(data, address),
+                    always_yield=False,
+                    checkpoint_if_cancelled=False,  # <- Already checked by send_lock
+                )
 
     def backend(self) -> AsyncBackend:
         return self.__backend

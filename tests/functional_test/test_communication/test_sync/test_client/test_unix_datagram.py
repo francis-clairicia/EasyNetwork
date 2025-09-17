@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import functools
-import inspect
 import pathlib
 import socketserver
 import sys
@@ -22,7 +20,7 @@ if sys.platform != "win32":
         from .....pytest_plugins.unix_sockets import UnixSocketPathFactory
 
     @pytest.fixture
-    def unix_datagram_socket_factory(
+    def bound_unix_datagram_socket_factory(
         request: pytest.FixtureRequest,
         unix_datagram_socket_factory: Callable[[], Socket],
         unix_socket_path_factory: UnixSocketPathFactory,
@@ -30,10 +28,8 @@ if sys.platform != "win32":
 
         from easynetwork.lowlevel import _unix_utils
 
-        @functools.wraps(unix_datagram_socket_factory)
         def bound_unix_datagram_socket_factory() -> Socket:
             sock = unix_datagram_socket_factory()
-            sock.settimeout(3)
             match getattr(request, "param", None):
                 case "PATHNAME":
                     sock.bind(unix_socket_path_factory())
@@ -55,18 +51,18 @@ if sys.platform != "win32":
     class TestUnixDatagramClient:
         @pytest.fixture
         @staticmethod
-        def server(unix_datagram_socket_factory: Callable[[], Socket]) -> Socket:
-            return unix_datagram_socket_factory()
+        def server(bound_unix_datagram_socket_factory: Callable[[], Socket]) -> Socket:
+            return bound_unix_datagram_socket_factory()
 
         @pytest.fixture
         @staticmethod
         def client(
             server: Socket,
-            unix_datagram_socket_factory: Callable[[], Socket],
+            bound_unix_datagram_socket_factory: Callable[[], Socket],
             datagram_protocol: DatagramProtocol[str, str],
         ) -> Iterator[UnixDatagramClient[str, str]]:
             address: str | bytes = server.getsockname()
-            socket = unix_datagram_socket_factory()
+            socket = bound_unix_datagram_socket_factory()
             socket.connect(address)
 
             with UnixDatagramClient(socket, datagram_protocol) as client:
@@ -229,11 +225,11 @@ if sys.platform != "win32":
 
         def test____dunder_init____peer_name____not_set(
             self,
-            unix_datagram_socket_factory: Callable[[], Socket],
+            bound_unix_datagram_socket_factory: Callable[[], Socket],
             datagram_protocol: DatagramProtocol[str, str],
         ) -> None:
             with pytest.raises(OSError):
-                _ = UnixDatagramClient(unix_datagram_socket_factory(), datagram_protocol)
+                _ = UnixDatagramClient(bound_unix_datagram_socket_factory(), datagram_protocol)
 
         def test____dunder_init____local_name____not_set(
             self,
@@ -241,7 +237,6 @@ if sys.platform != "win32":
             unix_datagram_socket_factory: Callable[[], Socket],
             datagram_protocol: DatagramProtocol[str, str],
         ) -> None:
-            unix_datagram_socket_factory = inspect.unwrap(unix_datagram_socket_factory)
             sock = unix_datagram_socket_factory()
             sock.connect(remote_address)
             assert not sock.getsockname()

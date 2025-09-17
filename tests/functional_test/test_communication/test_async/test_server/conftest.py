@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def logger_crash_enable() -> Event:
     return Event()
 
@@ -41,7 +41,7 @@ def pytest_runtest_call(item: pytest.Item) -> Generator[None]:
 
     yield
 
-    logger_crash_enable: Event = item_fixtures.get("logger_crash_enable") or Event()
+    logger_crash_enable: Event = item_fixtures["logger_crash_enable"]
     if not logger_crash_enable.is_set():
         return
 
@@ -55,8 +55,11 @@ def pytest_runtest_call(item: pytest.Item) -> Generator[None]:
 
     log_line_counter: collections.Counter[str] = collections.Counter()
 
+    failure_caught: dict[str, str] = {}
     expected_failure_caught: dict[str, str] = {}
     for record in itertools.chain(caplog.get_records("setup"), caplog.get_records("call")):
+        if record.name in failure_caught or record.name in expected_failure_caught:
+            continue
         threshold_level = logger_crash_threshold_level.get(record.name, logging.ERROR)
         if record.levelno < threshold_level:
             continue
@@ -75,7 +78,13 @@ def pytest_runtest_call(item: pytest.Item) -> Generator[None]:
         if expected_failure_message:
             expected_failure_caught[record.name] = f"{failure_message} because: {expected_failure_message}"
         else:
-            pytest.fail(failure_message)
+            failure_caught[record.name] = failure_message
+
+    if failure_caught:
+        failure_message = "\n".join(
+            itertools.chain(failure_caught.values(), (f"(xfail) {msg}" for msg in expected_failure_caught.values()))
+        )
+        pytest.fail(failure_message)
 
     if expected_failure_caught:
         expected_failure_message = "\n".join(expected_failure_caught.values())

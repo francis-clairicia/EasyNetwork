@@ -18,6 +18,7 @@ from __future__ import annotations
 
 __all__ = ["TrioDatagramSocketAdapter"]
 
+import errno as _errno
 import socket as _socket
 import warnings
 from collections.abc import Callable, Mapping
@@ -29,6 +30,7 @@ import trio
 from ..... import _utils, socket as socket_tools
 from ....transports.abc import AsyncDatagramTransport
 from ...abc import AsyncBackend
+from .._trio_utils import convert_trio_resource_errors
 
 
 @final
@@ -68,10 +70,12 @@ class TrioDatagramSocketAdapter(AsyncDatagramTransport):
         return self.__socket.fileno() < 0
 
     async def recv(self) -> bytes:
-        return await self.__socket.recv(self.MAX_DATAGRAM_BUFSIZE)
+        with convert_trio_resource_errors(broken_resource_errno=_errno.EBADF):
+            return await self.__socket.recv(self.MAX_DATAGRAM_BUFSIZE)
 
     async def send(self, data: bytes | bytearray | memoryview) -> None:
-        await self.__socket.send(data)
+        with convert_trio_resource_errors(broken_resource_errno=_errno.EBADF):
+            await self.__socket.send(data)
 
     def backend(self) -> AsyncBackend:
         return self.__backend

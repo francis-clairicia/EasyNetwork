@@ -23,7 +23,7 @@ import copy
 import math
 from collections.abc import Awaitable, Callable, Coroutine
 from types import TracebackType
-from typing import Any, Generic, Self, TypeVar, TypeVarTuple, final
+from typing import Any, Generic, NoReturn, Self, TypeVar, TypeVarTuple, final
 
 import outcome
 import trio
@@ -134,6 +134,16 @@ class TaskGroup(AbstractTaskGroup):
             if exc_val is not None and len(exc_grp.exceptions) == 1 and exc_grp.exceptions[0] is exc_val:
                 # Do not raise inner exception within a group.
                 return
+            cancellation_exc, exc_grp = exc_grp.split(trio.Cancelled)
+            if exc_grp is None and cancellation_exc:
+                if isinstance(exc_val, trio.Cancelled):
+                    # Simply re-raise inner exception.
+                    return
+                try:
+                    await self.__raise_cancellation_exc()
+                except trio.Cancelled as new_exc:
+                    new_exc.__context__ = None
+                    raise
             raise
         finally:
             del exc_val, exc_tb, nursery_ctx, self
@@ -162,6 +172,14 @@ class TaskGroup(AbstractTaskGroup):
             name = TaskUtils.compute_task_name_from_func(coro_func)
 
         return await nursery.start(self.__task_coroutine, coro_func, args, name=name)
+
+    @staticmethod
+    async def __raise_cancellation_exc() -> NoReturn:
+        # trio.Cancelled does not have a public constructor, so we must do some magic trick in order not to rely to private
+        # implementation.
+        with trio.CancelScope(deadline=-math.inf):
+            await trio.lowlevel.wait_task_rescheduled(lambda _: trio.lowlevel.Abort.SUCCEEDED)
+        raise AssertionError("Did not obtain the cancellation exception")
 
     def __check_nursery_started(self) -> trio.Nursery:
         if (n := self.__nursery) is None:

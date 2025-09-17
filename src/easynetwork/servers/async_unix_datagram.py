@@ -160,11 +160,15 @@ else:
                 await super().server_close()
             except self.backend().get_cancelled_exc_class():
                 if unix_socket_to_delete:
-                    await self.backend().run_in_thread(self.__cleanup_unix_socket, unix_socket_to_delete, self.logger)
+                    await self.backend().ignore_cancellation(
+                        self.backend().run_in_thread(self.__cleanup_unix_socket, unix_socket_to_delete, self.logger)
+                    )
                 raise
             else:
                 if unix_socket_to_delete:
-                    await self.backend().run_in_thread(self.__cleanup_unix_socket, unix_socket_to_delete, self.logger)
+                    await self.backend().ignore_cancellation(
+                        self.backend().run_in_thread(self.__cleanup_unix_socket, unix_socket_to_delete, self.logger)
+                    )
 
         @staticmethod
         def __cleanup_unix_socket(unix_socket_to_delete: dict[pathlib.Path, int], logger: logging.Logger) -> None:

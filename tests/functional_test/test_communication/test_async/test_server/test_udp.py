@@ -1,17 +1,14 @@
 from __future__ import annotations
 
-import asyncio
 import collections
 import contextlib
 import logging
-from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Sequence
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
 from typing import Any
 
 from easynetwork.exceptions import BaseProtocolParseError, ClientClosedError, DatagramProtocolParseError, DeserializeError
 from easynetwork.lowlevel._utils import remove_traceback_frames_in_place
-from easynetwork.lowlevel.api_async.backend._asyncio.backend import AsyncIOBackend
-from easynetwork.lowlevel.api_async.backend._asyncio.datagram.endpoint import DatagramEndpoint, create_datagram_endpoint
-from easynetwork.lowlevel.api_async.backend._asyncio.datagram.listener import DatagramListenerSocketAdapter
+from easynetwork.lowlevel.api_async.backend.abc import IEvent
 from easynetwork.lowlevel.socket import SocketAddress, SocketProxy
 from easynetwork.protocol import DatagramProtocol
 from easynetwork.servers.async_udp import AsyncUDPNetworkServer
@@ -20,18 +17,9 @@ from easynetwork.servers.handlers import AsyncDatagramClient, AsyncDatagramReque
 import pytest
 import pytest_asyncio
 
-from .base import BaseTestAsyncServer
-
-
-class NoListenerErrorBackend(AsyncIOBackend):
-    async def create_udp_listeners(
-        self,
-        host: str | Sequence[str] | None,
-        port: int,
-        *,
-        reuse_port: bool = False,
-    ) -> Sequence[DatagramListenerSocketAdapter]:
-        return []
+from .....fixtures.trio import trio_fixture
+from ..socket import AsyncDatagramSocket
+from .base import BaseTestAsyncServer, BaseTestAsyncServerWithAsyncIO, BaseTestAsyncServerWithTrio
 
 
 class RandomError(Exception):
@@ -195,21 +183,22 @@ class ConcurrencyTestRequestHandler(AsyncDatagramRequestHandler[str, str]):
     ignore_cancellation: bool = False
 
     async def handle(self, client: AsyncDatagramClient[str]) -> AsyncGenerator[None, str]:
+        backend = client.backend()
         while True:
             assert (yield) == "something"
             if self.sleep_time_before_second_yield is not None:
                 if self.ignore_cancellation:
-                    await client.backend().ignore_cancellation(asyncio.sleep(self.sleep_time_before_second_yield))
+                    await backend.ignore_cancellation(backend.sleep(self.sleep_time_before_second_yield))
                 else:
-                    await asyncio.sleep(self.sleep_time_before_second_yield)
+                    await backend.sleep(self.sleep_time_before_second_yield)
             request = yield
             if self.sleep_time_before_response is not None:
                 if self.ignore_cancellation:
-                    await client.backend().ignore_cancellation(asyncio.sleep(self.sleep_time_before_response))
+                    await backend.ignore_cancellation(backend.sleep(self.sleep_time_before_response))
                 else:
-                    await asyncio.sleep(self.sleep_time_before_response)
+                    await backend.sleep(self.sleep_time_before_response)
             if self.ignore_cancellation:
-                await client.backend().ignore_cancellation(client.send_packet(f"After wait: {request}"))
+                await backend.ignore_cancellation(client.send_packet(f"After wait: {request}"))
             else:
                 await client.send_packet(f"After wait: {request}")
             if self.recreate_generator:
@@ -220,7 +209,7 @@ class CancellationRequestHandler(AsyncDatagramRequestHandler[str, str]):
     async def handle(self, client: AsyncDatagramClient[str]) -> AsyncGenerator[None, str]:
         yield
         await client.send_packet("response")
-        raise asyncio.CancelledError()
+        await client.backend().sleep(3600)
 
 
 class RequestRefusedHandler(AsyncDatagramRequestHandler[str, str]):
@@ -271,145 +260,48 @@ class MyAsyncUDPServer(AsyncUDPNetworkServer[str, str]):
 
 
 @pytest.mark.flaky(retries=3, delay=0.1)
-class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
+class _BaseTestAsyncUDPNetworkServer(BaseTestAsyncServer):
+    @pytest.fixture(autouse=True)
+    @staticmethod
+    def set_default_logger_level(
+        caplog: pytest.LogCaptureFixture,
+        logger_crash_threshold_level: dict[str, int],
+    ) -> None:
+        caplog.set_level(logging.WARNING, LOGGER.name)
+        logger_crash_threshold_level[LOGGER.name] = logging.WARNING
+
     @pytest.fixture
     @staticmethod
     def request_handler(request: pytest.FixtureRequest) -> AsyncDatagramRequestHandler[str, str]:
         request_handler_cls: type[AsyncDatagramRequestHandler[str, str]] = getattr(request, "param", MyDatagramRequestHandler)
         return request_handler_cls()
 
-    @pytest.fixture
     @staticmethod
-    def asyncio_backend() -> AsyncIOBackend:
-        return AsyncIOBackend()
-
-    @pytest_asyncio.fixture
-    @staticmethod
-    async def server_not_activated(
-        asyncio_backend: AsyncIOBackend,
-        request_handler: AsyncDatagramRequestHandler[str, str],
-        localhost_ip: str,
-        datagram_protocol: DatagramProtocol[str, str],
-        caplog: pytest.LogCaptureFixture,
-        logger_crash_threshold_level: dict[str, int],
-    ) -> AsyncIterator[MyAsyncUDPServer]:
-        server = MyAsyncUDPServer(
-            localhost_ip,
-            0,
-            datagram_protocol,
-            request_handler,
-            asyncio_backend,
-            logger=LOGGER,
-        )
-        try:
-            assert not server.is_listening()
-            assert not server.get_sockets()
-            assert not server.get_addresses()
-            caplog.set_level(logging.INFO, LOGGER.name)
-            logger_crash_threshold_level[LOGGER.name] = logging.WARNING
-            yield server
-        finally:
-            await server.server_close()
-
-    @pytest_asyncio.fixture
-    @staticmethod
-    async def server(
-        asyncio_backend: AsyncIOBackend,
-        request_handler: AsyncDatagramRequestHandler[str, str],
-        localhost_ip: str,
-        datagram_protocol: DatagramProtocol[str, str],
-        caplog: pytest.LogCaptureFixture,
-        logger_crash_threshold_level: dict[str, int],
-    ) -> AsyncIterator[MyAsyncUDPServer]:
-        async with MyAsyncUDPServer(
-            localhost_ip,
-            0,
-            datagram_protocol,
-            request_handler,
-            asyncio_backend,
-            logger=LOGGER,
-        ) as server:
-            assert server.is_listening()
-            assert server.get_sockets()
-            assert server.get_addresses()
-            caplog.set_level(logging.INFO, LOGGER.name)
-            logger_crash_threshold_level[LOGGER.name] = logging.WARNING
-            yield server
-
-    @pytest_asyncio.fixture
-    @staticmethod
-    async def server_address(run_server: asyncio.Event, server: MyAsyncUDPServer) -> tuple[str, int]:
-        async with asyncio.timeout(1):
-            await run_server.wait()
-        assert server.is_serving()
-        server_addresses = server.get_addresses()
-        assert len(server_addresses) == 1
-        return server_addresses[0].for_connection()
-
-    @pytest.fixture
-    @staticmethod
-    def run_server_and_wait(run_server: None, server_address: Any) -> None:
-        pass
-
-    @pytest_asyncio.fixture
-    @staticmethod
-    async def client_factory(
-        server_address: tuple[str, int],
-        socket_family: int,
-        localhost_ip: str,
-    ) -> AsyncIterator[Callable[[], Awaitable[DatagramEndpoint]]]:
-        async with contextlib.AsyncExitStack() as stack:
-
-            async def factory() -> DatagramEndpoint:
-                endpoint = await create_datagram_endpoint(
-                    family=socket_family,
-                    local_addr=(localhost_ip, 0),
-                    remote_addr=server_address,
-                )
-                stack.push_async_callback(endpoint.aclose)
-                return endpoint
-
-            yield factory
-
-    @staticmethod
-    async def __ping_server(endpoint: DatagramEndpoint) -> None:
+    async def __ping_server(endpoint: AsyncDatagramSocket) -> None:
         await endpoint.sendto(b"__ping__", None)
-        async with asyncio.timeout(1):
+        with endpoint.backend().timeout(1):
             pong, _ = await endpoint.recvfrom()
             assert pong == b"pong"
 
-    async def test____serve_forever____empty_listener_list(
-        self,
-        request_handler: MyDatagramRequestHandler,
-        datagram_protocol: DatagramProtocol[str, str],
-    ) -> None:
-        s = MyAsyncUDPServer(None, 0, datagram_protocol, request_handler, NoListenerErrorBackend())
-        try:
-            with pytest.raises(OSError, match=r"^empty listeners list$"):
-                await s.serve_forever()
-
-            assert not s.get_sockets()
-        finally:
-            await s.server_close()
-
-    @pytest.mark.usefixtures("run_server_and_wait")
     async def test____serve_forever____server_assignment(
         self,
         server: MyAsyncUDPServer,
+        run_server: IEvent,
         request_handler: MyDatagramRequestHandler,
     ) -> None:
+        await run_server.wait()
         assert request_handler.server == server
 
     async def test____serve_forever____handle_request(
         self,
-        client_factory: Callable[[], Awaitable[DatagramEndpoint]],
+        client_factory: Callable[[], Awaitable[AsyncDatagramSocket]],
         request_handler: MyDatagramRequestHandler,
     ) -> None:
         endpoint = await client_factory()
-        client_address: tuple[Any, ...] = endpoint.get_extra_info("sockname")
+        client_address: tuple[Any, ...] = endpoint.getsockname()
 
         await endpoint.sendto(b"hello, world.", None)
-        async with asyncio.timeout(3):
+        with endpoint.backend().timeout(3):
             assert (await endpoint.recvfrom())[0] == b"HELLO, WORLD."
 
         assert request_handler.request_received[client_address] == ["hello, world."]
@@ -417,24 +309,24 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
     async def test____serve_forever____handle_request____server_shutdown(
         self,
         server: MyAsyncUDPServer,
-        client_factory: Callable[[], Awaitable[DatagramEndpoint]],
+        client_factory: Callable[[], Awaitable[AsyncDatagramSocket]],
         request_handler: MyDatagramRequestHandler,
     ) -> None:
         endpoint = await client_factory()
-        client_address: tuple[Any, ...] = endpoint.get_extra_info("sockname")
+        client_address: tuple[Any, ...] = endpoint.getsockname()
 
         await endpoint.sendto(b"hello, world.", None)
         assert client_address not in request_handler.created_clients_map
 
-        async with asyncio.timeout(1):
+        with endpoint.backend().timeout(1):
             await server.shutdown()
 
     async def test____serve_forever____client_extra_attributes(
         self,
-        client_factory: Callable[[], Awaitable[DatagramEndpoint]],
+        client_factory: Callable[[], Awaitable[AsyncDatagramSocket]],
         request_handler: MyDatagramRequestHandler,
     ) -> None:
-        all_endpoints: list[DatagramEndpoint] = [await client_factory() for _ in range(3)]
+        all_endpoints: list[AsyncDatagramSocket] = [await client_factory() for _ in range(3)]
 
         for endpoint in all_endpoints:
             await self.__ping_server(endpoint)
@@ -442,16 +334,16 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         assert len(request_handler.created_clients_map) == 3
 
         for endpoint in all_endpoints:
-            client_address: tuple[Any, ...] = endpoint.get_extra_info("sockname")
+            client_address: tuple[Any, ...] = endpoint.getsockname()
             connected_client: AsyncDatagramClient[str] = request_handler.created_clients_map[client_address]
 
             assert isinstance(connected_client.extra(INETClientAttribute.socket), SocketProxy)
             assert connected_client.extra(INETClientAttribute.remote_address) == client_address
-            assert connected_client.extra(INETClientAttribute.local_address) == endpoint.get_extra_info("peername")
+            assert connected_client.extra(INETClientAttribute.local_address) == endpoint.getpeername()
 
     async def test____serve_forever____client_equality(
         self,
-        client_factory: Callable[[], Awaitable[DatagramEndpoint]],
+        client_factory: Callable[[], Awaitable[AsyncDatagramSocket]],
     ) -> None:
         for _ in range(3):
             endpoint = await client_factory()
@@ -461,7 +353,7 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
 
     async def test____serve_forever____client_cache(
         self,
-        client_factory: Callable[[], Awaitable[DatagramEndpoint]],
+        client_factory: Callable[[], Awaitable[AsyncDatagramSocket]],
     ) -> None:
         for _ in range(3):
             endpoint = await client_factory()
@@ -473,11 +365,11 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
 
     async def test____serve_forever____save_request_handler_context(
         self,
-        client_factory: Callable[[], Awaitable[DatagramEndpoint]],
+        client_factory: Callable[[], Awaitable[AsyncDatagramSocket]],
         request_handler: MyDatagramRequestHandler,
     ) -> None:
         endpoint = await client_factory()
-        client_address: tuple[Any, ...] = endpoint.get_extra_info("sockname")
+        client_address: tuple[Any, ...] = endpoint.getsockname()
 
         await endpoint.sendto(b"__wait__", None)
         await endpoint.sendto(b"hello, world.", None)
@@ -487,46 +379,48 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
 
     async def test____serve_forever____save_request_handler_context____extra_datagram_are_rescheduled(
         self,
-        client_factory: Callable[[], Awaitable[DatagramEndpoint]],
+        client_factory: Callable[[], Awaitable[AsyncDatagramSocket]],
         request_handler: MyDatagramRequestHandler,
     ) -> None:
         endpoint = await client_factory()
-        client_address: tuple[Any, ...] = endpoint.get_extra_info("sockname")
+        client_address: tuple[Any, ...] = endpoint.getsockname()
 
         await endpoint.sendto(b"__wait__", None)
         await endpoint.sendto(b"hello, world.", None)
         await endpoint.sendto(b"Test 2.", None)
-        assert (await endpoint.recvfrom())[0] == b"After wait: hello, world."
+        with endpoint.backend().timeout(1.0):
+            assert (await endpoint.recvfrom())[0] == b"After wait: hello, world."
+            assert (await endpoint.recvfrom())[0] == b"TEST 2."
 
         assert set(request_handler.request_received[client_address]) == {"hello, world.", "Test 2."}
 
     async def test____serve_forever____save_request_handler_context____server_shutdown(
         self,
         server: MyAsyncUDPServer,
-        client_factory: Callable[[], Awaitable[DatagramEndpoint]],
+        client_factory: Callable[[], Awaitable[AsyncDatagramSocket]],
         request_handler: MyDatagramRequestHandler,
     ) -> None:
         endpoint = await client_factory()
-        client_address: tuple[Any, ...] = endpoint.get_extra_info("sockname")
+        client_address: tuple[Any, ...] = endpoint.getsockname()
 
         await endpoint.sendto(b"__wait__", None)
-        async with asyncio.timeout(1):
+        with endpoint.backend().timeout(1):
             while client_address not in request_handler.created_clients_map:
-                await asyncio.sleep(0)
+                await endpoint.backend().coro_yield()
 
-        async with asyncio.timeout(1):
+        with endpoint.backend().timeout(1):
             await server.shutdown()
 
     async def test____serve_forever____bad_request(
         self,
-        client_factory: Callable[[], Awaitable[DatagramEndpoint]],
+        client_factory: Callable[[], Awaitable[AsyncDatagramSocket]],
         request_handler: MyDatagramRequestHandler,
     ) -> None:
         endpoint = await client_factory()
-        client_address: tuple[Any, ...] = endpoint.get_extra_info("sockname")
+        client_address: tuple[Any, ...] = endpoint.getsockname()
 
         await endpoint.sendto("\u00e9".encode("latin-1"), None)  # StringSerializer does not accept unicode
-        await asyncio.sleep(0.1)
+        await endpoint.backend().sleep(0.1)
 
         assert (await endpoint.recvfrom())[0] == b"wrong encoding man."
         assert request_handler.request_received[client_address] == []
@@ -540,7 +434,7 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         self,
         mute_thrown_exception: bool,
         request_handler: ErrorInRequestHandler,
-        client_factory: Callable[[], Awaitable[DatagramEndpoint]],
+        client_factory: Callable[[], Awaitable[AsyncDatagramSocket]],
         caplog: pytest.LogCaptureFixture,
         logger_crash_maximum_nb_lines: dict[str, int],
     ) -> None:
@@ -553,12 +447,12 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         expected_message = b"RuntimeError: protocol.build_packet_from_datagram() crashed (caused by SystemError: CRASH)"
 
         await endpoint.sendto(b"something", None)
-        await asyncio.sleep(0.2)
+        await endpoint.backend().sleep(0.2)
 
         assert (await endpoint.recvfrom())[0] == expected_message
         if mute_thrown_exception:
             await endpoint.sendto(b"something", None)
-            await asyncio.sleep(0.2)
+            await endpoint.backend().sleep(0.2)
             assert (await endpoint.recvfrom())[0] == expected_message
             assert len(caplog.records) == 0  # After two attempts
         else:
@@ -570,7 +464,7 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
     async def test____serve_forever____unexpected_error_during_process(
         self,
         excgrp: bool,
-        client_factory: Callable[[], Awaitable[DatagramEndpoint]],
+        client_factory: Callable[[], Awaitable[AsyncDatagramSocket]],
         caplog: pytest.LogCaptureFixture,
         logger_crash_maximum_nb_lines: dict[str, int],
     ) -> None:
@@ -582,7 +476,7 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
             await endpoint.sendto(b"__error_excgrp__", None)
         else:
             await endpoint.sendto(b"__error__", None)
-        await asyncio.sleep(0.2)
+        await endpoint.backend().sleep(0.2)
 
         assert len(caplog.records) == 3
         assert caplog.records[1].exc_info is not None
@@ -595,7 +489,7 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
     @pytest.mark.parametrize("datagram_protocol", [pytest.param("bad_serialize", id="serializer_crash")], indirect=True)
     async def test____serve_forever____unexpected_error_during_response_serialization(
         self,
-        client_factory: Callable[[], Awaitable[DatagramEndpoint]],
+        client_factory: Callable[[], Awaitable[AsyncDatagramSocket]],
         caplog: pytest.LogCaptureFixture,
         logger_crash_maximum_nb_lines: dict[str, int],
     ) -> None:
@@ -605,15 +499,15 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
 
         await endpoint.sendto(b"request", None)
         while not caplog.records:
-            await asyncio.sleep(0.2)
+            await endpoint.backend().sleep(0.2)
 
         assert len(caplog.records) == 1
-        assert caplog.records[0].levelno == logging.ERROR
         assert caplog.records[0].getMessage() == "RuntimeError: protocol.make_datagram() crashed (caused by SystemError: CRASH)"
+        assert caplog.records[0].levelno == logging.ERROR
 
     async def test____serve_forever____os_error(
         self,
-        client_factory: Callable[[], Awaitable[DatagramEndpoint]],
+        client_factory: Callable[[], Awaitable[AsyncDatagramSocket]],
         caplog: pytest.LogCaptureFixture,
         logger_crash_maximum_nb_lines: dict[str, int],
     ) -> None:
@@ -622,7 +516,7 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         endpoint = await client_factory()
 
         await endpoint.sendto(b"__os_error__", None)
-        await asyncio.sleep(0.2)
+        await endpoint.backend().sleep(0.2)
 
         assert len(caplog.records) == 3
         assert caplog.records[1].exc_info is not None
@@ -632,24 +526,24 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
     async def test____serve_forever____use_of_a_closed_client_in_request_handler(  # In a world where this thing happen
         self,
         excgrp: bool,
-        client_factory: Callable[[], Awaitable[DatagramEndpoint]],
+        client_factory: Callable[[], Awaitable[AsyncDatagramSocket]],
         caplog: pytest.LogCaptureFixture,
         logger_crash_maximum_nb_lines: dict[str, int],
     ) -> None:
         caplog.set_level(logging.WARNING, LOGGER.name)
         logger_crash_maximum_nb_lines[LOGGER.name] = 1
         endpoint = await client_factory()
-        host, port = endpoint.get_extra_info("sockname")[:2]
+        host, port = endpoint.getsockname()[:2]
 
         if excgrp:
             await endpoint.sendto(b"__closed_client_error_excgrp__", None)
         else:
             await endpoint.sendto(b"__closed_client_error__", None)
-        await asyncio.sleep(0.2)
+        await endpoint.backend().sleep(0.2)
 
         assert len(caplog.records) == 1
-        assert caplog.records[0].levelno == logging.WARNING
         assert caplog.records[0].getMessage() == f"There have been attempts to do operation on closed client ({host!r}, {port})"
+        assert caplog.records[0].levelno == logging.WARNING
 
     @pytest.mark.parametrize("request_handler", [TimeoutYieldedRequestHandler, TimeoutContextRequestHandler], indirect=True)
     @pytest.mark.parametrize("request_timeout", [0.0, 1.0], ids=lambda p: f"timeout=={p}")
@@ -659,7 +553,7 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         request_timeout: float,
         timeout_on_third_yield: bool,
         request_handler: TimeoutYieldedRequestHandler | TimeoutContextRequestHandler,
-        client_factory: Callable[[], Awaitable[DatagramEndpoint]],
+        client_factory: Callable[[], Awaitable[AsyncDatagramSocket]],
     ) -> None:
         request_handler.request_timeout = request_timeout
         request_handler.timeout_on_third_yield = timeout_on_third_yield
@@ -670,18 +564,22 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
             await endpoint.sendto(b"something", None)
             assert (await endpoint.recvfrom())[0] == b"something"
 
-        async with asyncio.timeout(request_timeout + 1):
+        with endpoint.backend().timeout(request_timeout + 1):
             assert (await endpoint.recvfrom())[0] == b"successfully timed out"
 
     @pytest.mark.parametrize("request_handler", [CancellationRequestHandler], indirect=True)
     async def test____serve_forever____request_handler_is_cancelled(
         self,
-        client_factory: Callable[[], Awaitable[DatagramEndpoint]],
+        server: MyAsyncUDPServer,
+        client_factory: Callable[[], Awaitable[AsyncDatagramSocket]],
     ) -> None:
         endpoint = await client_factory()
 
         await endpoint.sendto(b"something", None)
         assert (await endpoint.recvfrom())[0] == b"response"
+
+        with server.backend().timeout(1.0):
+            await server.shutdown()
 
     @pytest.mark.parametrize("request_handler", [ErrorBeforeYieldHandler], indirect=True)
     async def test____serve_forever____request_handler_crashed_before_yield(
@@ -689,7 +587,7 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         request_handler: ErrorBeforeYieldHandler,
         caplog: pytest.LogCaptureFixture,
         logger_crash_maximum_nb_lines: dict[str, int],
-        client_factory: Callable[[], Awaitable[DatagramEndpoint]],
+        client_factory: Callable[[], Awaitable[AsyncDatagramSocket]],
     ) -> None:
         caplog.set_level(logging.ERROR, LOGGER.name)
         logger_crash_maximum_nb_lines[LOGGER.name] = 3
@@ -698,7 +596,7 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         request_handler.raise_error = True
         await endpoint.sendto(b"something", None)
         with pytest.raises(TimeoutError):
-            async with asyncio.timeout(0.5):
+            with endpoint.backend().timeout(0.5):
                 await endpoint.recvfrom()
         assert len(caplog.records) == 3
         assert caplog.records[1].exc_info is not None
@@ -714,7 +612,7 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         refuse_after: int,
         request_handler: RequestRefusedHandler,
         caplog: pytest.LogCaptureFixture,
-        client_factory: Callable[[], Awaitable[DatagramEndpoint]],
+        client_factory: Callable[[], Awaitable[AsyncDatagramSocket]],
     ) -> None:
         request_handler.bypass_refusal = False
         request_handler.refuse_after = refuse_after
@@ -727,7 +625,7 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
 
         await endpoint.sendto(b"something", None)
         with pytest.raises(TimeoutError):
-            async with asyncio.timeout(0.5):
+            with endpoint.backend().timeout(0.5):
                 await endpoint.recvfrom()
         assert len(caplog.records) == 0
         request_handler.bypass_refusal = True
@@ -738,14 +636,14 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
     async def test____serve_forever____datagram_while_request_handle_is_performed(
         self,
         request_handler: ConcurrencyTestRequestHandler,
-        client_factory: Callable[[], Awaitable[DatagramEndpoint]],
+        client_factory: Callable[[], Awaitable[AsyncDatagramSocket]],
     ) -> None:
         request_handler.sleep_time_before_second_yield = 0.5
         endpoint = await client_factory()
 
         await endpoint.sendto(b"something", None)
         await endpoint.sendto(b"hello, world.", None)
-        async with asyncio.timeout(5):
+        with endpoint.backend().timeout(5):
             assert (await endpoint.recvfrom())[0] == b"After wait: hello, world."
 
     @pytest.mark.parametrize("request_handler", [ConcurrencyTestRequestHandler], indirect=True)
@@ -755,7 +653,7 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         server: MyAsyncUDPServer,
         request_handler: ConcurrencyTestRequestHandler,
         ignore_cancellation: bool,
-        client_factory: Callable[[], Awaitable[DatagramEndpoint]],
+        client_factory: Callable[[], Awaitable[AsyncDatagramSocket]],
         logger_crash_xfail: dict[str, str],
     ) -> None:
         request_handler.sleep_time_before_second_yield = 0.5
@@ -767,8 +665,8 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         await endpoint.sendto(b"something", None)
         await endpoint.sendto(b"hello, world.", None)
         await endpoint.sendto(b"hello, world. new game +", None)
-        await asyncio.sleep(0.1)
-        async with asyncio.timeout(1):
+        await endpoint.backend().sleep(0.1)
+        with endpoint.backend().timeout(1):
             await server.shutdown()
 
     @pytest.mark.parametrize("request_handler", [ConcurrencyTestRequestHandler], indirect=True)
@@ -777,21 +675,21 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         self,
         recreate_generator: bool,
         request_handler: ConcurrencyTestRequestHandler,
-        client_factory: Callable[[], Awaitable[DatagramEndpoint]],
+        client_factory: Callable[[], Awaitable[AsyncDatagramSocket]],
     ) -> None:
         request_handler.sleep_time_before_response = 0.5
         request_handler.recreate_generator = recreate_generator
         endpoint = await client_factory()
 
-        async with asyncio.timeout(5):
+        with endpoint.backend().timeout(5):
             await endpoint.sendto(b"something", None)
-            await asyncio.sleep(0.1)
+            await endpoint.backend().sleep(0.1)
             await endpoint.sendto(b"hello, world.", None)
             for i in range(3):
                 await endpoint.sendto(b"something", None)
                 await endpoint.sendto(f"hello, world {i+2} times.".encode(), None)
             await endpoint.sendto(b"something", None)
-            await asyncio.sleep(0.1)
+            await endpoint.backend().sleep(0.1)
             request_handler.sleep_time_before_response = None
             await endpoint.sendto(b"hello, world. new game +", None)
             assert (await endpoint.recvfrom())[0] == b"After wait: hello, world."
@@ -799,3 +697,153 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
             assert (await endpoint.recvfrom())[0] == b"After wait: hello, world 3 times."
             assert (await endpoint.recvfrom())[0] == b"After wait: hello, world 4 times."
             assert (await endpoint.recvfrom())[0] == b"After wait: hello, world. new game +"
+
+
+class TestAsyncUDPNetworkServerWithAsyncIO(_BaseTestAsyncUDPNetworkServer, BaseTestAsyncServerWithAsyncIO):
+    @pytest_asyncio.fixture
+    @staticmethod
+    async def server_not_activated(
+        request_handler: AsyncDatagramRequestHandler[str, str],
+        localhost_ip: str,
+        datagram_protocol: DatagramProtocol[str, str],
+    ) -> AsyncIterator[MyAsyncUDPServer]:
+        server = MyAsyncUDPServer(
+            localhost_ip,
+            0,
+            datagram_protocol,
+            request_handler,
+            backend="asyncio",
+            logger=LOGGER,
+        )
+        try:
+            assert not server.is_listening()
+            assert not server.get_sockets()
+            assert not server.get_addresses()
+            yield server
+        finally:
+            await server.server_close()
+
+    @pytest_asyncio.fixture
+    @staticmethod
+    async def server(
+        request_handler: AsyncDatagramRequestHandler[str, str],
+        localhost_ip: str,
+        datagram_protocol: DatagramProtocol[str, str],
+    ) -> AsyncIterator[MyAsyncUDPServer]:
+        async with MyAsyncUDPServer(
+            localhost_ip,
+            0,
+            datagram_protocol,
+            request_handler,
+            backend="asyncio",
+            logger=LOGGER,
+        ) as server:
+            assert server.is_listening()
+            assert server.get_sockets()
+            assert server.get_addresses()
+            yield server
+
+    @pytest_asyncio.fixture
+    @staticmethod
+    async def server_address(run_server: IEvent, server: MyAsyncUDPServer) -> tuple[str, int]:
+        with server.backend().timeout(1):
+            await run_server.wait()
+        assert server.is_serving()
+        server_addresses = server.get_addresses()
+        assert len(server_addresses) == 1
+        return server_addresses[0].for_connection()
+
+    @pytest_asyncio.fixture
+    @staticmethod
+    async def client_factory(
+        server_address: tuple[str, int],
+        socket_family: int,
+        localhost_ip: str,
+    ) -> AsyncIterator[Callable[[], Awaitable[AsyncDatagramSocket]]]:
+        async with contextlib.AsyncExitStack() as stack:
+
+            async def factory() -> AsyncDatagramSocket:
+                endpoint = await AsyncDatagramSocket.open_udp_connection(
+                    *server_address,
+                    local_address=(localhost_ip, 0),
+                    family=socket_family,
+                )
+                await stack.enter_async_context(endpoint)
+                return endpoint
+
+            yield factory
+
+
+class TestAsyncUDPNetworkServerWithTrio(_BaseTestAsyncUDPNetworkServer, BaseTestAsyncServerWithTrio):
+    @trio_fixture
+    @staticmethod
+    async def server_not_activated(
+        request_handler: AsyncDatagramRequestHandler[str, str],
+        localhost_ip: str,
+        datagram_protocol: DatagramProtocol[str, str],
+    ) -> AsyncIterator[MyAsyncUDPServer]:
+        server = MyAsyncUDPServer(
+            localhost_ip,
+            0,
+            datagram_protocol,
+            request_handler,
+            backend="trio",
+            logger=LOGGER,
+        )
+        try:
+            assert not server.is_listening()
+            assert not server.get_sockets()
+            assert not server.get_addresses()
+            yield server
+        finally:
+            await server.server_close()
+
+    @trio_fixture
+    @staticmethod
+    async def server(
+        request_handler: AsyncDatagramRequestHandler[str, str],
+        localhost_ip: str,
+        datagram_protocol: DatagramProtocol[str, str],
+    ) -> AsyncIterator[MyAsyncUDPServer]:
+        async with MyAsyncUDPServer(
+            localhost_ip,
+            0,
+            datagram_protocol,
+            request_handler,
+            backend="trio",
+            logger=LOGGER,
+        ) as server:
+            assert server.is_listening()
+            assert server.get_sockets()
+            assert server.get_addresses()
+            yield server
+
+    @trio_fixture
+    @staticmethod
+    async def server_address(run_server: IEvent, server: MyAsyncUDPServer) -> tuple[str, int]:
+        with server.backend().timeout(1):
+            await run_server.wait()
+        assert server.is_serving()
+        server_addresses = server.get_addresses()
+        assert len(server_addresses) == 1
+        return server_addresses[0].for_connection()
+
+    @trio_fixture
+    @staticmethod
+    async def client_factory(
+        server_address: tuple[str, int],
+        socket_family: int,
+        localhost_ip: str,
+    ) -> AsyncIterator[Callable[[], Awaitable[AsyncDatagramSocket]]]:
+        async with contextlib.AsyncExitStack() as stack:
+
+            async def factory() -> AsyncDatagramSocket:
+                endpoint = await AsyncDatagramSocket.open_udp_connection(
+                    *server_address,
+                    local_address=(localhost_ip, 0),
+                    family=socket_family,
+                )
+                await stack.enter_async_context(endpoint)
+                return endpoint
+
+            yield factory

@@ -323,7 +323,7 @@ class BaseAsyncNetworkServerImpl(AbstractAsyncNetworkServer, Generic[_T_LowLevel
     @_utils.inherit_doc(AbstractAsyncNetworkServer)
     async def server_close(self) -> None:
         async with contextlib.AsyncExitStack() as exit_stack:
-            await exit_stack.enter_async_context(self.__server_close_lock)
+            await self.backend().ignore_cancellation(exit_stack.enter_async_context(self.__server_close_lock))
             exit_stack.enter_context(self.__server_close_guard)
 
             if self.__servers_factory_scope is not None:
@@ -510,7 +510,7 @@ class ClientErrorHandler(Generic[_T_Address]):
                         case _:  # pragma: no cover
                             raise exc_val
                 case ClientClosedError():
-                    self.__log_closed_client_errors(ExceptionGroup("", [exc_val]))
+                    self.__log_closed_client_errors(exc_val)
                     return True
                 case Exception():
                     if not isinstance(exc_val, self.__suppress_errors):
@@ -521,7 +521,7 @@ class ClientErrorHandler(Generic[_T_Address]):
         finally:
             del exc_val
 
-    def __log_closed_client_errors(self, exc: ExceptionGroup[ClientClosedError]) -> None:
+    def __log_closed_client_errors(self, exc: ClientClosedError | ExceptionGroup[ClientClosedError]) -> None:
         client_address = self.__compute_client_address()
         self.__logger.warning("There have been attempts to do operation on closed client %s", client_address, exc_info=exc)
 

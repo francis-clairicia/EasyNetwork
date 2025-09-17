@@ -78,6 +78,21 @@ class TestAsyncUDPNetworkServer:
         # Act & Assert
         assert server.backend() is mock_backend
 
+    async def test____server_activate____empty_listener_list(
+        self,
+        server: AsyncUDPNetworkServer[Any, Any],
+        mock_backend: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_backend.create_udp_listeners.side_effect = None
+        mock_backend.create_udp_listeners.return_value = []
+
+        # Act & Assert
+        with pytest.raises(OSError, match=r"^empty listeners list$"):
+            await server.server_activate()
+
+        assert not server.get_sockets()
+
 
 @pytest.mark.asyncio
 class TestClientAPI(BaseTestSocket):

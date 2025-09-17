@@ -625,22 +625,6 @@ class TestTrioBackend:
                 with backend.timeout(0):
                     await task.wait()
 
-    async def test____run_in_thread____cannot_be_cancelled_by_default(
-        self,
-        backend: AsyncBackend,
-        nursery: Nursery,
-    ) -> None:
-        import trio
-
-        with trio.CancelScope() as scope:
-            call_later_with_nursery(nursery, 0.1, scope.cancel)
-            call_later_with_nursery(nursery, 0.2, scope.cancel)
-            call_later_with_nursery(nursery, 0.3, scope.cancel)
-            call_later_with_nursery(nursery, 0.4, scope.cancel)
-            await backend.run_in_thread(time.sleep, 0.5)
-
-        assert not scope.cancelled_caught
-
     async def test____create_task_group____do_not_wrap_exception_from_within_context(
         self,
         backend: AsyncBackend,
@@ -658,6 +642,53 @@ class TestTrioBackend:
                 task_group.start_soon(coroutine, 54)
                 await backend.coro_yield()
                 raise ValueError("unwrapped exception")
+
+    async def test____create_task_group____do_not_wrap_CancelledError_from_within_context(
+        self,
+        backend: AsyncBackend,
+    ) -> None:
+        import trio
+
+        async def coroutine(value: int) -> int:
+            await trio.sleep(5.0)
+            return value
+
+        with backend.move_on_after(0.1), pytest.raises(trio.Cancelled):
+            async with backend.create_task_group() as task_group:
+                task_group.start_soon(coroutine, 42)
+                task_group.start_soon(coroutine, 54)
+                await trio.sleep(5.0)
+
+    async def test____create_task_group____raise_CancelledError_when_all_tasks_has_been_cancelled(
+        self,
+        backend: AsyncBackend,
+    ) -> None:
+        import trio
+
+        async def coroutine(value: int) -> int:
+            await trio.sleep(5.0)
+            return value
+
+        with backend.move_on_after(0.1), pytest.raises(trio.Cancelled):
+            async with backend.create_task_group() as task_group:
+                task_group.start_soon(coroutine, 42)
+                task_group.start_soon(coroutine, 54)
+
+    async def test____run_in_thread____cannot_be_cancelled_by_default(
+        self,
+        backend: AsyncBackend,
+        nursery: Nursery,
+    ) -> None:
+        import trio
+
+        with trio.CancelScope() as scope:
+            call_later_with_nursery(nursery, 0.1, scope.cancel)
+            call_later_with_nursery(nursery, 0.2, scope.cancel)
+            call_later_with_nursery(nursery, 0.3, scope.cancel)
+            call_later_with_nursery(nursery, 0.4, scope.cancel)
+            await backend.run_in_thread(time.sleep, 0.5)
+
+        assert not scope.cancelled_caught
 
     async def test____run_in_thread____abandon_on_cancel(
         self,
