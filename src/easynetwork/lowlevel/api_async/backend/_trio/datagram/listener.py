@@ -156,6 +156,7 @@ class TrioDatagramListenerSocketAdapter(AsyncDatagramListener["_RetAddress"]):
                 stack.enter_context(self.__serve_guard)
                 if task_group is None:
                     task_group = await stack.enter_async_context(self.__backend.create_task_group())
+                stack.enter_context(convert_trio_resource_errors(broken_resource_errno=_errno.EBADF))
 
                 MAX_DATAGRAM_BUFSIZE = self.MAX_DATAGRAM_BUFSIZE
                 wait_readable = self.__wait_readable
@@ -209,13 +210,14 @@ class TrioDatagramListenerSocketAdapter(AsyncDatagramListener["_RetAddress"]):
                 # it would retry with an already consumed iterator.
                 ancillary_data = list(ancillary_data)
             async with self.__send_lock:
-                await _retry_socket_method(
-                    self.__wait_writable,
-                    listener,
-                    lambda: listener.sendmsg([data], ancillary_data, 0, address),
-                    always_yield=False,
-                    checkpoint_if_cancelled=False,  # <- Already checked by send_lock
-                )
+                with convert_trio_resource_errors(broken_resource_errno=_errno.EBADF):
+                    await _retry_socket_method(
+                        self.__wait_writable,
+                        listener,
+                        lambda: listener.sendmsg([data], ancillary_data, 0, address),
+                        always_yield=False,
+                        checkpoint_if_cancelled=False,  # <- Already checked by send_lock
+                    )
 
     def backend(self) -> AsyncBackend:
         return self.__backend
