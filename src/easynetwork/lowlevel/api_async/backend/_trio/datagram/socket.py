@@ -70,11 +70,11 @@ class TrioDatagramSocketAdapter(AsyncDatagramTransport):
         return self.__socket.fileno() < 0
 
     async def recv(self) -> bytes:
-        with convert_trio_resource_errors(broken_resource_errno=_errno.ECONNABORTED):
+        with convert_trio_resource_errors(broken_resource_errno=_errno.EBADF):
             return await self.__socket.recv(self.MAX_DATAGRAM_BUFSIZE)
 
     async def send(self, data: bytes | bytearray | memoryview) -> None:
-        with convert_trio_resource_errors(broken_resource_errno=_errno.ECONNABORTED):
+        with convert_trio_resource_errors(broken_resource_errno=_errno.EBADF):
             await self.__socket.send(data)
 
     def backend(self) -> AsyncBackend:

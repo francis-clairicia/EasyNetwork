@@ -23,7 +23,7 @@ import copy
 import math
 from collections.abc import Awaitable, Callable, Coroutine
 from types import TracebackType
-from typing import Any, Generic, Self, TypeVar, TypeVarTuple, final
+from typing import Any, Generic, NoReturn, Self, TypeVar, TypeVarTuple, final
 
 import outcome
 import trio
@@ -140,8 +140,8 @@ class TaskGroup(AbstractTaskGroup):
                     # Simply re-raise inner exception.
                     return
                 try:
-                    raise (await self.__obtain_cancellation_exc())
-                except BaseException as new_exc:
+                    await self.__raise_cancellation_exc()
+                except trio.Cancelled as new_exc:
                     new_exc.__context__ = None
                     raise
             raise
@@ -174,20 +174,12 @@ class TaskGroup(AbstractTaskGroup):
         return await nursery.start(self.__task_coroutine, coro_func, args, name=name)
 
     @staticmethod
-    async def __obtain_cancellation_exc() -> trio.Cancelled:
+    async def __raise_cancellation_exc() -> NoReturn:
         # trio.Cancelled does not have a public constructor, so we must do some magic trick in order not to rely to private
         # implementation.
-        cancel_outcome: outcome.Outcome[Any] | None = None
-        with trio.CancelScope(shield=True) as scope:
-            scope.cancel()
-            cancel_outcome = await outcome.acapture(trio.lowlevel.checkpoint_if_cancelled)
-        match cancel_outcome:
-            case outcome.Error(trio.Cancelled() as exc):
-                exc.__context__ = exc.__cause__ = None
-                exc.__suppress_context__ = False
-                return exc.with_traceback(None)
-            case _:  # pragma: no cover
-                raise AssertionError(f"Did not obtain the cancellation exception, but {cancel_outcome!r}")
+        with trio.CancelScope(deadline=-math.inf):
+            await trio.lowlevel.wait_task_rescheduled(lambda _: trio.lowlevel.Abort.SUCCEEDED)
+        raise AssertionError("Did not obtain the cancellation exception")
 
     def __check_nursery_started(self) -> trio.Nursery:
         if (n := self.__nursery) is None:

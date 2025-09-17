@@ -44,12 +44,13 @@ class BaseTestTrioSocketStream(BaseTestSocketTransport):
         return exc
 
     @staticmethod
-    def _make_closed_resource_error(closed_socket_errno: int = errno.EBADF) -> _ClosedResourceError:
+    def _make_closed_resource_error(closed_socket_errno: int | None = None) -> _ClosedResourceError:
         import trio
 
         exc = trio.ClosedResourceError()
-        exc.__context__ = OSError(closed_socket_errno, os.strerror(closed_socket_errno))
-        exc.__cause__ = None
+        if closed_socket_errno is not None:
+            exc.__context__ = OSError(closed_socket_errno, os.strerror(closed_socket_errno))
+            exc.__cause__ = None
         return exc
 
 
@@ -177,22 +178,23 @@ class TestTrioStreamSocketAdapter(BaseTestTrioSocketStream, MixinTestSocketSendM
         mock_trio_socket_stream.receive_some.assert_awaited_once_with(0)
         assert data == b""
 
-    @pytest.mark.parametrize("closed_socket_errno", sorted(CLOSED_SOCKET_ERRNOS), ids=errno.errorcode.__getitem__)
+    @pytest.mark.parametrize(
+        "closed_socket_errno",
+        [*sorted(CLOSED_SOCKET_ERRNOS), None],
+        ids=lambda e: errno.errorcode[e] if e is not None else "None",
+    )
     async def test____recv____convert_trio_ClosedResourceError(
         self,
-        closed_socket_errno: int,
+        closed_socket_errno: int | None,
         transport: TrioStreamSocketAdapter,
         mock_trio_socket_stream: MagicMock,
     ) -> None:
         # Arrange
         mock_trio_socket_stream.receive_some.side_effect = self._make_closed_resource_error(closed_socket_errno)
 
-        # Act
-        with pytest.raises(OSError) as exc_info:
+        # Act & Assert
+        with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EBADF):
             _ = await transport.recv(1024)
-
-        # Assert
-        assert exc_info.value.errno == errno.EBADF
 
     @pytest.mark.parametrize(
         "connection_error_errno",
@@ -212,12 +214,9 @@ class TestTrioStreamSocketAdapter(BaseTestTrioSocketStream, MixinTestSocketSendM
         # Arrange
         mock_trio_socket_stream.receive_some.side_effect = self._make_broken_resource_error(connection_error_errno)
 
-        # Act
-        with pytest.raises(OSError) as exc_info:
+        # Act & Assert
+        with pytest.raises(OSError, check=lambda exc: exc.errno == connection_error_errno):
             _ = await transport.recv(1024)
-
-        # Assert
-        assert exc_info.value.errno == connection_error_errno
 
     async def test____recv_into____read_from_reader(
         self,
@@ -251,6 +250,18 @@ class TestTrioStreamSocketAdapter(BaseTestTrioSocketStream, MixinTestSocketSendM
         mock_trio_socket_stream.socket.recv_into.assert_awaited_once_with(buffer)
         assert nbytes == 0
 
+    async def test____recv_into____convert_trio_ClosedResourceError(
+        self,
+        transport: TrioStreamSocketAdapter,
+        mock_trio_socket_stream: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_trio_socket_stream.socket.recv_into.side_effect = self._make_closed_resource_error(None)
+
+        # Act & Assert
+        with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EBADF):
+            _ = await transport.recv_into(bytearray(4))
+
     async def test____send_all____use_stream_send_all(
         self,
         transport: TrioStreamSocketAdapter,
@@ -264,22 +275,23 @@ class TestTrioStreamSocketAdapter(BaseTestTrioSocketStream, MixinTestSocketSendM
         # Assert
         mock_trio_socket_stream.send_all.assert_awaited_once_with(b"data to send")
 
-    @pytest.mark.parametrize("closed_socket_errno", sorted(CLOSED_SOCKET_ERRNOS), ids=errno.errorcode.__getitem__)
+    @pytest.mark.parametrize(
+        "closed_socket_errno",
+        [*sorted(CLOSED_SOCKET_ERRNOS), None],
+        ids=lambda e: errno.errorcode[e] if e is not None else "None",
+    )
     async def test____send_all____convert_trio_ClosedResourceError(
         self,
-        closed_socket_errno: int,
+        closed_socket_errno: int | None,
         transport: TrioStreamSocketAdapter,
         mock_trio_socket_stream: MagicMock,
     ) -> None:
         # Arrange
         mock_trio_socket_stream.send_all.side_effect = self._make_closed_resource_error(closed_socket_errno)
 
-        # Act
-        with pytest.raises(OSError) as exc_info:
+        # Act & Assert
+        with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EBADF):
             await transport.send_all(b"data to send")
-
-        # Assert
-        assert exc_info.value.errno == errno.EBADF
 
     @pytest.mark.parametrize(
         "connection_error_errno",
@@ -299,12 +311,9 @@ class TestTrioStreamSocketAdapter(BaseTestTrioSocketStream, MixinTestSocketSendM
         # Arrange
         mock_trio_socket_stream.send_all.side_effect = self._make_broken_resource_error(connection_error_errno)
 
-        # Act
-        with pytest.raises(OSError) as exc_info:
+        # Act & Assert
+        with pytest.raises(OSError, check=lambda exc: exc.errno == connection_error_errno):
             await transport.send_all(b"data to send")
-
-        # Assert
-        assert exc_info.value.errno == connection_error_errno
 
     async def test____send_all_from_iterable____use_socket_sendmsg_when_available(
         self,
@@ -394,6 +403,20 @@ class TestTrioStreamSocketAdapter(BaseTestTrioSocketStream, MixinTestSocketSendM
             [b"p"],
         ]
 
+    async def test____send_all_from_iterable____use_socket_sendmsg____convert_trio_ClosedResourceError(
+        self,
+        transport: TrioStreamSocketAdapter,
+        mock_trio_socket_stream: MagicMock,
+    ) -> None:
+        # Arrange
+        self.__assert_sendmsg_is_available_or_skip(mock_trio_socket_stream.socket)
+
+        mock_trio_socket_stream.socket.sendmsg.side_effect = self._make_closed_resource_error(None)
+
+        # Act & Assert
+        with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EBADF):
+            await transport.send_all_from_iterable([b"data", b"to", b"send"])
+
     async def test____send_all_from_iterable____fallback_to_send_all____sendmsg_unavailable(
         self,
         transport: TrioStreamSocketAdapter,
@@ -439,22 +462,23 @@ class TestTrioStreamSocketAdapter(BaseTestTrioSocketStream, MixinTestSocketSendM
         # Assert
         mock_trio_socket_stream.send_eof.assert_awaited_once_with()
 
-    @pytest.mark.parametrize("closed_socket_errno", sorted(CLOSED_SOCKET_ERRNOS), ids=errno.errorcode.__getitem__)
+    @pytest.mark.parametrize(
+        "closed_socket_errno",
+        [*sorted(CLOSED_SOCKET_ERRNOS), None],
+        ids=lambda e: errno.errorcode[e] if e is not None else "None",
+    )
     async def test____send_eof____convert_trio_ClosedResourceError(
         self,
-        closed_socket_errno: int,
+        closed_socket_errno: int | None,
         transport: TrioStreamSocketAdapter,
         mock_trio_socket_stream: MagicMock,
     ) -> None:
         # Arrange
         mock_trio_socket_stream.send_eof.side_effect = self._make_closed_resource_error(closed_socket_errno)
 
-        # Act
-        with pytest.raises(OSError) as exc_info:
+        # Act & Assert
+        with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EBADF):
             await transport.send_eof()
-
-        # Assert
-        assert exc_info.value.errno == errno.EBADF
 
     @pytest.mark.parametrize(
         "connection_error_errno",
@@ -474,12 +498,9 @@ class TestTrioStreamSocketAdapter(BaseTestTrioSocketStream, MixinTestSocketSendM
         # Arrange
         mock_trio_socket_stream.send_eof.side_effect = self._make_broken_resource_error(connection_error_errno)
 
-        # Act
-        with pytest.raises(OSError) as exc_info:
+        # Act & Assert
+        with pytest.raises(OSError, check=lambda exc: exc.errno == connection_error_errno):
             await transport.send_eof()
-
-        # Assert
-        assert exc_info.value.errno == connection_error_errno
 
     async def test____get_backend____returns_linked_instance(
         self,
@@ -710,10 +731,14 @@ class TestTrioListenerSocketAdapter(BaseTestTrioSocketStream):
         mock_TrioStreamSocketAdapter.assert_called_once_with(trio_backend, mock_accepted_trio_socket_stream)
         handler.assert_awaited_once_with(accepted_client_transport)
 
-    @pytest.mark.parametrize("closed_socket_errno", sorted(CLOSED_SOCKET_ERRNOS), ids=errno.errorcode.__getitem__)
+    @pytest.mark.parametrize(
+        "closed_socket_errno",
+        [*sorted(CLOSED_SOCKET_ERRNOS), None],
+        ids=lambda e: errno.errorcode[e] if e is not None else "None",
+    )
     async def test____serve____convert_trio_ClosedResourceError(
         self,
-        closed_socket_errno: int,
+        closed_socket_errno: int | None,
         trio_backend: TrioBackend,
         listener: TrioListenerSocketAdapter,
         handler: AsyncMock,
@@ -727,13 +752,11 @@ class TestTrioListenerSocketAdapter(BaseTestTrioSocketStream):
             sleep_time=0.1,
         )
 
-        # Act
+        # Act & Assert
         async with trio_backend.create_task_group() as task_group:
-            with pytest.raises(OSError) as exc_info:
+            with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EBADF):
                 await listener.serve(handler, task_group)
 
-        # Assert
-        assert exc_info.value.errno == errno.EBADF
         handler.assert_not_awaited()
 
     @PlatformMarkers.skipif_platform_win32_because("test failures are all too frequent on CI", skip_only_on_ci=True)

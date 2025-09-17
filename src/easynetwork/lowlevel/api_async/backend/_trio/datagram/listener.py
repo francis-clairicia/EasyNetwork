@@ -139,13 +139,14 @@ class TrioDatagramListenerSocketAdapter(AsyncDatagramListener["_RetAddress"]):
 
     async def send_to(self, data: bytes | bytearray | memoryview, address: _Address) -> None:
         async with self.__send_lock:
-            await _retry_socket_method(
-                self.__wait_writable,
-                (listener := self.__listener),
-                lambda: listener.sendto(data, address),
-                always_yield=False,
-                checkpoint_if_cancelled=False,  # <- Already checked by send_lock
-            )
+            with convert_trio_resource_errors(broken_resource_errno=_errno.EBADF):
+                await _retry_socket_method(
+                    self.__wait_writable,
+                    (listener := self.__listener),
+                    lambda: listener.sendto(data, address),
+                    always_yield=False,
+                    checkpoint_if_cancelled=False,  # <- Already checked by send_lock
+                )
 
     def backend(self) -> AsyncBackend:
         return self.__backend

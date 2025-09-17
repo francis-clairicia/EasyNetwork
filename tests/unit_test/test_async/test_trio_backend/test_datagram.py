@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import errno
 import logging
 from collections.abc import AsyncIterator, Callable
 from typing import TYPE_CHECKING, Any
@@ -125,6 +126,20 @@ class TestTrioDatagramSocketAdapter(BaseTestSocketTransport):
         mock_trio_datagram_socket.recv.assert_awaited_once_with(TrioDatagramSocketAdapter.MAX_DATAGRAM_BUFSIZE)
         assert data == b"data"
 
+    async def test____recv____convert_trio_ClosedResourceError(
+        self,
+        transport: TrioDatagramSocketAdapter,
+        mock_trio_datagram_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        import trio
+
+        mock_trio_datagram_socket.recv.side_effect = trio.ClosedResourceError
+
+        # Act & Assert
+        with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EBADF):
+            await transport.recv()
+
     async def test____send____write_on_socket(
         self,
         transport: TrioDatagramSocketAdapter,
@@ -138,6 +153,20 @@ class TestTrioDatagramSocketAdapter(BaseTestSocketTransport):
 
         # Assert
         mock_trio_datagram_socket.send.assert_awaited_once_with(b"data to send")
+
+    async def test____send____convert_trio_ClosedResourceError(
+        self,
+        transport: TrioDatagramSocketAdapter,
+        mock_trio_datagram_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        import trio
+
+        mock_trio_datagram_socket.send.side_effect = trio.ClosedResourceError
+
+        # Act & Assert
+        with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EBADF):
+            await transport.send(b"data to send")
 
     async def test____get_backend____returns_linked_instance(
         self,
@@ -374,9 +403,31 @@ class TestTrioDatagramListenerSocketAdapter(BaseTestSocketTransport):
         ]
         assert mock_trio_lowlevel_wait_readable.await_args_list == [mocker.call(mock_datagram_listener_socket) for _ in range(3)]
         assert len(caplog.records) == 1
-        assert caplog.records[0].levelno == logging.WARNING
         assert caplog.records[0].getMessage() == "Unrelated error occurred on datagram reception: OSError: Unrelated OS Error"
+        assert caplog.records[0].levelno == logging.WARNING
         assert caplog.records[0].exc_info is not None and isinstance(caplog.records[0].exc_info[1], OSError)
+
+    async def test____serve____convert_trio_ClosedResourceError(
+        self,
+        trio_backend: TrioBackend,
+        listener: TrioDatagramListenerSocketAdapter,
+        handler: AsyncMock,
+        mock_datagram_listener_socket: MagicMock,
+        mock_trio_lowlevel_wait_readable: AsyncMock,
+    ) -> None:
+        # Arrange
+        import trio
+
+        mock_datagram_listener_socket.recvfrom.side_effect = BlockingIOError
+        mock_trio_lowlevel_wait_readable.side_effect = trio.ClosedResourceError
+
+        # Act
+        task_group: TaskGroup | None
+        async with trio_backend.create_task_group() as task_group:
+            with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EBADF):
+                await listener.serve(handler, task_group)
+
+        handler.assert_not_awaited()
 
     @pytest.mark.parametrize("block_count", [2, 1, 0], ids=lambda count: f"block_count=={count}")
     @pytest.mark.parametrize(
@@ -418,6 +469,32 @@ class TestTrioDatagramListenerSocketAdapter(BaseTestSocketTransport):
         assert mock_trio_lowlevel_wait_writable.await_args_list == [
             mocker.call(mock_datagram_listener_socket) for _ in range(expected_wait_writable_nb_calls)
         ]
+
+    @pytest.mark.parametrize(
+        ["socket_family_name", "destination_address"],
+        [
+            pytest.param("AF_INET", ("127.0.0.1", 12345)),
+            pytest.param("AF_UNIX", "/path/to/unix.sock"),
+            pytest.param("AF_UNIX", b"\x00abstract_address"),
+        ],
+        indirect=["socket_family_name"],
+    )
+    async def test____send_to____convert_trio_ClosedResourceError(
+        self,
+        destination_address: tuple[str, int] | str | bytes,
+        listener: TrioDatagramListenerSocketAdapter,
+        mock_datagram_listener_socket: MagicMock,
+        mock_trio_lowlevel_wait_writable: AsyncMock,
+    ) -> None:
+        # Arrange
+        import trio
+
+        mock_datagram_listener_socket.sendto.side_effect = BlockingIOError
+        mock_trio_lowlevel_wait_writable.side_effect = trio.ClosedResourceError
+
+        # Act & Assert
+        with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EBADF):
+            await listener.send_to(b"data to send", destination_address)
 
     async def test____get_backend____returns_linked_instance(
         self,
