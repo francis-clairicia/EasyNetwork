@@ -82,7 +82,8 @@ class TrioStreamSocketAdapter(AsyncStreamTransport):
         async def recv_with_ancillary(self, bufsize: int, ancillary_bufsize: int) -> tuple[bytes, list[tuple[int, int, bytes]]]:
             if not _unix_utils.is_unix_socket_family((socket := self.__stream.socket).family):
                 return await super().recv_with_ancillary(bufsize, ancillary_bufsize)
-            msg, ancdata, _, _ = await socket.recvmsg(bufsize, ancillary_bufsize)
+            with convert_trio_resource_errors(broken_resource_errno=_errno.ECONNABORTED):
+                msg, ancdata, _, _ = await socket.recvmsg(bufsize, ancillary_bufsize)
             return msg, ancdata
 
     if sys.platform != "win32" and hasattr(trio.socket.SocketType, "recvmsg_into"):
@@ -94,7 +95,8 @@ class TrioStreamSocketAdapter(AsyncStreamTransport):
         ) -> tuple[int, list[tuple[int, int, bytes]]]:
             if not _unix_utils.is_unix_socket_family((socket := self.__stream.socket).family):
                 return await super().recv_with_ancillary_into(buffer, ancillary_bufsize)
-            msg, ancdata, _, _ = await socket.recvmsg_into([buffer], ancillary_bufsize)
+            with convert_trio_resource_errors(broken_resource_errno=_errno.ECONNABORTED):
+                msg, ancdata, _, _ = await socket.recvmsg_into([buffer], ancillary_bufsize)
             return msg, ancdata
 
     async def send_all(self, data: bytes | bytearray | memoryview) -> None:
@@ -119,9 +121,10 @@ class TrioStreamSocketAdapter(AsyncStreamTransport):
                     # it would retry with an already consumed iterator.
                     ancillary_data = list(ancillary_data)
 
-                # Do not send the islice directly because if sendmsg() blocks,
-                # it would retry with an already consumed iterator.
-                sent = await socket.sendmsg(list(itertools.islice(buffers, constants.SC_IOV_MAX)), ancillary_data)
+                with convert_trio_resource_errors(broken_resource_errno=_errno.ECONNABORTED):
+                    # Do not send the islice directly because if sendmsg() blocks,
+                    # it would retry with an already consumed iterator.
+                    sent = await socket.sendmsg(list(itertools.islice(buffers, constants.SC_IOV_MAX)), ancillary_data)
                 _utils.adjust_leftover_buffer(buffers, sent)
                 if buffers:
                     raise _utils.error_from_errno(_errno.EMSGSIZE)

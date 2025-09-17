@@ -82,7 +82,8 @@ class TrioDatagramSocketAdapter(AsyncDatagramTransport):
         async def recv_with_ancillary(self, ancillary_bufsize: int) -> tuple[bytes, list[tuple[int, int, bytes]]]:
             if not _unix_utils.is_unix_socket_family((socket := self.__socket).family):
                 return await super().recv_with_ancillary(ancillary_bufsize)
-            msg, ancdata, _, _ = await socket.recvmsg(self.MAX_DATAGRAM_BUFSIZE, ancillary_bufsize)
+            with convert_trio_resource_errors(broken_resource_errno=_errno.EBADF):
+                msg, ancdata, _, _ = await socket.recvmsg(self.MAX_DATAGRAM_BUFSIZE, ancillary_bufsize)
             return msg, ancdata
 
     async def send(self, data: bytes | bytearray | memoryview) -> None:
@@ -103,7 +104,8 @@ class TrioDatagramSocketAdapter(AsyncDatagramTransport):
                 # it would retry with an already consumed iterator.
                 ancillary_data = list(ancillary_data)
 
-            await socket.sendmsg([data], ancillary_data)
+            with convert_trio_resource_errors(broken_resource_errno=_errno.EBADF):
+                await socket.sendmsg([data], ancillary_data)
 
     def backend(self) -> AsyncBackend:
         return self.__backend
