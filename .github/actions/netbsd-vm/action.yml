@@ -38,7 +38,6 @@ runs:
         prepare: |
           set -e
           /usr/sbin/pkg_add -v pkgin
-          pkgin update
           pkgin -y install curl git ${{ env.NETBSD_PORTS_FOR_PYTHON }}
           curl -sSL https://pdm-project.org/install-pdm.py | ${{ env.NETBSD_PYTHON_BIN }} - --version=${{ env.PDM_VERSION }} --path=/usr/local
           pdm config check_update false

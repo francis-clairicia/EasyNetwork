@@ -74,7 +74,7 @@ jobs:
       && (github.event_name != 'pull_request' || github.event.pull_request.draft != true)
     runs-on: ubuntu-24.04
 
-    name: type-hinting (freebsd-14.1)
+    name: type-hinting (freebsd-14.3)
     steps:
       - uses: actions/checkout@v5
         with:
@@ -83,7 +83,7 @@ jobs:
         timeout-minutes: 10
         uses: ./.github/actions/freebsd-vm
         with:
-          release: '14.1'
+          release: '14.3'
           python-version: '3.11'
           run: |
             export TOX_WORK_DIR=/tmp/.tox
@@ -95,7 +95,7 @@ jobs:
       && (github.event_name != 'pull_request' || github.event.pull_request.draft != true)
     runs-on: ubuntu-24.04
 
-    name: type-hinting (openbsd-7.6)
+    name: type-hinting (openbsd-7.7)
     steps:
       - uses: actions/checkout@v5
         with:
@@ -104,7 +104,7 @@ jobs:
         timeout-minutes: 10
         uses: ./.github/actions/openbsd-vm
         with:
-          release: '7.6'
+          release: '7.7'
           python-version: '3.11'
           # FIXME: Cannot run tox (which uses tox-pdm) on OpenBSD: PDM crashes when installing packages
           # c.f. https://github.com/pdm-project/dep-logic/issues/7
@@ -124,7 +124,7 @@ jobs:
       && (github.event_name != 'pull_request' || github.event.pull_request.draft != true)
     runs-on: ubuntu-24.04
 
-    name: type-hinting (netbsd-10.0)
+    name: type-hinting (netbsd-10.1)
     steps:
       - uses: actions/checkout@v5
         with:
@@ -133,7 +133,7 @@ jobs:
         timeout-minutes: 10
         uses: ./.github/actions/netbsd-vm
         with:
-          release: '10.0'
+          release: '10.1'
           python-version: '3.11'
           run: |
             export TOX_WORK_DIR=/tmp/.tox
