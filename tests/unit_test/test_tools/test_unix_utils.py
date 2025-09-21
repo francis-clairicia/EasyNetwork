@@ -146,7 +146,7 @@ if sys.platform != "win32":
         # Act & Assert
         assert platform_supports_automatic_socket_bind()
 
-    @pytest.mark.parametrize("platform", ["darwin", "freebsdXX", "openbsdXX", "netbsdXX", "dragonflyXX"])
+    @pytest.mark.parametrize("platform", ["darwin", "freebsdXX", "openbsdXX", "netbsdXX"])
     def test____platform_supports_automatic_socket_bind_____not_supported(platform: str, monkeypatch: pytest.MonkeyPatch) -> None:
         # Arrange
         monkeypatch.setattr("sys.platform", platform)
@@ -203,7 +203,6 @@ if sys.platform != "win32":
         FREEBSD = ("freebsd",)
         OPENBSD = ("openbsd",)
         NETBSD = ("netbsd",)
-        DRAGONFLYBSD = ("dragonfly",)
 
         @pytest.fixture(scope="class", autouse=True)
         @staticmethod
@@ -437,7 +436,7 @@ if sys.platform != "win32":
             # Assert
             mock_CDLL.assert_not_called()
 
-        @PlatformMarkers.runs_only_on_platform(FREEBSD + DRAGONFLYBSD, "get_peer_eid_impl____bsd_generic_impl")
+        @PlatformMarkers.runs_only_on_platform(FREEBSD, "get_peer_eid_impl____bsd_generic_impl")
         def test____get_peer_credentials_impl_from_platform____get_peer_eid_impl____bsd_generic_impl(
             self,
             mock_find_library: MagicMock,
@@ -468,7 +467,7 @@ if sys.platform != "win32":
             mock_shared_lib.getpeereid.assert_called_once_with(mock_unix_stream_socket.fileno(), mocker.ANY, mocker.ANY)
             mock_unix_stream_socket.getsockopt.asset_not_called()
 
-        @PlatformMarkers.runs_only_on_platform(FREEBSD + DRAGONFLYBSD, "get_peer_eid_impl____bsd_generic_impl")
+        @PlatformMarkers.runs_only_on_platform(FREEBSD, "get_peer_eid_impl____bsd_generic_impl")
         def test____get_peer_credentials_impl_from_platform____get_peer_eid_impl____bsd_generic_impl____socket_closed(
             self,
             mock_find_library: MagicMock,
@@ -491,7 +490,7 @@ if sys.platform != "win32":
             mock_shared_lib.getpeereid.assert_not_called()
             mock_unix_stream_socket.getsockopt.assert_not_called()
 
-        @PlatformMarkers.runs_only_on_platform(FREEBSD + DRAGONFLYBSD, "get_peer_eid_impl____bsd_generic_impl")
+        @PlatformMarkers.runs_only_on_platform(FREEBSD, "get_peer_eid_impl____bsd_generic_impl")
         def test____get_peer_credentials_impl_from_platform____get_peer_eid_impl____bsd_generic_impl____getpeereid_failed(
             self,
             mock_find_library: MagicMock,
@@ -521,7 +520,7 @@ if sys.platform != "win32":
             mock_shared_lib.getpeereid.asset_called_once()
             mock_unix_stream_socket.getsockopt.assert_not_called()
 
-        @PlatformMarkers.runs_only_on_platform(FREEBSD + DRAGONFLYBSD, "get_peer_eid_impl____bsd_generic_impl")
+        @PlatformMarkers.runs_only_on_platform(FREEBSD, "get_peer_eid_impl____bsd_generic_impl")
         def test____get_peer_credentials_impl_from_platform____get_peer_eid_impl____bsd_generic_impl____libc_not_found(
             self,
             mock_find_library: MagicMock,
