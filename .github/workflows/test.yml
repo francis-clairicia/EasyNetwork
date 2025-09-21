@@ -188,7 +188,7 @@ jobs:
       # This indicates PDM not to use the .whl but the .tar.gz distribution in order to recompile the package in-place.
       PDM_NO_BINARY: coverage
 
-    name: test (openbsd-7.7, ${{ matrix.python_version }})
+    name: test (openbsd-7.6, ${{ matrix.python_version }})
     steps:
       - uses: actions/checkout@v5
         with:
@@ -198,7 +198,7 @@ jobs:
         timeout-minutes: 25
         uses: ./.github/actions/openbsd-vm
         with:
-          release: '7.7'
+          release: '7.6'
           python-version: ${{ matrix.python_version }}
           # FIXME: Cannot run tox (which uses tox-pdm) on OpenBSD: PDM crashes when installing packages
           # c.f. https://github.com/pdm-project/dep-logic/issues/7
