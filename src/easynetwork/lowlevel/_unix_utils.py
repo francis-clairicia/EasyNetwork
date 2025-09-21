@@ -93,7 +93,7 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
                 return __get_peer_eid_macos_impl()
             case platform if platform.startswith(("linux", "openbsd", "netbsd")):
                 return __get_ucred_impl()
-            case platform if platform.startswith(("freebsd", "dragonfly")):
+            case platform if platform.startswith("freebsd"):
                 return __get_peer_eid_bsd_generic_impl()
             case platform:  # pragma: no cover
                 raise NotImplementedError(f"There is no implementation available for {platform!r}")
