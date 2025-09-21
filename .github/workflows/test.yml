@@ -122,6 +122,8 @@ jobs:
         include:
           - python_version: '3.11'
             tox_py: py311
+          - python_version: '3.12'
+            tox_py: py312
     env:
       # Since v7.6.11, coverage ships a pure python wheel (which is used on BSD) but the pure python Tracker always crashes.
       # This indicates PDM not to use the .whl but the .tar.gz distribution in order to recompile the package in-place.
@@ -181,14 +183,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - python_version: '3.11'
+          - os_version: '7.6'
+            python_version: '3.11'
             tox_py: py311
+          - os_version: '7.7'
+            python_version: '3.12'
+            tox_py: py312
     env:
       # Since v7.6.11, coverage ships a pure python wheel (which is used on BSD) but the pure python Tracker always crashes.
       # This indicates PDM not to use the .whl but the .tar.gz distribution in order to recompile the package in-place.
       PDM_NO_BINARY: coverage
 
-    name: test (openbsd-7.6, ${{ matrix.python_version }})
+    name: test (openbsd-${{ matrix.os_version }}, ${{ matrix.python_version }})
     steps:
       - uses: actions/checkout@v5
         with:
@@ -198,7 +204,7 @@ jobs:
         timeout-minutes: 25
         uses: ./.github/actions/openbsd-vm
         with:
-          release: '7.6'
+          release: ${{ matrix.os_version }}
           python-version: ${{ matrix.python_version }}
           # FIXME: Cannot run tox (which uses tox-pdm) on OpenBSD: PDM crashes when installing packages
           # c.f. https://github.com/pdm-project/dep-logic/issues/7
@@ -261,6 +267,8 @@ jobs:
         include:
           - python_version: '3.11'
             tox_py: py311
+          - python_version: '3.12'
+            tox_py: py312
     env:
       # Since v7.6.11, coverage ships a pure python wheel (which is used on BSD) but the pure python Tracker always crashes.
       # This indicates PDM not to use the .whl but the .tar.gz distribution in order to recompile the package in-place.
