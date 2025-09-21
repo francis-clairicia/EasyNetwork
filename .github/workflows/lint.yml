@@ -74,7 +74,7 @@ jobs:
       && (github.event_name != 'pull_request' || github.event.pull_request.draft != true)
     runs-on: ubuntu-24.04
 
-    name: type-hinting (freebsd-14.1)
+    name: type-hinting (freebsd-14.3)
     steps:
       - uses: actions/checkout@v5
         with:
@@ -83,7 +83,7 @@ jobs:
         timeout-minutes: 10
         uses: ./.github/actions/freebsd-vm
         with:
-          release: '14.1'
+          release: '14.3'
           python-version: '3.11'
           run: |
             export TOX_WORK_DIR=/tmp/.tox
@@ -124,7 +124,7 @@ jobs:
       && (github.event_name != 'pull_request' || github.event.pull_request.draft != true)
     runs-on: ubuntu-24.04
 
-    name: type-hinting (netbsd-10.0)
+    name: type-hinting (netbsd-10.1)
     steps:
       - uses: actions/checkout@v5
         with:
@@ -133,7 +133,7 @@ jobs:
         timeout-minutes: 10
         uses: ./.github/actions/netbsd-vm
         with:
-          release: '10.0'
+          release: '10.1'
           python-version: '3.11'
           run: |
             export TOX_WORK_DIR=/tmp/.tox

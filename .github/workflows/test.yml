@@ -127,7 +127,7 @@ jobs:
       # This indicates PDM not to use the .whl but the .tar.gz distribution in order to recompile the package in-place.
       PDM_NO_BINARY: coverage
 
-    name: test (freebsd-14.1, ${{ matrix.python_version }})
+    name: test (freebsd-14.3, ${{ matrix.python_version }})
     steps:
       - uses: actions/checkout@v5
         with:
@@ -137,7 +137,7 @@ jobs:
         timeout-minutes: 25
         uses: ./.github/actions/freebsd-vm
         with:
-          release: '14.1'
+          release: '14.3'
           python-version: ${{ matrix.python_version }}
           envs: >-
             PDM_NO_BINARY
@@ -266,7 +266,7 @@ jobs:
       # This indicates PDM not to use the .whl but the .tar.gz distribution in order to recompile the package in-place.
       PDM_NO_BINARY: coverage
 
-    name: test (netbsd-10.0, ${{ matrix.python_version }})
+    name: test (netbsd-10.1, ${{ matrix.python_version }})
     steps:
       - uses: actions/checkout@v5
         with:
@@ -276,7 +276,7 @@ jobs:
         timeout-minutes: 25
         uses: ./.github/actions/netbsd-vm
         with:
-          release: '10.0'
+          release: '10.1'
           python-version: ${{ matrix.python_version }}
           envs: >-
             PDM_NO_BINARY
