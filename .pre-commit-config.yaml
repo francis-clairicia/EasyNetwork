@@ -22,7 +22,7 @@ repos:
       - id: isort
         args: ['--filter-files', '--settings-file', 'pyproject.toml']
   - repo: https://github.com/psf/black
-    rev: '25.1.0'
+    rev: '25.9.0'
     hooks:
       - id: black
         args: ['--config', 'pyproject.toml']
@@ -46,7 +46,7 @@ repos:
         types: []  # Overwrite with empty in order to fallback to types_or
         types_or: [python, pyi]
   - repo: https://github.com/pdm-project/pdm
-    rev: '2.25.4'
+    rev: '2.25.9'
     hooks:
       - id: pdm-lock-check
       - id: pdm-export
@@ -79,7 +79,7 @@ repos:
       - id: rst-directive-colons
       - id: rst-inline-touching-normal
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: 'v5.0.0'
+    rev: 'v6.0.0'
     hooks:
       - id: mixed-line-ending
         args: [--fix=lf]

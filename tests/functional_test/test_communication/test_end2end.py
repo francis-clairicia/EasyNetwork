@@ -11,7 +11,12 @@ from easynetwork.clients.udp import UDPNetworkClient
 from easynetwork.lowlevel.api_async.backend.utils import BuiltinAsyncBackendLiteral
 from easynetwork.protocol import AnyStreamProtocolType, DatagramProtocol
 from easynetwork.servers.abc import AbstractNetworkServer
-from easynetwork.servers.handlers import AsyncBaseClientInterface, AsyncDatagramRequestHandler, AsyncStreamRequestHandler
+from easynetwork.servers.handlers import (
+    AsyncDatagramClient,
+    AsyncDatagramRequestHandler,
+    AsyncStreamClient,
+    AsyncStreamRequestHandler,
+)
 from easynetwork.servers.standalone_tcp import StandaloneTCPNetworkServer
 from easynetwork.servers.standalone_udp import StandaloneUDPNetworkServer
 from easynetwork.servers.threads_helper import NetworkServerThread
@@ -19,8 +24,14 @@ from easynetwork.servers.threads_helper import NetworkServerThread
 import pytest
 
 
-class EchoRequestHandler(AsyncStreamRequestHandler[str, str], AsyncDatagramRequestHandler[str, str]):
-    async def handle(self, client: AsyncBaseClientInterface[str]) -> AsyncGenerator[None, str]:
+class EchoStreamRequestHandler(AsyncStreamRequestHandler[str, str]):
+    async def handle(self, client: AsyncStreamClient[str]) -> AsyncGenerator[None, str]:
+        request = yield
+        await client.send_packet(request)
+
+
+class EchoDatagramRequestHandler(AsyncDatagramRequestHandler[str, str]):
+    async def handle(self, client: AsyncDatagramClient[str]) -> AsyncGenerator[None, str]:
         request = yield
         await client.send_packet(request)
 
@@ -70,7 +81,7 @@ class TestNetworkTCP(BaseTestNetworkServer):
         server_backend: BuiltinAsyncBackendLiteral,
         stream_protocol: AnyStreamProtocolType[str, str],
     ) -> StandaloneTCPNetworkServer[str, str]:
-        return StandaloneTCPNetworkServer("127.0.0.1", 0, stream_protocol, EchoRequestHandler(), backend=server_backend)
+        return StandaloneTCPNetworkServer("127.0.0.1", 0, stream_protocol, EchoStreamRequestHandler(), backend=server_backend)
 
     @pytest.fixture
     @staticmethod
@@ -135,7 +146,7 @@ class TestNetworkUDP(BaseTestNetworkServer):
         server_backend: BuiltinAsyncBackendLiteral,
         datagram_protocol: DatagramProtocol[str, str],
     ) -> StandaloneUDPNetworkServer[str, str]:
-        return StandaloneUDPNetworkServer("127.0.0.1", 0, datagram_protocol, EchoRequestHandler(), backend=server_backend)
+        return StandaloneUDPNetworkServer("127.0.0.1", 0, datagram_protocol, EchoDatagramRequestHandler(), backend=server_backend)
 
     @pytest.fixture
     @staticmethod
@@ -215,7 +226,7 @@ if sys.platform != "win32":
             return StandaloneUnixStreamServer(
                 unix_socket_path_factory(),
                 stream_protocol,
-                EchoRequestHandler(),
+                EchoStreamRequestHandler(),
                 backend=server_backend,
             )
 
@@ -286,7 +297,7 @@ if sys.platform != "win32":
             return StandaloneUnixDatagramServer(
                 unix_socket_path_factory(),
                 datagram_protocol,
-                EchoRequestHandler(),
+                EchoDatagramRequestHandler(),
                 backend=server_backend,
             )
 
