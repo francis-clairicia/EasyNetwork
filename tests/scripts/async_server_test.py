@@ -17,7 +17,28 @@ PORT = 9000
 logger = logging.getLogger("app")
 
 
-class MyAsyncRequestHandler(AsyncStreamRequestHandler[str, str], AsyncDatagramRequestHandler[str, str]):
+class MyAsyncStreamRequestHandler(AsyncStreamRequestHandler[str, str]):
+    async def service_init(self, exit_stack: contextlib.AsyncExitStack, server: AbstractAsyncNetworkServer) -> None:
+        self.server = server
+
+    async def handle(self, client: AsyncBaseClientInterface[str]) -> AsyncGenerator[None, str]:
+        request: str = yield
+        logger.debug(f"Received {request!r} from {client!r}")
+        match request:
+            case "error:":
+                raise RuntimeError("requested error")
+            case "wait:":
+                request = (yield) + " after wait"
+            case "self_kill:":
+                await self.server.server_close()
+                await client.send_packet("stop_listening() done")
+                return
+            case _:
+                pass
+        await client.send_packet(request.upper())
+
+
+class MyAsyncDatagramRequestHandler(AsyncDatagramRequestHandler[str, str]):
     async def service_init(self, exit_stack: contextlib.AsyncExitStack, server: AbstractAsyncNetworkServer) -> None:
         self.server = server
 
@@ -39,11 +60,11 @@ class MyAsyncRequestHandler(AsyncStreamRequestHandler[str, str], AsyncDatagramRe
 
 
 def create_tcp_server() -> StandaloneTCPNetworkServer[str, str]:
-    return StandaloneTCPNetworkServer(None, PORT, StreamProtocol(StringLineSerializer()), MyAsyncRequestHandler())
+    return StandaloneTCPNetworkServer(None, PORT, StreamProtocol(StringLineSerializer()), MyAsyncStreamRequestHandler())
 
 
 def create_udp_server() -> StandaloneUDPNetworkServer[str, str]:
-    return StandaloneUDPNetworkServer(None, PORT, DatagramProtocol(StringLineSerializer()), MyAsyncRequestHandler())
+    return StandaloneUDPNetworkServer(None, PORT, DatagramProtocol(StringLineSerializer()), MyAsyncDatagramRequestHandler())
 
 
 def main() -> None:

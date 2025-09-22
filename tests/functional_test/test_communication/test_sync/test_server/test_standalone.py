@@ -9,7 +9,12 @@ from typing import TYPE_CHECKING
 from easynetwork.exceptions import ServerAlreadyRunning, ServerClosedError
 from easynetwork.protocol import AnyStreamProtocolType, DatagramProtocol
 from easynetwork.servers.abc import AbstractNetworkServer
-from easynetwork.servers.handlers import AsyncBaseClientInterface, AsyncDatagramRequestHandler, AsyncStreamRequestHandler
+from easynetwork.servers.handlers import (
+    AsyncDatagramClient,
+    AsyncDatagramRequestHandler,
+    AsyncStreamClient,
+    AsyncStreamRequestHandler,
+)
 from easynetwork.servers.standalone_tcp import StandaloneTCPNetworkServer
 from easynetwork.servers.standalone_udp import StandaloneUDPNetworkServer
 from easynetwork.servers.threads_helper import NetworkServerThread
@@ -17,8 +22,14 @@ from easynetwork.servers.threads_helper import NetworkServerThread
 import pytest
 
 
-class EchoRequestHandler(AsyncStreamRequestHandler[str, str], AsyncDatagramRequestHandler[str, str]):
-    async def handle(self, client: AsyncBaseClientInterface[str]) -> AsyncGenerator[None, str]:
+class EchoStreamRequestHandler(AsyncStreamRequestHandler[str, str]):
+    async def handle(self, client: AsyncStreamClient[str]) -> AsyncGenerator[None, str]:
+        request = yield
+        await client.send_packet(request)
+
+
+class EchoDatagramRequestHandler(AsyncDatagramRequestHandler[str, str]):
+    async def handle(self, client: AsyncDatagramClient[str]) -> AsyncGenerator[None, str]:
         request = yield
         await client.send_packet(request)
 
@@ -115,7 +126,7 @@ class TestStandaloneTCPNetworkServer(BaseTestStandaloneNetworkServer):
     @pytest.fixture
     @staticmethod
     def server(stream_protocol: AnyStreamProtocolType[str, str]) -> StandaloneTCPNetworkServer[str, str]:
-        return StandaloneTCPNetworkServer(None, 0, stream_protocol, EchoRequestHandler(), "asyncio")
+        return StandaloneTCPNetworkServer(None, 0, stream_protocol, EchoStreamRequestHandler(), "asyncio")
 
     def test____socket_property____server_is_not_running(self, server: StandaloneTCPNetworkServer[str, str]) -> None:
         with server:
@@ -132,7 +143,7 @@ class TestStandaloneUDPNetworkServer(BaseTestStandaloneNetworkServer):
     @pytest.fixture
     @staticmethod
     def server(datagram_protocol: DatagramProtocol[str, str]) -> StandaloneUDPNetworkServer[str, str]:
-        return StandaloneUDPNetworkServer("localhost", 0, datagram_protocol, EchoRequestHandler(), "asyncio")
+        return StandaloneUDPNetworkServer("localhost", 0, datagram_protocol, EchoDatagramRequestHandler(), "asyncio")
 
     def test____socket_property____server_is_not_running(self, server: StandaloneUDPNetworkServer[str, str]) -> None:
         with server:
@@ -161,7 +172,12 @@ if sys.platform != "win32":
         ) -> StandaloneUnixStreamServer[str, str]:
             from easynetwork.servers.standalone_unix_stream import StandaloneUnixStreamServer
 
-            return StandaloneUnixStreamServer(unix_socket_path_factory(), stream_protocol, EchoRequestHandler(), "asyncio")
+            return StandaloneUnixStreamServer(
+                unix_socket_path_factory(),
+                stream_protocol,
+                EchoStreamRequestHandler(),
+                "asyncio",
+            )
 
         def test____socket_property____server_is_not_running(self, server: StandaloneUnixStreamServer[str, str]) -> None:
             with server:
@@ -182,7 +198,12 @@ if sys.platform != "win32":
         ) -> StandaloneUnixDatagramServer[str, str]:
             from easynetwork.servers.standalone_unix_datagram import StandaloneUnixDatagramServer
 
-            return StandaloneUnixDatagramServer(unix_socket_path_factory(), datagram_protocol, EchoRequestHandler(), "asyncio")
+            return StandaloneUnixDatagramServer(
+                unix_socket_path_factory(),
+                datagram_protocol,
+                EchoDatagramRequestHandler(),
+                "asyncio",
+            )
 
         def test____socket_property____server_is_not_running(self, server: StandaloneUnixDatagramServer[str, str]) -> None:
             with server:
