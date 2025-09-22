@@ -23,7 +23,7 @@ import enum
 import math
 import types
 from collections import deque
-from collections.abc import Awaitable, Callable, Coroutine, Generator, Iterator
+from collections.abc import Awaitable, Callable, Coroutine, Generator, Iterable
 from types import TracebackType
 from typing import Any, ClassVar, NamedTuple, Self, TypeVar, TypeVarTuple, cast, final
 from weakref import WeakKeyDictionary
@@ -175,7 +175,7 @@ class TaskGroup(AbstractTaskGroup):
         except asyncio.CancelledError:
             # Cancel the task and wait for it to exit before returning
             task.cancel()
-            await TaskUtils.cancel_shielded_await(task.wait())
+            await TaskUtils.cancel_shielded_await(task.wait())  # type: ignore[misc]
             raise
         finally:
             del waiter
@@ -286,7 +286,7 @@ class CancelScope(AbstractCancelScope):
         if TaskUtils.current_asyncio_task() is not self.__host_task:
             raise RuntimeError("Attempted to exit cancel scope in a different task than it was entered in")
 
-        if self._current_task_scope(self.__host_task) is not self:
+        if self.__current_task_scope_dict[self.__host_task][0] is not self:
             raise RuntimeError("Attempted to exit a cancel scope that isn't the current tasks's current cancel scope")
 
         self.__state = _ScopeState.EXITED
@@ -401,12 +401,8 @@ class CancelScope(AbstractCancelScope):
                 self.__timeout_handle = loop.call_at(self.__deadline, self.cancel)
 
     @classmethod
-    def _current_task_scope(cls, task: asyncio.Task[Any]) -> CancelScope | None:
-        return next(cls._inner_to_outer_task_scopes(task), None)
-
-    @classmethod
-    def _inner_to_outer_task_scopes(cls, task: asyncio.Task[Any]) -> Iterator[CancelScope]:
-        return iter(cls.__current_task_scope_dict.get(task, ()))
+    def _inner_to_outer_task_scopes(cls, task: asyncio.Task[Any]) -> Iterable[CancelScope]:
+        return cls.__current_task_scope_dict.get(task, ())
 
     @classmethod
     def _reschedule_delayed_task_cancel(cls, task: asyncio.Task[Any], cancel_msg: str | None) -> asyncio.Handle:
@@ -466,12 +462,8 @@ class TaskUtils:
             CancelScope._reschedule_delayed_task_cancel(cls.current_asyncio_task(), _get_cancelled_error_message(exc))
 
     @classmethod
-    def cancel_shielded_await(cls, awaitable: Awaitable[_T], /) -> Awaitable[_T]:
-        return cast(Awaitable[_T], cls.__cancel_shielded_await(awaitable))
-
-    @classmethod
     @types.coroutine
-    def __cancel_shielded_await(cls, awaitable: Awaitable[_T], /) -> Generator[Any, Any, _T]:
+    def cancel_shielded_await(cls, awaitable: Awaitable[_T], /) -> Generator[Any, Any, _T]:
         current_task: asyncio.Task[Any] = cls.current_asyncio_task()
         coroutine = awaitable.__await__()
         try:
