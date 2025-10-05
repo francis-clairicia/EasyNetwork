@@ -38,8 +38,10 @@ Internet addresses
 .. autonamedtuple:: IPv6SocketAddress
    :members:
 
-.. autodata:: SocketAddress
-   :annotation: :TypeAlias = IPv4SocketAddress | IPv6SocketAddress
+.. py:type:: SocketAddress
+   :canonical: IPv4SocketAddress | IPv6SocketAddress
+
+   An internet socket address, either IPv4 or IPv6.
 
 Unix-related
 ------------
@@ -68,6 +70,20 @@ Unix-related
       '<unnamed>'
 
 .. autonamedtuple:: UnixCredentials
+   :members:
+
+.. autoclass:: SocketAncillary
+   :members:
+
+.. py:type:: SocketAncillaryMessages
+   :canonical: SCMRights | SCMCredentials
+
+   Unix socket control messages.
+
+.. autoclass:: SCMCredentials
+   :members:
+
+.. autoclass:: SCMRights
    :members:
 
 

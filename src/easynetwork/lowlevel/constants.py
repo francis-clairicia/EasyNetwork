@@ -31,6 +31,7 @@ __all__ = [
 ]
 
 import errno as _errno
+import socket as _socket
 from typing import Final
 
 # Buffer size for a recv(2) operation
@@ -133,3 +134,20 @@ def __get_sysconf(name: str, /) -> int:
 SC_IOV_MAX: Final[int] = __get_sysconf("SC_IOV_MAX")
 
 del __get_sysconf
+
+# Socket control message type for sending/receiving unix credentials.
+SCM_CREDENTIALS: Final[int | None] = next(
+    (
+        msg_type
+        for name in (
+            # Linux
+            "SCM_CREDENTIALS",
+            # FreeBSD
+            "SCM_CREDS2",
+            # NetBSD
+            "SCM_CREDS",
+        )
+        if (msg_type := getattr(_socket, name, None)) is not None
+    ),
+    None,
+)

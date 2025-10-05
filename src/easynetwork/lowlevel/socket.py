@@ -38,19 +38,22 @@ __all__ = [
     "socket_linger",
 ]
 
+import array
 import contextlib
+import dataclasses
 import functools
 import os
 import pathlib
 import socket as _socket
 import sys
 import threading
-from abc import abstractmethod
-from collections.abc import Callable
+from abc import ABCMeta, abstractmethod
+from collections.abc import Callable, Iterable, Iterator
 from struct import Struct
 from typing import (
     TYPE_CHECKING,
     Any,
+    ClassVar,
     Literal,
     NamedTuple,
     ParamSpec,
@@ -63,12 +66,14 @@ from typing import (
     runtime_checkable,
 )
 
-from . import typed_attr
+from . import constants, typed_attr
 from ._final import runtime_final_class
 
 if TYPE_CHECKING:
     from socket import _RetAddress
     from ssl import SSLContext, SSLObject, SSLSocket, _PeerCertRetDictType
+
+    from _typeshed import ReadableBuffer
 
 _P = ParamSpec("_P")
 _T_Return = TypeVar("_T_Return")
@@ -340,13 +345,15 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
 
                 An abstract socket address name may contain any bytes, including zero.
 
-                Examples:
+                Example:
 
                     >>> addr = UnixSocketAddress.from_abstract_name("hidden")
                     >>> addr
                     UnixSocketAddress(b'hidden' <abstract>)
                     >>> addr.as_abstract_name()
                     b'hidden'
+
+                Availability: Linux
                 """
                 if not isinstance(name, (str, bytes)):
                     raise TypeError(f"Expected a str object or a bytes object, got {name!r}")
@@ -473,7 +480,7 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
                 """
                 Returns the contents of this address if it is in the abstract namespace.
 
-                Examples:
+                Example:
 
                     >>> import socket
                     >>> s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -481,6 +488,8 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
                     >>> addr = UnixSocketAddress.from_raw(s.getsockname())
                     >>> addr.as_abstract_name()
                     b'hidden'
+
+                Availability: Linux
                 """
                 match self.__addr:
                     case bytes(addr):
@@ -492,7 +501,7 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
             """
             Returns the raw representation of this address.
 
-            Examples:
+            Example:
 
                 >>> UnixSocketAddress.from_pathname("/tmp/sock").as_raw()
                 '/tmp/sock'
@@ -796,7 +805,12 @@ def set_tcp_keepalive(sock: SupportsSocketOptions, state: bool) -> None:
 
 if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
 
-    __all__ += ["UnixCredentials"]
+    __all__ += [
+        "SCMRights",
+        "SocketAncillary",
+        "SocketAncillaryMessages",
+        "UnixCredentials",
+    ]
 
     class UnixCredentials(NamedTuple):
         """
@@ -813,6 +827,271 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
 
         gid: int
         """Effective Group ID of the peer process."""
+
+    class _RawSCMessage(metaclass=ABCMeta):
+        @property
+        @abstractmethod
+        def itemsize(self) -> int:
+            raise NotImplementedError
+
+        @abstractmethod
+        def is_empty(self) -> bool:
+            raise NotImplementedError
+
+        @abstractmethod
+        def append_raw(self, data: memoryview, /) -> None:
+            raise NotImplementedError
+
+        @abstractmethod
+        def as_raw(self) -> bytes:
+            raise NotImplementedError
+
+        @abstractmethod
+        def messages(self) -> SocketAncillaryMessages:
+            raise NotImplementedError
+
+    @dataclasses.dataclass(kw_only=True, eq=False, frozen=True, slots=True, match_args=True)
+    class SCMRights:
+        """
+        This control message contains file descriptors.
+
+        The level is equal to :data:`~socket.SOL_SOCKET` and the type is equal to :data:`~socket.SCM_RIGHTS`.
+
+        .. versionadded:: NEXT_VERSION
+        """
+
+        fds: Iterator[int]
+
+    @final
+    @dataclasses.dataclass(eq=False, frozen=True, slots=True)
+    class _RawSCMRights(_RawSCMessage):
+        _data: array.array[int] = dataclasses.field(default_factory=lambda: array.array("i"))
+
+        @property
+        def itemsize(self) -> int:
+            return self._data.itemsize
+
+        def is_empty(self) -> bool:
+            return not self._data
+
+        def append(self, fds: Iterable[int]) -> None:
+            self._data.extend(fds)
+
+        def append_raw(self, data: memoryview) -> None:
+            assert data.itemsize == 1  # nosec assert_used
+            self._data.frombytes(data)
+
+        def as_raw(self) -> bytes:
+            return bytes(self._data)
+
+        def messages(self) -> SCMRights:
+            return SCMRights(fds=iter(self._data))
+
+    if sys.platform != "darwin":
+        __all__ += ["SCMCredentials"]
+
+        @dataclasses.dataclass(kw_only=True, eq=False, frozen=True, slots=True, match_args=True)
+        class SCMCredentials:
+            """
+            This control message contains unix credentials.
+
+            The level is equal to :data:`~socket.SOL_SOCKET` and the type is equal to :data:`~socket.SCM_CREDENTIALS` or
+            :data:`~socket.SCM_CREDS` or :data:`~socket.SCM_CREDS2`.
+
+            Availability: Linux, FreeBSD, NetBSD.
+
+            .. versionadded:: NEXT_VERSION
+            """
+
+            credentials: Iterator[UnixCredentials]
+
+        @final
+        @dataclasses.dataclass(eq=False, frozen=True, slots=True)
+        class _RawSCMCredentials(_RawSCMessage):
+            struct: ClassVar[Struct] = Struct("@iII")
+            itemsize: ClassVar[int] = struct.size
+            _data: bytearray = dataclasses.field(default_factory=bytearray)
+
+            def is_empty(self) -> bool:
+                return not self._data
+
+            def append(self, credentials: Iterable[UnixCredentials]) -> None:
+                for data in [self.struct.pack(ucred.pid, ucred.uid, ucred.gid) for ucred in credentials]:
+                    self._data.extend(data)
+
+            def append_raw(self, data: memoryview) -> None:
+                assert data.itemsize == 1  # nosec assert_used
+                self._data.extend(data)
+
+            def as_raw(self) -> bytes:
+                return bytes(self._data)
+
+            def messages(self) -> SCMCredentials:
+                return SCMCredentials(credentials=map(UnixCredentials._make, self.struct.iter_unpack(self._data)))
+
+        SocketAncillaryMessages: TypeAlias = SCMRights | SCMCredentials
+        """Unix socket control messages."""
+    else:
+        SocketAncillaryMessages: TypeAlias = SCMRights
+        """Unix socket control messages."""
+
+    class SocketAncillary:
+        """
+        A Unix socket Ancillary data object.
+
+        .. versionadded:: NEXT_VERSION
+        """
+
+        __slots__ = ("__data",)
+
+        def __init__(self) -> None:
+            self.__data: dict[tuple[int, int], _RawSCMessage] = {}
+
+        def add_fds(self, fds: Iterable[int]) -> None:
+            """
+            Add file descriptors to the ancillary data.
+
+            Technically, that means this operation adds a control message with the level :data:`~socket.SOL_SOCKET`
+            and the type :data:`~socket.SCM_RIGHTS`.
+
+            Parameters:
+                fds: Any iterable of opened file descriptors.
+            """
+            scm_rights, inserted = self.__get_or_insert(_socket.SOL_SOCKET, _socket.SCM_RIGHTS)
+            assert type(scm_rights) is _RawSCMRights  # nosec assert_used
+            scm_rights.append(fds)
+            if scm_rights.is_empty() and inserted:
+                del self.__data[_socket.SOL_SOCKET, _socket.SCM_RIGHTS]
+
+        if sys.platform != "darwin" and constants.SCM_CREDENTIALS is not None:
+
+            def add_creds(self, credentials: Iterable[UnixCredentials]) -> None:
+                """
+                Add credentials to the ancillary data.
+
+                Parameters:
+                    credentials: Any iterable of unix credentials.
+
+                Technically, that means this operation adds a control message with the level :data:`~socket.SOL_SOCKET` and
+                the type is equal to :data:`~socket.SCM_CREDENTIALS` or :data:`~socket.SCM_CREDS` or :data:`~socket.SCM_CREDS2`.
+
+                Availability: Linux, FreeBSD, NetBSD.
+                """
+                assert constants.SCM_CREDENTIALS is not None  # nosec assert_used
+                scm_creds, inserted = self.__get_or_insert(_socket.SOL_SOCKET, constants.SCM_CREDENTIALS)
+                assert type(scm_creds) is _RawSCMCredentials  # nosec assert_used
+                scm_creds.append(credentials)
+                if scm_creds.is_empty() and inserted:
+                    del self.__data[_socket.SOL_SOCKET, constants.SCM_CREDENTIALS]
+
+        def messages(self) -> Iterator[SocketAncillaryMessages]:
+            """
+            Returns the iterator of the control messages.
+
+            Example::
+
+                s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                s.connect("/tmp/sock")
+                ancillary = SocketAncillary()
+
+                msg, ancdata, _, _ = s.recvmsg(1024, socket.CMSG_LEN(4096))
+                ancillary.update_from_raw(ancdata)
+
+                for message in ancillary.messages():
+                    match message:
+                        case SCMRights(fds):
+                            for fd in fds:
+                                print(f"Received file descriptor: {fd}")
+                        case SCMCredentials(credentials):
+                            for ucred in credentials:
+                                print(f"Received unix credential: {ucred}")
+            """
+            for cmsg_data in self.__data.values():
+                yield cmsg_data.messages()
+
+        def update_from_raw(self, messages: Iterable[tuple[int, int, ReadableBuffer]]) -> None:
+            """
+            Read raw socket control messages received from a unix socket.
+
+            Example:
+                >>> import socket                                               # doctest: +SKIP
+                >>> s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)       # doctest: +SKIP
+                >>> s.connect("/tmp/sock")                                      # doctest: +SKIP
+                >>> ancillary = SocketAncillary()                               # doctest: +SKIP
+                >>> msg, ancdata, _, _ = s.recvmsg(1024, socket.CMSG_LEN(4096)) # doctest: +SKIP
+                >>> ancillary.update_from_raw(ancdata)                          # doctest: +SKIP
+                >>> list(ancillary.messages())                                  # doctest: +SKIP
+                [SCMRights(fds=...)]
+
+            Parameters:
+                messages: Any iterable of socket control messages in the form ``(level, type, data)``.
+
+            Raises:
+                ExceptionGroup[ValueError]: Unknown message level/type pair.
+            """
+            parse_errors: list[Exception] = []
+            try:
+                for cmsg_level, cmsg_type, cmsg_data in messages:
+                    try:
+                        raw_scm_data, _ = self.__get_or_insert(cmsg_level, cmsg_type)
+                        with self.__shrink_truncated_data(memoryview(cmsg_data).cast("B"), raw_scm_data.itemsize) as cmsg_data:
+                            raw_scm_data.append_raw(cmsg_data)
+                    except Exception as exc:
+                        parse_errors.append(exc)
+                if parse_errors:
+                    raise ExceptionGroup("Failed to parse some messages", parse_errors)
+            finally:
+                parse_errors.clear()
+
+        def as_raw(self) -> list[tuple[int, int, bytes]]:
+            """
+            Create raw socket control messages to send to a unix socket.
+
+            Example:
+                >>> import socket                                         # doctest: +SKIP
+                >>> s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) # doctest: +SKIP
+                >>> s.connect("/tmp/sock")                                # doctest: +SKIP
+                >>> ancillary = SocketAncillary()
+                >>> ancillary.add_fds([4, 5, 6])
+                >>> list(ancillary.messages())
+                [SCMRights(fds=...)]
+                >>> s.sendmsg([b"data"], ancillary.as_raw())              # doctest: +SKIP
+
+            Returns:
+                A list of socket control messages in the form ``(level, type, data)``.
+            """
+            return [(cmsg_level, cmsg_type, cmsg_data.as_raw()) for (cmsg_level, cmsg_type), cmsg_data in self.__data.items()]
+
+        def clear(self) -> None:
+            """
+            Clears the ancillary data, removing all values.
+            """
+            self.__data.clear()
+
+        def __get_or_insert(self, cmsg_level: int, cmsg_type: int) -> tuple[_RawSCMessage, bool]:
+            raw_scm_data: _RawSCMessage | None = self.__data.get((cmsg_level, cmsg_type))
+            inserted = False
+            if raw_scm_data is None:
+                raw_scm_data = self.__determine_scm_data_type(cmsg_level, cmsg_type)
+                self.__data[cmsg_level, cmsg_type] = raw_scm_data
+                inserted = True
+            return raw_scm_data, inserted
+
+        def __determine_scm_data_type(self, cmsg_level: int, cmsg_type: int) -> _RawSCMessage:
+            match (cmsg_level, cmsg_type):
+                case (_socket.SOL_SOCKET, _socket.SCM_RIGHTS):
+                    return _RawSCMRights()
+                case (_socket.SOL_SOCKET, constants.SCM_CREDENTIALS) if (
+                    sys.platform != "darwin" and constants.SCM_CREDENTIALS is not None
+                ):
+                    return _RawSCMCredentials()
+                case _:
+                    raise ValueError(f"Unknown message level/type pair: {(cmsg_level, cmsg_type)}")
+
+        @staticmethod
+        def __shrink_truncated_data(cmsg_data: memoryview, itemsize: int) -> memoryview:
+            assert cmsg_data.itemsize == 1  # nosec assert_used
+            return cmsg_data[: len(cmsg_data) - (len(cmsg_data) % itemsize)]
 
 
 if os.name == "nt":  # Windows

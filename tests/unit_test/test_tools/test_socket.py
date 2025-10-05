@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import pathlib
 import socket
+import struct
 import sys
 from collections.abc import Callable
 from socket import AF_INET, AF_INET6, IPPROTO_TCP, SO_KEEPALIVE, SO_LINGER, SOL_SOCKET, TCP_NODELAY
@@ -601,3 +602,202 @@ class TestSocketOptions:
 
         # Assert
         mock_tcp_socket.setsockopt.assert_called_once_with(SOL_SOCKET, SO_LINGER, expected_buffer)
+
+
+if sys.platform != "win32":
+    from socket import SCM_RIGHTS
+
+    from easynetwork.lowlevel.socket import SocketAncillary, UnixCredentials
+
+    class TestSocketAncillary:
+        @pytest.fixture(scope="class")
+        @staticmethod
+        def SCM_CREDENTIALS() -> int:
+            if sys.platform.startswith("freebsd"):
+                return getattr(socket, "SCM_CREDS2")
+            if sys.platform.startswith("netbsd"):
+                return getattr(socket, "SCM_CREDS")
+            if sys.platform == "linux":
+                return socket.SCM_CREDENTIALS
+            pytest.skip("Cannot send unix credentials.")
+
+        def test____add_fds____default(self) -> None:
+            # Arrange
+            ancdata = SocketAncillary()
+
+            # Act
+            ancdata.add_fds([3, 4, 5, 10])
+
+            # Assert
+            assert ancdata.as_raw() == [(SOL_SOCKET, SCM_RIGHTS, struct.pack("4i", 3, 4, 5, 10))]
+
+        def test____add_fds____always_append_to_the_same_message(self) -> None:
+            # Arrange
+            ancdata = SocketAncillary()
+            ancdata.add_fds([3, 4])
+
+            # Act
+            ancdata.add_fds([5, 10])
+
+            # Assert
+            assert ancdata.as_raw() == [(SOL_SOCKET, SCM_RIGHTS, struct.pack("4i", 3, 4, 5, 10))]
+
+        def test____add_fds____empty_iterable(self) -> None:
+            # Arrange
+            ancdata = SocketAncillary()
+
+            # Act
+            ancdata.add_fds(iter([]))
+
+            # Assert
+            assert ancdata.as_raw() == []
+
+        if sys.platform != "darwin":
+
+            def test____add_creds____default(self, SCM_CREDENTIALS: int) -> None:
+                # Arrange
+                ancdata = SocketAncillary()
+
+                # Act
+                ancdata.add_creds([UnixCredentials(pid=12345, uid=1001, gid=2002)])
+
+                # Assert
+                assert ancdata.as_raw() == [(SOL_SOCKET, SCM_CREDENTIALS, struct.pack("3i", 12345, 1001, 2002))]
+
+            def test____add_creds____empty_iterable(self) -> None:
+                # Arrange
+                ancdata = SocketAncillary()
+
+                # Act
+                ancdata.add_creds(iter([]))
+
+                # Assert
+                assert ancdata.as_raw() == []
+
+        @pytest.mark.parametrize(
+            ["cmsg_level_name", "cmsg_type_name", "cmsg_data"],
+            [
+                pytest.param("SOL_SOCKET", "SCM_RIGHTS", struct.pack("4i", 3, 4, 5, 10), id="SCM_RIGHTS"),
+                pytest.param("SOL_SOCKET", "SCM_CREDENTIALS", struct.pack("3i", 12345, 1001, 2002), id="SCM_CREDENTIALS"),
+            ],
+        )
+        def test____update_from_raw____recognized_messages(
+            self,
+            request: pytest.FixtureRequest,
+            cmsg_level_name: str,
+            cmsg_type_name: str,
+            cmsg_data: bytes,
+        ) -> None:
+            # Arrange
+            ancdata = SocketAncillary()
+            cmsg_level: int = getattr(socket, cmsg_level_name)
+            cmsg_type: int
+            match cmsg_type_name:
+                case "SCM_CREDENTIALS":
+                    cmsg_type = request.getfixturevalue("SCM_CREDENTIALS")
+                case _:
+                    cmsg_type = getattr(socket, cmsg_type_name)
+
+            # Act
+            ancdata.update_from_raw([(cmsg_level, cmsg_type, cmsg_data)])
+
+            # Assert
+            assert ancdata.as_raw() == [(cmsg_level, cmsg_type, cmsg_data)]
+
+        def test____update_from_raw____merge_common_messages(self) -> None:
+            # Arrange
+            ancdata = SocketAncillary()
+
+            # Act
+            ancdata.update_from_raw(
+                [
+                    (SOL_SOCKET, SCM_RIGHTS, struct.pack("i", 3)),
+                    (SOL_SOCKET, SCM_RIGHTS, struct.pack("i", 4)),
+                ]
+            )
+            ancdata.update_from_raw([(SOL_SOCKET, SCM_RIGHTS, struct.pack("2i", 5, 10))])
+
+            # Assert
+            assert ancdata.as_raw() == [(SOL_SOCKET, SCM_RIGHTS, struct.pack("4i", 3, 4, 5, 10))]
+
+        def test____update_from_raw____raise_error_after_all_messages_has_been_parsed(self) -> None:
+            # Arrange
+            ancdata = SocketAncillary()
+
+            # Act & Assert
+            with pytest.RaisesGroup(pytest.RaisesExc(ValueError, match=r"Unknown message level/type pair: \(-42, -999\)")):
+                ancdata.update_from_raw(
+                    [
+                        (-42, -999, b"unknown_message_type"),
+                        (SOL_SOCKET, SCM_RIGHTS, struct.pack("4i", 3, 4, 5, 10)),
+                    ]
+                )
+            assert ancdata.as_raw() == [(SOL_SOCKET, SCM_RIGHTS, struct.pack("4i", 3, 4, 5, 10))]
+
+        def test____update_from_raw____handle_truncated_data____scm_rights(self) -> None:
+            # Arrange
+            ancdata = SocketAncillary()
+
+            # Act
+            ancdata.update_from_raw([(SOL_SOCKET, SCM_RIGHTS, struct.pack("i", 3)[:-2])])
+
+            # Assert
+            assert ancdata.as_raw() == [(SOL_SOCKET, SCM_RIGHTS, b"")]
+
+        if sys.platform != "darwin":
+
+            def test____update_from_raw____handle_truncated_data____scm_credentials(self, SCM_CREDENTIALS: int) -> None:
+                # Arrange
+                ancdata = SocketAncillary()
+
+                # Act
+                ancdata.update_from_raw([(SOL_SOCKET, SCM_CREDENTIALS, struct.pack("3i", 12345, 1001, 2002)[:-2])])
+
+                # Assert
+                assert ancdata.as_raw() == [(SOL_SOCKET, SCM_CREDENTIALS, b"")]
+
+        def test____messages____scm_rights(self) -> None:
+            # Arrange
+            from easynetwork.lowlevel.socket import SCMRights
+
+            ancdata = SocketAncillary()
+            ancdata.update_from_raw([(SOL_SOCKET, SCM_RIGHTS, struct.pack("4i", 3, 4, 5, 10))])
+
+            # Act
+            fds: list[int] = []
+            for messages in ancdata.messages():
+                if isinstance(messages, SCMRights):
+                    fds.extend(messages.fds)
+
+            # Assert
+            assert fds == [3, 4, 5, 10]
+
+        if sys.platform != "darwin":
+
+            def test____messages____scm_credentials(self, SCM_CREDENTIALS: int) -> None:
+                # Arrange
+                from easynetwork.lowlevel.socket import SCMCredentials
+
+                ancdata = SocketAncillary()
+                ancdata.update_from_raw([(SOL_SOCKET, SCM_CREDENTIALS, struct.pack("3i", 12345, 1001, 2002))])
+
+                # Act
+                unix_creds: list[UnixCredentials] = []
+                for messages in ancdata.messages():
+                    if isinstance(messages, SCMCredentials):
+                        unix_creds.extend(messages.credentials)
+
+                # Assert
+                assert unix_creds == [UnixCredentials(pid=12345, uid=1001, gid=2002)]
+
+        def test____clear____default(self) -> None:
+            # Arrange
+            ancdata = SocketAncillary()
+            ancdata.update_from_raw([(SOL_SOCKET, SCM_RIGHTS, struct.pack("4i", 3, 4, 5, 10))])
+            assert len(ancdata.as_raw()) > 0
+
+            # Act
+            ancdata.clear()
+
+            # Assert
+            assert ancdata.as_raw() == []
