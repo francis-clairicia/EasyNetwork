@@ -73,6 +73,8 @@ class PlatformMarkers:
     supports_abstract_sockets = runs_only_on_platform("linux", "abstract sockets are available only on Linux")
     abstract_sockets_unsupported = skipif_platform_linux_because("abstract sockets are available only on Linux")
 
+    supports_sending_unix_credentials = runs_only_on_platform(("linux", "freebsd", "netbsd"), "Cannot send unix credentials")
+
     supports_socket_sendmsg = pytest.mark.skipif(
         not hasattr(socket.socket, "sendmsg"), reason=f"socket.sendmsg() is not available on {sys.platform}"
     )

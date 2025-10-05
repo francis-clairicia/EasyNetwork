@@ -19,18 +19,13 @@ __all__ = [
     "is_unix_socket_family",
 ]
 
-import functools
-import os
 import socket as _socket
 import sys
-from collections.abc import Callable
-from typing import TYPE_CHECKING, Literal
-
-from .socket import ISocket
+from typing import TYPE_CHECKING
 
 if sys.platform == "win32" or (not TYPE_CHECKING and not hasattr(_socket, "AF_UNIX")):
 
-    def is_unix_socket_family(family: int, /) -> Literal[False]:
+    def is_unix_socket_family(family: int, /) -> bool:
         return False
 
 else:
@@ -45,12 +40,16 @@ def check_unix_socket_family(family: int, /) -> None:
 
 
 if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
-    from .socket import UnixCredentials, UnixSocketAddress
+    import functools
+    import os
+    from collections.abc import Callable
+
+    from .socket import ISocket, UnixCredentials, UnixSocketAddress
 
     __all__ += [
         "UnixCredsContainer",
-        "convert_unix_socket_address",
         "convert_optional_unix_socket_address",
+        "convert_unix_socket_address",
         "platform_supports_automatic_socket_bind",
     ]
 
