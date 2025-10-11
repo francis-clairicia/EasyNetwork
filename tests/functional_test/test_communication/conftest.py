@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import io
+import pathlib
 import ssl
 import sys
 from collections.abc import Callable, Iterator
@@ -164,6 +166,13 @@ if sys.platform != "win32":
                 right_sock.bind("")
 
             yield left_sock, right_sock
+
+
+@pytest.fixture
+def tmp_file(tmp_path: pathlib.Path) -> Iterator[io.FileIO]:
+    tmp_file_path = tmp_path / "file.txt"
+    with tmp_file_path.open("wb", buffering=0) as tmp_file:
+        yield tmp_file
 
 
 @pytest.fixture(scope="session")

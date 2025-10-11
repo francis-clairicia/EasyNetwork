@@ -44,10 +44,11 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
     import os
     from collections.abc import Callable
 
-    from .socket import ISocket, UnixCredentials, UnixSocketAddress
+    from .socket import ISocket, SocketAncillary, UnixCredentials, UnixSocketAddress
 
     __all__ += [
         "UnixCredsContainer",
+        "close_fds_in_socket_ancillary",
         "convert_optional_unix_socket_address",
         "convert_unix_socket_address",
         "platform_supports_automatic_socket_bind",
@@ -71,6 +72,19 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
         # Automatic socket bind feature is available on platforms supporting abstract unix sockets.
         # Currently, only linux platform has this feature.
         return sys.platform == "linux"
+
+    def close_fds_in_socket_ancillary(ancillary: SocketAncillary) -> None:
+        close_errors: list[OSError] = []
+        try:
+            for fd in ancillary.iter_fds():
+                try:
+                    os.close(fd)
+                except OSError as exc:
+                    close_errors.append(exc)
+            if close_errors:
+                raise ExceptionGroup("", close_errors)
+        finally:
+            close_errors.clear()
 
     class UnixCredsContainer:
         __slots__ = ("__peer_credentials", "__sock")
