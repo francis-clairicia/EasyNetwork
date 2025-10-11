@@ -607,7 +607,7 @@ class TestSocketOptions:
 if sys.platform != "win32":
     from socket import SCM_RIGHTS
 
-    from easynetwork.lowlevel.socket import SocketAncillary, UnixCredentials
+    from easynetwork.lowlevel.socket import SocketAncillary
 
     class TestSocketAncillary:
         @pytest.fixture(scope="class")
@@ -656,13 +656,27 @@ if sys.platform != "win32":
 
             def test____add_creds____default(self, SCM_CREDENTIALS: int) -> None:
                 # Arrange
+                from easynetwork.lowlevel.socket import SocketCredential
+
                 ancdata = SocketAncillary()
 
                 # Act
-                ancdata.add_creds([UnixCredentials(pid=12345, uid=1001, gid=2002)])
+                ancdata.add_creds([SocketCredential(pid=12345, uid=1001, gid=2002)])
 
                 # Assert
                 assert ancdata.as_raw() == [(SOL_SOCKET, SCM_CREDENTIALS, struct.pack("3i", 12345, 1001, 2002))]
+
+            def test____add_creds____pid_unset(self, SCM_CREDENTIALS: int) -> None:
+                # Arrange
+                from easynetwork.lowlevel.socket import SocketCredential
+
+                ancdata = SocketAncillary()
+
+                # Act
+                ancdata.add_creds([SocketCredential(uid=1001, gid=2002)])
+
+                # Assert
+                assert ancdata.as_raw() == [(SOL_SOCKET, SCM_CREDENTIALS, struct.pack("3i", os.getpid(), 1001, 2002))]
 
             def test____add_creds____empty_iterable(self) -> None:
                 # Arrange
@@ -776,19 +790,19 @@ if sys.platform != "win32":
 
             def test____messages____scm_credentials(self, SCM_CREDENTIALS: int) -> None:
                 # Arrange
-                from easynetwork.lowlevel.socket import SCMCredentials
+                from easynetwork.lowlevel.socket import SCMCredentials, SocketCredential
 
                 ancdata = SocketAncillary()
                 ancdata.update_from_raw([(SOL_SOCKET, SCM_CREDENTIALS, struct.pack("3i", 12345, 1001, 2002))])
 
                 # Act
-                unix_creds: list[UnixCredentials] = []
+                unix_creds: list[SocketCredential] = []
                 for messages in ancdata.messages():
                     if isinstance(messages, SCMCredentials):
                         unix_creds.extend(messages.credentials)
 
                 # Assert
-                assert unix_creds == [UnixCredentials(pid=12345, uid=1001, gid=2002)]
+                assert unix_creds == [SocketCredential(pid=12345, uid=1001, gid=2002)]
 
         def test____clear____default(self) -> None:
             # Arrange
