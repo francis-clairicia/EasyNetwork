@@ -887,8 +887,24 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
         def messages(self) -> SCMRights:
             return SCMRights(fds=iter(self._data))
 
-    if sys.platform != "darwin":
-        __all__ += ["SCMCredentials"]
+    if sys.platform != "darwin" and (TYPE_CHECKING or constants.SCM_CREDENTIALS is not None):
+        __all__ += ["SCMCredentials", "SocketCredential"]
+
+        class SocketCredential(NamedTuple):
+            """
+            Unix credential tuple.
+
+            .. versionadded:: NEXT_VERSION
+            """
+
+            pid: int = 0
+            """Process ID."""
+
+            uid: int = 0
+            """Effective user ID."""
+
+            gid: int = 0
+            """Effective Group ID."""
 
         @dataclasses.dataclass(kw_only=True, eq=False, frozen=True, slots=True, match_args=True)
         class SCMCredentials:
@@ -903,7 +919,7 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
             .. versionadded:: NEXT_VERSION
             """
 
-            credentials: Iterator[UnixCredentials]
+            credentials: Iterator[SocketCredential]
 
         @final
         @dataclasses.dataclass(eq=False, frozen=True, slots=True)
@@ -915,8 +931,8 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
             def is_empty(self) -> bool:
                 return not self._data
 
-            def append(self, credentials: Iterable[UnixCredentials]) -> None:
-                for data in [self.struct.pack(ucred.pid, ucred.uid, ucred.gid) for ucred in credentials]:
+            def append(self, credentials: Iterable[SocketCredential]) -> None:
+                for data in [self.struct.pack(ucred.pid or os.getpid(), ucred.uid, ucred.gid) for ucred in credentials]:
                     self._data.extend(data)
 
             def append_raw(self, data: memoryview) -> None:
@@ -927,7 +943,7 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
                 return bytes(self._data)
 
             def messages(self) -> SCMCredentials:
-                return SCMCredentials(credentials=map(UnixCredentials._make, self.struct.iter_unpack(self._data)))
+                return SCMCredentials(credentials=map(SocketCredential._make, self.struct.iter_unpack(self._data)))
 
         SocketAncillaryMessages: TypeAlias = SCMRights | SCMCredentials
         """Unix socket control messages."""
@@ -963,9 +979,9 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
             if scm_rights.is_empty() and inserted:
                 del self.__data[_socket.SOL_SOCKET, _socket.SCM_RIGHTS]
 
-        if sys.platform != "darwin" and constants.SCM_CREDENTIALS is not None:
+        if sys.platform != "darwin" and (TYPE_CHECKING or constants.SCM_CREDENTIALS is not None):
 
-            def add_creds(self, credentials: Iterable[UnixCredentials]) -> None:
+            def add_creds(self, credentials: Iterable[SocketCredential]) -> None:
                 """
                 Add credentials to the ancillary data.
 
