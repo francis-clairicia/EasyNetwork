@@ -72,6 +72,9 @@ Unix-related
 .. autonamedtuple:: UnixCredentials
    :members:
 
+.. autonamedtuple:: SocketCredential
+   :members:
+
 .. autoclass:: SocketAncillary
    :members:
 

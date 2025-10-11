@@ -46,7 +46,7 @@ else:
     from ..lowlevel import _lock, _unix_utils, _utils, constants
     from ..lowlevel.api_sync.endpoints.stream import StreamEndpoint
     from ..lowlevel.api_sync.transports import socket as _transport_socket
-    from ..lowlevel.socket import SocketProxy, UnixCredentials, UnixSocketAddress, UNIXSocketAttribute
+    from ..lowlevel.socket import SocketAncillary, SocketProxy, UnixCredentials, UnixSocketAddress, UNIXSocketAttribute
     from ..protocol import AnyStreamProtocolType
     from .abc import AbstractNetworkClient
 
@@ -204,7 +204,13 @@ else:
             with self.__send_lock.get():
                 self.__endpoint.close()
 
-        def send_packet(self, packet: _T_SentPacket, *, timeout: float | None = None) -> None:
+        def send_packet(
+            self,
+            packet: _T_SentPacket,
+            *,
+            ancillary_data: SocketAncillary | None = None,
+            timeout: float | None = None,
+        ) -> None:
             """
             Sends `packet` to the remote endpoint. Thread-safe.
 
@@ -223,6 +229,7 @@ else:
 
             Parameters:
                 packet: the Python object to send.
+                ancillary_data: the socket ancillary data to send along with the packet.
                 timeout: the allowed time (in seconds) for blocking operations.
 
             Raises:
@@ -238,7 +245,10 @@ else:
                 if endpoint.is_closed():
                     raise self.__closed()
                 with self.__convert_socket_error(endpoint=endpoint):
-                    endpoint.send_packet(packet, timeout=timeout)
+                    if ancillary_data is None:
+                        endpoint.send_packet(packet, timeout=timeout)
+                    else:
+                        endpoint.send_packet_with_ancillary(packet, ancillary_data.as_raw(), timeout=timeout)
                     _utils.check_real_socket_state(endpoint.extra(UNIXSocketAttribute.socket))
 
         def send_eof(self) -> None:
@@ -290,6 +300,57 @@ else:
                     raise self.__closed()
                 with self.__convert_socket_error(endpoint=endpoint):
                     return endpoint.recv_packet(timeout=timeout)
+                raise AssertionError("Expected code to be unreachable.")
+
+        def recv_packet_with_ancillary(
+            self,
+            ancillary_bufsize: int,
+            *,
+            timeout: float | None = None,
+        ) -> tuple[_T_ReceivedPacket, SocketAncillary]:
+            """
+            Waits for a new packet with ancillary data to arrive from the remote endpoint. Thread-safe.
+
+            If `timeout` is not :data:`None`, the entire receive operation will take at most `timeout` seconds.
+
+            Important:
+                The lock acquisition time is included in the `timeout`.
+
+                This means that you may get a :exc:`TimeoutError` because it took too long to get the lock.
+
+            Parameters:
+                timeout: the allowed time (in seconds) for blocking operations.
+                ancillary_bufsize: Read buffer size for ancillary data.
+
+            Raises:
+                ClientClosedError: the client object is closed.
+                ConnectionError: connection unexpectedly closed during operation.
+                                You should not attempt any further operation and close the client object.
+                EOFError: could not deserialize packet because of partial chunk reception.
+                TimeoutError: the receive operation does not end up after `timeout` seconds.
+                OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
+                StreamProtocolParseError: invalid data received.
+
+            Returns:
+                the received packet.
+            """
+            with _utils.lock_with_timeout(self.__receive_lock.get(), timeout) as timeout:
+                endpoint = self.__endpoint
+                if endpoint.is_closed():
+                    raise self.__closed()
+                with self.__convert_socket_error(endpoint=endpoint):
+                    ancillary_data = SocketAncillary()
+                    try:
+                        packet = endpoint.recv_packet_with_ancillary(
+                            ancillary_bufsize,
+                            ancillary_data.update_from_raw,
+                            timeout=timeout,
+                        )
+                    except BaseException:
+                        _unix_utils.close_fds_in_socket_ancillary(ancillary_data)
+                        raise
+                    else:
+                        return packet, ancillary_data
                 raise AssertionError("Expected code to be unreachable.")
 
         @classmethod

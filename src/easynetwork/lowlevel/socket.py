@@ -1010,7 +1010,7 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
                 s.connect("/tmp/sock")
                 ancillary = SocketAncillary()
 
-                msg, ancdata, _, _ = s.recvmsg(1024, socket.CMSG_LEN(4096))
+                msg, ancdata, _, _ = s.recvmsg(1024, socket.CMSG_SPACE(4096))
                 ancillary.update_from_raw(ancdata)
 
                 for message in ancillary.messages():
@@ -1025,18 +1025,37 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
             for cmsg_data in self.__data.values():
                 yield cmsg_data.messages()
 
+        def iter_fds(self) -> Iterator[int]:
+            """
+            Fast path to retrieve file descriptors within the messages.
+
+            Example::
+
+                s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                s.connect("/tmp/sock")
+                ancillary = SocketAncillary()
+
+                msg, ancdata, _, _ = s.recvmsg(1024, socket.CMSG_SPACE(4096))
+                ancillary.update_from_raw(ancdata)
+
+                for fd in ancillary.iter_fds():
+                    print(f"Received file descriptor: {fd}")
+            """
+            return (fd for msg in self.messages() if isinstance(msg, SCMRights) for fd in msg.fds)
+
         def update_from_raw(self, messages: Iterable[tuple[int, int, ReadableBuffer]]) -> None:
             """
             Read raw socket control messages received from a unix socket.
 
             Example:
-                >>> import socket                                               # doctest: +SKIP
-                >>> s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)       # doctest: +SKIP
-                >>> s.connect("/tmp/sock")                                      # doctest: +SKIP
-                >>> ancillary = SocketAncillary()                               # doctest: +SKIP
-                >>> msg, ancdata, _, _ = s.recvmsg(1024, socket.CMSG_LEN(4096)) # doctest: +SKIP
-                >>> ancillary.update_from_raw(ancdata)                          # doctest: +SKIP
-                >>> list(ancillary.messages())                                  # doctest: +SKIP
+
+                >>> import socket                                                 # doctest: +SKIP
+                >>> s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)         # doctest: +SKIP
+                >>> s.connect("/tmp/sock")                                        # doctest: +SKIP
+                >>> ancillary = SocketAncillary()                                 # doctest: +SKIP
+                >>> msg, ancdata, _, _ = s.recvmsg(1024, socket.CMSG_SPACE(4096)) # doctest: +SKIP
+                >>> ancillary.update_from_raw(ancdata)                            # doctest: +SKIP
+                >>> list(ancillary.messages())                                    # doctest: +SKIP
                 [SCMRights(fds=...)]
 
             Parameters:
@@ -1064,6 +1083,7 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
             Create raw socket control messages to send to a unix socket.
 
             Example:
+
                 >>> import socket                                         # doctest: +SKIP
                 >>> s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) # doctest: +SKIP
                 >>> s.connect("/tmp/sock")                                # doctest: +SKIP
