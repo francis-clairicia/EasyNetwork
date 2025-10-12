@@ -269,7 +269,13 @@ else:
                 with self.__convert_socket_error(endpoint=endpoint):
                     endpoint.send_eof()
 
-        def recv_packet(self, *, timeout: float | None = None) -> _T_ReceivedPacket:
+        def recv_packet(
+            self,
+            *,
+            ancillary_data: SocketAncillary | None = None,
+            ancillary_bufsize: int | None = None,
+            timeout: float | None = None,
+        ) -> _T_ReceivedPacket:
             """
             Waits for a new packet to arrive from the remote endpoint. Thread-safe.
 
@@ -281,12 +287,15 @@ else:
                 This means that you may get a :exc:`TimeoutError` because it took too long to get the lock.
 
             Parameters:
+                ancillary_data: where to write received ancillary data.
+                ancillary_bufsize: read buffer size for ancillary data.
                 timeout: the allowed time (in seconds) for blocking operations.
 
             Raises:
                 ClientClosedError: the client object is closed.
                 ConnectionError: connection unexpectedly closed during operation.
                                 You should not attempt any further operation and close the client object.
+                EOFError: could not deserialize packet because of partial chunk reception with ancillary data.
                 TimeoutError: the receive operation does not end up after `timeout` seconds.
                 OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
                 StreamProtocolParseError: invalid data received.
@@ -299,58 +308,17 @@ else:
                 if endpoint.is_closed():
                     raise self.__closed()
                 with self.__convert_socket_error(endpoint=endpoint):
-                    return endpoint.recv_packet(timeout=timeout)
-                raise AssertionError("Expected code to be unreachable.")
-
-        def recv_packet_with_ancillary(
-            self,
-            ancillary_bufsize: int,
-            *,
-            timeout: float | None = None,
-        ) -> tuple[_T_ReceivedPacket, SocketAncillary]:
-            """
-            Waits for a new packet with ancillary data to arrive from the remote endpoint. Thread-safe.
-
-            If `timeout` is not :data:`None`, the entire receive operation will take at most `timeout` seconds.
-
-            Important:
-                The lock acquisition time is included in the `timeout`.
-
-                This means that you may get a :exc:`TimeoutError` because it took too long to get the lock.
-
-            Parameters:
-                timeout: the allowed time (in seconds) for blocking operations.
-                ancillary_bufsize: Read buffer size for ancillary data.
-
-            Raises:
-                ClientClosedError: the client object is closed.
-                ConnectionError: connection unexpectedly closed during operation.
-                                You should not attempt any further operation and close the client object.
-                EOFError: could not deserialize packet because of partial chunk reception.
-                TimeoutError: the receive operation does not end up after `timeout` seconds.
-                OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
-                StreamProtocolParseError: invalid data received.
-
-            Returns:
-                the received packet.
-            """
-            with _utils.lock_with_timeout(self.__receive_lock.get(), timeout) as timeout:
-                endpoint = self.__endpoint
-                if endpoint.is_closed():
-                    raise self.__closed()
-                with self.__convert_socket_error(endpoint=endpoint):
-                    ancillary_data = SocketAncillary()
-                    try:
-                        packet = endpoint.recv_packet_with_ancillary(
+                    if ancillary_data is not None:
+                        if ancillary_bufsize is None:
+                            ancillary_bufsize = constants.DEFAULT_ANCILLARY_DATA_BUFSIZE
+                        return endpoint.recv_packet_with_ancillary(
                             ancillary_bufsize,
                             ancillary_data.update_from_raw,
                             timeout=timeout,
                         )
-                    except BaseException:
-                        _unix_utils.close_fds_in_socket_ancillary(ancillary_data)
-                        raise
-                    else:
-                        return packet, ancillary_data
+                    elif ancillary_bufsize is not None:
+                        raise ValueError("ancillary_bufsize is only meaningful with ancillary_data")
+                    return endpoint.recv_packet(timeout=timeout)
                 raise AssertionError("Expected code to be unreachable.")
 
         @classmethod
@@ -448,8 +416,7 @@ else:
         connect_timeout: float | None = None,
         local_path: str | bytes | None = None,
     ) -> _socket.socket:
-        family: int = getattr(_socket, "AF_UNIX")
-        socket = _socket.socket(family, _socket.SOCK_STREAM, 0)
+        socket = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM, 0)
         try:
             if local_path is not None:
                 try:

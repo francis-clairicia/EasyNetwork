@@ -32,6 +32,7 @@ __all__ = [
 
 import errno as _errno
 import socket as _socket
+from collections.abc import Callable
 from typing import Final
 
 # Buffer size for a recv(2) operation
@@ -151,3 +152,19 @@ SCM_CREDENTIALS: Final[int | None] = next(
     ),
     None,
 )
+
+
+def __compute_default_ancillary_data_bufsize() -> int:
+    try:
+        CMSG_LEN: Callable[[int], int] = getattr(_socket, "CMSG_LEN")
+    except AttributeError:
+        return 0
+    else:
+        CMSG_SPACE: Callable[[int], int] = getattr(_socket, "CMSG_SPACE", CMSG_LEN)
+        return CMSG_SPACE(8192)
+
+
+# Ancillary data buffer size for a recvmsg(2) operation
+DEFAULT_ANCILLARY_DATA_BUFSIZE: Final[int] = __compute_default_ancillary_data_bufsize()
+
+del __compute_default_ancillary_data_bufsize
