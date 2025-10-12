@@ -82,7 +82,7 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
                 except OSError as exc:
                     close_errors.append(exc)
             if close_errors:
-                raise ExceptionGroup("", close_errors)
+                raise ExceptionGroup("OSError", close_errors)
         finally:
             close_errors.clear()
 

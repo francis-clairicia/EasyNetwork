@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import sys
 from socket import socket as Socket
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from socket import _RetAddress
 
 
 def readline(sock: Socket) -> bytes:
@@ -24,9 +28,9 @@ if sys.platform != "win32":
     except ImportError:
         from socket import CMSG_LEN as CMSG_SPACE
 
-    def readmsg(sock: Socket) -> tuple[bytes, SocketAncillary]:
-        chunk, cmsgs, flags, _ = sock.recvmsg(1024, CMSG_SPACE(5120))
+    def readmsg(sock: Socket) -> tuple[bytes, SocketAncillary, _RetAddress]:
+        chunk, cmsgs, flags, address = sock.recvmsg(1024, CMSG_SPACE(8192))
         assert flags == 0, "messages truncated"
         ancillary = SocketAncillary()
         ancillary.update_from_raw(cmsgs)
-        return chunk, ancillary
+        return chunk, ancillary, address
