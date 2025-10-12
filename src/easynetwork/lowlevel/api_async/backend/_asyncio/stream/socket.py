@@ -239,9 +239,11 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
                     raise _utils.error_from_errno(_errno.EMSGSIZE)
 
             async def send_all_from_iterable(self, iterable_of_data: Iterable[bytes | bytearray | memoryview]) -> None:
+                buffers: deque[memoryview] = deque(map(memoryview, iterable_of_data))  # type: ignore[arg-type]
+                del iterable_of_data
                 return await self._sock_send_all(
                     "send_all_from_iterable",
-                    data=deque(map(lambda v: memoryview(v), iterable_of_data)),
+                    data=buffers,
                     send=lambda sock, buffers: sock.sendmsg(itertools.islice(buffers, constants.SC_IOV_MAX)),
                     send_success=lambda sent, buffers: _utils.adjust_leftover_buffer(buffers, sent),
                     retry_send=bool,

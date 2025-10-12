@@ -15,7 +15,7 @@ import pytest
 import pytest_asyncio
 
 from .....fixtures.trio import trio_fixture
-from .....tools import PlatformMarkers, is_uvloop_event_loop
+from .....tools import PlatformMarkers
 from ..socket import AsyncDatagramSocket
 from .base import BaseTestAsyncServer, BaseTestAsyncServerWithAsyncIO, BaseTestAsyncServerWithTrio
 
@@ -904,14 +904,6 @@ if sys.platform != "win32":
             unnamed_addresses_behavior: _UnnamedAddressesBehavior | None,
         ) -> AsyncIterator[MyAsyncUnixDatagramServer]:
             if use_unix_address_type == "ABSTRACT":
-                import asyncio
-
-                if is_uvloop_event_loop(asyncio.get_running_loop()):
-                    # Addresses received through uvloop transports contains extra NULL bytes because the creation of
-                    # the bytes object from the sockaddr_un structure does not take into account the real addrlen.
-                    # https://github.com/MagicStack/uvloop/blob/v0.21.0/uvloop/includes/compat.h#L34-L55
-                    pytest.xfail("uvloop translation of abstract unix sockets to python object is wrong.")
-
                 # Let the kernel assign us an abstract socket address.
                 path = ""
             else:

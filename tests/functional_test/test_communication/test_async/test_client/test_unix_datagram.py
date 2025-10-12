@@ -6,14 +6,13 @@ import pathlib
 import sys
 from collections.abc import AsyncIterator, Callable
 from socket import socket as Socket
-from typing import TYPE_CHECKING, Any, NoReturn
+from typing import TYPE_CHECKING, NoReturn
 
 import pytest
 import pytest_asyncio
-import sniffio
 
 from .....fixtures.trio import trio_fixture
-from .....tools import PlatformMarkers, is_uvloop_event_loop
+from .....tools import PlatformMarkers
 from .._utils import delay
 from ..socket import AsyncDatagramSocket
 
@@ -239,12 +238,6 @@ if sys.platform != "win32":
             remote_address: str | bytes,
             datagram_protocol: DatagramProtocol[str, str],
         ) -> None:
-            if sniffio.current_async_library() == "asyncio" and is_uvloop_event_loop(asyncio.get_running_loop()):
-                # Addresses received through uvloop transports contains extra NULL bytes because the creation of
-                # the bytes object from the sockaddr_un structure does not take into account the real addrlen.
-                # https://github.com/MagicStack/uvloop/blob/v0.21.0/uvloop/includes/compat.h#L34-L55
-                pytest.xfail("uvloop translation of abstract unix sockets to python object is wrong.")
-
             async with AsyncUnixDatagramClient(remote_address, datagram_protocol) as client:
                 assert client.is_connected()
                 assert not client.get_local_name().is_unnamed()
@@ -453,60 +446,66 @@ if sys.platform != "win32":
 
     @pytest.mark.asyncio
     class TestAsyncUnixDatagramClientConnectionWithAsyncIO(_BaseTestAsyncUnixDatagramClientConnection):
-        class EchoProtocol(asyncio.DatagramProtocol):
-            transport: asyncio.DatagramTransport | None = None
-
-            def __init__(self) -> None:
-                super().__init__()
-                self.connection_lost_event = asyncio.Event()
-
-            def connection_made(self, transport: asyncio.DatagramTransport) -> None:  # type: ignore[override]
-                self.transport = transport
-
-            def connection_lost(self, exc: Exception | None) -> None:
-                self.transport = None
-                self.connection_lost_event.set()
-
-            def datagram_received(self, data: bytes, addr: Any) -> None:
-                if self.transport is not None:
-                    self.transport.sendto(data, addr)
-
         @pytest_asyncio.fixture
         @classmethod
         async def server(
             cls,
             bound_unix_datagram_socket_factory: Callable[[], Socket],
-        ) -> AsyncIterator[asyncio.DatagramTransport]:
+        ) -> AsyncIterator[Socket]:
             event_loop = asyncio.get_running_loop()
 
-            # Caveat: uvloop does not support having a UNIX socket address for "local_addr" parameter.
-            # The socket must be created manually.
-            sock = bound_unix_datagram_socket_factory()
-            try:
-                from easynetwork.lowlevel.socket import UnixSocketAddress
+            async def echo_server_coroutine(sock: Socket) -> NoReturn:
+                def echo_server(sock: Socket) -> None:
+                    data, addr = sock.recvfrom(65536)
+                    sock.sendto(data, addr)
 
-                local_addr = UnixSocketAddress.from_raw(sock.getsockname())
-                if sys.platform == "linux" and local_addr.as_abstract_name() and is_uvloop_event_loop(asyncio.get_running_loop()):
-                    # Addresses received through uvloop transports contains extra NULL bytes because the creation of
-                    # the bytes object from the sockaddr_un structure does not take into account the real addrlen.
-                    # https://github.com/MagicStack/uvloop/blob/v0.21.0/uvloop/includes/compat.h#L34-L55
-                    pytest.xfail("uvloop translation of abstract unix sockets to python object is wrong.")
+                await cls.__infinite_serve(sock, echo_server)
+
+            with contextlib.closing(bound_unix_datagram_socket_factory()) as sock:
                 sock.setblocking(False)
-            except BaseException:
-                sock.close()
-                raise
-            transport, protocol = await event_loop.create_datagram_endpoint(cls.EchoProtocol, sock=sock)
-            del sock
-            try:
-                with contextlib.closing(transport):
-                    yield transport
-            finally:
-                await protocol.connection_lost_event.wait()
+
+                task: asyncio.Task[NoReturn] = event_loop.create_task(echo_server_coroutine(sock))
+
+                yield sock
+
+                task.cancel()
+                await asyncio.wait({task}, timeout=1.0)
+
+        @staticmethod
+        def __infinite_serve(
+            listener_sock: Socket,
+            listener_ready_callback: Callable[[Socket], None],
+        ) -> asyncio.Future[NoReturn]:
+            loop = asyncio.get_running_loop()
+
+            def on_fut_done(f: asyncio.Future[NoReturn]) -> None:
+                loop.remove_reader(listener_sock)
+
+            def listener_ready(f: asyncio.Future[NoReturn]) -> None:
+                if f.done():
+                    # I/O callbacks are always called before asyncio.Future done callbacks.
+                    return
+                try:
+                    listener_ready_callback(listener_sock)
+                except (BlockingIOError, InterruptedError):
+                    return
+                except OSError:
+                    raise
+                except BaseException as exc:
+                    f.set_exception(exc)
+                    # Break reference cycle with exception set.
+                    del f
+
+            f: asyncio.Future[NoReturn] = loop.create_future()
+            loop.add_reader(listener_sock, listener_ready, f)
+
+            f.add_done_callback(on_fut_done)
+            return f
 
         @pytest.fixture
         @staticmethod
-        def remote_address(server: asyncio.DatagramTransport) -> str | bytes:
-            return server.get_extra_info("sockname")
+        def remote_address(server: Socket) -> str | bytes:
+            return server.getsockname()
 
     @pytest.mark.feature_trio(async_test_auto_mark=True)
     class TestAsyncUnixDatagramClientConnectionWithTrio(_BaseTestAsyncUnixDatagramClientConnection):
