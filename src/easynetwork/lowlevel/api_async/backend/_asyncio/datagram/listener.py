@@ -188,8 +188,8 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
                         listener_ready,
                     )
 
+        @staticmethod
         def __infinite_serve(
-            self,
             listener_sock: _socket.socket,
             listener_ready_callback: Callable[[_socket.socket], None],
         ) -> asyncio.Future[NoReturn]:
