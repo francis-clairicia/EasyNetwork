@@ -232,7 +232,7 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
 
                 sent = await self._sock_send(
                     "send_all_with_ancillary",
-                    send=lambda sock: sock.sendmsg(itertools.islice(buffers, constants.SC_IOV_MAX)),
+                    send=lambda sock: sock.sendmsg(itertools.islice(buffers, constants.SC_IOV_MAX), ancillary_data),
                 )
                 _utils.adjust_leftover_buffer(buffers, sent)
                 if buffers:
