@@ -208,6 +208,9 @@ else:
 
             If `timeout` is not :data:`None`, the entire send operation will take at most `timeout` seconds.
 
+            .. versionadded:: NEXT_VERSION
+                `ancillary_data` parameter.
+
             Warning:
                 A timeout on a send operation is unusual.
 
@@ -250,6 +253,9 @@ else:
             Waits for a new packet from the remote endpoint. Thread-safe.
 
             If `timeout` is not :data:`None`, the entire receive operation will take at most `timeout` seconds.
+
+            .. versionadded:: NEXT_VERSION
+                `ancillary_data` and `ancillary_bufsize` parameters.
 
             Important:
                 The lock acquisition time is included in the `timeout`.

@@ -46,6 +46,11 @@ Internet addresses
 Unix-related
 ------------
 
+.. py:type:: RawUnixSocketAddress
+   :canonical: str | bytes
+
+   An address associated with a Unix socket.
+
 .. autoclass:: UnixSocketAddress
    :members:
 
