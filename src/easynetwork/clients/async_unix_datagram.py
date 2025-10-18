@@ -47,7 +47,7 @@ else:
     from ..lowlevel.api_async.endpoints.datagram import AsyncDatagramEndpoint
     from ..lowlevel.api_async.transports.abc import AsyncDatagramTransport
     from ..lowlevel.api_async.transports.utils import aclose_forcefully
-    from ..lowlevel.socket import SocketProxy, UnixSocketAddress, UNIXSocketAttribute
+    from ..lowlevel.socket import SocketAncillary, SocketProxy, UnixSocketAddress, UNIXSocketAttribute
     from ..protocol import DatagramProtocol
     from . import _base
     from .abc import AbstractAsyncNetworkClient
@@ -256,15 +256,19 @@ else:
                 else:
                     await self.__endpoint.aclose()
 
-        async def send_packet(self, packet: _T_SentPacket) -> None:
+        async def send_packet(self, packet: _T_SentPacket, *, ancillary_data: SocketAncillary | None = None) -> None:
             """
             Sends `packet` to the remote endpoint. Does not require task synchronization.
+
+            .. versionadded:: NEXT_VERSION
+                `ancillary_data` parameter.
 
             Warning:
                 In the case of a cancellation, it is impossible to know if all the packet data has been sent.
 
             Parameters:
                 packet: the Python object to send.
+                ancillary_data: the socket ancillary data to send along with the packet.
 
             Raises:
                 ClientClosedError: the client object is closed.
@@ -273,14 +277,27 @@ else:
             async with self.__send_lock:
                 endpoint = await self.__endpoint.connect()
                 with self.__convert_socket_error(endpoint=endpoint):
-                    await endpoint.send_packet(packet)
+                    if ancillary_data is None:
+                        await endpoint.send_packet(packet)
+                    else:
+                        await endpoint.send_packet_with_ancillary(packet, ancillary_data.as_raw())
                     _utils.check_real_socket_state(endpoint.extra(UNIXSocketAttribute.socket))
 
-        async def recv_packet(self) -> _T_ReceivedPacket:
+        async def recv_packet(
+            self,
+            *,
+            ancillary_data: SocketAncillary | None = None,
+            ancillary_bufsize: int | None = None,
+        ) -> _T_ReceivedPacket:
             """
             Waits for a new packet to arrive from the remote endpoint. Does not require task synchronization.
 
-            Calls :meth:`wait_connected`.
+            .. versionadded:: NEXT_VERSION
+                `ancillary_data` and `ancillary_bufsize` parameters.
+
+            Parameters:
+                ancillary_data: where to write received ancillary data.
+                ancillary_bufsize: read buffer size for ancillary data.
 
             Raises:
                 ClientClosedError: the client object is closed.
@@ -293,6 +310,15 @@ else:
             async with self.__receive_lock:
                 endpoint = await self.__endpoint.connect()
                 with self.__convert_socket_error(endpoint=endpoint):
+                    if ancillary_data is not None:
+                        if ancillary_bufsize is None:
+                            ancillary_bufsize = constants.DEFAULT_ANCILLARY_DATA_BUFSIZE
+                        return await endpoint.recv_packet_with_ancillary(
+                            ancillary_bufsize,
+                            ancillary_data.update_from_raw,
+                        )
+                    elif ancillary_bufsize is not None:
+                        raise ValueError("ancillary_bufsize is only meaningful with ancillary_data")
                     return await endpoint.recv_packet()
                 raise AssertionError("Expected code to be unreachable.")
 

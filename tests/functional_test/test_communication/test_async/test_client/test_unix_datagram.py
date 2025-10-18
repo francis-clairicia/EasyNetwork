@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import io
 import pathlib
 import sys
 from collections.abc import AsyncIterator, Callable
@@ -19,7 +20,8 @@ from ..socket import AsyncDatagramSocket
 if sys.platform != "win32":
     from easynetwork.clients.async_unix_datagram import AsyncUnixDatagramClient
     from easynetwork.exceptions import ClientClosedError, DatagramProtocolParseError
-    from easynetwork.lowlevel.socket import SocketProxy
+    from easynetwork.lowlevel import _unix_utils
+    from easynetwork.lowlevel.socket import SocketAncillary, SocketProxy
     from easynetwork.protocol import DatagramProtocol
 
     if TYPE_CHECKING:
@@ -68,6 +70,22 @@ if sys.platform != "win32":
             with client.backend().timeout(3):
                 assert await server.recvfrom() == (b"ABCDEF", client.get_local_name().as_raw())
 
+        async def test____send_packet____with_ancillary_data(
+            self,
+            tmp_file: io.FileIO,
+            client: AsyncUnixDatagramClient[str, str],
+            server: AsyncDatagramSocket,
+        ) -> None:
+            sent_ancillary = SocketAncillary()
+            sent_ancillary.add_fds([tmp_file.fileno()])
+            await client.send_packet("ABCDEF", ancillary_data=sent_ancillary)
+
+            received_packet, received_ancillary, sender_address = await server.recvmsg()
+            _unix_utils.close_fds_in_socket_ancillary(received_ancillary)
+            assert received_packet == b"ABCDEF"
+            assert sender_address == client.get_local_name().as_raw()
+            assert len(list(received_ancillary.iter_fds())) == 1
+
         async def test____send_packet____closed_client(
             self,
             client: AsyncUnixDatagramClient[str, str],
@@ -92,6 +110,24 @@ if sys.platform != "win32":
             await server.sendto(b"ABCDEF", client.get_local_name().as_raw())
             with client.backend().timeout(3):
                 assert await client.recv_packet() == "ABCDEF"
+
+        async def test____recv_packet____with_ancillary_data(
+            self,
+            tmp_file: io.FileIO,
+            client: AsyncUnixDatagramClient[str, str],
+            server: AsyncDatagramSocket,
+        ) -> None:
+            sent_ancillary = SocketAncillary()
+            sent_ancillary.add_fds([tmp_file.fileno()])
+            await server.sendmsg([b"ABCDEF"], sent_ancillary.as_raw(), client.get_local_name().as_raw())
+
+            received_ancillary = SocketAncillary()
+            try:
+                received_packet = await client.recv_packet(ancillary_data=received_ancillary)
+            finally:
+                _unix_utils.close_fds_in_socket_ancillary(received_ancillary)
+            assert received_packet == "ABCDEF"
+            assert len(list(received_ancillary.iter_fds())) == 1
 
         async def test____recv_packet____closed_client(
             self,

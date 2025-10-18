@@ -9,6 +9,7 @@ import dataclasses
 import socket
 import ssl
 import sys
+from collections.abc import Iterable
 from errno import ECONNRESET
 from typing import TYPE_CHECKING, Any, Self, assert_never, overload
 
@@ -23,7 +24,43 @@ from easynetwork.serializers.tools import GeneratorStreamReader
 import sniffio
 
 if TYPE_CHECKING:
+    from socket import _RetAddress
+
     import trio
+
+if sys.platform != "win32":
+    from easynetwork.lowlevel.socket import SocketAncillary
+
+    try:
+        from socket import CMSG_SPACE
+    except ImportError:
+        from socket import CMSG_LEN as CMSG_SPACE
+
+    if TYPE_CHECKING:
+        from _socket import _CMSGArg
+
+    _MAX_ANCDATA_SIZE = 8192
+
+    async def _asyncio_sock_recvmsg(sock: socket.socket, bufsize: int) -> tuple[bytes, SocketAncillary, _RetAddress]:
+        loop = asyncio.get_running_loop()
+        while True:
+            try:
+                data, cmsgs, flags, address = sock.recvmsg(bufsize, CMSG_SPACE(_MAX_ANCDATA_SIZE))
+            except (BlockingIOError, InterruptedError):
+                pass
+            else:
+                assert flags == 0, "messages truncated"
+                ancillary = SocketAncillary()
+                ancillary.update_from_raw(cmsgs)
+                return data, ancillary, address
+            await _asyncio_utils.wait_until_readable(sock, loop)
+
+    async def _trio_sock_recvmsg(sock: trio.socket.SocketType, bufsize: int) -> tuple[bytes, SocketAncillary, _RetAddress]:
+        data, cmsgs, flags, address = await sock.recvmsg(bufsize, CMSG_SPACE(_MAX_ANCDATA_SIZE))
+        assert flags == 0, "messages truncated"
+        ancillary = SocketAncillary()
+        ancillary.update_from_raw(cmsgs)
+        return data, ancillary, address
 
 
 @dataclasses.dataclass(eq=False, slots=True, match_args=True)
@@ -70,6 +107,18 @@ class _AsyncIORawStreamSock:
             except StopIteration as exc:
                 return exc.value
 
+    if sys.platform != "win32":
+
+        async def recvmsg(self, bufsize: int) -> tuple[bytes, SocketAncillary]:
+            with contextlib.closing(self._buffered_stream_reader.read(bufsize)) as generator:
+                try:
+                    next(generator)
+                except StopIteration as exc:
+                    return exc.value, SocketAncillary()
+                else:
+                    data, ancillary, _ = await _asyncio_sock_recvmsg(self.sock, bufsize)
+                    return data, ancillary
+
 
 @dataclasses.dataclass(eq=False, slots=True, match_args=True)
 class _TrioStream:
@@ -113,6 +162,24 @@ class _TrioStream:
                     generator.send(data)
             except StopIteration as exc:
                 return exc.value
+
+    if sys.platform != "win32":
+
+        async def recvmsg(self, bufsize: int) -> tuple[bytes, SocketAncillary]:
+            import trio
+
+            match self.stream:
+                case trio.SocketStream(socket=sock):
+                    with contextlib.closing(self._buffered_stream_reader.read(bufsize)) as generator:
+                        try:
+                            next(generator)
+                        except StopIteration as exc:
+                            return exc.value, SocketAncillary()
+                        else:
+                            data, ancillary, _ = await _trio_sock_recvmsg(sock, bufsize)
+                            return data, ancillary
+                case _:
+                    raise NotImplementedError
 
 
 @dataclasses.dataclass(kw_only=True, eq=False, frozen=True, slots=True)
@@ -293,6 +360,15 @@ class AsyncStreamSocket:
             case _:
                 assert_never(self._impl)
 
+    if sys.platform != "win32":
+
+        async def recvmsg(self, bufsize: int = 1024) -> tuple[bytes, SocketAncillary]:
+            match self._impl:
+                case _AsyncIORawStreamSock() | _TrioStream() as reader:
+                    return await reader.recvmsg(bufsize)
+                case _:
+                    raise NotImplementedError
+
     async def send_all(self, data: bytes | bytearray | memoryview) -> None:
         match self._impl:
             case _AsyncIOStream(writer=writer):
@@ -307,6 +383,32 @@ class AsyncStreamSocket:
                     await trio_stream.send_all(data)
             case _:
                 assert_never(self._impl)
+
+    if sys.platform != "win32":
+
+        async def sendmsg(self, data: Iterable[bytes | bytearray | memoryview], ancdata: Iterable[_CMSGArg]) -> None:
+            data = list(data)
+            ancdata = list(ancdata)
+            match self._impl:
+                case _AsyncIORawStreamSock(sock):
+                    loop = asyncio.get_running_loop()
+                    while True:
+                        try:
+                            sock.sendmsg(data, ancdata)
+                        except (BlockingIOError, InterruptedError):
+                            pass
+                        else:
+                            return
+                        await _asyncio_utils.wait_until_writable(sock, loop)
+                case _TrioStream(trio_stream):
+                    import trio
+
+                    if isinstance(trio_stream, trio.SSLStream):
+                        raise NotImplementedError
+
+                    await trio_stream.socket.sendmsg(data, ancdata)
+                case _:
+                    raise NotImplementedError
 
     async def send_eof(self) -> None:
         match self._impl:
@@ -569,6 +671,17 @@ class AsyncDatagramSocket:
             case _:
                 assert_never(self._impl)
 
+    if sys.platform != "win32":
+
+        async def recvmsg(self) -> tuple[bytes, SocketAncillary, _RetAddress]:
+            match self._impl:
+                case _AsyncIORawDatagramSock(sock):
+                    return await _asyncio_sock_recvmsg(sock, MAX_DATAGRAM_BUFSIZE)
+                case _TrioDatagram(sock):
+                    return await _trio_sock_recvmsg(sock, MAX_DATAGRAM_BUFSIZE)
+                case _:
+                    raise NotImplementedError
+
     async def sendto(self, data: bytes | bytearray | memoryview, address: socket._Address | None) -> None:
         match self._impl:
             case _AsyncIODatagram(endpoint):
@@ -594,6 +707,32 @@ class AsyncDatagramSocket:
                     await sock.sendto(data, address)
             case _:
                 assert_never(self._impl)
+
+    if sys.platform != "win32":
+
+        async def sendmsg(
+            self,
+            data: Iterable[bytes | bytearray | memoryview],
+            ancdata: Iterable[_CMSGArg],
+            address: socket._Address | None,
+        ) -> None:
+            data = list(data)
+            ancdata = list(ancdata)
+            match self._impl:
+                case _AsyncIORawDatagramSock(sock):
+                    loop = asyncio.get_running_loop()
+                    while True:
+                        try:
+                            sock.sendmsg(data, ancdata, 0, address)
+                        except (BlockingIOError, InterruptedError):
+                            pass
+                        else:
+                            return
+                        await _asyncio_utils.wait_until_writable(sock, loop)
+                case _TrioDatagram(sock):
+                    await sock.sendmsg(data, ancdata, 0, address)
+                case _:
+                    raise NotImplementedError
 
     def getsockname(self) -> socket._RetAddress:
         match self._impl:
