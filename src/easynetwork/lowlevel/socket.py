@@ -850,6 +850,8 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
         def messages(self) -> SocketAncillaryMessages:
             raise NotImplementedError
 
+    @final
+    @runtime_final_class
     @dataclasses.dataclass(kw_only=True, eq=False, frozen=True, slots=True, match_args=True)
     class SCMRights:
         """
@@ -861,8 +863,10 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
         """
 
         fds: Iterator[int]
+        """File descriptor iterator."""
 
     @final
+    @runtime_final_class
     @dataclasses.dataclass(eq=False, frozen=True, slots=True)
     class _RawSCMRights(_RawSCMessage):
         _data: array.array[int] = dataclasses.field(default_factory=lambda: array.array("i"))
@@ -894,6 +898,8 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
             """
             Unix credential tuple.
 
+            Availability: Linux, FreeBSD, NetBSD.
+
             .. versionadded:: NEXT_VERSION
             """
 
@@ -906,6 +912,8 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
             gid: int = 0
             """Effective Group ID."""
 
+        @final
+        @runtime_final_class
         @dataclasses.dataclass(kw_only=True, eq=False, frozen=True, slots=True, match_args=True)
         class SCMCredentials:
             """
@@ -920,8 +928,10 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
             """
 
             credentials: Iterator[SocketCredential]
+            """Socket credential iterator."""
 
         @final
+        @runtime_final_class
         @dataclasses.dataclass(eq=False, frozen=True, slots=True)
         class _RawSCMCredentials(_RawSCMessage):
             struct: ClassVar[Struct] = Struct("@iII")
@@ -951,6 +961,8 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
         SocketAncillaryMessages: TypeAlias = SCMRights
         """Unix socket control messages."""
 
+    @final
+    @runtime_final_class
     class SocketAncillary:
         """
         A Unix socket Ancillary data object.

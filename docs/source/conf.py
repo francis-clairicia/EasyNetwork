@@ -93,7 +93,6 @@ autodoc_type_aliases = {
     "Context": "contextvars.Context",
     "MemoryBIO": "ssl.MemoryBIO",
     "Pickler": "pickle.Pickler",
-    "RawUnixSocketAddress": "str | bytes",
     "ReadableBuffer": "bytes | bytearray | memoryview | collections.abc.Buffer",
     "SSLContext": "ssl.SSLContext",
     "SSLObject": "ssl.SSLObject",
