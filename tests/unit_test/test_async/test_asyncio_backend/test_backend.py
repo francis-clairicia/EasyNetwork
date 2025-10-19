@@ -4,6 +4,7 @@ import asyncio
 import contextvars
 import errno
 import os
+import sys
 from collections.abc import Callable, Coroutine, Sequence
 from socket import AF_INET, AF_INET6, AF_UNSPEC, IPPROTO_TCP, IPPROTO_UDP, SOCK_DGRAM, SOCK_STREAM
 from typing import TYPE_CHECKING, Any, Final
@@ -20,6 +21,9 @@ import pytest
 from ....fixtures.socket import AF_UNIX_or_skip
 from ....tools import temporary_task_factory
 from ..._utils import partial_eq
+
+if sys.platform != "win32":
+    from easynetwork.lowlevel.api_async.backend._asyncio.stream.listener import AcceptedUnixSocketFactory
 
 if TYPE_CHECKING:
     from unittest.mock import AsyncMock, MagicMock
@@ -339,17 +343,9 @@ class TestAsyncIOBackend:
         AF_UNIX = AF_UNIX_or_skip()
         mock_socket_cls = mocker.patch("socket.socket", return_value=mock_unix_stream_socket)
         event_loop = asyncio.get_running_loop()
-        mock_asyncio_transport = mocker.NonCallableMagicMock(spec=asyncio.Transport)
-        mock_protocol = mocker.NonCallableMagicMock(spec=StreamReaderBufferedProtocol)
-        mock_AsyncioTransportStreamSocketAdapter: MagicMock = mocker.patch(
-            f"{_ASYNCIO_BACKEND_MODULE}.stream.socket.AsyncioTransportStreamSocketAdapter",
+        mock_RawUnixStreamSocketAdapter: MagicMock = mocker.patch(
+            f"{_ASYNCIO_BACKEND_MODULE}.stream.socket.RawUnixStreamSocketAdapter",
             return_value=mocker.sentinel.socket,
-        )
-        mock_event_loop_create_unix_connection: AsyncMock = mocker.patch.object(
-            event_loop,
-            "create_unix_connection",
-            new_callable=mocker.AsyncMock,
-            return_value=(mock_asyncio_transport, mock_protocol),
         )
         mock_sock_connect: AsyncMock = mocker.patch.object(
             event_loop,
@@ -376,11 +372,7 @@ class TestAsyncIOBackend:
             ]
 
         mock_sock_connect.assert_awaited_once_with(mock_unix_stream_socket, remote_address)
-        mock_event_loop_create_unix_connection.assert_awaited_once_with(
-            partial_eq(StreamReaderBufferedProtocol, loop=event_loop),
-            sock=mock_unix_stream_socket,
-        )
-        mock_AsyncioTransportStreamSocketAdapter.assert_called_once_with(backend, mock_asyncio_transport, mock_protocol)
+        mock_RawUnixStreamSocketAdapter.assert_called_once_with(backend, mock_unix_stream_socket)
         assert socket is mocker.sentinel.socket
 
     @pytest.mark.parametrize(
@@ -425,17 +417,9 @@ class TestAsyncIOBackend:
         mock_socket_cls = mocker.patch("socket.socket", return_value=mock_unix_stream_socket)
         mock_unix_stream_socket.bind.side_effect = bind_error
         event_loop = asyncio.get_running_loop()
-        mock_asyncio_transport = mocker.NonCallableMagicMock(spec=asyncio.Transport)
-        mock_protocol = mocker.NonCallableMagicMock(spec=StreamReaderBufferedProtocol)
-        mock_AsyncioTransportStreamSocketAdapter: MagicMock = mocker.patch(
-            f"{_ASYNCIO_BACKEND_MODULE}.stream.socket.AsyncioTransportStreamSocketAdapter",
+        mock_RawUnixStreamSocketAdapter: MagicMock = mocker.patch(
+            f"{_ASYNCIO_BACKEND_MODULE}.stream.socket.RawUnixStreamSocketAdapter",
             return_value=mocker.sentinel.socket,
-        )
-        mock_event_loop_create_unix_connection: AsyncMock = mocker.patch.object(
-            event_loop,
-            "create_unix_connection",
-            new_callable=mocker.AsyncMock,
-            return_value=(mock_asyncio_transport, mock_protocol),
         )
         mock_sock_connect: AsyncMock = mocker.patch.object(
             event_loop,
@@ -460,8 +444,7 @@ class TestAsyncIOBackend:
             assert exc_info.value.errno == errno.EINVAL
 
         mock_sock_connect.assert_not_awaited()
-        mock_event_loop_create_unix_connection.assert_not_awaited()
-        mock_AsyncioTransportStreamSocketAdapter.assert_not_called()
+        mock_RawUnixStreamSocketAdapter.assert_not_called()
 
     @pytest.mark.parametrize(
         "remote_address",
@@ -494,17 +477,9 @@ class TestAsyncIOBackend:
         mock_socket_cls = mocker.patch("socket.socket", return_value=mock_unix_stream_socket)
         mock_unix_stream_socket.connect.side_effect = connect_error
         event_loop = asyncio.get_running_loop()
-        mock_asyncio_transport = mocker.NonCallableMagicMock(spec=asyncio.Transport)
-        mock_protocol = mocker.NonCallableMagicMock(spec=StreamReaderBufferedProtocol)
-        mock_AsyncioTransportStreamSocketAdapter: MagicMock = mocker.patch(
-            f"{_ASYNCIO_BACKEND_MODULE}.stream.socket.AsyncioTransportStreamSocketAdapter",
+        mock_RawUnixStreamSocketAdapter: MagicMock = mocker.patch(
+            f"{_ASYNCIO_BACKEND_MODULE}.stream.socket.RawUnixStreamSocketAdapter",
             return_value=mocker.sentinel.socket,
-        )
-        mock_event_loop_create_unix_connection: AsyncMock = mocker.patch.object(
-            event_loop,
-            "create_unix_connection",
-            new_callable=mocker.AsyncMock,
-            return_value=(mock_asyncio_transport, mock_protocol),
         )
         mock_sock_connect: AsyncMock = mocker.patch.object(
             event_loop,
@@ -527,8 +502,7 @@ class TestAsyncIOBackend:
         assert exc_info.value.errno == connect_error.errno
 
         mock_sock_connect.assert_awaited_once_with(mock_unix_stream_socket, remote_address)
-        mock_event_loop_create_unix_connection.assert_not_awaited()
-        mock_AsyncioTransportStreamSocketAdapter.assert_not_called()
+        mock_RawUnixStreamSocketAdapter.assert_not_called()
 
     async def test____wrap_stream_socket____use_loop_create_connection_for_tcp_sockets(
         self,
@@ -570,7 +544,7 @@ class TestAsyncIOBackend:
         assert socket is mocker.sentinel.socket
         mock_tcp_socket.setblocking.assert_called_with(False)
 
-    async def test____wrap_stream_socket____use_loop_create_unix_connection_for_unix_sockets(
+    async def test____wrap_stream_socket____creates_unix_stream_transports_for_unix_sockets(
         self,
         backend: AsyncIOBackend,
         mock_unix_stream_socket: MagicMock,
@@ -582,6 +556,10 @@ class TestAsyncIOBackend:
         mock_protocol = mocker.NonCallableMagicMock(spec=StreamReaderBufferedProtocol)
         mock_AsyncioTransportStreamSocketAdapter: MagicMock = mocker.patch(
             f"{_ASYNCIO_BACKEND_MODULE}.stream.socket.AsyncioTransportStreamSocketAdapter",
+            return_value=mocker.sentinel.socket,
+        )
+        mock_RawUnixStreamSocketAdapter: MagicMock = mocker.patch(
+            f"{_ASYNCIO_BACKEND_MODULE}.stream.socket.RawUnixStreamSocketAdapter",
             return_value=mocker.sentinel.socket,
         )
         mock_event_loop_create_connection: AsyncMock = mocker.patch.object(
@@ -601,12 +579,10 @@ class TestAsyncIOBackend:
         socket = await backend.wrap_stream_socket(mock_unix_stream_socket)
 
         # Assert
-        mock_event_loop_create_unix_connection.assert_awaited_once_with(
-            partial_eq(StreamReaderBufferedProtocol, loop=event_loop),
-            sock=mock_unix_stream_socket,
-        )
+        mock_event_loop_create_unix_connection.assert_not_called()
         mock_event_loop_create_connection.assert_not_called()
-        mock_AsyncioTransportStreamSocketAdapter.assert_called_once_with(backend, mock_asyncio_transport, mock_protocol)
+        mock_AsyncioTransportStreamSocketAdapter.assert_not_called()
+        mock_RawUnixStreamSocketAdapter.assert_called_once_with(backend, mock_unix_stream_socket)
         assert socket is mocker.sentinel.socket
         mock_unix_stream_socket.setblocking.assert_called_with(False)
 
@@ -781,7 +757,7 @@ class TestAsyncIOBackend:
             f"{_ASYNCIO_BACKEND_MODULE}.stream.listener.ListenerSocketAdapter",
             return_value=mocker.sentinel.listener_socket,
         )
-        expected_factory: AbstractAcceptedSocketFactory[Any] = AcceptedSocketFactory()
+        expected_factory: AbstractAcceptedSocketFactory[Any] = AcceptedUnixSocketFactory()
 
         # Act
         listener_socket = await backend.create_unix_stream_listener(
@@ -991,22 +967,15 @@ class TestAsyncIOBackend:
         remote_address: str | bytes,
         backend: AsyncIOBackend,
         mock_unix_datagram_socket: MagicMock,
-        mock_datagram_endpoint_factory: Callable[[], MagicMock],
         mocker: MockerFixture,
     ) -> None:
         # Arrange
         AF_UNIX = AF_UNIX_or_skip()
         mock_socket_cls = mocker.patch("socket.socket", return_value=mock_unix_datagram_socket)
         event_loop = asyncio.get_running_loop()
-        mock_endpoint = mock_datagram_endpoint_factory()
-        mock_AsyncioTransportDatagramSocketAdapter: MagicMock = mocker.patch(
-            f"{_ASYNCIO_BACKEND_MODULE}.datagram.socket.AsyncioTransportDatagramSocketAdapter",
+        mock_RawUnixDatagramSocketAdapter: MagicMock = mocker.patch(
+            f"{_ASYNCIO_BACKEND_MODULE}.datagram.socket.RawUnixDatagramSocketAdapter",
             return_value=mocker.sentinel.socket,
-        )
-        mock_create_datagram_endpoint: AsyncMock = mocker.patch(
-            f"{_ASYNCIO_BACKEND_MODULE}.datagram.endpoint.create_datagram_endpoint",
-            new_callable=mocker.AsyncMock,
-            return_value=mock_endpoint,
         )
         mock_sock_connect: AsyncMock = mocker.patch.object(
             event_loop,
@@ -1036,8 +1005,7 @@ class TestAsyncIOBackend:
             ]
 
         mock_sock_connect.assert_awaited_once_with(mock_unix_datagram_socket, remote_address)
-        mock_create_datagram_endpoint.assert_awaited_once_with(sock=mock_unix_datagram_socket)
-        mock_AsyncioTransportDatagramSocketAdapter.assert_called_once_with(backend, mock_endpoint)
+        mock_RawUnixDatagramSocketAdapter.assert_called_once_with(backend, mock_unix_datagram_socket)
         assert socket is mocker.sentinel.socket
 
     @pytest.mark.parametrize(
@@ -1075,7 +1043,6 @@ class TestAsyncIOBackend:
         bind_error: OSError,
         backend: AsyncIOBackend,
         mock_unix_datagram_socket: MagicMock,
-        mock_datagram_endpoint_factory: Callable[[], MagicMock],
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -1083,15 +1050,9 @@ class TestAsyncIOBackend:
         mock_socket_cls = mocker.patch("socket.socket", return_value=mock_unix_datagram_socket)
         mock_unix_datagram_socket.bind.side_effect = bind_error
         event_loop = asyncio.get_running_loop()
-        mock_endpoint = mock_datagram_endpoint_factory()
-        mock_AsyncioTransportDatagramSocketAdapter: MagicMock = mocker.patch(
-            f"{_ASYNCIO_BACKEND_MODULE}.datagram.socket.AsyncioTransportDatagramSocketAdapter",
+        mock_RawUnixDatagramSocketAdapter: MagicMock = mocker.patch(
+            f"{_ASYNCIO_BACKEND_MODULE}.datagram.socket.RawUnixDatagramSocketAdapter",
             return_value=mocker.sentinel.socket,
-        )
-        mock_create_datagram_endpoint: AsyncMock = mocker.patch(
-            f"{_ASYNCIO_BACKEND_MODULE}.datagram.endpoint.create_datagram_endpoint",
-            new_callable=mocker.AsyncMock,
-            return_value=mock_endpoint,
         )
         mock_sock_connect: AsyncMock = mocker.patch.object(
             event_loop,
@@ -1119,8 +1080,7 @@ class TestAsyncIOBackend:
             assert exc_info.value.errno == errno.EINVAL
 
         mock_sock_connect.assert_not_awaited()
-        mock_create_datagram_endpoint.assert_not_awaited()
-        mock_AsyncioTransportDatagramSocketAdapter.assert_not_called()
+        mock_RawUnixDatagramSocketAdapter.assert_not_called()
 
     @pytest.mark.parametrize(
         "local_address",
@@ -1156,7 +1116,6 @@ class TestAsyncIOBackend:
         connect_error: OSError,
         backend: AsyncIOBackend,
         mock_unix_datagram_socket: MagicMock,
-        mock_datagram_endpoint_factory: Callable[[], MagicMock],
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -1164,15 +1123,9 @@ class TestAsyncIOBackend:
         mock_socket_cls = mocker.patch("socket.socket", return_value=mock_unix_datagram_socket)
         mock_unix_datagram_socket.connect.side_effect = connect_error
         event_loop = asyncio.get_running_loop()
-        mock_endpoint = mock_datagram_endpoint_factory()
-        mock_AsyncioTransportDatagramSocketAdapter: MagicMock = mocker.patch(
-            f"{_ASYNCIO_BACKEND_MODULE}.datagram.socket.AsyncioTransportDatagramSocketAdapter",
+        mock_RawUnixDatagramSocketAdapter: MagicMock = mocker.patch(
+            f"{_ASYNCIO_BACKEND_MODULE}.datagram.socket.RawUnixDatagramSocketAdapter",
             return_value=mocker.sentinel.socket,
-        )
-        mock_create_datagram_endpoint: AsyncMock = mocker.patch(
-            f"{_ASYNCIO_BACKEND_MODULE}.datagram.endpoint.create_datagram_endpoint",
-            new_callable=mocker.AsyncMock,
-            return_value=mock_endpoint,
         )
         mock_sock_connect: AsyncMock = mocker.patch.object(
             event_loop,
@@ -1199,28 +1152,16 @@ class TestAsyncIOBackend:
         assert exc_info.value.errno == connect_error.errno
 
         mock_sock_connect.assert_awaited_once_with(mock_unix_datagram_socket, remote_address)
-        mock_create_datagram_endpoint.assert_not_awaited()
-        mock_AsyncioTransportDatagramSocketAdapter.assert_not_called()
+        mock_RawUnixDatagramSocketAdapter.assert_not_called()
 
-    @pytest.mark.parametrize("socket_family_name", ["INET", "UNIX"], ids=lambda p: f"family=={p}")
-    async def test____wrap_connected_datagram_socket____use_loop_create_datagram_endpoint(
+    async def test____wrap_connected_datagram_socket____use_loop_create_datagram_endpoint_for_udp_sockets(
         self,
         backend: AsyncIOBackend,
-        socket_family_name: str,
-        mock_udp_socket_factory: Callable[[], MagicMock],
-        mock_unix_datagram_socket_factory: Callable[[], MagicMock],
+        mock_udp_socket: MagicMock,
         mock_datagram_endpoint_factory: Callable[[], MagicMock],
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        match socket_family_name:
-            case "INET":
-                mock_datagram_socket = mock_udp_socket_factory()
-            case "UNIX":
-                mock_datagram_socket = mock_unix_datagram_socket_factory()
-            case _:
-                pytest.fail(socket_family_name)
-
         mock_endpoint = mock_datagram_endpoint_factory()
         mock_AsyncioTransportDatagramSocketAdapter: MagicMock = mocker.patch(
             f"{_ASYNCIO_BACKEND_MODULE}.datagram.socket.AsyncioTransportDatagramSocketAdapter",
@@ -1233,14 +1174,48 @@ class TestAsyncIOBackend:
         )
 
         # Act
-        socket = await backend.wrap_connected_datagram_socket(mock_datagram_socket)
+        socket = await backend.wrap_connected_datagram_socket(mock_udp_socket)
 
         # Assert
-        mock_create_datagram_endpoint.assert_awaited_once_with(sock=mock_datagram_socket)
+        mock_create_datagram_endpoint.assert_awaited_once_with(sock=mock_udp_socket)
         mock_AsyncioTransportDatagramSocketAdapter.assert_called_once_with(backend, mock_endpoint)
 
         assert socket is mocker.sentinel.socket
-        mock_datagram_socket.setblocking.assert_called_with(False)
+        mock_udp_socket.setblocking.assert_called_with(False)
+
+    async def test____wrap_connected_datagram_socket____creates_unix_datagram_transport_for_unix_sockets(
+        self,
+        backend: AsyncIOBackend,
+        mock_unix_datagram_socket: MagicMock,
+        mock_datagram_endpoint_factory: Callable[[], MagicMock],
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_endpoint = mock_datagram_endpoint_factory()
+        mock_AsyncioTransportDatagramSocketAdapter: MagicMock = mocker.patch(
+            f"{_ASYNCIO_BACKEND_MODULE}.datagram.socket.AsyncioTransportDatagramSocketAdapter",
+            return_value=mocker.sentinel.socket,
+        )
+        mock_RawUnixDatagramSocketAdapter: MagicMock = mocker.patch(
+            f"{_ASYNCIO_BACKEND_MODULE}.datagram.socket.RawUnixDatagramSocketAdapter",
+            return_value=mocker.sentinel.socket,
+        )
+        mock_create_datagram_endpoint: AsyncMock = mocker.patch(
+            f"{_ASYNCIO_BACKEND_MODULE}.datagram.endpoint.create_datagram_endpoint",
+            new_callable=mocker.AsyncMock,
+            return_value=mock_endpoint,
+        )
+
+        # Act
+        socket = await backend.wrap_connected_datagram_socket(mock_unix_datagram_socket)
+
+        # Assert
+        mock_create_datagram_endpoint.assert_not_called()
+        mock_AsyncioTransportDatagramSocketAdapter.assert_not_called()
+        mock_RawUnixDatagramSocketAdapter.assert_called_once_with(backend, mock_unix_datagram_socket)
+
+        assert socket is mocker.sentinel.socket
+        mock_unix_datagram_socket.setblocking.assert_called_with(False)
 
     async def test____create_udp_listeners____open_listener_sockets(
         self,
@@ -1429,19 +1404,10 @@ class TestAsyncIOBackend:
     ) -> None:
         # Arrange
         AF_UNIX = AF_UNIX_or_skip()
-        event_loop = asyncio.get_running_loop()
         mock_socket_cls = mocker.patch("socket.socket", return_value=mock_unix_datagram_socket)
         mock_os_chmod = mocker.patch("os.chmod", autospec=True, return_value=None)
-        mock_transport = mocker.NonCallableMagicMock(spec=asyncio.DatagramTransport)
-        mock_protocol = mocker.NonCallableMagicMock(spec=DatagramListenerProtocol)
-        mock_create_datagram_endpoint: AsyncMock = mocker.patch.object(
-            event_loop,
-            "create_datagram_endpoint",
-            new_callable=mocker.AsyncMock,
-            return_value=(mock_transport, mock_protocol),
-        )
-        mock_DatagramListenerSocketAdapter: MagicMock = mocker.patch(
-            f"{_ASYNCIO_BACKEND_MODULE}.datagram.listener.DatagramListenerSocketAdapter",
+        mock_RawUnixDatagramListenerAdapter: MagicMock = mocker.patch(
+            f"{_ASYNCIO_BACKEND_MODULE}.datagram.listener.RawUnixDatagramListenerAdapter",
             return_value=mocker.sentinel.listener_socket,
         )
 
@@ -1461,11 +1427,7 @@ class TestAsyncIOBackend:
             mock_os_chmod.assert_not_called()
         else:
             mock_os_chmod.assert_called_once_with(local_address, mode)
-        mock_create_datagram_endpoint.assert_awaited_once_with(
-            partial_eq(DatagramListenerProtocol, loop=event_loop),
-            sock=mock_unix_datagram_socket,
-        )
-        mock_DatagramListenerSocketAdapter.assert_called_once_with(backend, mock_transport, mock_protocol)
+        mock_RawUnixDatagramListenerAdapter.assert_called_once_with(backend, mock_unix_datagram_socket)
         assert listener_socket is mocker.sentinel.listener_socket
 
     @pytest.mark.parametrize(
@@ -1500,20 +1462,11 @@ class TestAsyncIOBackend:
     ) -> None:
         # Arrange
         AF_UNIX = AF_UNIX_or_skip()
-        event_loop = asyncio.get_running_loop()
         mock_socket_cls = mocker.patch("socket.socket", return_value=mock_unix_datagram_socket)
         mock_os_chmod = mocker.patch("os.chmod", autospec=True, return_value=None)
         mock_unix_datagram_socket.bind.side_effect = bind_error
-        mock_transport = mocker.NonCallableMagicMock(spec=asyncio.DatagramTransport)
-        mock_protocol = mocker.NonCallableMagicMock(spec=DatagramListenerProtocol)
-        mock_create_datagram_endpoint: AsyncMock = mocker.patch.object(
-            event_loop,
-            "create_datagram_endpoint",
-            new_callable=mocker.AsyncMock,
-            return_value=(mock_transport, mock_protocol),
-        )
-        mock_DatagramListenerSocketAdapter: MagicMock = mocker.patch(
-            f"{_ASYNCIO_BACKEND_MODULE}.datagram.listener.DatagramListenerSocketAdapter",
+        mock_RawUnixDatagramListenerAdapter: MagicMock = mocker.patch(
+            f"{_ASYNCIO_BACKEND_MODULE}.datagram.listener.RawUnixDatagramListenerAdapter",
             return_value=mocker.sentinel.listener_socket,
         )
 
@@ -1535,8 +1488,7 @@ class TestAsyncIOBackend:
         else:
             assert exc_info.value.errno == errno.EINVAL
         mock_os_chmod.assert_not_called()
-        mock_create_datagram_endpoint.assert_not_called()
-        mock_DatagramListenerSocketAdapter.assert_not_called()
+        mock_RawUnixDatagramListenerAdapter.assert_not_called()
 
     @pytest.mark.parametrize(
         "local_address",
@@ -1556,20 +1508,10 @@ class TestAsyncIOBackend:
         # Arrange
         chmod_error = OSError(errno.EPERM, os.strerror(errno.EPERM))
         mode: int = 0o640
-        AF_UNIX_or_skip()
-        event_loop = asyncio.get_running_loop()
         mocker.patch("socket.socket", return_value=mock_unix_datagram_socket)
         mock_os_chmod = mocker.patch("os.chmod", autospec=True, side_effect=chmod_error)
-        mock_transport = mocker.NonCallableMagicMock(spec=asyncio.DatagramTransport)
-        mock_protocol = mocker.NonCallableMagicMock(spec=DatagramListenerProtocol)
-        mock_create_datagram_endpoint: AsyncMock = mocker.patch.object(
-            event_loop,
-            "create_datagram_endpoint",
-            new_callable=mocker.AsyncMock,
-            return_value=(mock_transport, mock_protocol),
-        )
-        mock_DatagramListenerSocketAdapter: MagicMock = mocker.patch(
-            f"{_ASYNCIO_BACKEND_MODULE}.datagram.listener.DatagramListenerSocketAdapter",
+        mock_RawUnixDatagramListenerAdapter: MagicMock = mocker.patch(
+            f"{_ASYNCIO_BACKEND_MODULE}.datagram.listener.RawUnixDatagramListenerAdapter",
             return_value=mocker.sentinel.listener_socket,
         )
 
@@ -1587,8 +1529,7 @@ class TestAsyncIOBackend:
             mocker.call.close(),
         ]
         mock_os_chmod.assert_called_once()
-        mock_create_datagram_endpoint.assert_not_called()
-        mock_DatagramListenerSocketAdapter.assert_not_called()
+        mock_RawUnixDatagramListenerAdapter.assert_not_called()
 
     @pytest.mark.parametrize("fair_lock", [False, True], ids=lambda p: f"fair_lock=={p}")
     async def test____create_lock____use_asyncio_Lock_class(
