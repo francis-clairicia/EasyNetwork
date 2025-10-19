@@ -191,7 +191,7 @@ class AsyncIOBackend(AbstractAsyncBackend):
             return RawUnixStreamSocketAdapter(self, socket)
 
     async def wrap_stream_socket(self, socket: _socket.socket) -> AsyncStreamTransport:
-        if _unix_utils.is_unix_socket_family(socket.family):
+        if sys.platform != "win32" and _unix_utils.is_unix_socket_family(socket.family):
             from .stream.socket import RawUnixStreamSocketAdapter
 
             socket.setblocking(False)
@@ -310,7 +310,7 @@ class AsyncIOBackend(AbstractAsyncBackend):
             return RawUnixDatagramSocketAdapter(self, socket)
 
     async def wrap_connected_datagram_socket(self, socket: _socket.socket) -> AsyncDatagramTransport:
-        if _unix_utils.is_unix_socket_family(socket.family):
+        if sys.platform != "win32" and _unix_utils.is_unix_socket_family(socket.family):
             from .datagram.socket import RawUnixDatagramSocketAdapter
 
             socket.setblocking(False)
