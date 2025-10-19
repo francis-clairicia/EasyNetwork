@@ -84,7 +84,7 @@ tox = [
     "tox-pdm~=0.7.2",
 ]
 format = [
-    "isort>=6.0,<7",
+    "isort>=7.0",
     "black>=22.6.0",
 ]
 mypy = [
