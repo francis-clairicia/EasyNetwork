@@ -202,9 +202,6 @@ class SocketStreamTransport(base_selector.SelectorStreamTransport):
                 buffers: deque[memoryview] = deque(map(memoryview, iterable_of_data))  # type: ignore[arg-type]
                 del iterable_of_data
 
-                if not buffers:
-                    return self.send_all(b"", timeout)
-
                 socket_sendmsg = self.__socket.sendmsg
 
                 def try_sendmsg() -> int:
@@ -213,9 +210,11 @@ class SocketStreamTransport(base_selector.SelectorStreamTransport):
                     except (BlockingIOError, InterruptedError):
                         raise base_selector.WouldBlockOnWrite(self.__socket.fileno()) from None
 
-                while buffers:
+                while True:
                     sent, timeout = self._retry(try_sendmsg, timeout)
                     _utils.adjust_leftover_buffer(buffers, sent)
+                    if not buffers:
+                        break
 
     @_utils.inherit_doc(base_selector.SelectorStreamTransport)
     def send_eof(self) -> None:

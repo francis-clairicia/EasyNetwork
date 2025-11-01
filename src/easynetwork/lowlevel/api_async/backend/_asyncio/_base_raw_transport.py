@@ -26,7 +26,7 @@ import socket as _socket
 import warnings
 from collections.abc import Awaitable, Callable, Iterator, Mapping
 from types import MappingProxyType
-from typing import Any, TypeVar
+from typing import Any, Literal, TypeVar, overload
 
 from .... import _utils, socket as socket_tools
 from ...transports.abc import AsyncBaseTransport
@@ -157,8 +157,9 @@ class BaseRawSocketTransport(AsyncBaseTransport):
                         pass
                     else:
                         data = send_success(result, data)
-                        if not retry_send(data):
-                            return
+                        if retry_send(data):
+                            continue
+                        return
                     await _asyncio_utils.wait_until_writable(sock, loop)
         finally:
             del data
@@ -180,6 +181,7 @@ class BaseRawSocketTransport(AsyncBaseTransport):
             # aclose() cancelled the scope
             raise _utils.error_from_errno(_errno.EBADF)
 
+    @overload
     @contextlib.contextmanager
     def _write_task_context(
         self,
@@ -187,11 +189,32 @@ class BaseRawSocketTransport(AsyncBaseTransport):
         /,
         *,
         loop: asyncio.AbstractEventLoop | None = None,
-    ) -> Iterator[_socket.socket]:
+    ) -> Iterator[_socket.socket]: ...
+
+    @overload
+    @contextlib.contextmanager
+    def _write_task_context(
+        self,
+        requester: str,
+        /,
+        *,
+        loop: asyncio.AbstractEventLoop | None = None,
+        accept_closed_sockets: Literal[True],
+    ) -> Iterator[_socket.socket | None]: ...
+
+    @contextlib.contextmanager
+    def _write_task_context(
+        self,
+        requester: str,
+        /,
+        *,
+        loop: asyncio.AbstractEventLoop | None = None,
+        accept_closed_sockets: bool = False,
+    ) -> Iterator[_socket.socket | None]:
         if self.__write_task is not None:
             raise RuntimeError(f"{requester}() called while another coroutine is already sending data")
         sock = self.__socket
-        if sock is None:
+        if sock is None and not accept_closed_sockets:
             raise _utils.error_from_errno(_errno.EBADF)
 
         if loop is None:

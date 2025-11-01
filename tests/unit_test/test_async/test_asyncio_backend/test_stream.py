@@ -5,11 +5,14 @@ from __future__ import annotations
 import asyncio
 import asyncio.trsock
 import contextlib
+import errno
 import logging
 import os
 import ssl
-from collections.abc import AsyncIterator, Callable, Coroutine
+import sys
+from collections.abc import AsyncIterator, Callable, Coroutine, Iterable
 from errno import EBADF, errorcode as errno_errorcode
+from socket import SHUT_WR
 from typing import TYPE_CHECKING, Any, Literal, NoReturn, TypeAlias
 
 from easynetwork.exceptions import BusyResourceError, UnsupportedOperation
@@ -24,21 +27,31 @@ from easynetwork.lowlevel.api_async.backend._asyncio.stream.socket import (
     StreamReaderBufferedProtocol,
 )
 from easynetwork.lowlevel.api_async.backend._asyncio.tasks import CancelScope, TaskGroup as AsyncIOTaskGroup
-from easynetwork.lowlevel.constants import ACCEPT_CAPACITY_ERRNOS, IGNORABLE_ACCEPT_ERRNOS, NOT_CONNECTED_SOCKET_ERRNOS
+from easynetwork.lowlevel.constants import (
+    ACCEPT_CAPACITY_ERRNOS,
+    CLOSED_SOCKET_ERRNOS,
+    IGNORABLE_ACCEPT_ERRNOS,
+    NOT_CONNECTED_SOCKET_ERRNOS,
+)
 from easynetwork.lowlevel.socket import SocketAttribute
 
 import pytest
 import pytest_asyncio
 
+from ....tools import PlatformMarkers
+from ..._utils import partial_eq
+from ...base import BaseTestSocketTransport, BaseTestUnixSocketTransport, MixinTestSocketSendMSG
+from .base import BaseTestAsyncSocket, MockedEventLoopSockMethods
+
+if sys.platform != "win32":
+    from easynetwork.lowlevel.api_async.backend._asyncio.stream.listener import AcceptedUnixSocketFactory
+    from easynetwork.lowlevel.api_async.backend._asyncio.stream.socket import RawUnixStreamSocketAdapter
+
 if TYPE_CHECKING:
     from unittest.mock import AsyncMock, MagicMock
 
+    from _typeshed import ReadableBuffer
     from pytest_mock import MockerFixture
-
-from ....tools import PlatformMarkers
-from ..._utils import partial_eq
-from ...base import BaseTestSocketTransport
-from .base import BaseTestAsyncSocket
 
 
 class BaseTestTransportStreamSocket(BaseTestSocketTransport):
@@ -656,7 +669,6 @@ class TestListenerSocketAdapter(BaseTestSocketTransport, BaseTestAsyncSocket):
 
 
 @pytest.mark.asyncio
-@pytest.mark.filterwarnings("ignore::ResourceWarning")
 class TestAcceptedSocketFactory(BaseTestTransportStreamSocket):
     @pytest_asyncio.fixture
     @staticmethod
@@ -724,13 +736,64 @@ class TestAcceptedSocketFactory(BaseTestTransportStreamSocket):
 
         # Act
         socket = await accepted_socket.connect(asyncio_backend, mock_stream_socket)
+        await socket.aclose()
 
         # Assert
-        assert isinstance(socket, AsyncioTransportStreamSocketAdapter)
-        mock_event_loop_connect_accepted_socket.assert_awaited_once_with(
-            partial_eq(StreamReaderBufferedProtocol, loop=event_loop),
-            mock_stream_socket,
-        )
+        async with socket:
+            assert isinstance(socket, AsyncioTransportStreamSocketAdapter)
+            assert socket.backend() is asyncio_backend
+            mock_event_loop_connect_accepted_socket.assert_awaited_once_with(
+                partial_eq(StreamReaderBufferedProtocol, loop=event_loop),
+                mock_stream_socket,
+            )
+
+
+if sys.platform != "win32":
+
+    @pytest.mark.asyncio
+    class TestAcceptedUnixSocketFactory(BaseTestTransportStreamSocket, BaseTestUnixSocketTransport):
+
+        @pytest.fixture
+        @staticmethod
+        def accepted_socket() -> AcceptedUnixSocketFactory:
+            return AcceptedUnixSocketFactory()
+
+        async def test____log_connection_error____error_log(
+            self,
+            caplog: pytest.LogCaptureFixture,
+            accepted_socket: AcceptedUnixSocketFactory,
+        ) -> None:
+            # Arrange
+            logger = logging.getLogger(__name__)
+            caplog.set_level(logging.ERROR, logger.name)
+            exc = BaseException()
+
+            # Act
+            accepted_socket.log_connection_error(logger, exc)
+
+            # Assert
+            assert len(caplog.records) == 1
+            assert caplog.records[0].levelno == logging.ERROR
+            assert caplog.records[0].getMessage() == "Error in client task"
+            assert caplog.records[0].exc_info is not None and caplog.records[0].exc_info[1] is exc
+
+        async def test____connect____creates_new_stream_socket(
+            self,
+            asyncio_backend: AsyncIOBackend,
+            accepted_socket: AcceptedUnixSocketFactory,
+            mock_stream_socket: MagicMock,
+        ) -> None:
+            # Arrange
+
+            # Act
+            socket = await accepted_socket.connect(asyncio_backend, mock_stream_socket)
+
+            # Assert
+            async with socket:
+                assert isinstance(socket, RawUnixStreamSocketAdapter)
+                assert socket.backend() is asyncio_backend
+                with socket._read_task_context("test") as inner_sock:
+                    assert inner_sock is mock_stream_socket
 
 
 @pytest.mark.asyncio
@@ -1017,6 +1080,783 @@ class TestAsyncioTransportStreamSocketAdapter(BaseTestTransportWithSSL):
         assert transport.extra(SocketAttribute.family) == mock_stream_socket.family
         assert transport.extra(SocketAttribute.sockname) == local_address
         assert transport.extra(SocketAttribute.peername) == remote_address
+
+
+if sys.platform != "win32":
+
+    @pytest.mark.asyncio
+    class TestRawUnixStreamSocketAdapter(
+        BaseTestTransportStreamSocket,
+        BaseTestUnixSocketTransport,
+        BaseTestAsyncSocket,
+        MixinTestSocketSendMSG,
+    ):
+        @pytest_asyncio.fixture
+        @staticmethod
+        async def transport(
+            asyncio_backend: AsyncIOBackend,
+            mock_stream_socket: MagicMock,
+        ) -> AsyncIterator[RawUnixStreamSocketAdapter]:
+            transport = RawUnixStreamSocketAdapter(asyncio_backend, mock_stream_socket)
+            async with transport:
+                yield transport
+
+        async def test____dunder_init____refuse_non_stream_sockets(
+            self,
+            asyncio_backend: AsyncIOBackend,
+            mock_unix_datagram_socket: MagicMock,
+        ) -> None:
+            # Arrange
+
+            # Act & Assert
+            with pytest.raises(ValueError):
+                _ = RawUnixStreamSocketAdapter(asyncio_backend, mock_unix_datagram_socket)
+
+        async def test____dunder_init____refuse_transports_over_ssl(
+            self,
+            asyncio_backend: AsyncIOBackend,
+            socket_family: int,
+            mock_ssl_socket_factory: Callable[[int], MagicMock],
+        ) -> None:
+            # Arrange
+            mock_ssl_socket = mock_ssl_socket_factory(socket_family)
+
+            # Act & Assert
+            with pytest.raises(TypeError):
+                _ = RawUnixStreamSocketAdapter(asyncio_backend, mock_ssl_socket)
+
+        async def test____dunder_del____ResourceWarning(
+            self,
+            asyncio_backend: AsyncIOBackend,
+            mock_stream_socket: MagicMock,
+        ) -> None:
+            # Arrange
+            transport = RawUnixStreamSocketAdapter(asyncio_backend, mock_stream_socket)  # noqa: F841
+
+            # Act & Assert
+            with pytest.warns(ResourceWarning, match=r"^unclosed transport .+$"):
+                del transport
+
+            mock_stream_socket.close.assert_called()
+
+        async def test____aclose____close_transport_and_yield(
+            self,
+            transport: RawUnixStreamSocketAdapter,
+            mock_stream_socket: MagicMock,
+        ) -> None:
+            # Arrange
+
+            # Act
+            await transport.aclose()
+
+            # Assert
+            mock_stream_socket.close.assert_called_once_with()
+
+        @pytest.mark.parametrize("transport_closed", [False, True], ids=lambda p: f"transport_closed=={p}")
+        async def test____is_closing____default(
+            self,
+            transport_closed: bool,
+            transport: RawUnixStreamSocketAdapter,
+        ) -> None:
+            # Arrange
+            if transport_closed:
+                await transport.aclose()
+
+            # Act
+            state = transport.is_closing()
+
+            # Assert
+            assert state is transport_closed
+
+        async def test____recv____use_event_loop_sock_recv(
+            self,
+            transport: RawUnixStreamSocketAdapter,
+            mock_stream_socket: MagicMock,
+            mock_event_loop_sock_method: MockedEventLoopSockMethods,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+        ) -> None:
+            # Arrange
+            mock_event_loop_sock_recv = mock_event_loop_sock_method["sock_recv"]
+            mock_event_loop_sock_recv.side_effect = None
+            mock_event_loop_sock_recv.return_value = b"data"
+
+            # Act
+            data: bytes = await transport.recv(1024)
+
+            # Assert
+            mock_event_loop_sock_recv.assert_awaited_once_with(mock_stream_socket, 1024)
+            mock_stream_socket.assert_not_called()
+            mock_event_loop_add_reader.assert_not_called()
+            mock_event_loop_add_writer.assert_not_called()
+            assert data == b"data"
+
+        async def test____recv____event_loop_sock_recv_not_implemented(
+            self,
+            transport: RawUnixStreamSocketAdapter,
+            mock_stream_socket: MagicMock,
+            mock_event_loop_sock_method: MockedEventLoopSockMethods,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+        ) -> None:
+            # Arrange
+            mock_event_loop_sock_method["sock_recv"].side_effect = NotImplementedError
+            mock_stream_socket.recv.return_value = b"data"
+
+            # Act
+            data: bytes = await transport.recv(1024)
+
+            # Assert
+            mock_stream_socket.recv.assert_called_once_with(1024)
+            mock_event_loop_add_reader.assert_not_called()
+            mock_event_loop_add_writer.assert_not_called()
+            assert data == b"data"
+
+        async def test____recv____event_loop_sock_recv_not_implemented____blocking_error(
+            self,
+            transport: RawUnixStreamSocketAdapter,
+            mock_stream_socket: MagicMock,
+            mock_event_loop_sock_method: MockedEventLoopSockMethods,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+            mocker: MockerFixture,
+        ) -> None:
+            # Arrange
+            mock_event_loop_sock_method["sock_recv"].side_effect = NotImplementedError
+            mock_stream_socket.recv.side_effect = [BlockingIOError, BlockingIOError, b"data"]
+
+            # Act
+            data: bytes = await transport.recv(1024)
+
+            # Assert
+            assert mock_stream_socket.recv.mock_calls == [mocker.call(1024) for _ in range(3)]
+            assert mock_event_loop_add_reader.call_count == 2
+            mock_event_loop_add_writer.assert_not_called()
+            assert data == b"data"
+
+        async def test____recv_into____use_event_loop_sock_recv_into(
+            self,
+            transport: RawUnixStreamSocketAdapter,
+            mock_stream_socket: MagicMock,
+            mock_event_loop_sock_method: MockedEventLoopSockMethods,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+        ) -> None:
+            # Arrange
+            mock_event_loop_sock_recv_into = mock_event_loop_sock_method["sock_recv_into"]
+            mock_event_loop_sock_recv_into.side_effect = None
+            mock_event_loop_sock_recv_into.return_value = 4
+            buffer = bytearray(1024)
+
+            # Act
+            nbytes = await transport.recv_into(buffer)
+
+            # Assert
+            mock_event_loop_sock_recv_into.assert_awaited_once_with(mock_stream_socket, buffer)
+            mock_stream_socket.assert_not_called()
+            mock_event_loop_add_reader.assert_not_called()
+            mock_event_loop_add_writer.assert_not_called()
+            assert nbytes == 4
+
+        async def test____recv_into____event_loop_sock_recv_into_not_implemented(
+            self,
+            transport: RawUnixStreamSocketAdapter,
+            mock_stream_socket: MagicMock,
+            mock_event_loop_sock_method: MockedEventLoopSockMethods,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+        ) -> None:
+            # Arrange
+            mock_event_loop_sock_method["sock_recv_into"].side_effect = NotImplementedError
+            mock_stream_socket.recv_into.return_value = 4
+            buffer = bytearray(1024)
+
+            # Act
+            nbytes = await transport.recv_into(buffer)
+
+            # Assert
+            mock_stream_socket.recv_into.assert_called_once_with(buffer)
+            mock_event_loop_add_reader.assert_not_called()
+            mock_event_loop_add_writer.assert_not_called()
+            assert nbytes == 4
+
+        async def test____recv_into____event_loop_sock_recv_into_not_implemented____blocking_error(
+            self,
+            transport: RawUnixStreamSocketAdapter,
+            mock_stream_socket: MagicMock,
+            mock_event_loop_sock_method: MockedEventLoopSockMethods,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+            mocker: MockerFixture,
+        ) -> None:
+            # Arrange
+            mock_event_loop_sock_method["sock_recv_into"].side_effect = NotImplementedError
+            mock_stream_socket.recv_into.side_effect = [BlockingIOError, BlockingIOError, 4]
+            buffer = bytearray(1024)
+
+            # Act
+            nbytes = await transport.recv_into(buffer)
+
+            # Assert
+            assert mock_stream_socket.recv_into.mock_calls == [mocker.call(buffer) for _ in range(3)]
+            assert mock_event_loop_add_reader.call_count == 2
+            mock_event_loop_add_writer.assert_not_called()
+            assert nbytes == 4
+
+        @PlatformMarkers.supports_socket_recvmsg
+        async def test____recv_with_ancillary____use_socket_recvmsg(
+            self,
+            transport: RawUnixStreamSocketAdapter,
+            mock_stream_socket: MagicMock,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+            mocker: MockerFixture,
+        ) -> None:
+            # Arrange
+            mock_stream_socket.recvmsg.return_value = (b"data", mocker.sentinel.ancdata, 0, "/path/to/sender.sock")
+
+            # Act
+            data, ancdata = await transport.recv_with_ancillary(1024, 2048)
+
+            # Assert
+            mock_stream_socket.recvmsg.assert_called_once_with(1024, 2048)
+            mock_event_loop_add_reader.assert_not_called()
+            mock_event_loop_add_writer.assert_not_called()
+            assert data == b"data"
+            assert ancdata is mocker.sentinel.ancdata
+
+        @PlatformMarkers.supports_socket_recvmsg
+        async def test____recv_with_ancillary____use_socket_recvmsg____blocking_error(
+            self,
+            transport: RawUnixStreamSocketAdapter,
+            mock_stream_socket: MagicMock,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+            mocker: MockerFixture,
+        ) -> None:
+            # Arrange
+            mock_stream_socket.recvmsg.side_effect = [
+                BlockingIOError,
+                BlockingIOError,
+                (b"data", mocker.sentinel.ancdata, 0, "/path/to/sender.sock"),
+            ]
+
+            # Act
+            data, ancdata = await transport.recv_with_ancillary(1024, 2048)
+
+            # Assert
+            assert mock_stream_socket.recvmsg.mock_calls == [mocker.call(1024, 2048) for _ in range(3)]
+            assert mock_event_loop_add_reader.call_count == 2
+            mock_event_loop_add_writer.assert_not_called()
+            assert data == b"data"
+            assert ancdata is mocker.sentinel.ancdata
+
+        @PlatformMarkers.supports_socket_recvmsg_into
+        async def test____recv_with_ancillary_into____use_socket_recvmsg_into(
+            self,
+            transport: RawUnixStreamSocketAdapter,
+            mock_stream_socket: MagicMock,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+            mocker: MockerFixture,
+        ) -> None:
+            # Arrange
+            mock_stream_socket.recvmsg_into.return_value = (4, mocker.sentinel.ancdata, 0, "/path/to/sender.sock")
+            buffer = bytearray(1024)
+
+            # Act
+            nbytes, ancdata = await transport.recv_with_ancillary_into(buffer, 2048)
+
+            # Assert
+            mock_stream_socket.recvmsg_into.assert_called_once_with([buffer], 2048)
+            mock_event_loop_add_reader.assert_not_called()
+            mock_event_loop_add_writer.assert_not_called()
+            assert nbytes == 4
+            assert ancdata is mocker.sentinel.ancdata
+
+        @PlatformMarkers.supports_socket_recvmsg_into
+        async def test____recv_with_ancillary_into____use_socket_recvmsg_into____blocking_error(
+            self,
+            transport: RawUnixStreamSocketAdapter,
+            mock_stream_socket: MagicMock,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+            mocker: MockerFixture,
+        ) -> None:
+            # Arrange
+            mock_stream_socket.recvmsg_into.side_effect = [
+                BlockingIOError,
+                BlockingIOError,
+                (4, mocker.sentinel.ancdata, 0, "/path/to/sender.sock"),
+            ]
+            buffer = bytearray(1024)
+
+            # Act
+            nbytes, ancdata = await transport.recv_with_ancillary_into(buffer, 2048)
+
+            # Assert
+            assert mock_stream_socket.recvmsg_into.mock_calls == [mocker.call([buffer], 2048) for _ in range(3)]
+            assert mock_event_loop_add_reader.call_count == 2
+            mock_event_loop_add_writer.assert_not_called()
+            assert nbytes == 4
+            assert ancdata is mocker.sentinel.ancdata
+
+        @pytest.mark.parametrize("data", [b"packet\n", b""], ids=repr)
+        async def test____send_all____use_event_loop_sock_send_all(
+            self,
+            data: bytes,
+            transport: RawUnixStreamSocketAdapter,
+            mock_stream_socket: MagicMock,
+            mock_event_loop_sock_method: MockedEventLoopSockMethods,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+        ) -> None:
+            # Arrange
+            mock_event_loop_sock_send_all = mock_event_loop_sock_method["sock_sendall"]
+            mock_event_loop_sock_send_all.side_effect = None
+            mock_event_loop_sock_send_all.return_value = None
+
+            # Act
+            await transport.send_all(data)
+
+            # Assert
+            mock_event_loop_sock_send_all.assert_awaited_once_with(mock_stream_socket, data)
+            mock_stream_socket.assert_not_called()
+            mock_event_loop_add_reader.assert_not_called()
+            mock_event_loop_add_writer.assert_not_called()
+
+        @pytest.mark.parametrize("data", [b"packet\n", b""], ids=repr)
+        async def test____send_all____event_loop_sock_send_all_not_implemented____one_shot_call(
+            self,
+            data: bytes,
+            transport: RawUnixStreamSocketAdapter,
+            mock_event_loop_sock_method: MockedEventLoopSockMethods,
+            mock_stream_socket: MagicMock,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+        ) -> None:
+            # Arrange
+            mock_event_loop_sock_method["sock_sendall"].side_effect = NotImplementedError
+            mock_stream_socket.send.side_effect = lambda data: memoryview(data).nbytes
+
+            # Act
+            await transport.send_all(data)
+
+            # Assert
+            mock_stream_socket.send.assert_called_once_with(data)
+            mock_stream_socket.sendall.assert_not_called()
+            mock_event_loop_add_reader.assert_not_called()
+            mock_event_loop_add_writer.assert_not_called()
+
+        async def test____send_all____several_call(
+            self,
+            transport: RawUnixStreamSocketAdapter,
+            mock_event_loop_sock_method: MockedEventLoopSockMethods,
+            mock_stream_socket: MagicMock,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+            mocker: MockerFixture,
+        ) -> None:
+            # Arrange
+            mock_event_loop_sock_method["sock_sendall"].side_effect = NotImplementedError
+            mock_stream_socket.send.side_effect = [
+                len(b"pack"),
+                BlockingIOError,
+                len(b"et"),
+                BlockingIOError,
+                len(b"\n"),
+            ]
+
+            # Act
+            await transport.send_all(b"packet\n")
+
+            # Assert
+            assert mock_stream_socket.send.call_args_list == [
+                mocker.call(b"packet\n"),
+                mocker.call(b"et\n"),
+                mocker.call(b"et\n"),
+                mocker.call(b"\n"),
+                mocker.call(b"\n"),
+            ]
+            mock_stream_socket.sendall.assert_not_called()
+            mock_event_loop_add_reader.assert_not_called()
+            assert mock_event_loop_add_writer.call_count == 2
+
+        @PlatformMarkers.supports_socket_sendmsg
+        async def test____send_all_with_ancillary____default(
+            self,
+            transport: RawUnixStreamSocketAdapter,
+            mock_stream_socket: MagicMock,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+            mocker: MockerFixture,
+        ) -> None:
+            # Arrange
+            chunks: list[list[bytes]] = []
+
+            def sendmsg_side_effect(buffers: Iterable[ReadableBuffer], *args: Any) -> int:
+                buffers = list(buffers)
+                chunks.append(list(map(bytes, buffers)))
+                return sum(memoryview(v).nbytes for v in buffers)
+
+            mock_stream_socket.sendmsg.side_effect = sendmsg_side_effect
+
+            # Act
+            await transport.send_all_with_ancillary(iter([b"data", b"to", b"send"]), mocker.sentinel.ancdata)
+
+            # Assert
+            mock_stream_socket.sendmsg.assert_called_once_with(mocker.ANY, mocker.sentinel.ancdata)
+            mock_event_loop_add_reader.assert_not_called()
+            mock_event_loop_add_writer.assert_not_called()
+            assert chunks == [[b"data", b"to", b"send"]]
+
+        @PlatformMarkers.supports_socket_sendmsg
+        async def test____send_all_with_ancillary____message_too_long(
+            self,
+            transport: RawUnixStreamSocketAdapter,
+            mock_stream_socket: MagicMock,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+            mocker: MockerFixture,
+        ) -> None:
+            # Arrange
+            chunks: list[list[bytes]] = []
+
+            def sendmsg_side_effect(buffers: Iterable[ReadableBuffer], *args: Any) -> int:
+                buffers = list(buffers)
+                chunks.append(list(map(bytes, buffers)))
+                return min(sum(memoryview(v).nbytes for v in buffers), 3)
+
+            mock_stream_socket.sendmsg.side_effect = sendmsg_side_effect
+
+            # Act
+            with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EMSGSIZE):
+                await transport.send_all_with_ancillary(iter([b"data", b"to", b"send"]), mocker.sentinel.ancdata)
+
+            # Assert
+            mock_stream_socket.sendmsg.assert_called_once_with(mocker.ANY, mocker.sentinel.ancdata)
+            mock_event_loop_add_reader.assert_not_called()
+            mock_event_loop_add_writer.assert_not_called()
+            assert chunks == [[b"data", b"to", b"send"]]
+
+        @PlatformMarkers.supports_socket_sendmsg
+        @pytest.mark.usefixtures("SC_IOV_MAX")
+        @pytest.mark.parametrize("SC_IOV_MAX", [2], ids=lambda p: f"SC_IOV_MAX=={p}", indirect=True)
+        async def test____send_all_with_ancillary____message_too_long____nb_buffers_greather_than_SC_IOV_MAX(
+            self,
+            transport: RawUnixStreamSocketAdapter,
+            mock_stream_socket: MagicMock,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+            mocker: MockerFixture,
+        ) -> None:
+            # Arrange
+            chunks: list[list[bytes]] = []
+
+            def sendmsg_side_effect(buffers: Iterable[ReadableBuffer], *args: Any) -> int:
+                buffers = list(buffers)
+                chunks.append(list(map(bytes, buffers)))
+                return sum(memoryview(v).nbytes for v in buffers)
+
+            mock_stream_socket.sendmsg.side_effect = sendmsg_side_effect
+
+            # Act
+            with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EMSGSIZE):
+                await transport.send_all_with_ancillary(iter([b"a", b"b", b"c", b"d"]), mocker.sentinel.ancdata)
+
+            # Assert
+            mock_stream_socket.sendmsg.assert_called_once_with(mocker.ANY, mocker.sentinel.ancdata)
+            mock_event_loop_add_reader.assert_not_called()
+            mock_event_loop_add_writer.assert_not_called()
+            assert chunks == [[b"a", b"b"]]
+
+        @PlatformMarkers.supports_socket_sendmsg
+        @pytest.mark.parametrize("data_is_iterator", [False, True], ids=lambda p: f"data_is_iterator=={p}")
+        @pytest.mark.parametrize("ancillary_data_is_iterator", [False, True], ids=lambda p: f"ancillary_data_is_iterator=={p}")
+        async def test____send_all_with_ancillary____blocking_error____correctly_handle_iterables(
+            self,
+            data_is_iterator: bool,
+            ancillary_data_is_iterator: bool,
+            transport: RawUnixStreamSocketAdapter,
+            mock_stream_socket: MagicMock,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+            mocker: MockerFixture,
+        ) -> None:
+            # Arrange
+            to_raise: list[type[OSError]] = [BlockingIOError]
+            chunks: list[list[bytes]] = []
+            ancillary_data_sent: list[list[Any]] = []
+
+            def sendmsg_side_effect(buffers: Iterable[ReadableBuffer], ancdata: Iterable[Any]) -> int:
+                buffers = list(buffers)
+                ancdata = list(ancdata)
+                if to_raise:
+                    raise to_raise.pop(0)
+                chunks.append(list(map(bytes, buffers)))
+                ancillary_data_sent.append(ancdata)
+                return sum(memoryview(v).nbytes for v in buffers)
+
+            mock_stream_socket.sendmsg.side_effect = sendmsg_side_effect
+
+            data: Iterable[bytes] = [b"data"]
+            if data_is_iterator:
+                data = iter(data)
+            ancillary_data: Iterable[Any] = [mocker.sentinel.ancdata]
+            if ancillary_data_is_iterator:
+                ancillary_data = iter(ancillary_data)
+
+            # Act
+            await transport.send_all_with_ancillary(data, ancillary_data)
+
+            # Assert
+            assert mock_stream_socket.sendmsg.call_count == 2
+            assert mock_event_loop_add_reader.call_count == 0
+            assert mock_event_loop_add_writer.call_count == 1
+            assert chunks == [[b"data"]]
+            assert ancillary_data_sent == [[mocker.sentinel.ancdata]]
+
+        @PlatformMarkers.supports_socket_sendmsg
+        async def test____send_all_from_iterable____use_socket_sendmsg(
+            self,
+            transport: RawUnixStreamSocketAdapter,
+            mock_stream_socket: MagicMock,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+        ) -> None:
+            # Arrange
+            chunks: list[list[bytes]] = []
+
+            def sendmsg_side_effect(buffers: Iterable[ReadableBuffer]) -> int:
+                buffers = list(buffers)
+                chunks.append(list(map(bytes, buffers)))
+                return sum(memoryview(v).nbytes for v in buffers)
+
+            mock_stream_socket.sendmsg.side_effect = sendmsg_side_effect
+
+            # Act
+            await transport.send_all_from_iterable(iter([b"data", b"to", b"send"]))
+
+            # Assert
+            mock_stream_socket.sendmsg.assert_called_once()
+            mock_event_loop_add_reader.assert_not_called()
+            mock_event_loop_add_writer.assert_not_called()
+            assert chunks == [[b"data", b"to", b"send"]]
+
+        @PlatformMarkers.supports_socket_sendmsg
+        @pytest.mark.usefixtures("SC_IOV_MAX")
+        @pytest.mark.parametrize("SC_IOV_MAX", [2], ids=lambda p: f"SC_IOV_MAX=={p}", indirect=True)
+        async def test____send_all_from_iterable____use_socket_sendmsg____nb_buffers_greather_than_SC_IOV_MAX(
+            self,
+            transport: RawUnixStreamSocketAdapter,
+            mock_stream_socket: MagicMock,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+        ) -> None:
+            # Arrange
+            chunks: list[list[bytes]] = []
+
+            def sendmsg_side_effect(buffers: Iterable[ReadableBuffer]) -> int:
+                buffers = list(buffers)
+                chunks.append(list(map(bytes, buffers)))
+                return sum(memoryview(v).nbytes for v in buffers)
+
+            mock_stream_socket.sendmsg.side_effect = sendmsg_side_effect
+
+            # Act
+            await transport.send_all_from_iterable(iter([b"a", b"b", b"c", b"d", b"e"]))
+
+            # Assert
+            assert mock_stream_socket.sendmsg.call_count == 3
+            mock_event_loop_add_reader.assert_not_called()
+            mock_event_loop_add_writer.assert_not_called()
+            assert chunks == [
+                [b"a", b"b"],
+                [b"c", b"d"],
+                [b"e"],
+            ]
+
+        @PlatformMarkers.supports_socket_sendmsg
+        async def test____send_all_from_iterable____use_socket_sendmsg____adjust_leftover_buffer(
+            self,
+            transport: RawUnixStreamSocketAdapter,
+            mock_stream_socket: MagicMock,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+        ) -> None:
+            # Arrange
+            chunks: list[list[bytes]] = []
+
+            def sendmsg_side_effect(buffers: Iterable[ReadableBuffer]) -> int:
+                buffers = list(buffers)
+                chunks.append(list(map(bytes, buffers)))
+                return min(sum(memoryview(v).nbytes for v in buffers), 3)
+
+            mock_stream_socket.sendmsg.side_effect = sendmsg_side_effect
+
+            # Act
+            await transport.send_all_from_iterable(iter([b"abcd", b"efg", b"hijkl", b"mnop"]))
+
+            # Assert
+            assert mock_stream_socket.sendmsg.call_count == 6
+            mock_event_loop_add_reader.assert_not_called()
+            mock_event_loop_add_writer.assert_not_called()
+            assert chunks == [
+                [b"abcd", b"efg", b"hijkl", b"mnop"],
+                [b"d", b"efg", b"hijkl", b"mnop"],
+                [b"g", b"hijkl", b"mnop"],
+                [b"jkl", b"mnop"],
+                [b"mnop"],
+                [b"p"],
+            ]
+
+        @PlatformMarkers.supports_socket_sendmsg
+        async def test____send_all_from_iterable____use_socket_sendmsg____empty_buffer_list(
+            self,
+            transport: RawUnixStreamSocketAdapter,
+            mock_stream_socket: MagicMock,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+        ) -> None:
+            # Arrange
+            chunks: list[list[bytes]] = []
+
+            def sendmsg_side_effect(buffers: Iterable[ReadableBuffer]) -> int:
+                buffers = list(buffers)
+                chunks.append(list(map(bytes, buffers)))
+                return sum(memoryview(v).nbytes for v in buffers)
+
+            mock_stream_socket.sendmsg.side_effect = sendmsg_side_effect
+
+            # Act
+            await transport.send_all_from_iterable(iter([]))
+
+            # Assert
+            mock_stream_socket.send.assert_not_called()
+            mock_stream_socket.sendall.assert_not_called()
+            mock_event_loop_add_reader.assert_not_called()
+            mock_event_loop_add_writer.assert_not_called()
+            assert mock_stream_socket.sendmsg.call_count == 1
+            assert chunks == [[]]
+
+        @PlatformMarkers.supports_socket_sendmsg
+        async def test____send_all_from_iterable____use_socket_sendmsg____blocking_error(
+            self,
+            transport: RawUnixStreamSocketAdapter,
+            mock_stream_socket: MagicMock,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+        ) -> None:
+            # Arrange
+            to_raise: list[type[OSError]] = [BlockingIOError]
+            chunks: list[list[bytes]] = []
+
+            def sendmsg_side_effect(buffers: Iterable[ReadableBuffer]) -> int:
+                if to_raise:
+                    raise to_raise.pop(0)
+                buffers = list(buffers)
+                chunks.append(list(map(bytes, buffers)))
+                return sum(memoryview(v).nbytes for v in buffers)
+
+            mock_stream_socket.sendmsg.side_effect = sendmsg_side_effect
+
+            # Act
+            await transport.send_all_from_iterable(iter([b"data"]))
+
+            # Assert
+            mock_stream_socket.send.assert_not_called()
+            mock_stream_socket.sendall.assert_not_called()
+            mock_event_loop_add_reader.assert_not_called()
+            mock_event_loop_add_writer.assert_called_once()
+            assert mock_stream_socket.sendmsg.call_count == 2
+            assert chunks == [[b"data"]]
+
+        @pytest.mark.parametrize(
+            "os_error",
+            [pytest.param(None)] + list(map(pytest.param, sorted(NOT_CONNECTED_SOCKET_ERRNOS | CLOSED_SOCKET_ERRNOS))),
+            ids=lambda p: errno.errorcode.get(p, repr(p)),
+        )
+        async def test____send_eof____default(
+            self,
+            os_error: int | None,
+            transport: RawUnixStreamSocketAdapter,
+            mock_stream_socket: MagicMock,
+        ) -> None:
+            # Arrange
+            if os_error is not None:
+                mock_stream_socket.shutdown.side_effect = OSError(os_error, os.strerror(os_error))
+
+            # Act
+            await transport.send_eof()
+
+            # Assert
+            mock_stream_socket.shutdown.assert_called_once_with(SHUT_WR)
+
+        async def test____send_eof____os_error(
+            self,
+            transport: RawUnixStreamSocketAdapter,
+            mock_stream_socket: MagicMock,
+        ) -> None:
+            # Arrange
+            mock_stream_socket.shutdown.side_effect = OSError
+
+            # Act & Assert
+            with pytest.raises(OSError):
+                await transport.send_eof()
+
+        async def test____send_eof____transport_closed(
+            self,
+            transport: RawUnixStreamSocketAdapter,
+            mock_stream_socket: MagicMock,
+        ) -> None:
+            # Arrange
+            await transport.aclose()
+            mock_stream_socket.reset_mock()
+
+            # Act
+            await transport.send_eof()
+
+            # Assert
+            mock_stream_socket.shutdown.assert_not_called()
+
+        async def test____send_eof____task_cancelling(
+            self,
+            transport: RawUnixStreamSocketAdapter,
+            mock_stream_socket: MagicMock,
+        ) -> None:
+            # Arrange
+
+            # Act
+            with transport.backend().move_on_after(0):
+                await transport.send_eof()
+
+            # Assert
+            mock_stream_socket.shutdown.assert_not_called()
+
+        async def test____extra_attributes____returns_socket_info(
+            self,
+            transport: RawUnixStreamSocketAdapter,
+            local_address: tuple[str, int] | bytes,
+            remote_address: tuple[str, int] | bytes,
+            mock_stream_socket: MagicMock,
+        ) -> None:
+            # Arrange
+
+            # Act & Assert
+            assert getattr(transport.extra(SocketAttribute.socket), "_sock") is mock_stream_socket
+            assert transport.extra(SocketAttribute.family) == mock_stream_socket.family
+            assert transport.extra(SocketAttribute.sockname) == local_address
+            assert transport.extra(SocketAttribute.peername) == remote_address
+
+        async def test____get_backend____returns_linked_instance(
+            self,
+            transport: RawUnixStreamSocketAdapter,
+            asyncio_backend: AsyncIOBackend,
+        ) -> None:
+            # Arrange
+
+            # Act & Assert
+            assert transport.backend() is asyncio_backend
 
 
 _ProtocolDataReceiver: TypeAlias = Callable[[StreamReaderBufferedProtocol, int], Coroutine[Any, Any, bytes]]

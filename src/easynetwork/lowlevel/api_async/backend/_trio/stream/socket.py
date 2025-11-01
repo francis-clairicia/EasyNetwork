@@ -133,17 +133,16 @@ class TrioStreamSocketAdapter(AsyncStreamTransport):
                 buffers: deque[memoryview] = deque(map(memoryview, iterable_of_data))  # type: ignore[arg-type]
                 del iterable_of_data
 
-                if not buffers:
-                    return await self.send_all(b"")
-
                 socket_sendmsg = self.__stream.socket.sendmsg
 
                 with convert_trio_resource_errors(broken_resource_errno=_errno.ECONNABORTED):
-                    while buffers:
+                    while True:
                         # Do not send the islice directly because if sendmsg() blocks,
                         # it would retry with an already consumed iterator.
                         sent = await socket_sendmsg(list(itertools.islice(buffers, constants.SC_IOV_MAX)))
                         _utils.adjust_leftover_buffer(buffers, sent)
+                        if not buffers:
+                            break
 
     async def send_eof(self) -> None:
         with convert_trio_resource_errors(broken_resource_errno=_errno.ECONNABORTED):
