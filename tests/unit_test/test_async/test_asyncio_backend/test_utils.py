@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import asyncio.trsock
 from collections.abc import Callable
 from socket import SocketType
 from typing import TYPE_CHECKING
@@ -57,5 +56,5 @@ async def test____wait_until___event_wakeup(
         await fut
 
     # Assert
-    event_loop_add_event.assert_called_once_with(mock_socket, mocker.ANY, mocker.ANY)
+    event_loop_add_event.assert_called_once_with(mock_socket, mocker.ANY, fut)
     event_loop_remove_event.assert_called_once_with(mock_socket)

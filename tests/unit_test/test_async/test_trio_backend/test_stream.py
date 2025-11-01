@@ -533,6 +533,34 @@ class TestTrioStreamSocketAdapter(BaseTestTrioSocketStream, MixinTestSocketSendM
         assert chunks == [[b"data", b"to", b"send"]]
 
     @PlatformMarkers.supports_socket_sendmsg
+    @pytest.mark.usefixtures("SC_IOV_MAX")
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
+    @pytest.mark.parametrize("SC_IOV_MAX", [2], ids=lambda p: f"SC_IOV_MAX=={p}", indirect=True)
+    async def test____send_all_with_ancillary____message_too_long____nb_buffers_greather_than_SC_IOV_MAX(
+        self,
+        transport: TrioStreamSocketAdapter,
+        mock_trio_socket_stream: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        chunks: list[list[bytes]] = []
+
+        def sendmsg_side_effect(buffers: Iterable[ReadableBuffer], *args: Any) -> int:
+            buffers = list(buffers)
+            chunks.append(list(map(bytes, buffers)))
+            return sum(memoryview(v).nbytes for v in buffers)
+
+        mock_trio_socket_stream.socket.sendmsg.side_effect = sendmsg_side_effect
+
+        # Act
+        with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EMSGSIZE):
+            await transport.send_all_with_ancillary(iter([b"a", b"b", b"c", b"d"]), mocker.sentinel.ancdata)
+
+        # Assert
+        mock_trio_socket_stream.socket.sendmsg.assert_awaited_once_with(mocker.ANY, mocker.sentinel.ancdata)
+        assert chunks == [[b"a", b"b"]]
+
+    @PlatformMarkers.supports_socket_sendmsg
     @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
     async def test____send_all_with_ancillary____convert_trio_ClosedResourceError(
         self,
@@ -673,6 +701,30 @@ class TestTrioStreamSocketAdapter(BaseTestTrioSocketStream, MixinTestSocketSendM
         ]
 
     @PlatformMarkers.supports_socket_sendmsg
+    async def test____send_all_from_iterable____use_socket_sendmsg____empty_buffer_list(
+        self,
+        transport: TrioStreamSocketAdapter,
+        mock_trio_socket_stream: MagicMock,
+    ) -> None:
+        # Arrange
+        chunks: list[list[bytes]] = []
+
+        def sendmsg_side_effect(buffers: Iterable[ReadableBuffer]) -> int:
+            buffers = list(buffers)
+            chunks.append(list(map(bytes, buffers)))
+            return sum(memoryview(v).nbytes for v in buffers)
+
+        mock_trio_socket_stream.socket.sendmsg.side_effect = sendmsg_side_effect
+
+        # Act
+        await transport.send_all_from_iterable(iter([]))
+
+        # Assert
+        mock_trio_socket_stream.send_all.assert_not_called()
+        assert mock_trio_socket_stream.socket.sendmsg.call_count == 1
+        assert chunks == [[]]
+
+    @PlatformMarkers.supports_socket_sendmsg
     async def test____send_all_from_iterable____use_socket_sendmsg____convert_trio_ClosedResourceError(
         self,
         transport: TrioStreamSocketAdapter,
@@ -701,20 +753,6 @@ class TestTrioStreamSocketAdapter(BaseTestTrioSocketStream, MixinTestSocketSendM
         assert mock_trio_socket_stream.send_all.await_args_list == [
             mocker.call(b"".join([b"data", b"to", b"send"])),
         ]
-
-    @PlatformMarkers.supports_socket_sendmsg
-    async def test____send_all_from_iterable____fallback_to_send_all____sendmsg_available_but_empty_buffer_list(
-        self,
-        transport: TrioStreamSocketAdapter,
-        mock_trio_socket_stream: MagicMock,
-    ) -> None:
-        # Arrange
-
-        # Act
-        await transport.send_all_from_iterable(iter([]))
-
-        # Assert
-        mock_trio_socket_stream.send_all.assert_awaited_once_with(b"")
 
     async def test____send_eof____use_stream_eof(
         self,

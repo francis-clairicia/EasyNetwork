@@ -527,6 +527,35 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
         assert chunks == [[b"data", b"to", b"send"]]
 
     @PlatformMarkers.supports_socket_sendmsg
+    @pytest.mark.usefixtures("SC_IOV_MAX")
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
+    @pytest.mark.parametrize("SC_IOV_MAX", [2], ids=lambda p: f"SC_IOV_MAX=={p}", indirect=True)
+    def test____send_all_noblock_with_ancillary____message_too_long____nb_buffers_greather_than_SC_IOV_MAX(
+        self,
+        transport: SocketStreamTransport,
+        mock_stream_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        chunks: list[list[bytes]] = []
+
+        def sendmsg_side_effect(buffers: Iterable[ReadableBuffer], *args: Any) -> int:
+            buffers = list(buffers)
+            chunks.append(list(map(bytes, buffers)))
+            return sum(memoryview(v).nbytes for v in buffers)
+
+        mock_stream_socket.sendmsg.side_effect = sendmsg_side_effect
+
+        # Act
+        with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EMSGSIZE):
+            transport.send_all_noblock_with_ancillary(iter([b"a", b"b", b"c", b"d"]), mocker.sentinel.ancdata)
+
+        # Assert
+        mock_stream_socket.sendmsg.assert_called_once_with(mocker.ANY, mocker.sentinel.ancdata)
+        mock_stream_socket.fileno.assert_not_called()
+        assert chunks == [[b"a", b"b"]]
+
+    @PlatformMarkers.supports_socket_sendmsg
     @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
     @pytest.mark.parametrize("error", [BlockingIOError, InterruptedError])
     def test____send_all_noblock_with_ancillary____blocking_error(
@@ -683,6 +712,31 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
         ]
 
     @PlatformMarkers.supports_socket_sendmsg
+    def test____send_all_from_iterable____use_socket_sendmsg____empty_buffer_list(
+        self,
+        transport: SocketStreamTransport,
+        mock_stream_socket: MagicMock,
+        mock_transport_send_all: MagicMock,
+    ) -> None:
+        # Arrange
+        chunks: list[list[bytes]] = []
+
+        def sendmsg_side_effect(buffers: Iterable[ReadableBuffer]) -> int:
+            buffers = list(buffers)
+            chunks.append(list(map(bytes, buffers)))
+            return sum(memoryview(v).nbytes for v in buffers)
+
+        mock_stream_socket.sendmsg.side_effect = sendmsg_side_effect
+
+        # Act
+        transport.send_all_from_iterable(iter([]), 123456)
+
+        # Assert
+        mock_transport_send_all.assert_not_called()
+        assert mock_stream_socket.sendmsg.call_count == 1
+        assert chunks == [[]]
+
+    @PlatformMarkers.supports_socket_sendmsg
     @pytest.mark.parametrize("error", [BlockingIOError, InterruptedError])
     def test____send_all_from_iterable____use_socket_sendmsg____blocking_error(
         self,
@@ -733,25 +787,6 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
         assert mock_transport_send_all.call_args_list == [
             mocker.call(b"".join([b"data", b"to", b"send"]), mocker.ANY),
         ]
-
-    @PlatformMarkers.supports_socket_sendmsg
-    def test____send_all_from_iterable____fallback_to_send_all____sendmsg_available_but_empty_buffer_list(
-        self,
-        transport: SocketStreamTransport,
-        mock_stream_socket: MagicMock,
-        mock_transport_retry: MagicMock,
-        mock_transport_send_all: MagicMock,
-    ) -> None:
-        # Arrange
-
-        # Act
-        transport.send_all_from_iterable(iter([]), 123456)
-
-        # Assert
-        mock_transport_retry.assert_not_called()
-        if hasattr(mock_stream_socket, "sendmsg"):
-            mock_stream_socket.sendmsg.assert_not_called()
-        mock_transport_send_all.assert_called_once_with(b"", 123456)
 
     @pytest.mark.parametrize(
         "os_error",
