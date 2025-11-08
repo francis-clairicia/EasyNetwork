@@ -41,7 +41,7 @@ class BaseTestAsyncSocket:
             "sock_recv": cls.__patch_async_sock_method(event_loop, "sock_recv", "recv", mocker),
             "sock_recv_into": cls.__patch_async_sock_method(event_loop, "sock_recv_into", "recv_into", mocker),
             "sock_recvfrom": cls.__patch_async_sock_method(event_loop, "sock_recvfrom", "recvfrom", mocker),
-            "sock_sendall": cls.__patch_async_sock_method(event_loop, "sock_sendall", "sendall", mocker),
+            "sock_sendall": cls.__patch_async_sock_method(event_loop, "sock_sendall", "send", mocker),
             "sock_sendto": cls.__patch_async_sock_method(event_loop, "sock_sendto", "sendto", mocker),
         }
 
@@ -58,7 +58,8 @@ class BaseTestAsyncSocket:
                 try:
                     return method(*args, **kwargs)
                 except BlockingIOError:
-                    await asyncio.sleep(0)
+                    pass
+                await asyncio.sleep(0)
 
         return mocker.patch.object(event_loop, event_loop_method, side_effect=sock_method_patch)
 

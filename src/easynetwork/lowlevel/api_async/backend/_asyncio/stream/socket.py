@@ -252,7 +252,7 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
         async def send_eof(self) -> None:
             with self._write_task_context("send_eof", accept_closed_sockets=True) as sock:
                 await TaskUtils.coro_yield()
-                if sock is None:
+                if sock is None or sock.fileno() < 0:
                     return
                 try:
                     sock.shutdown(_socket.SHUT_WR)

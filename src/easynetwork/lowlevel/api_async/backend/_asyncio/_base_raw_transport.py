@@ -28,6 +28,7 @@ from collections.abc import Awaitable, Callable, Iterator, Mapping
 from types import MappingProxyType
 from typing import Any, Literal, TypeVar, overload
 
+from .....exceptions import BusyResourceError
 from .... import _utils, socket as socket_tools
 from ...transports.abc import AsyncBaseTransport
 from ..abc import AsyncBackend, CancelScope
@@ -44,7 +45,7 @@ class BaseRawSocketTransport(AsyncBaseTransport):
         "__socket",
         "__extra_attributes",
         "__read_scope",
-        "__write_task",
+        "__write_scope",
     )
 
     def __init__(
@@ -61,7 +62,7 @@ class BaseRawSocketTransport(AsyncBaseTransport):
         self.__extra_attributes = MappingProxyType(socket_tools._get_socket_extra(trsock, wrap_in_proxy=False))
 
         self.__read_scope: CancelScope | None = None
-        self.__write_task: asyncio.Future[None] | None = None
+        self.__write_scope: tuple[CancelScope, asyncio.Future[None]] | None = None
 
     def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
         try:
@@ -84,8 +85,13 @@ class BaseRawSocketTransport(AsyncBaseTransport):
             if self.__read_scope is not None:
                 self.__read_scope.cancel()
                 await TaskUtils.coro_yield()
-            if self.__write_task is not None:
-                await asyncio.shield(self.__write_task)
+            if self.__write_scope is not None:
+                write_scope, write_fut = self.__write_scope
+                try:
+                    await asyncio.shield(write_fut)
+                except self.__backend.get_cancelled_exc_class():
+                    write_scope.cancel()
+                    raise
 
     async def _sock_recv(
         self,
@@ -167,7 +173,7 @@ class BaseRawSocketTransport(AsyncBaseTransport):
     @contextlib.contextmanager
     def _read_task_context(self, requester: str, /) -> Iterator[_socket.socket]:
         if self.__read_scope is not None:
-            raise RuntimeError(f"{requester}() called while another coroutine is already waiting for incoming data")
+            raise BusyResourceError(f"{requester}() called while another coroutine is already waiting for incoming data")
         sock = self.__socket
         if sock is None:
             raise _utils.error_from_errno(_errno.EBADF)
@@ -211,22 +217,27 @@ class BaseRawSocketTransport(AsyncBaseTransport):
         loop: asyncio.AbstractEventLoop | None = None,
         accept_closed_sockets: bool = False,
     ) -> Iterator[_socket.socket | None]:
-        if self.__write_task is not None:
-            raise RuntimeError(f"{requester}() called while another coroutine is already sending data")
+        if self.__write_scope is not None:
+            raise BusyResourceError(f"{requester}() called while another coroutine is already sending data")
         sock = self.__socket
         if sock is None and not accept_closed_sockets:
             raise _utils.error_from_errno(_errno.EBADF)
 
         if loop is None:
             loop = asyncio.get_running_loop()
-        self.__write_task = f = loop.create_future()
-        try:
+        with self.__backend.open_cancel_scope() as scope:
+            f = loop.create_future()
+            self.__write_scope = (scope, f)
             try:
-                yield sock
+                try:
+                    yield sock
+                finally:
+                    f.set_result(None)
             finally:
-                f.set_result(None)
-        finally:
-            self.__write_task = None
+                self.__write_scope = None
+        if scope.cancelled_caught():
+            # aclose() cancelled the scope
+            raise _utils.error_from_errno(_errno.EBADF)
 
     def backend(self) -> AsyncBackend:
         return self.__backend
