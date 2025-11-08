@@ -27,6 +27,7 @@ from easynetwork.lowlevel.api_async.backend._asyncio.stream.socket import (
     StreamReaderBufferedProtocol,
 )
 from easynetwork.lowlevel.api_async.backend._asyncio.tasks import CancelScope, TaskGroup as AsyncIOTaskGroup
+from easynetwork.lowlevel.api_async.transports.utils import aclose_forcefully
 from easynetwork.lowlevel.constants import (
     ACCEPT_CAPACITY_ERRNOS,
     CLOSED_SOCKET_ERRNOS,
@@ -1234,6 +1235,29 @@ if sys.platform != "win32":
             mock_event_loop_add_writer.assert_not_called()
             assert data == b"data"
 
+        async def test____recv____transport_closed(
+            self,
+            transport: RawUnixStreamSocketAdapter,
+            mock_stream_socket: MagicMock,
+            mock_event_loop_sock_method: MockedEventLoopSockMethods,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+        ) -> None:
+            # Arrange
+            mock_event_loop_sock_recv = mock_event_loop_sock_method["sock_recv"]
+            await transport.aclose()
+            mock_stream_socket.reset_mock()
+
+            # Act & Assert
+            with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EBADF):
+                await transport.recv(1024)
+
+            # Assert
+            mock_event_loop_sock_recv.assert_not_called()
+            mock_stream_socket.assert_not_called()
+            mock_event_loop_add_reader.assert_not_called()
+            mock_event_loop_add_writer.assert_not_called()
+
         async def test____recv_into____use_event_loop_sock_recv_into(
             self,
             transport: RawUnixStreamSocketAdapter,
@@ -1303,6 +1327,29 @@ if sys.platform != "win32":
             mock_event_loop_add_writer.assert_not_called()
             assert nbytes == 4
 
+        async def test____recv_into____transport_closed(
+            self,
+            transport: RawUnixStreamSocketAdapter,
+            mock_stream_socket: MagicMock,
+            mock_event_loop_sock_method: MockedEventLoopSockMethods,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+        ) -> None:
+            # Arrange
+            mock_event_loop_sock_recv_into = mock_event_loop_sock_method["sock_recv_into"]
+            await transport.aclose()
+            mock_stream_socket.reset_mock()
+
+            # Act & Assert
+            with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EBADF):
+                await transport.recv_into(bytearray(1024))
+
+            # Assert
+            mock_event_loop_sock_recv_into.assert_not_called()
+            mock_stream_socket.assert_not_called()
+            mock_event_loop_add_reader.assert_not_called()
+            mock_event_loop_add_writer.assert_not_called()
+
         @PlatformMarkers.supports_socket_recvmsg
         async def test____recv_with_ancillary____use_socket_recvmsg(
             self,
@@ -1350,6 +1397,27 @@ if sys.platform != "win32":
             mock_event_loop_add_writer.assert_not_called()
             assert data == b"data"
             assert ancdata is mocker.sentinel.ancdata
+
+        @PlatformMarkers.supports_socket_recvmsg
+        async def test____recv_with_ancillary____transport_closed(
+            self,
+            transport: RawUnixStreamSocketAdapter,
+            mock_stream_socket: MagicMock,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+        ) -> None:
+            # Arrange
+            await transport.aclose()
+            mock_stream_socket.reset_mock()
+
+            # Act & Assert
+            with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EBADF):
+                await transport.recv_with_ancillary(1024, 2048)
+
+            # Assert
+            mock_stream_socket.assert_not_called()
+            mock_event_loop_add_reader.assert_not_called()
+            mock_event_loop_add_writer.assert_not_called()
 
         @PlatformMarkers.supports_socket_recvmsg_into
         async def test____recv_with_ancillary_into____use_socket_recvmsg_into(
@@ -1400,6 +1468,27 @@ if sys.platform != "win32":
             mock_event_loop_add_writer.assert_not_called()
             assert nbytes == 4
             assert ancdata is mocker.sentinel.ancdata
+
+        @PlatformMarkers.supports_socket_recvmsg_into
+        async def test____recv_with_ancillary_into____transport_closed(
+            self,
+            transport: RawUnixStreamSocketAdapter,
+            mock_stream_socket: MagicMock,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+        ) -> None:
+            # Arrange
+            await transport.aclose()
+            mock_stream_socket.reset_mock()
+
+            # Act & Assert
+            with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EBADF):
+                await transport.recv_with_ancillary_into(bytearray(1024), 2048)
+
+            # Assert
+            mock_stream_socket.assert_not_called()
+            mock_event_loop_add_reader.assert_not_called()
+            mock_event_loop_add_writer.assert_not_called()
 
         @pytest.mark.parametrize("data", [b"packet\n", b""], ids=repr)
         async def test____send_all____use_event_loop_sock_send_all(
@@ -1481,6 +1570,29 @@ if sys.platform != "win32":
             mock_stream_socket.sendall.assert_not_called()
             mock_event_loop_add_reader.assert_not_called()
             assert mock_event_loop_add_writer.call_count == 2
+
+        async def test____send_all____transport_closed(
+            self,
+            transport: RawUnixStreamSocketAdapter,
+            mock_stream_socket: MagicMock,
+            mock_event_loop_sock_method: MockedEventLoopSockMethods,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+        ) -> None:
+            # Arrange
+            mock_event_loop_sock_send_all = mock_event_loop_sock_method["sock_sendall"]
+            await transport.aclose()
+            mock_stream_socket.reset_mock()
+
+            # Act & Assert
+            with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EBADF):
+                await transport.send_all(b"data")
+
+            # Assert
+            mock_event_loop_sock_send_all.assert_not_called()
+            mock_stream_socket.assert_not_called()
+            mock_event_loop_add_reader.assert_not_called()
+            mock_event_loop_add_writer.assert_not_called()
 
         @PlatformMarkers.supports_socket_sendmsg
         async def test____send_all_with_ancillary____use_socket_sendmsg(
@@ -1615,6 +1727,27 @@ if sys.platform != "win32":
             assert mock_event_loop_add_writer.call_count == 1
             assert chunks == [[b"data"]]
             assert ancillary_data_sent == [[mocker.sentinel.ancdata]]
+
+        @PlatformMarkers.supports_socket_sendmsg
+        async def test____send_all_with_ancillary____transport_closed(
+            self,
+            transport: RawUnixStreamSocketAdapter,
+            mock_stream_socket: MagicMock,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+        ) -> None:
+            # Arrange
+            await transport.aclose()
+            mock_stream_socket.reset_mock()
+
+            # Act & Assert
+            with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EBADF):
+                await transport.send_all_with_ancillary([b"data"], [])
+
+            # Assert
+            mock_stream_socket.assert_not_called()
+            mock_event_loop_add_reader.assert_not_called()
+            mock_event_loop_add_writer.assert_not_called()
 
         @PlatformMarkers.supports_socket_sendmsg
         async def test____send_all_from_iterable____use_socket_sendmsg(
@@ -1771,6 +1904,27 @@ if sys.platform != "win32":
             assert mock_stream_socket.sendmsg.call_count == 2
             assert chunks == [[b"data"]]
 
+        @PlatformMarkers.supports_socket_sendmsg
+        async def test____send_all_from_iterable____transport_closed(
+            self,
+            transport: RawUnixStreamSocketAdapter,
+            mock_stream_socket: MagicMock,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+        ) -> None:
+            # Arrange
+            await transport.aclose()
+            mock_stream_socket.reset_mock()
+
+            # Act & Assert
+            with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EBADF):
+                await transport.send_all_from_iterable([b"data"])
+
+            # Assert
+            mock_stream_socket.assert_not_called()
+            mock_event_loop_add_reader.assert_not_called()
+            mock_event_loop_add_writer.assert_not_called()
+
         @pytest.mark.parametrize(
             "os_error",
             [pytest.param(None)] + list(map(pytest.param, sorted(NOT_CONNECTED_SOCKET_ERRNOS | CLOSED_SOCKET_ERRNOS))),
@@ -1832,6 +1986,279 @@ if sys.platform != "win32":
 
             # Assert
             mock_stream_socket.shutdown.assert_not_called()
+
+        @pytest.mark.parametrize(
+            "recv_method",
+            [
+                pytest.param("recv"),
+                pytest.param("recv_into"),
+                pytest.param("recv_with_ancillary", marks=[PlatformMarkers.supports_socket_recvmsg]),
+                pytest.param("recv_with_ancillary_into", marks=[PlatformMarkers.supports_socket_recvmsg_into]),
+            ],
+        )
+        @pytest.mark.parametrize("force_close", [pytest.param(False, id="aclose"), pytest.param(True, id="aclose_forcefully")])
+        async def test____special_case____recv____close_while_reading(
+            self,
+            recv_method: str,
+            force_close: bool,
+            transport: RawUnixStreamSocketAdapter,
+            mock_stream_socket: MagicMock,
+        ) -> None:
+            # Arrange
+            mock_sock_recv_method: MagicMock
+            match recv_method:
+                case "recv":
+                    mock_sock_recv_method = mock_stream_socket.recv
+
+                    async def recv_coroutine(transport: RawUnixStreamSocketAdapter) -> None:
+                        await transport.recv(1024)
+
+                case "recv_into":
+                    mock_sock_recv_method = mock_stream_socket.recv_into
+
+                    async def recv_coroutine(transport: RawUnixStreamSocketAdapter) -> None:
+                        await transport.recv_into(bytearray(1024))
+
+                case "recv_with_ancillary":
+                    mock_sock_recv_method = mock_stream_socket.recvmsg
+
+                    async def recv_coroutine(transport: RawUnixStreamSocketAdapter) -> None:
+                        await transport.recv_with_ancillary(1024, 2048)
+
+                case "recv_with_ancillary_into":
+                    mock_sock_recv_method = mock_stream_socket.recvmsg_into
+
+                    async def recv_coroutine(transport: RawUnixStreamSocketAdapter) -> None:
+                        await transport.recv_with_ancillary_into(bytearray(1024), 2048)
+
+                case _:
+                    pytest.fail(recv_method)
+
+            with self._set_sock_method_in_blocking_state(mock_sock_recv_method):
+                busy_method_task = await self._busy_socket_task(recv_coroutine(transport), mock_sock_recv_method)
+
+            # Act
+            if force_close:
+                await aclose_forcefully(transport)
+            else:
+                await transport.aclose()
+
+            # Assert
+            with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EBADF):
+                await busy_method_task
+
+        @pytest.mark.parametrize(
+            "busy_recv_method",
+            [
+                pytest.param("recv"),
+                pytest.param("recv_into"),
+                pytest.param("recv_with_ancillary", marks=[PlatformMarkers.supports_socket_recvmsg]),
+                pytest.param("recv_with_ancillary_into", marks=[PlatformMarkers.supports_socket_recvmsg_into]),
+            ],
+            ids=lambda p: f"b:{p}",
+        )
+        @pytest.mark.parametrize(
+            "incoming_recv_method",
+            [
+                pytest.param("recv"),
+                pytest.param("recv_into"),
+                pytest.param("recv_with_ancillary", marks=[PlatformMarkers.supports_socket_recvmsg]),
+                pytest.param("recv_with_ancillary_into", marks=[PlatformMarkers.supports_socket_recvmsg_into]),
+            ],
+            ids=lambda p: f"i:{p}",
+        )
+        async def test____special_case____recv____busy(
+            self,
+            busy_recv_method: str,
+            incoming_recv_method: str,
+            transport: RawUnixStreamSocketAdapter,
+            mock_stream_socket: MagicMock,
+        ) -> None:
+            # Arrange
+            mock_busy_sock_recv_method: MagicMock
+            match busy_recv_method:
+                case "recv":
+                    mock_busy_sock_recv_method = mock_stream_socket.recv
+
+                    async def recv_coroutine(transport: RawUnixStreamSocketAdapter) -> None:
+                        await transport.recv(1024)
+
+                case "recv_into":
+                    mock_busy_sock_recv_method = mock_stream_socket.recv_into
+
+                    async def recv_coroutine(transport: RawUnixStreamSocketAdapter) -> None:
+                        await transport.recv_into(bytearray(1024))
+
+                case "recv_with_ancillary":
+                    mock_busy_sock_recv_method = mock_stream_socket.recvmsg
+
+                    async def recv_coroutine(transport: RawUnixStreamSocketAdapter) -> None:
+                        await transport.recv_with_ancillary(1024, 2048)
+
+                case "recv_with_ancillary_into":
+                    mock_busy_sock_recv_method = mock_stream_socket.recvmsg_into
+
+                    async def recv_coroutine(transport: RawUnixStreamSocketAdapter) -> None:
+                        await transport.recv_with_ancillary_into(bytearray(1024), 2048)
+
+                case _:
+                    pytest.fail(busy_recv_method)
+
+            with self._set_sock_method_in_blocking_state(mock_busy_sock_recv_method):
+                busy_method_task = await self._busy_socket_task(recv_coroutine(transport), mock_busy_sock_recv_method)
+                # Cancel now for teardown speed-up.
+                busy_method_task.cancel()
+
+            # Act & Assert
+            with pytest.raises(
+                BusyResourceError,
+                match=r"^%s\(\) called while another coroutine is already waiting for incoming data" % incoming_recv_method,
+            ):
+                match incoming_recv_method:
+                    case "recv":
+                        await transport.recv(1024)
+                    case "recv_into":
+                        await transport.recv_into(bytearray(1024))
+                    case "recv_with_ancillary":
+                        await transport.recv_with_ancillary(1024, 2048)
+                    case "recv_with_ancillary_into":
+                        await transport.recv_with_ancillary_into(bytearray(1024), 2048)
+                    case _:
+                        pytest.fail(incoming_recv_method)
+            mock_stream_socket.assert_not_called()
+
+        @pytest.mark.parametrize(
+            "send_method",
+            [
+                pytest.param("send_all"),
+                pytest.param("send_all_with_ancillary", marks=[PlatformMarkers.supports_socket_sendmsg]),
+                pytest.param("send_all_from_iterable", marks=[PlatformMarkers.supports_socket_sendmsg]),
+            ],
+        )
+        @pytest.mark.parametrize("force_close", [pytest.param(False, id="aclose"), pytest.param(True, id="aclose_forcefully")])
+        async def test____special_case____send____close_while_writing(
+            self,
+            send_method: str,
+            force_close: bool,
+            transport: RawUnixStreamSocketAdapter,
+            mock_stream_socket: MagicMock,
+        ) -> None:
+            # Arrange
+            mock_sock_send_method: MagicMock
+            match send_method:
+                case "send_all":
+                    mock_sock_send_method = mock_stream_socket.send
+                    mock_sock_send_method.side_effect = lambda data: memoryview(data).nbytes
+
+                    async def send_coroutine(transport: RawUnixStreamSocketAdapter) -> None:
+                        await transport.send_all(b"data")
+
+                case "send_all_with_ancillary":
+                    mock_sock_send_method = mock_stream_socket.sendmsg
+                    mock_sock_send_method.side_effect = lambda buffers, *args: sum(memoryview(v).nbytes for v in buffers)
+
+                    async def send_coroutine(transport: RawUnixStreamSocketAdapter) -> None:
+                        await transport.send_all_with_ancillary([b"data"], [])
+
+                case "send_all_from_iterable":
+                    mock_sock_send_method = mock_stream_socket.sendmsg
+                    mock_sock_send_method.side_effect = lambda buffers, *args: sum(memoryview(v).nbytes for v in buffers)
+
+                    async def send_coroutine(transport: RawUnixStreamSocketAdapter) -> None:
+                        await transport.send_all_from_iterable([b"data"])
+
+                case _:
+                    pytest.fail(send_method)
+
+            with self._set_sock_method_in_blocking_state(mock_sock_send_method):
+                busy_method_task = await self._busy_socket_task(send_coroutine(transport), mock_sock_send_method)
+
+            # Act
+            if force_close:
+                with self._set_sock_method_in_blocking_state(mock_sock_send_method):
+                    await aclose_forcefully(transport)
+            else:
+                await transport.aclose()
+
+            # Assert
+            with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EBADF) if force_close else contextlib.nullcontext():
+                await busy_method_task
+
+        @pytest.mark.parametrize(
+            "busy_send_method",
+            [
+                pytest.param("send_all"),
+                pytest.param("send_all_with_ancillary", marks=[PlatformMarkers.supports_socket_sendmsg]),
+                pytest.param("send_all_from_iterable", marks=[PlatformMarkers.supports_socket_sendmsg]),
+            ],
+            ids=lambda p: f"b:{p}",
+        )
+        @pytest.mark.parametrize(
+            "incoming_send_method",
+            [
+                pytest.param("send_all"),
+                pytest.param("send_all_with_ancillary", marks=[PlatformMarkers.supports_socket_sendmsg]),
+                pytest.param("send_all_from_iterable", marks=[PlatformMarkers.supports_socket_sendmsg]),
+            ],
+            ids=lambda p: f"i:{p}",
+        )
+        async def test____special_case____send____busy(
+            self,
+            busy_send_method: str,
+            incoming_send_method: str,
+            transport: RawUnixStreamSocketAdapter,
+            mock_stream_socket: MagicMock,
+        ) -> None:
+            # Arrange
+            mock_busy_sock_send_method: MagicMock
+            match busy_send_method:
+                case "send_all":
+                    mock_busy_sock_send_method = mock_stream_socket.send
+                    mock_busy_sock_send_method.side_effect = lambda data: memoryview(data).nbytes
+
+                    async def send_coroutine(transport: RawUnixStreamSocketAdapter) -> None:
+                        await transport.send_all(b"data")
+
+                case "send_all_with_ancillary":
+                    mock_busy_sock_send_method = mock_stream_socket.sendmsg
+                    mock_busy_sock_send_method.side_effect = lambda buffers, *args: sum(memoryview(v).nbytes for v in buffers)
+
+                    async def send_coroutine(transport: RawUnixStreamSocketAdapter) -> None:
+                        await transport.send_all_with_ancillary([b"data"], [])
+
+                case "send_all_from_iterable":
+                    mock_busy_sock_send_method = mock_stream_socket.sendmsg
+                    mock_busy_sock_send_method.side_effect = lambda buffers, *args: sum(memoryview(v).nbytes for v in buffers)
+
+                    async def send_coroutine(transport: RawUnixStreamSocketAdapter) -> None:
+                        await transport.send_all_from_iterable([b"data"])
+
+                case _:
+                    pytest.fail(busy_send_method)
+
+            with self._set_sock_method_in_blocking_state(mock_busy_sock_send_method):
+                busy_method_task = await self._busy_socket_task(send_coroutine(transport), mock_busy_sock_send_method)
+                # Cancel now for teardown speed-up.
+                busy_method_task.cancel()
+
+            # Act & Assert
+            with pytest.raises(
+                BusyResourceError,
+                match=r"^%s\(\) called while another coroutine is already sending data" % incoming_send_method,
+            ):
+                match incoming_send_method:
+                    case "send_all":
+                        mock_stream_socket.send.side_effect = lambda data: memoryview(data).nbytes
+                        await transport.send_all(b"data")
+                    case "send_all_with_ancillary":
+                        mock_stream_socket.sendmsg.side_effect = lambda buffers, *args: sum(memoryview(v).nbytes for v in buffers)
+                        await transport.send_all_with_ancillary([b"data"], [])
+                    case "send_all_from_iterable":
+                        mock_stream_socket.sendmsg.side_effect = lambda buffers, *args: sum(memoryview(v).nbytes for v in buffers)
+                        await transport.send_all_from_iterable([b"data"])
+                    case _:
+                        pytest.fail(incoming_send_method)
+            mock_stream_socket.assert_not_called()
 
         async def test____extra_attributes____returns_socket_info(
             self,

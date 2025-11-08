@@ -144,7 +144,6 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
             super().__init__(backend, socket)
 
             self.__send_lock: asyncio.Lock = asyncio.Lock()
-            self.__serve_guard: _utils.ResourceGuard = _utils.ResourceGuard(f"{self.__class__.__name__}.serve() awaited twice.")
 
         async def serve(
             self,
@@ -152,7 +151,6 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
             task_group: TaskGroup | None = None,
         ) -> NoReturn:
             async with contextlib.AsyncExitStack() as stack:
-                stack.enter_context(self.__serve_guard)
                 if task_group is None:
                     task_group = await stack.enter_async_context(self.backend().create_task_group())
 
@@ -173,7 +171,6 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
                 task_group: TaskGroup | None = None,
             ) -> NoReturn:
                 async with contextlib.AsyncExitStack() as stack:
-                    stack.enter_context(self.__serve_guard)
                     if task_group is None:
                         task_group = await stack.enter_async_context(self.backend().create_task_group())
 
