@@ -154,7 +154,7 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
             async with contextlib.AsyncExitStack() as stack:
                 stack.enter_context(self.__serve_guard)
                 if task_group is None:
-                    task_group = await stack.enter_async_context(self.__backend.create_task_group())
+                    task_group = await stack.enter_async_context(self.backend().create_task_group())
 
                 MAX_DATAGRAM_BUFSIZE = constants.MAX_DATAGRAM_BUFSIZE
 
@@ -175,7 +175,7 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
                 async with contextlib.AsyncExitStack() as stack:
                     stack.enter_context(self.__serve_guard)
                     if task_group is None:
-                        task_group = await stack.enter_async_context(self.__backend.create_task_group())
+                        task_group = await stack.enter_async_context(self.backend().create_task_group())
 
                     MAX_DATAGRAM_BUFSIZE = constants.MAX_DATAGRAM_BUFSIZE
 
