@@ -1483,7 +1483,7 @@ if sys.platform != "win32":
             assert mock_event_loop_add_writer.call_count == 2
 
         @PlatformMarkers.supports_socket_sendmsg
-        async def test____send_all_with_ancillary____default(
+        async def test____send_all_with_ancillary____use_socket_sendmsg(
             self,
             transport: RawUnixStreamSocketAdapter,
             mock_stream_socket: MagicMock,
