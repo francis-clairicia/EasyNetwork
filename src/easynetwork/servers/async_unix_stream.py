@@ -362,6 +362,12 @@ else:
                     raise ClientClosedError("Closed client")
                 await self.__client.send_packet(packet)
 
+        async def send_packet_with_ancillary(self, packet: _T_Response, ancillary_data: Any, /) -> None:
+            async with self.__send_lock:
+                if self.__closing:
+                    raise ClientClosedError("Closed client")
+                await self.__client.send_packet_with_ancillary(packet, ancillary_data)
+
         def backend(self) -> AsyncBackend:
             return self.__client.backend()
 

@@ -34,6 +34,7 @@ from typing import TYPE_CHECKING, Any, Generic
 
 from .._typevars import _T_Request, _T_Response
 from ..lowlevel import socket as socket_tools, typed_attr
+from ..lowlevel.request_handler import RecvParams
 
 if TYPE_CHECKING:
     from ..lowlevel.api_async.backend.abc import AsyncBackend
@@ -108,6 +109,32 @@ class AsyncBaseClientInterface(typed_attr.TypedAttributeProvider, Generic[_T_Res
             OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
         """
         raise NotImplementedError
+
+    async def send_packet_with_ancillary(self, packet: _T_Response, ancillary_data: Any, /) -> None:
+        """
+        Sends `packet` to the remote endpoint with ancillary data. Does not require task synchronization.
+
+        .. versionadded:: NEXT_VERSION
+
+        Warning:
+            In the case of a cancellation, it is impossible to know if all the packet data has been sent.
+            This would leave the connection in an inconsistent state.
+
+        Parameters:
+            packet: the Python object to send.
+            ancillary_data: The ancillary data to send along with the message.
+
+        Raises:
+            ClientClosedError: the client object is closed.
+            ConnectionError: connection unexpectedly closed during operation.
+                             You should not attempt any further operation and close the client object.
+            OSError: Data too big to be sent at once.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
+            UnsupportedOperation: This client does not have ancillary data support.
+        """
+        from ..exceptions import UnsupportedOperation
+
+        raise UnsupportedOperation("This client does not have ancillary data support.")
 
     @abstractmethod
     def is_closing(self) -> bool:
@@ -192,7 +219,7 @@ class AsyncStreamRequestHandler(Generic[_T_Request, _T_Response], metaclass=ABCM
         pass
 
     @abstractmethod
-    def handle(self, client: AsyncStreamClient[_T_Response], /) -> AsyncGenerator[float | None, _T_Request]:
+    def handle(self, client: AsyncStreamClient[_T_Response], /) -> AsyncGenerator[float | RecvParams | None, _T_Request]:
         """
         This function must do all the work required to service a request.
 
@@ -217,11 +244,17 @@ class AsyncStreamRequestHandler(Generic[_T_Request, _T_Response], metaclass=ABCM
             There is one exception: if the generator returns before the first :keyword:`yield` statement,
             the connection is forcibly closed.
 
+        .. versionchanged:: NEXT_VERSION
+            The async generator may (and should) yield a :class:`.RecvParams` object.
+
+        .. deprecated:: NEXT_VERSION
+            If the async generator yields a number, a :exc:`DeprecationWarning` will be emitted. Use :class:`.RecvParams` instead.
+
         Parameters:
             client: An interface to communicate with the remote endpoint.
 
         Yields:
-            :data:`None` or a number interpreted as the timeout delay.
+            :data:`None` or a number interpreted as the timeout delay or a :class:`.RecvParams` object.
         """
         raise NotImplementedError
 
@@ -229,7 +262,7 @@ class AsyncStreamRequestHandler(Generic[_T_Request, _T_Response], metaclass=ABCM
         self,
         client: AsyncStreamClient[_T_Response],
         /,
-    ) -> Coroutine[Any, Any, None] | AsyncGenerator[float | None, _T_Request]:
+    ) -> Coroutine[Any, Any, None] | AsyncGenerator[float | RecvParams | None, _T_Request]:
         """
         Called once the client is connected to perform any initialization actions required.
         The default implementation does nothing.
@@ -253,6 +286,12 @@ class AsyncStreamRequestHandler(Generic[_T_Request, _T_Response], metaclass=ABCM
 
         In the latter case, as for :meth:`handle`, :meth:`on_connection` can :keyword:`yield` whenever a request from
         the `client` is needed.
+
+        .. versionchanged:: NEXT_VERSION
+            The async generator may (and should) yield a :class:`.RecvParams` object.
+
+        .. deprecated:: NEXT_VERSION
+            If the async generator yields a number, a :exc:`DeprecationWarning` will be emitted. Use :class:`.RecvParams` instead.
 
         Parameters:
             client: An interface to communicate with the remote endpoint.
@@ -307,7 +346,7 @@ class AsyncDatagramRequestHandler(Generic[_T_Request, _T_Response], metaclass=AB
         pass
 
     @abstractmethod
-    def handle(self, client: AsyncDatagramClient[_T_Response], /) -> AsyncGenerator[float | None, _T_Request]:
+    def handle(self, client: AsyncDatagramClient[_T_Response], /) -> AsyncGenerator[float | RecvParams | None, _T_Request]:
         """
         This function must do all the work required to service a request.
 
@@ -342,10 +381,16 @@ class AsyncDatagramRequestHandler(Generic[_T_Request, _T_Response], metaclass=AB
             This is useful when a client that you do not expect to see sends something; the datagrams are parsed only when
             the generator hits a :keyword:`yield` statement.
 
+        .. versionchanged:: NEXT_VERSION
+            The async generator may (and should) yield a :class:`.RecvParams` object.
+
+        .. deprecated:: NEXT_VERSION
+            If the async generator yields a number, a :exc:`DeprecationWarning` will be emitted. Use :class:`.RecvParams` instead.
+
         Parameters:
             client: An interface to communicate with the remote endpoint.
 
         Yields:
-            :data:`None` or a number interpreted as the timeout delay.
+            :data:`None` or a number interpreted as the timeout delay or a :class:`.RecvParams` object.
         """
         raise NotImplementedError
