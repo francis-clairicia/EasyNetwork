@@ -276,8 +276,8 @@ else:
             """
             Sends `packet` to the remote endpoint. Does not require task synchronization.
 
-            .. versionadded:: NEXT_VERSION
-                `ancillary_data` parameter.
+            .. versionchanged:: NEXT_VERSION
+                Added `ancillary_data` parameter.
 
             Warning:
                 In the case of a cancellation, it is impossible to know if all the packet data has been sent.
@@ -329,8 +329,8 @@ else:
             """
             Waits for a new packet to arrive from the remote endpoint. Does not require task synchronization.
 
-            .. versionadded:: NEXT_VERSION
-                `ancillary_data` and `ancillary_bufsize` parameters.
+            .. versionchanged:: NEXT_VERSION
+                Added `ancillary_data` and `ancillary_bufsize` parameters.
 
             Parameters:
                 ancillary_data: where to write received ancillary data.
