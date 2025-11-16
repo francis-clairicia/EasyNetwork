@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import copy
 import errno
 import os
@@ -24,14 +25,14 @@ if TYPE_CHECKING:
 
 
 if sys.platform != "win32":
-    from socket import AF_UNIX
+    from socket import AF_UNIX, SCM_RIGHTS
 
     from easynetwork.clients.unix_stream import UnixStreamClient, _create_unix_stream_connection
     from easynetwork.exceptions import ClientClosedError, IncrementalDeserializeError, StreamProtocolParseError
     from easynetwork.lowlevel.api_sync.endpoints.stream import StreamEndpoint
     from easynetwork.lowlevel.api_sync.transports.socket import SocketStreamTransport
-    from easynetwork.lowlevel.constants import CLOSED_SOCKET_ERRNOS, DEFAULT_STREAM_BUFSIZE
-    from easynetwork.lowlevel.socket import SocketProxy, UnixCredentials, UnixSocketAddress, _get_socket_extra
+    from easynetwork.lowlevel.constants import CLOSED_SOCKET_ERRNOS, DEFAULT_ANCILLARY_DATA_BUFSIZE, DEFAULT_STREAM_BUFSIZE
+    from easynetwork.lowlevel.socket import SocketAncillary, SocketProxy, UnixCredentials, UnixSocketAddress, _get_socket_extra
 
     class TestUnixStreamClient(BaseTestClient):
         @pytest.fixture(scope="class", params=UNIX_FAMILIES)
@@ -100,7 +101,9 @@ if sys.platform != "win32":
         def mock_stream_endpoint(mocker: MockerFixture) -> MagicMock:
             mock_stream_endpoint = make_transport_mock(mocker=mocker, spec=StreamEndpoint)
             mock_stream_endpoint.recv_packet.return_value = mocker.sentinel.packet
+            mock_stream_endpoint.recv_packet_with_ancillary.return_value = mocker.sentinel.packet
             mock_stream_endpoint.send_packet.return_value = None
+            mock_stream_endpoint.send_packet_with_ancillary.return_value = None
             mock_stream_endpoint.send_eof.return_value = None
             return mock_stream_endpoint
 
@@ -209,6 +212,17 @@ if sys.platform != "win32":
         @staticmethod
         def send_timeout(request: pytest.FixtureRequest) -> float:
             return request.param
+
+        @pytest.fixture(params=["NO_CMSG", "WITH_CMSG"])
+        @staticmethod
+        def ancillary_data(request: pytest.FixtureRequest) -> SocketAncillary | None:
+            match request.param:
+                case "NO_CMSG":
+                    return None
+                case "WITH_CMSG":
+                    return SocketAncillary()
+                case _:
+                    pytest.fail(f"Invalid ancillary_data param: {request.param}")
 
         @pytest.mark.parametrize("max_recv_size", [None, 123456789], ids=lambda p: f"max_recv_size=={p}")
         @pytest.mark.parametrize("retry_interval", [1.0, float("+inf")], ids=lambda p: f"retry_interval=={p}")
@@ -417,14 +431,13 @@ if sys.platform != "win32":
             enotconn_exception = self.configure_socket_mock_to_raise_ENOTCONN(mock_unix_stream_socket)
 
             # Act
-            with pytest.raises(OSError) as exc_info:
+            with pytest.raises(OSError, check=lambda exc: exc.errno == enotconn_exception.errno):
                 _ = UnixStreamClient(
                     mock_unix_stream_socket,
                     protocol=mock_stream_protocol,
                 )
 
             # Assert
-            assert exc_info.value.errno == enotconn_exception.errno
             mock_socket_create_connection.assert_not_called()
             assert mock_unix_stream_socket.mock_calls == [mocker.call.getpeername(), mocker.call.close()]
 
@@ -680,23 +693,36 @@ if sys.platform != "win32":
             self,
             client: UnixStreamClient[Any, Any],
             send_timeout: float | None,
+            ancillary_data: SocketAncillary | None,
             mock_unix_stream_socket: MagicMock,
             mock_stream_endpoint: MagicMock,
             mocker: MockerFixture,
         ) -> None:
             # Arrange
+            if ancillary_data:
+                ancillary_data.add_fds((4, 5, 6))
 
             # Act
-            client.send_packet(mocker.sentinel.packet, timeout=send_timeout)
+            client.send_packet(mocker.sentinel.packet, timeout=send_timeout, ancillary_data=ancillary_data)
 
             # Assert
-            mock_stream_endpoint.send_packet.assert_called_once_with(mocker.sentinel.packet, timeout=send_timeout)
+            if ancillary_data:
+                mock_stream_endpoint.send_packet.assert_not_called()
+                mock_stream_endpoint.send_packet_with_ancillary.assert_called_once_with(
+                    mocker.sentinel.packet,
+                    [(SOL_SOCKET, SCM_RIGHTS, mocker.ANY)],
+                    timeout=send_timeout,
+                )
+            else:
+                mock_stream_endpoint.send_packet.assert_called_once_with(mocker.sentinel.packet, timeout=send_timeout)
+                mock_stream_endpoint.send_packet_with_ancillary.assert_not_called()
             mock_unix_stream_socket.getsockopt.assert_called_once_with(SOL_SOCKET, SO_ERROR)
 
         def test____send_packet____raise_error_saved_in_SO_ERROR_option(
             self,
             client: UnixStreamClient[Any, Any],
             send_timeout: float | None,
+            ancillary_data: SocketAncillary | None,
             mock_unix_stream_socket: MagicMock,
             mock_stream_endpoint: MagicMock,
             mocker: MockerFixture,
@@ -705,18 +731,27 @@ if sys.platform != "win32":
             mock_unix_stream_socket.getsockopt.return_value = errno.EBUSY
 
             # Act
-            with pytest.raises(OSError) as exc_info:
-                client.send_packet(mocker.sentinel.packet, timeout=send_timeout)
+            with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EBUSY):
+                client.send_packet(mocker.sentinel.packet, timeout=send_timeout, ancillary_data=ancillary_data)
 
             # Assert
-            assert exc_info.value.errno == errno.EBUSY
-            mock_stream_endpoint.send_packet.assert_called_once_with(mocker.sentinel.packet, timeout=send_timeout)
+            if ancillary_data:
+                mock_stream_endpoint.send_packet.assert_not_called()
+                mock_stream_endpoint.send_packet_with_ancillary.assert_called_once_with(
+                    mocker.sentinel.packet,
+                    [],
+                    timeout=send_timeout,
+                )
+            else:
+                mock_stream_endpoint.send_packet.assert_called_once_with(mocker.sentinel.packet, timeout=send_timeout)
+                mock_stream_endpoint.send_packet_with_ancillary.assert_not_called()
             mock_unix_stream_socket.getsockopt.assert_called_once_with(SOL_SOCKET, SO_ERROR)
 
         def test____send_packet____closed_client_error(
             self,
             client: UnixStreamClient[Any, Any],
             send_timeout: float | None,
+            ancillary_data: SocketAncillary | None,
             mock_unix_stream_socket: MagicMock,
             mock_stream_endpoint: MagicMock,
             mocker: MockerFixture,
@@ -727,29 +762,37 @@ if sys.platform != "win32":
 
             # Act
             with pytest.raises(ClientClosedError):
-                client.send_packet(mocker.sentinel.packet, timeout=send_timeout)
+                client.send_packet(mocker.sentinel.packet, timeout=send_timeout, ancillary_data=ancillary_data)
 
             # Assert
             mock_stream_endpoint.send_packet.assert_not_called()
+            mock_stream_endpoint.send_packet_with_ancillary.assert_not_called()
             mock_unix_stream_socket.getsockopt.assert_not_called()
 
         def test____send_packet____convert_connection_errors(
             self,
             client: UnixStreamClient[Any, Any],
             send_timeout: float | None,
+            ancillary_data: SocketAncillary | None,
             mock_unix_stream_socket: MagicMock,
             mock_stream_endpoint: MagicMock,
             mocker: MockerFixture,
         ) -> None:
             # Arrange
             mock_stream_endpoint.send_packet.side_effect = ConnectionError
+            mock_stream_endpoint.send_packet_with_ancillary.side_effect = ConnectionError
 
             # Act
             with pytest.raises(ConnectionAbortedError):
-                client.send_packet(mocker.sentinel.packet, timeout=send_timeout)
+                client.send_packet(mocker.sentinel.packet, timeout=send_timeout, ancillary_data=ancillary_data)
 
             # Assert
-            mock_stream_endpoint.send_packet.assert_called_once_with(mocker.sentinel.packet, timeout=send_timeout)
+            if ancillary_data:
+                mock_stream_endpoint.send_packet.assert_not_called()
+                mock_stream_endpoint.send_packet_with_ancillary.assert_called_once()
+            else:
+                mock_stream_endpoint.send_packet.assert_called_once()
+                mock_stream_endpoint.send_packet_with_ancillary.assert_not_called()
             mock_stream_endpoint.close.assert_not_called()
             mock_unix_stream_socket.getsockopt.assert_not_called()
 
@@ -759,22 +802,32 @@ if sys.platform != "win32":
             closed_socket_errno: int,
             client: UnixStreamClient[Any, Any],
             send_timeout: float | None,
+            ancillary_data: SocketAncillary | None,
             mock_unix_stream_socket: MagicMock,
             mock_stream_endpoint: MagicMock,
             mocker: MockerFixture,
         ) -> None:
             # Arrange
-            mock_stream_endpoint.send_packet.side_effect = OSError(closed_socket_errno, os.strerror(closed_socket_errno))
+            expected_error = OSError(closed_socket_errno, os.strerror(closed_socket_errno))
+            mock_stream_endpoint.send_packet.side_effect = expected_error
+            mock_stream_endpoint.send_packet_with_ancillary.side_effect = expected_error
 
             # Act
-            with pytest.raises(OSError) as exc_info:
-                client.send_packet(mocker.sentinel.packet, timeout=send_timeout)
+            with pytest.raises(
+                OSError,
+                check=lambda exc: exc.errno == closed_socket_errno
+                and exc.__notes__ == ["The socket file descriptor was closed unexpectedly."],
+            ):
+                client.send_packet(mocker.sentinel.packet, timeout=send_timeout, ancillary_data=ancillary_data)
 
             # Assert
-            assert exc_info.value.errno == closed_socket_errno
-            assert exc_info.value.__notes__ == ["The socket file descriptor was closed unexpectedly."]
             assert not client.is_closed()
-            mock_stream_endpoint.send_packet.assert_called_once_with(mocker.sentinel.packet, timeout=send_timeout)
+            if ancillary_data:
+                mock_stream_endpoint.send_packet.assert_not_called()
+                mock_stream_endpoint.send_packet_with_ancillary.assert_called_once()
+            else:
+                mock_stream_endpoint.send_packet.assert_called_once()
+                mock_stream_endpoint.send_packet_with_ancillary.assert_not_called()
             mock_stream_endpoint.close.assert_not_called()
             mock_unix_stream_socket.getsockopt.assert_not_called()
 
@@ -817,12 +870,14 @@ if sys.platform != "win32":
             mock_stream_endpoint.send_eof.side_effect = OSError(closed_socket_errno, os.strerror(closed_socket_errno))
 
             # Act
-            with pytest.raises(OSError) as exc_info:
+            with pytest.raises(
+                OSError,
+                check=lambda exc: exc.errno == closed_socket_errno
+                and exc.__notes__ == ["The socket file descriptor was closed unexpectedly."],
+            ):
                 client.send_eof()
 
             # Assert
-            assert exc_info.value.errno == closed_socket_errno
-            assert exc_info.value.__notes__ == ["The socket file descriptor was closed unexpectedly."]
             assert not client.is_closed()
             mock_stream_endpoint.send_eof.assert_called_once_with()
             mock_stream_endpoint.close.assert_not_called()
@@ -831,40 +886,91 @@ if sys.platform != "win32":
             self,
             client: UnixStreamClient[Any, Any],
             recv_timeout: float | None,
+            ancillary_data: SocketAncillary | None,
             mock_stream_endpoint: MagicMock,
             mocker: MockerFixture,
         ) -> None:
             # Arrange
             mock_stream_endpoint.recv_packet.side_effect = [mocker.sentinel.packet]
+            mock_stream_endpoint.recv_packet_with_ancillary.side_effect = [mocker.sentinel.packet]
 
             # Act
-            packet: Any = client.recv_packet(timeout=recv_timeout)
+            packet: Any = client.recv_packet(timeout=recv_timeout, ancillary_data=ancillary_data)
 
             # Assert
-            mock_stream_endpoint.recv_packet.assert_called_once_with(timeout=recv_timeout)
+            if ancillary_data:
+                mock_stream_endpoint.recv_packet.assert_not_called()
+                mock_stream_endpoint.recv_packet_with_ancillary.assert_called_once_with(
+                    DEFAULT_ANCILLARY_DATA_BUFSIZE,
+                    ancillary_data.update_from_raw,
+                    timeout=recv_timeout,
+                )
+            else:
+                mock_stream_endpoint.recv_packet.assert_called_once_with(timeout=recv_timeout)
+                mock_stream_endpoint.recv_packet_with_ancillary.assert_not_called()
             assert packet is mocker.sentinel.packet
+
+        def test____recv_packet____receive_bytes_from_socket____custom_ancillary_bufsize(
+            self,
+            client: UnixStreamClient[Any, Any],
+            recv_timeout: float | None,
+            ancillary_data: SocketAncillary | None,
+            mock_stream_endpoint: MagicMock,
+            mocker: MockerFixture,
+        ) -> None:
+            # Arrange
+
+            # Act
+            packet: Any = None
+            with (
+                pytest.raises(ValueError, match=r"^ancillary_bufsize is only meaningful with ancillary_data")
+                if ancillary_data is None
+                else contextlib.nullcontext()
+            ):
+                packet = client.recv_packet(timeout=recv_timeout, ancillary_bufsize=1234, ancillary_data=ancillary_data)
+
+            # Assert
+            mock_stream_endpoint.recv_packet.assert_not_called()
+            if ancillary_data:
+                mock_stream_endpoint.recv_packet_with_ancillary.assert_called_once_with(
+                    1234,
+                    ancillary_data.update_from_raw,
+                    timeout=recv_timeout,
+                )
+                assert packet is mocker.sentinel.packet
+            else:
+                mock_stream_endpoint.recv_packet_with_ancillary.assert_not_called()
+                assert packet is None
 
         def test____recv_packet____protocol_parse_error(
             self,
             client: UnixStreamClient[Any, Any],
             recv_timeout: float | None,
+            ancillary_data: SocketAncillary | None,
             mock_stream_endpoint: MagicMock,
         ) -> None:
             # Arrange
             expected_error = StreamProtocolParseError(b"", IncrementalDeserializeError("Sorry", b""))
             mock_stream_endpoint.recv_packet.side_effect = [expected_error]
+            mock_stream_endpoint.recv_packet_with_ancillary.side_effect = [expected_error]
 
             # Act
-            with pytest.raises(StreamProtocolParseError) as exc_info:
-                _ = client.recv_packet(timeout=recv_timeout)
+            with pytest.raises(StreamProtocolParseError, check=lambda exc: exc is expected_error):
+                _ = client.recv_packet(timeout=recv_timeout, ancillary_data=ancillary_data)
 
             # Assert
-            assert exc_info.value is expected_error
+            if ancillary_data:
+                mock_stream_endpoint.recv_packet.assert_not_called()
+                mock_stream_endpoint.recv_packet_with_ancillary.assert_called_once()
+            else:
+                mock_stream_endpoint.recv_packet.assert_called_once()
+                mock_stream_endpoint.recv_packet_with_ancillary.assert_not_called()
 
         def test____recv_packet____closed_client_error(
             self,
             client: UnixStreamClient[Any, Any],
             recv_timeout: float | None,
+            ancillary_data: SocketAncillary | None,
             mock_stream_endpoint: MagicMock,
         ) -> None:
             # Arrange
@@ -873,26 +979,34 @@ if sys.platform != "win32":
 
             # Act
             with pytest.raises(ClientClosedError):
-                _ = client.recv_packet(timeout=recv_timeout)
+                _ = client.recv_packet(timeout=recv_timeout, ancillary_data=ancillary_data)
 
             # Assert
             mock_stream_endpoint.recv_packet.assert_not_called()
+            mock_stream_endpoint.recv_packet_with_ancillary.assert_not_called()
 
         def test____recv_packet____convert_connection_errors(
             self,
             client: UnixStreamClient[Any, Any],
             recv_timeout: float | None,
+            ancillary_data: SocketAncillary | None,
             mock_stream_endpoint: MagicMock,
         ) -> None:
             # Arrange
             mock_stream_endpoint.recv_packet.side_effect = ConnectionError
+            mock_stream_endpoint.recv_packet_with_ancillary.side_effect = ConnectionError
 
             # Act
             with pytest.raises(ConnectionAbortedError):
-                _ = client.recv_packet(timeout=recv_timeout)
+                _ = client.recv_packet(timeout=recv_timeout, ancillary_data=ancillary_data)
 
             # Assert
-            mock_stream_endpoint.recv_packet.assert_called_once_with(timeout=recv_timeout)
+            if ancillary_data:
+                mock_stream_endpoint.recv_packet.assert_not_called()
+                mock_stream_endpoint.recv_packet_with_ancillary.assert_called_once()
+            else:
+                mock_stream_endpoint.recv_packet.assert_called_once()
+                mock_stream_endpoint.recv_packet_with_ancillary.assert_not_called()
 
         @pytest.mark.parametrize("closed_socket_errno", sorted(CLOSED_SOCKET_ERRNOS), ids=errno.errorcode.__getitem__)
         def test____recv_packet____convert_closed_socket_errors(
@@ -900,20 +1014,30 @@ if sys.platform != "win32":
             closed_socket_errno: int,
             client: UnixStreamClient[Any, Any],
             recv_timeout: float | None,
+            ancillary_data: SocketAncillary | None,
             mock_stream_endpoint: MagicMock,
         ) -> None:
             # Arrange
-            mock_stream_endpoint.recv_packet.side_effect = OSError(closed_socket_errno, os.strerror(closed_socket_errno))
+            expected_error = OSError(closed_socket_errno, os.strerror(closed_socket_errno))
+            mock_stream_endpoint.recv_packet.side_effect = expected_error
+            mock_stream_endpoint.recv_packet_with_ancillary.side_effect = expected_error
 
             # Act
-            with pytest.raises(OSError) as exc_info:
-                _ = client.recv_packet(timeout=recv_timeout)
+            with pytest.raises(
+                OSError,
+                check=lambda exc: exc.errno == closed_socket_errno
+                and exc.__notes__ == ["The socket file descriptor was closed unexpectedly."],
+            ):
+                _ = client.recv_packet(timeout=recv_timeout, ancillary_data=ancillary_data)
 
             # Assert
-            assert exc_info.value.errno == closed_socket_errno
-            assert exc_info.value.__notes__ == ["The socket file descriptor was closed unexpectedly."]
             assert not client.is_closed()
-            mock_stream_endpoint.recv_packet.assert_called_once_with(timeout=recv_timeout)
+            if ancillary_data:
+                mock_stream_endpoint.recv_packet.assert_not_called()
+                mock_stream_endpoint.recv_packet_with_ancillary.assert_called_once()
+            else:
+                mock_stream_endpoint.recv_packet.assert_called_once()
+                mock_stream_endpoint.recv_packet_with_ancillary.assert_not_called()
             mock_stream_endpoint.close.assert_not_called()
 
         def test____special_case____separate_send_and_receive_locks(
@@ -1069,7 +1193,7 @@ if sys.platform != "win32":
             mock_unix_stream_socket.connect.return_value = None
 
             # Act
-            with pytest.raises(OSError) as exc_info:
+            with pytest.raises(OSError, check=lambda exc: exc.errno == (bind_error.errno or errno.EINVAL)):
                 _ = _create_unix_stream_connection(
                     remote_address,
                     connect_timeout=connect_timeout,
@@ -1082,10 +1206,6 @@ if sys.platform != "win32":
                 mocker.call.bind(local_address),
                 mocker.call.close(),
             ]
-            if bind_error.errno:
-                assert exc_info.value.errno == bind_error.errno
-            else:
-                assert exc_info.value.errno == errno.EINVAL
 
         @pytest.mark.parametrize(
             "remote_address",
@@ -1119,7 +1239,7 @@ if sys.platform != "win32":
             mock_unix_stream_socket.connect.side_effect = connect_error
 
             # Act
-            with pytest.raises(OSError) as exc_info:
+            with pytest.raises(OSError, check=lambda exc: exc.errno == connect_error.errno):
                 _ = _create_unix_stream_connection(
                     remote_address,
                     connect_timeout=connect_timeout,
@@ -1132,4 +1252,3 @@ if sys.platform != "win32":
                 mocker.call.connect(remote_address),
                 mocker.call.close(),
             ]
-            assert exc_info.value.errno == connect_error.errno
