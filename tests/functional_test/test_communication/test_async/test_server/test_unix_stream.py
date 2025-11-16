@@ -37,6 +37,7 @@ if sys.platform != "win32":
     from easynetwork.lowlevel._utils import remove_traceback_frames_in_place
     from easynetwork.lowlevel.api_async.backend.abc import IEvent, Task
     from easynetwork.lowlevel.api_async.transports.utils import aclose_forcefully
+    from easynetwork.lowlevel.request_handler import RecvParams
     from easynetwork.lowlevel.socket import SocketProxy, UnixSocketAddress, enable_socket_linger
     from easynetwork.protocol import AnyStreamProtocolType
     from easynetwork.servers.async_unix_stream import AsyncUnixStreamServer
@@ -169,7 +170,7 @@ if sys.platform != "win32":
                 self.bad_request_received[fetch_client_address(client)].append(exc)
                 await client.send_packet("wrong encoding man.")
 
-    class TimeoutYieldedRequestHandler(AsyncStreamRequestHandler[str, str]):
+    class TimeoutYieldedDeprecatedWayRequestHandler(AsyncStreamRequestHandler[str, str]):
         request_timeout: float = 1.0
         timeout_on_second_yield: bool = False
 
@@ -183,6 +184,24 @@ if sys.platform != "win32":
             try:
                 with pytest.raises(TimeoutError):
                     yield self.request_timeout
+                await client.send_packet("successfully timed out")
+            finally:
+                self.request_timeout = 1.0  # Force reset to 1 second in order not to overload the server
+
+    class TimeoutYieldedRequestHandler(AsyncStreamRequestHandler[str, str]):
+        request_timeout: float = 1.0
+        timeout_on_second_yield: bool = False
+
+        async def on_connection(self, client: AsyncStreamClient[str]) -> None:
+            await client.send_packet("milk")
+
+        async def handle(self, client: AsyncStreamClient[str]) -> AsyncGenerator[RecvParams | None, str]:
+            if self.timeout_on_second_yield:
+                request = yield None
+                await client.send_packet(request)
+            try:
+                with pytest.raises(TimeoutError):
+                    yield RecvParams(timeout=self.request_timeout)
                 await client.send_packet("successfully timed out")
             finally:
                 self.request_timeout = 1.0  # Force reset to 1 second in order not to overload the server
@@ -219,12 +238,12 @@ if sys.platform != "win32":
         bypass_handshake: bool = False
         handshake_2fa: bool = False
 
-        async def on_connection(self, client: AsyncStreamClient[str]) -> AsyncGenerator[float | None, str]:
+        async def on_connection(self, client: AsyncStreamClient[str]) -> AsyncGenerator[RecvParams | None, str]:
             await client.send_packet("milk")
             if self.bypass_handshake:
                 return
             try:
-                password = yield 1.0
+                password = yield RecvParams(timeout=1.0)
 
                 if password != "chocolate":
                     await client.send_packet("wrong password")
@@ -233,7 +252,7 @@ if sys.platform != "win32":
 
                 if self.handshake_2fa:
                     await client.send_packet("2FA code needed")
-                    code = yield 1.0
+                    code = yield RecvParams(timeout=1.0)
 
                     if code != "42":
                         await client.send_packet("wrong code")
@@ -959,7 +978,18 @@ if sys.platform != "win32":
 
             assert await client.recv(1024) == b""
 
-        @pytest.mark.parametrize("request_handler", [TimeoutYieldedRequestHandler, TimeoutContextRequestHandler], indirect=True)
+        @pytest.mark.parametrize(
+            "request_handler",
+            [
+                TimeoutYieldedRequestHandler,
+                pytest.param(
+                    TimeoutYieldedDeprecatedWayRequestHandler,
+                    marks=pytest.mark.filterwarnings("ignore::DeprecationWarning:easynetwork"),
+                ),
+                TimeoutContextRequestHandler,
+            ],
+            indirect=True,
+        )
         @pytest.mark.parametrize("request_timeout", [0.0, 1.0], ids=lambda p: f"timeout=={p}")
         @pytest.mark.parametrize("timeout_on_second_yield", [False, True], ids=lambda p: f"timeout_on_second_yield=={p}")
         async def test____serve_forever____throw_cancelled_error(

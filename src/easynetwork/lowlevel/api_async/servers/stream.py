@@ -205,7 +205,11 @@ class AsyncStreamServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T_R
         Accept incoming connections as they come in and start tasks to handle them.
 
         .. versionchanged:: NEXT_VERSION
-            `client_connected_cb` may yield a :class:`.RecvParams` object.
+            The async generator returned by `client_connected_cb` may (and should) yield a :class:`.RecvParams` object.
+
+        .. deprecated:: NEXT_VERSION
+            If the async generator returned by `client_connected_cb` yields a number, a :exc:`DeprecationWarning` will be emitted.
+            Use :class:`.RecvParams` instead.
 
         Parameters:
             client_connected_cb: a callable that will be used to handle each accepted connection.
@@ -491,5 +495,8 @@ def _rcv(param: float | RecvParams | None, /) -> RecvParams:
     match param:
         case RecvParams():
             return param
+        case None:
+            return RecvParams()
         case _:
+            warnings.warn("Yielding a flat number is deprecated. Use RecvParams instead.", DeprecationWarning, stacklevel=2)
             return RecvParams(timeout=param)

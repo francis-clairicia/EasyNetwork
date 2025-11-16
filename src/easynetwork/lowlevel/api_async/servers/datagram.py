@@ -175,7 +175,11 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
         Receive incoming datagrams as they come in and start tasks to handle them.
 
         .. versionchanged:: NEXT_VERSION
-            `datagram_received_cb` may yield a :class:`.RecvParams` object.
+            The async generator returned by `datagram_received_cb` may (and should) yield a :class:`.RecvParams` object.
+
+        .. deprecated:: NEXT_VERSION
+            If the async generator returned by `datagram_received_cb` yields a number, a :exc:`DeprecationWarning` will be emitted.
+            Use :class:`.RecvParams` instead.
 
         Important:
             There will always be only one active generator per client.
@@ -567,5 +571,8 @@ def _rcv(param: float | RecvParams | None, /) -> RecvParams:
     match param:
         case RecvParams():
             return param
+        case None:
+            return RecvParams()
         case _:
+            warnings.warn("Yielding a flat number is deprecated. Use RecvParams instead.", DeprecationWarning, stacklevel=2)
             return RecvParams(timeout=param)

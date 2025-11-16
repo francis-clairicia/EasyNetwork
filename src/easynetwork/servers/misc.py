@@ -29,7 +29,8 @@ from typing import TypeVar, TypeVarTuple
 
 from .._typevars import _T_Request, _T_Response
 from ..lowlevel import _utils
-from ..lowlevel.api_async.servers import datagram as _lowlevel_datagram_server, stream as _lowlevel_stream_server
+from ..lowlevel.api_async.servers import datagram as _datagram_server, stream as _stream_server
+from ..lowlevel.request_handler import RecvParams
 from .handlers import AsyncDatagramClient, AsyncDatagramRequestHandler, AsyncStreamClient, AsyncStreamRequestHandler
 
 _T_Address = TypeVar("_T_Address", bound=Hashable)
@@ -39,13 +40,13 @@ _T_VarArgs = TypeVarTuple("_T_VarArgs")
 
 def build_lowlevel_stream_server_handler(
     initializer: Callable[
-        [_lowlevel_stream_server.ConnectedStreamClient[_T_Response], *_T_VarArgs],
+        [_stream_server.ConnectedStreamClient[_T_Response], *_T_VarArgs],
         AbstractAsyncContextManager[AsyncStreamClient[_T_Response] | None],
     ],
     request_handler: AsyncStreamRequestHandler[_T_Request, _T_Response],
     *args: *_T_VarArgs,
     logger: logging.Logger | None = None,
-) -> Callable[[_lowlevel_stream_server.ConnectedStreamClient[_T_Response]], AsyncGenerator[float | None, _T_Request]]:
+) -> Callable[[_stream_server.ConnectedStreamClient[_T_Response]], AsyncGenerator[float | RecvParams | None, _T_Request]]:
     """
     Creates an :term:`asynchronous generator` function, usable by :meth:`.AsyncStreamServer.serve`, from
     an :class:`.AsyncStreamRequestHandler`.
@@ -70,8 +71,8 @@ def build_lowlevel_stream_server_handler(
     from ..lowlevel.api_async.transports import utils as _transports_utils
 
     async def handler(
-        lowlevel_client: _lowlevel_stream_server.ConnectedStreamClient[_T_Response], /
-    ) -> AsyncGenerator[float | None, _T_Request]:
+        lowlevel_client: _stream_server.ConnectedStreamClient[_T_Response], /
+    ) -> AsyncGenerator[float | RecvParams | None, _T_Request]:
         async with initializer(lowlevel_client, *args) as client, AsyncExitStack() as request_handler_exit_stack:
             del lowlevel_client
 
@@ -79,27 +80,30 @@ def build_lowlevel_stream_server_handler(
                 # Initialization failed, but must not raise an exception.
                 return
 
-            request_handler_generator: AsyncGenerator[float | None, _T_Request]
+            request_handler_generator: AsyncGenerator[float | RecvParams | None, _T_Request]
             request: _T_Request | None
-            timeout: float | None
+            recv_params: float | RecvParams | None
 
             _on_connection_hook = request_handler.on_connection(client)
             if isinstance(_on_connection_hook, AsyncGenerator):
                 try:
-                    timeout = await anext(_on_connection_hook)
+                    recv_params = await anext(_on_connection_hook)
                 except StopAsyncIteration:
                     pass
                 else:
                     while True:
                         try:
                             try:
-                                request = yield timeout
+                                try:
+                                    request = yield recv_params
+                                finally:
+                                    del recv_params
                             except GeneratorExit:  # pragma: no cover
                                 raise
                             except BaseException as exc:
-                                timeout = await _on_connection_hook.athrow(exc)
+                                recv_params = await _on_connection_hook.athrow(exc)
                             else:
-                                timeout = await _on_connection_hook.asend(request)
+                                recv_params = await _on_connection_hook.asend(request)
                             finally:
                                 request = None
                         except StopAsyncIteration:
@@ -131,7 +135,7 @@ def build_lowlevel_stream_server_handler(
             while not client_is_closing():
                 request_handler_generator = new_request_handler(client)
                 try:
-                    timeout = await anext(request_handler_generator)
+                    recv_params = await anext(request_handler_generator)
                 except StopAsyncIteration:
                     await _transports_utils.aclose_forcefully(client)
                     return
@@ -139,13 +143,16 @@ def build_lowlevel_stream_server_handler(
                     while True:
                         try:
                             try:
-                                request = yield timeout
+                                try:
+                                    request = yield recv_params
+                                finally:
+                                    del recv_params
                             except GeneratorExit:  # pragma: no cover
                                 raise
                             except BaseException as exc:
-                                timeout = await request_handler_generator.athrow(exc)
+                                recv_params = await request_handler_generator.athrow(exc)
                             else:
-                                timeout = await request_handler_generator.asend(request)
+                                recv_params = await request_handler_generator.asend(request)
                             finally:
                                 request = None
                         except StopAsyncIteration:
@@ -162,14 +169,14 @@ def build_lowlevel_stream_server_handler(
 
 def build_lowlevel_datagram_server_handler(
     initializer: Callable[
-        [_lowlevel_datagram_server.DatagramClientContext[_T_Response, _T_Address], *_T_VarArgs],
+        [_datagram_server.DatagramClientContext[_T_Response, _T_Address], *_T_VarArgs],
         AbstractAsyncContextManager[AsyncDatagramClient[_T_Response] | None],
     ],
     request_handler: AsyncDatagramRequestHandler[_T_Request, _T_Response],
     *args: *_T_VarArgs,
 ) -> Callable[
-    [_lowlevel_datagram_server.DatagramClientContext[_T_Response, _T_Address]],
-    AsyncGenerator[float | None, _T_Request],
+    [_datagram_server.DatagramClientContext[_T_Response, _T_Address]],
+    AsyncGenerator[float | RecvParams | None, _T_Request],
 ]:
     """
     Creates an :term:`asynchronous generator` function, usable by :meth:`.AsyncDatagramServer.serve`, from
@@ -189,8 +196,8 @@ def build_lowlevel_datagram_server_handler(
     """
 
     async def handler(
-        lowlevel_client: _lowlevel_datagram_server.DatagramClientContext[_T_Response, _T_Address], /
-    ) -> AsyncGenerator[float | None, _T_Request]:
+        lowlevel_client: _datagram_server.DatagramClientContext[_T_Response, _T_Address], /
+    ) -> AsyncGenerator[float | RecvParams | None, _T_Request]:
         async with initializer(lowlevel_client, *args) as client:
             del lowlevel_client
 
@@ -200,22 +207,22 @@ def build_lowlevel_datagram_server_handler(
 
             request_handler_generator = request_handler.handle(client)
             request: _T_Request | None
-            timeout: float | None
+            recv_params: float | RecvParams | None
             try:
-                timeout = await anext(request_handler_generator)
+                recv_params = await anext(request_handler_generator)
             except StopAsyncIteration:
                 return
             else:
                 while True:
                     try:
                         try:
-                            request = yield timeout
+                            request = yield recv_params
                         except GeneratorExit:  # pragma: no cover
                             raise
                         except BaseException as exc:
-                            timeout = await request_handler_generator.athrow(exc)
+                            recv_params = await request_handler_generator.athrow(exc)
                         else:
-                            timeout = await request_handler_generator.asend(request)
+                            recv_params = await request_handler_generator.asend(request)
                         finally:
                             request = None
                     except StopAsyncIteration:

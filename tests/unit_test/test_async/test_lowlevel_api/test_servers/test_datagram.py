@@ -172,6 +172,50 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
             mock_backend.create_task_group.assert_called_once_with()
             mock_task_group.__aenter__.assert_awaited_once()
 
+    @pytest.mark.parametrize("recv_with_ancillary", [False, True], ids=lambda p: f"recv_with_ancillary=={p}")
+    async def test____serve____timeout____old_method_is_deprecated(
+        self,
+        recv_with_ancillary: bool,
+        server: AsyncDatagramServer[Any, Any, Any],
+        mock_datagram_listener: MagicMock,
+        caplog: pytest.LogCaptureFixture,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        caplog.set_level(logging.ERROR)
+
+        async def serve_side_effect(handler: Callable[[bytes, Any], Coroutine[Any, Any, None]], task_group: Any) -> NoReturn:
+            packet = b"packet"
+            await handler(packet, mocker.sentinel.address)
+            raise asyncio.CancelledError("serve_side_effect")
+
+        async def serve_with_ancillary_side_effect(
+            handler: Callable[[bytes, Any, Any], Coroutine[Any, Any, None]],
+            ancillary_bufsize: int,
+            task_group: Any,
+        ) -> NoReturn:
+            packet = b"packet"
+            await handler(packet, mocker.sentinel.ancdata, mocker.sentinel.address)
+            raise asyncio.CancelledError("serve_side_effect")
+
+        mock_datagram_listener.serve.side_effect = serve_side_effect
+        mock_datagram_listener.serve_with_ancillary.side_effect = serve_with_ancillary_side_effect
+
+        @stub_decorator(mocker)
+        async def datagram_received_cb(_: Any) -> AsyncGenerator[float, Any]:
+            yield 1234.0
+
+        # Act & Assert
+        with pytest.warns(DeprecationWarning, match=r"^Yielding a flat number is deprecated"):
+            async with TaskGroup() as tg:
+                with pytest.raises(asyncio.CancelledError, match=r"^serve_side_effect$"):
+                    if recv_with_ancillary:
+                        await server.serve_with_ancillary(datagram_received_cb, 1024, None, tg)
+                    else:
+                        await server.serve(datagram_received_cb, tg)
+
+        assert len(caplog.records) == 0
+
     @pytest.mark.parametrize("invalid_timeout", [-1.0, math.nan])
     @pytest.mark.parametrize("invalid_timeout_after_first_yield", [False, True], ids=lambda p: f"after_first_yield=={p}")
     @pytest.mark.parametrize("recv_with_ancillary", [False, True], ids=lambda p: f"recv_with_ancillary=={p}")
@@ -217,14 +261,14 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
         mock_backend.create_condition_var.side_effect = asyncio.Condition
 
         @stub_decorator(mocker)
-        async def datagram_received_cb(_: Any) -> AsyncGenerator[float | RecvParams | None, Any]:
+        async def datagram_received_cb(_: Any) -> AsyncGenerator[RecvParams | None, Any]:
             ancillary_data_received = mocker.stub("ancillary_data_received")
             if invalid_timeout_after_first_yield:
                 if recv_with_ancillary:
                     yield RecvParams(timeout=1.0, recv_with_ancillary=RecvAncillaryDataParams(0, ancillary_data_received))
                     ancillary_data_received.assert_called_once_with(mocker.sentinel.ancdata)
                 else:
-                    yield 1.0
+                    yield RecvParams(timeout=1.0)
             with pytest.raises(ValueError, match=r"^Invalid delay: .+$"):
                 if recv_with_ancillary:
                     yield RecvParams(
@@ -232,7 +276,7 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
                         recv_with_ancillary=RecvAncillaryDataParams(0, ancillary_data_received),
                     )
                 else:
-                    yield invalid_timeout
+                    yield RecvParams(timeout=invalid_timeout)
             if recv_with_ancillary:
                 assert ancillary_data_received.mock_calls == [
                     mocker.call(mocker.sentinel.ancdata),
@@ -590,6 +634,7 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
         mocker: MockerFixture,
     ) -> None:
         # Arrange
+        mock_datagram_listener.send_to.return_value = None
 
         # Act
         await server.send_packet_to(mocker.sentinel.packet, mocker.sentinel.destination)
@@ -597,6 +642,30 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
         # Assert
         mock_datagram_protocol.make_datagram.assert_called_once_with(mocker.sentinel.packet)
         mock_datagram_listener.send_to.assert_awaited_once_with(b"packet", mocker.sentinel.destination)
+        mock_datagram_listener.send_with_ancillary_to.assert_not_called()
+
+    async def test____send_packet_to____protocol_crashed(
+        self,
+        server: AsyncDatagramServer[Any, Any, Any],
+        mock_datagram_listener: MagicMock,
+        mock_datagram_protocol: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_datagram_listener.send_to.return_value = None
+        expected_error = Exception("Error")
+        mock_datagram_protocol.make_datagram.side_effect = expected_error
+
+        # Act & Assert
+        with pytest.raises(
+            RuntimeError,
+            match=r"^protocol\.make_datagram\(\) crashed$",
+            check=lambda exc: exc.__cause__ is expected_error,
+        ):
+            await server.send_packet_to(mocker.sentinel.packet, mocker.sentinel.destination)
+
+        mock_datagram_listener.send_to.assert_not_called()
+        mock_datagram_listener.send_with_ancillary_to.assert_not_called()
 
     async def test____send_packet_with_ancillary_to____send_bytes_to_transport(
         self,
@@ -606,6 +675,7 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
         mocker: MockerFixture,
     ) -> None:
         # Arrange
+        mock_datagram_listener.send_with_ancillary_to.return_value = None
 
         # Act
         await server.send_packet_with_ancillary_to(mocker.sentinel.packet, mocker.sentinel.ancdata, mocker.sentinel.destination)
@@ -617,6 +687,32 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
             mocker.sentinel.ancdata,
             mocker.sentinel.destination,
         )
+        mock_datagram_listener.send_to.assert_not_called()
+
+    async def test____send_packet_with_ancillary_to____protocol_crashed(
+        self,
+        server: AsyncDatagramServer[Any, Any, Any],
+        mock_datagram_listener: MagicMock,
+        mock_datagram_protocol: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_datagram_listener.send_with_ancillary_to.return_value = None
+        expected_error = Exception("Error")
+        mock_datagram_protocol.make_datagram.side_effect = expected_error
+
+        # Act & Assert
+        with pytest.raises(
+            RuntimeError,
+            match=r"^protocol\.make_datagram\(\) crashed$",
+            check=lambda exc: exc.__cause__ is expected_error,
+        ):
+            await server.send_packet_with_ancillary_to(
+                mocker.sentinel.packet, mocker.sentinel.ancdata, mocker.sentinel.destination
+            )
+
+        # Assert
+        mock_datagram_listener.send_with_ancillary_to.assert_not_called()
         mock_datagram_listener.send_to.assert_not_called()
 
     async def test____get_backend____returns_inner_listener_backend(

@@ -9,6 +9,7 @@ from typing import Any
 from easynetwork.exceptions import BaseProtocolParseError, ClientClosedError, DatagramProtocolParseError, DeserializeError
 from easynetwork.lowlevel._utils import remove_traceback_frames_in_place
 from easynetwork.lowlevel.api_async.backend.abc import IEvent
+from easynetwork.lowlevel.request_handler import RecvParams
 from easynetwork.lowlevel.socket import SocketAddress, SocketProxy
 from easynetwork.protocol import DatagramProtocol
 from easynetwork.servers.async_udp import AsyncUDPNetworkServer
@@ -135,7 +136,7 @@ class MyDatagramRequestHandler(AsyncDatagramRequestHandler[str, str]):
             await client.send_packet("wrong encoding man.")
 
 
-class TimeoutYieldedRequestHandler(AsyncDatagramRequestHandler[str, str]):
+class TimeoutYieldedDeprecatedWayRequestHandler(AsyncDatagramRequestHandler[str, str]):
     request_timeout: float = 1.0
     timeout_on_third_yield: bool = False
 
@@ -147,6 +148,26 @@ class TimeoutYieldedRequestHandler(AsyncDatagramRequestHandler[str, str]):
         try:
             with pytest.raises(TimeoutError):
                 yield self.request_timeout
+            await client.send_packet("successfully timed out")
+        except BaseException:
+            await client.send_packet("error occurred")
+            raise
+        finally:
+            self.request_timeout = 1.0  # Force reset to 1 second in order not to overload the server
+
+
+class TimeoutYieldedRequestHandler(AsyncDatagramRequestHandler[str, str]):
+    request_timeout: float = 1.0
+    timeout_on_third_yield: bool = False
+
+    async def handle(self, client: AsyncDatagramClient[str]) -> AsyncGenerator[RecvParams | None, str]:
+        assert (yield None) == "something"
+        if self.timeout_on_third_yield:
+            request = yield None
+            await client.send_packet(request)
+        try:
+            with pytest.raises(TimeoutError):
+                yield RecvParams(timeout=self.request_timeout)
             await client.send_packet("successfully timed out")
         except BaseException:
             await client.send_packet("error occurred")
@@ -545,14 +566,25 @@ class _BaseTestAsyncUDPNetworkServer(BaseTestAsyncServer):
         assert caplog.records[0].getMessage() == f"There have been attempts to do operation on closed client ({host!r}, {port})"
         assert caplog.records[0].levelno == logging.WARNING
 
-    @pytest.mark.parametrize("request_handler", [TimeoutYieldedRequestHandler, TimeoutContextRequestHandler], indirect=True)
+    @pytest.mark.parametrize(
+        "request_handler",
+        [
+            TimeoutYieldedRequestHandler,
+            pytest.param(
+                TimeoutYieldedDeprecatedWayRequestHandler,
+                marks=pytest.mark.filterwarnings("ignore::DeprecationWarning:easynetwork"),
+            ),
+            TimeoutContextRequestHandler,
+        ],
+        indirect=True,
+    )
     @pytest.mark.parametrize("request_timeout", [0.0, 1.0], ids=lambda p: f"timeout=={p}")
     @pytest.mark.parametrize("timeout_on_third_yield", [False, True], ids=lambda p: f"timeout_on_third_yield=={p}")
     async def test____serve_forever____throw_cancelled_error(
         self,
         request_timeout: float,
         timeout_on_third_yield: bool,
-        request_handler: TimeoutYieldedRequestHandler | TimeoutContextRequestHandler,
+        request_handler: TimeoutYieldedRequestHandler | TimeoutYieldedDeprecatedWayRequestHandler | TimeoutContextRequestHandler,
         client_factory: Callable[[], Awaitable[AsyncDatagramSocket]],
     ) -> None:
         request_handler.request_timeout = request_timeout

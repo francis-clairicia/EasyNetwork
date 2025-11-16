@@ -429,6 +429,37 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
 
         exception_caught.assert_called_once_with(False)
 
+    async def test____serve____timeout____old_method_is_deprecated(
+        self,
+        server: AsyncStreamServer[Any, Any],
+        mock_stream_transport: MagicMock,
+        mock_listener: MagicMock,
+        caplog: pytest.LogCaptureFixture,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        caplog.set_level(logging.WARNING)
+
+        async def serve_side_effect(handler: Callable[[Any], Awaitable[None]], task_group: Any) -> NoReturn:
+            await handler(mock_stream_transport)
+            raise asyncio.CancelledError("serve_side_effect")
+
+        mock_listener.serve.side_effect = serve_side_effect
+        mock_stream_transport.recv.side_effect = [b"packet\n"]
+        mock_stream_transport.recv_into.side_effect = make_recv_into_side_effect([b"packet\n"])
+
+        @stub_decorator(mocker)
+        async def client_connected_cb(_: Any) -> AsyncGenerator[float, Any]:
+            yield 1234.0
+
+        # Act & Assert
+        with pytest.warns(DeprecationWarning, match=r"^Yielding a flat number is deprecated"):
+            async with TaskGroup() as tg:
+                with pytest.raises(asyncio.CancelledError, match=r"^serve_side_effect$"):
+                    await server.serve(client_connected_cb, tg)
+
+        assert len(caplog.records) == 0
+
     @pytest.mark.parametrize("invalid_timeout", [-1.0, math.nan])
     @pytest.mark.parametrize("recv_with_ancillary", [False, True], ids=lambda p: f"recv_with_ancillary=={p}")
     async def test____serve____invalid_timeout(
@@ -455,7 +486,7 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
         mock_stream_transport.recv_with_ancillary_into.side_effect = OSError
 
         @stub_decorator(mocker)
-        async def client_connected_cb(_: Any) -> AsyncGenerator[RecvParams | float, Any]:
+        async def client_connected_cb(_: Any) -> AsyncGenerator[RecvParams, Any]:
             with pytest.raises(ValueError, match=r"^Invalid delay: .+$"):
                 if recv_with_ancillary:
                     ancillary_data_received = mocker.stub("ancillary_data_received")
@@ -464,7 +495,7 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
                         recv_with_ancillary=RecvAncillaryDataParams(1024, ancillary_data_received),
                     )
                 else:
-                    yield invalid_timeout
+                    yield RecvParams(timeout=invalid_timeout)
 
         # Act & Assert
         async with TaskGroup() as tg:
@@ -581,7 +612,7 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
         )
 
         @stub_decorator(mocker)
-        async def client_connected_cb(_: Any) -> AsyncGenerator[RecvParams | float, Any]:
+        async def client_connected_cb(_: Any) -> AsyncGenerator[RecvParams, Any]:
             ancillary_data_received = mocker.stub("ancillary_data_received")
             ancillary_data_received.side_effect = expected_error = Exception("Error")
 

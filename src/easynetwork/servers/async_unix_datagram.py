@@ -36,6 +36,7 @@ else:
     import contextlib
     import errno as _errno
     import functools
+    import inspect
     import logging
     import os
     import pathlib
@@ -46,13 +47,13 @@ else:
 
     from .._typevars import _T_Request, _T_Response
     from ..exceptions import ClientClosedError
-    from ..lowlevel import _unix_utils, _utils
+    from ..lowlevel import _unix_utils, _utils, constants
     from ..lowlevel._final import runtime_final_class
     from ..lowlevel.api_async.backend.abc import AsyncBackend, TaskGroup
     from ..lowlevel.api_async.backend.utils import BuiltinAsyncBackendLiteral
     from ..lowlevel.api_async.servers import datagram as _datagram_server
     from ..lowlevel.api_async.transports.abc import AsyncDatagramListener
-    from ..lowlevel.socket import SocketProxy, UnixSocketAddress, UNIXSocketAttribute
+    from ..lowlevel.socket import SocketAncillary, SocketProxy, UnixSocketAddress, UNIXSocketAttribute
     from ..protocol import DatagramProtocol
     from . import _base
     from .handlers import AsyncDatagramClient, AsyncDatagramRequestHandler, UNIXClientAttribute
@@ -80,6 +81,8 @@ else:
             "__service_available",
             "__unix_socket_to_delete",
             "__unnamed_addresses_behavior",
+            "__receive_ancillary_data",
+            "__ancillary_bufsize",
         )
 
         def __init__(
@@ -91,9 +94,15 @@ else:
             *,
             mode: int | None = None,
             unnamed_addresses_behavior: _UnnamedAddressesBehavior | None = None,
+            receive_ancillary_data: bool = False,
+            ancillary_bufsize: int | None = None,
             logger: logging.Logger | None = None,
         ) -> None:
             """
+
+            .. versionchanged:: NEXT_VERSION
+                Added `receive_ancillary_data` and `ancillary_bufsize` parameters.
+
             Parameters:
                 path: Path of the socket.
                 protocol: The :term:`protocol object` to use.
@@ -109,6 +118,8 @@ else:
                                             * ``"handle"``: Act as a normal reception.
 
                                             * ``"warn"``: Drop the datagram and issue a :data:`~logging.WARNING` log.
+                receive_ancillary_data: ask the socket to read the ancillary data sent along with a datagram.
+                ancillary_bufsize: read buffer size for ancillary data.
                 logger: If given, the logger instance to use.
             """
             super().__init__(
@@ -140,6 +151,9 @@ else:
                 case _:
                     raise ValueError(f"Invalid unnamed_addresses_behavior value, got {unnamed_addresses_behavior!r}")
 
+            if not receive_ancillary_data and ancillary_bufsize is not None:
+                raise ValueError("ancillary_bufsize is only meaningful with receive_ancillary_data set to True")
+
             self.__listener_factory: Callable[[], Coroutine[Any, Any, AsyncDatagramListener[str | bytes]]]
             self.__listener_factory = _utils.make_callback(
                 backend.create_unix_datagram_listener,
@@ -152,6 +166,8 @@ else:
             self.__service_available = _utils.Flag()
             self.__unix_socket_to_delete: dict[pathlib.Path, int] = {}
             self.__unnamed_addresses_behavior = unnamed_addresses_behavior
+            self.__receive_ancillary_data = receive_ancillary_data
+            self.__ancillary_bufsize = ancillary_bufsize
 
         async def server_close(self) -> None:
             unix_socket_to_delete = self.__unix_socket_to_delete
@@ -213,7 +229,23 @@ else:
                 self.__request_handler,
                 weakref.WeakValueDictionary(),
             )
-            await server.serve(handler, task_group)
+            if self.__receive_ancillary_data:
+                ancillary_bufsize = self.__ancillary_bufsize
+                if ancillary_bufsize is None:
+                    ancillary_bufsize = constants.DEFAULT_ANCILLARY_DATA_BUFSIZE
+                await server.serve_with_ancillary(handler, ancillary_bufsize, self.__ancillary_data_unused, task_group)
+            else:
+                await server.serve(handler, task_group)
+
+        def __ancillary_data_unused(self, raw_ancdata: Any, client_address: UnixSocketAddress, /) -> None:
+            if raw_ancdata:
+                ancillary = SocketAncillary()
+                try:
+                    ancillary.update_from_raw(raw_ancdata)
+                except Exception as exc:  # pragma: no cover
+                    self.logger.warning(f"From {client_address}: Failed to read ancillary data", exc_info=exc)
+                finally:
+                    _unix_utils.close_fds_in_socket_ancillary(ancillary)
 
         def __client_initializer(
             self,
@@ -274,20 +306,48 @@ else:
         ) -> NoReturn:
 
             @functools.wraps(handler, assigned=())
-            def wrapper(datagram: bytes, addr: str | bytes | None) -> Coroutine[Any, Any, None]:
-                if addr is None:
-                    # A datagram received from an unnamed Unix datagram socket have a "None" address.
-                    # https://github.com/python/cpython/blob/v3.11.10/Modules/socketmodule.c#L1321-L1324
-                    return handler(datagram, UnixSocketAddress())
-                else:
-                    return handler(datagram, UnixSocketAddress.from_raw(addr))
+            def wrapper(datagram: bytes, addr: str | bytes | None, /) -> Coroutine[Any, Any, None]:
+                # A datagram received from an unnamed Unix datagram socket have a "None" address.
+                # https://github.com/python/cpython/blob/v3.11.10/Modules/socketmodule.c#L1321-L1324
+                return handler(datagram, UnixSocketAddress() if addr is None else UnixSocketAddress.from_raw(addr))
+
+            if sys.version_info >= (3, 12):
+                inspect.markcoroutinefunction(wrapper)
 
             await self.__wrapped.serve(wrapper, task_group)
+
+        async def serve_with_ancillary(
+            self,
+            handler: Callable[[bytes, Any | None, UnixSocketAddress], Coroutine[Any, Any, None]],
+            ancillary_bufsize: int,
+            task_group: TaskGroup | None = None,
+        ) -> NoReturn:
+
+            @functools.wraps(handler, assigned=())
+            def wrapper(datagram: bytes, ancdata: Any | None, addr: str | bytes | None, /) -> Coroutine[Any, Any, None]:
+                # A datagram received from an unnamed Unix datagram socket have a "None" address.
+                # https://github.com/python/cpython/blob/v3.11.10/Modules/socketmodule.c#L1321-L1324
+                return handler(datagram, ancdata, UnixSocketAddress() if addr is None else UnixSocketAddress.from_raw(addr))
+
+            if sys.version_info >= (3, 12):
+                inspect.markcoroutinefunction(wrapper)
+
+            await self.__wrapped.serve_with_ancillary(wrapper, ancillary_bufsize, task_group)
 
         async def send_to(self, data: bytes | bytearray | memoryview, address: UnixSocketAddress) -> None:
             if address.is_unnamed():
                 raise OSError(_errno.EINVAL, "Cannot send a datagram to an unnamed address.")
             return await self.__wrapped.send_to(data, address.as_raw())
+
+        async def send_with_ancillary_to(
+            self,
+            data: bytes | bytearray | memoryview,
+            ancillary_data: Any,
+            address: UnixSocketAddress,
+        ) -> None:
+            if address.is_unnamed():
+                raise OSError(_errno.EINVAL, "Cannot send a datagram to an unnamed address.")
+            return await self.__wrapped.send_with_ancillary_to(data, ancillary_data, address.as_raw())
 
         def backend(self) -> AsyncBackend:
             return self.__wrapped.backend()
@@ -346,6 +406,13 @@ else:
             if self.__is_closing(self.__service_available, server):
                 raise ClientClosedError("Closed client")
             await server.send_packet_to(packet, address)
+
+        async def send_packet_with_ancillary(self, packet: _T_Response, ancillary_data: Any, /) -> None:
+            server = self.__context.server
+            address = self.__context.address
+            if self.__is_closing(self.__service_available, server):
+                raise ClientClosedError("Closed client")
+            await server.send_packet_with_ancillary_to(packet, ancillary_data, address)
 
         def backend(self) -> AsyncBackend:
             return self.__context.backend()
@@ -407,7 +474,7 @@ else:
                     case "ignore":
                         return None
                     case "warn":
-                        self.__logger.warning("A datagram received from an unbound UNIX datagram socket was dropped.")
+                        self.__logger.warning("A datagram received from an unbound UNIX datagram socket has been dropped.")
                         return None
                     case "handle":
                         # Do not store an unnamed client in cache.
