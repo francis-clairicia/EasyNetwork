@@ -604,14 +604,17 @@ class AsyncDatagramSocket:
                     case "asyncio":
                         event_loop = asyncio.get_running_loop()
                         await event_loop.sock_connect(sock, path)
+                        return cls(_impl=_AsyncIORawDatagramSock(sock), _backend=new_builtin_backend("asyncio"))
                     case "trio":
+                        import trio
+
                         from easynetwork.lowlevel.api_async.backend._trio._trio_utils import connect_sock_to_resolved_address
 
+                        backend = new_builtin_backend("trio")
                         await connect_sock_to_resolved_address(sock, path)
+                        return cls(_impl=_TrioDatagram(trio.socket.from_stdlib_socket(sock)), _backend=backend)
                     case lib_name:
                         raise NotImplementedError(lib_name)
-
-                return cls(_impl=_AsyncIORawDatagramSock(sock), _backend=new_builtin_backend("asyncio"))
             except BaseException:
                 sock.close()
                 raise
@@ -754,4 +757,5 @@ class AsyncDatagramSocket:
             case _TrioDatagram(sock):
                 return sock.getpeername()
             case _:
+                assert_never(self._impl)
                 assert_never(self._impl)
