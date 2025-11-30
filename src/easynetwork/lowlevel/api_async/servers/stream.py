@@ -397,9 +397,9 @@ class _RequestReceiver(Generic[_T_Request]):
         try:
             data, ancdata = await self.transport.recv_with_ancillary(self.max_recv_size, ancillary_data_params.bufsize)
         except Exception as exc:
-            if self.disconnect_error_filter is None or not self.disconnect_error_filter(exc):
-                raise
-            raise StopAsyncIteration from None
+            if self.disconnect_error_filter is not None and self.disconnect_error_filter(exc):
+                raise StopAsyncIteration from None
+            raise
 
         if not data:
             del ancdata
@@ -471,9 +471,9 @@ class _BufferedRequestReceiver(Generic[_T_Request]):
             try:
                 nbytes, ancdata = await self.transport.recv_with_ancillary_into(buffer, ancillary_data_params.bufsize)
             except Exception as exc:
-                if self.disconnect_error_filter is None or not self.disconnect_error_filter(exc):
-                    raise
-                raise StopAsyncIteration from None
+                if self.disconnect_error_filter is not None and self.disconnect_error_filter(exc):
+                    raise StopAsyncIteration from None
+                raise
 
         if not nbytes:
             del ancdata

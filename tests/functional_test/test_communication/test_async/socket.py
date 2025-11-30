@@ -186,6 +186,7 @@ class _TrioStream:
 class AsyncStreamSocket:
     _impl: _AsyncIOStream | _AsyncIORawStreamSock | _TrioStream
     _backend: AsyncBackend
+    _read_timeout: float | None = dataclasses.field(init=False, default=None)
 
     @classmethod
     async def from_connected_stdlib_socket(
@@ -321,6 +322,9 @@ class AsyncStreamSocket:
     def backend(self) -> AsyncBackend:
         return self._backend
 
+    def set_read_timeout(self, timeout: float | None) -> None:
+        object.__setattr__(self, "_read_timeout", timeout)
+
     async def aclose(self) -> None:
         match self._impl:
             case _AsyncIOStream(writer=writer):
@@ -339,35 +343,38 @@ class AsyncStreamSocket:
                 assert_never(self._impl)
 
     async def recv(self, bufsize: int) -> bytes:
-        match self._impl:
-            case _AsyncIOStream(reader=reader):
-                return await reader.read(bufsize)
-            case _AsyncIORawStreamSock() as reader:
-                return await reader.read(bufsize)
-            case _TrioStream() as reader:
-                return await reader.read(bufsize)
-            case _:
-                assert_never(self._impl)
+        with self._backend.timeout(t) if (t := self._read_timeout) is not None else contextlib.nullcontext():
+            match self._impl:
+                case _AsyncIOStream(reader=reader):
+                    return await reader.read(bufsize)
+                case _AsyncIORawStreamSock() as reader:
+                    return await reader.read(bufsize)
+                case _TrioStream() as reader:
+                    return await reader.read(bufsize)
+                case _:
+                    assert_never(self._impl)
 
     async def readline(self) -> bytes:
-        match self._impl:
-            case _AsyncIOStream(reader=reader):
-                return await reader.readline()
-            case _AsyncIORawStreamSock() as reader:
-                return await reader.readline()
-            case _TrioStream() as reader:
-                return await reader.readline()
-            case _:
-                assert_never(self._impl)
+        with self._backend.timeout(t) if (t := self._read_timeout) is not None else contextlib.nullcontext():
+            match self._impl:
+                case _AsyncIOStream(reader=reader):
+                    return await reader.readline()
+                case _AsyncIORawStreamSock() as reader:
+                    return await reader.readline()
+                case _TrioStream() as reader:
+                    return await reader.readline()
+                case _:
+                    assert_never(self._impl)
 
     if sys.platform != "win32":
 
         async def recvmsg(self, bufsize: int = 1024) -> tuple[bytes, SocketAncillary]:
-            match self._impl:
-                case _AsyncIORawStreamSock() | _TrioStream() as reader:
-                    return await reader.recvmsg(bufsize)
-                case _:
-                    raise NotImplementedError
+            with self._backend.timeout(t) if (t := self._read_timeout) is not None else contextlib.nullcontext():
+                match self._impl:
+                    case _AsyncIORawStreamSock() | _TrioStream() as reader:
+                        return await reader.recvmsg(bufsize)
+                    case _:
+                        raise NotImplementedError
 
     async def send_all(self, data: bytes | bytearray | memoryview) -> None:
         match self._impl:
@@ -525,6 +532,7 @@ class _TrioDatagram:
 class AsyncDatagramSocket:
     _impl: _AsyncIODatagram | _AsyncIORawDatagramSock | _TrioDatagram
     _backend: AsyncBackend
+    _read_timeout: float | None = dataclasses.field(init=False, default=None)
 
     @classmethod
     async def from_stdlib_socket(
@@ -641,6 +649,9 @@ class AsyncDatagramSocket:
     def backend(self) -> AsyncBackend:
         return self._backend
 
+    def set_read_timeout(self, timeout: float | None) -> None:
+        object.__setattr__(self, "_read_timeout", timeout)
+
     async def aclose(self) -> None:
         match self._impl:
             case _AsyncIODatagram(endpoint):
@@ -657,33 +668,35 @@ class AsyncDatagramSocket:
                 assert_never(self._impl)
 
     async def recvfrom(self) -> tuple[bytes, socket._RetAddress]:
-        match self._impl:
-            case _AsyncIODatagram(endpoint):
-                return await endpoint.recvfrom()
-            case _AsyncIORawDatagramSock(sock):
-                loop = asyncio.get_running_loop()
-                # https://github.com/MagicStack/uvloop/issues/561
-                while True:
-                    try:
-                        return sock.recvfrom(MAX_DATAGRAM_BUFSIZE)
-                    except (BlockingIOError, InterruptedError):
-                        pass
-                    await _asyncio_utils.wait_until_readable(sock, loop)
-            case _TrioDatagram(sock):
-                return await sock.recvfrom(MAX_DATAGRAM_BUFSIZE)
-            case _:
-                assert_never(self._impl)
+        with self._backend.timeout(t) if (t := self._read_timeout) is not None else contextlib.nullcontext():
+            match self._impl:
+                case _AsyncIODatagram(endpoint):
+                    return await endpoint.recvfrom()
+                case _AsyncIORawDatagramSock(sock):
+                    loop = asyncio.get_running_loop()
+                    # https://github.com/MagicStack/uvloop/issues/561
+                    while True:
+                        try:
+                            return sock.recvfrom(MAX_DATAGRAM_BUFSIZE)
+                        except (BlockingIOError, InterruptedError):
+                            pass
+                        await _asyncio_utils.wait_until_readable(sock, loop)
+                case _TrioDatagram(sock):
+                    return await sock.recvfrom(MAX_DATAGRAM_BUFSIZE)
+                case _:
+                    assert_never(self._impl)
 
     if sys.platform != "win32":
 
         async def recvmsg(self) -> tuple[bytes, SocketAncillary, _RetAddress]:
-            match self._impl:
-                case _AsyncIORawDatagramSock(sock):
-                    return await _asyncio_sock_recvmsg(sock, MAX_DATAGRAM_BUFSIZE)
-                case _TrioDatagram(sock):
-                    return await _trio_sock_recvmsg(sock, MAX_DATAGRAM_BUFSIZE)
-                case _:
-                    raise NotImplementedError
+            with self._backend.timeout(t) if (t := self._read_timeout) is not None else contextlib.nullcontext():
+                match self._impl:
+                    case _AsyncIORawDatagramSock(sock):
+                        return await _asyncio_sock_recvmsg(sock, MAX_DATAGRAM_BUFSIZE)
+                    case _TrioDatagram(sock):
+                        return await _trio_sock_recvmsg(sock, MAX_DATAGRAM_BUFSIZE)
+                    case _:
+                        raise NotImplementedError
 
     async def sendto(self, data: bytes | bytearray | memoryview, address: socket._Address | None) -> None:
         match self._impl:
