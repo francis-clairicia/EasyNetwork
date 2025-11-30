@@ -287,9 +287,19 @@ if sys.platform != "win32":
         __slots__ = ()
 
     _UnixAddressTypeLiteral = Literal["PATHNAME", "ABSTRACT"]
+    _ServerModeLiteral = Literal["SERVE", "SERVE_WITH_CMSG"]
 
     @pytest.mark.flaky(retries=3, delay=0.1)
     class _BaseTestAsyncUnixDatagramServer(BaseTestAsyncServer):
+        @pytest.fixture(autouse=True)
+        @staticmethod
+        def set_default_logger_level(
+            caplog: pytest.LogCaptureFixture,
+            logger_crash_threshold_level: dict[str, int],
+        ) -> None:
+            caplog.set_level(logging.WARNING, LOGGER.name)
+            logger_crash_threshold_level[LOGGER.name] = logging.WARNING
+
         @pytest.fixture(
             params=[
                 pytest.param("PATHNAME"),
@@ -303,6 +313,20 @@ if sys.platform != "win32":
                     return param
                 case _:
                     pytest.fail(f"Invalid use_unix_address_type parameter: {request.param}")
+
+        @pytest.fixture(
+            params=[
+                pytest.param("SERVE"),
+                pytest.param("SERVE_WITH_CMSG"),
+            ]
+        )
+        @staticmethod
+        def server_mode(request: pytest.FixtureRequest) -> _ServerModeLiteral:
+            match request.param:
+                case "SERVE" | "SERVE_WITH_CMSG" as param:
+                    return param
+                case _:
+                    pytest.fail(f"Invalid server_mode parameter: {request.param}")
 
         @pytest.fixture
         @staticmethod
@@ -936,6 +960,7 @@ if sys.platform != "win32":
             unix_socket_path_factory: UnixSocketPathFactory,
             datagram_protocol: DatagramProtocol[str, str],
             unnamed_addresses_behavior: _UnnamedAddressesBehavior | None,
+            server_mode: _ServerModeLiteral,
         ) -> AsyncIterator[MyAsyncUnixDatagramServer]:
             if use_unix_address_type == "ABSTRACT":
                 # Let the kernel assign us an abstract socket address.
@@ -948,6 +973,7 @@ if sys.platform != "win32":
                 request_handler,
                 backend="asyncio",
                 unnamed_addresses_behavior=unnamed_addresses_behavior,
+                receive_ancillary_data=(server_mode == "SERVE_WITH_CMSG"),
                 logger=LOGGER,
             ) as server:
                 assert server.is_listening()
@@ -1027,6 +1053,7 @@ if sys.platform != "win32":
             unix_socket_path_factory: UnixSocketPathFactory,
             datagram_protocol: DatagramProtocol[str, str],
             unnamed_addresses_behavior: _UnnamedAddressesBehavior | None,
+            server_mode: _ServerModeLiteral,
         ) -> AsyncIterator[MyAsyncUnixDatagramServer]:
             if use_unix_address_type == "ABSTRACT":
                 # Let the kernel assign us an abstract socket address.
@@ -1039,6 +1066,7 @@ if sys.platform != "win32":
                 request_handler,
                 backend="trio",
                 unnamed_addresses_behavior=unnamed_addresses_behavior,
+                receive_ancillary_data=(server_mode == "SERVE_WITH_CMSG"),
                 logger=LOGGER,
             ) as server:
                 assert server.is_listening()
