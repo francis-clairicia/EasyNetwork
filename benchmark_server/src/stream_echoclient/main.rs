@@ -37,16 +37,11 @@ struct Args {
     output_format: OutputFormat,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum OutputFormat {
+    #[default]
     Text,
     Json,
-}
-
-impl Default for OutputFormat {
-    fn default() -> Self {
-        Self::Text
-    }
 }
 
 fn client_from_args(args: &Args) -> io::Result<StreamClient> {

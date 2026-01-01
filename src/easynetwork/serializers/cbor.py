@@ -116,8 +116,15 @@ class CBORSerializer(FileBasedPacketSerializer[Any, Any]):
         elif not isinstance(decoder_config, CBORDecoderConfig):
             raise TypeError(f"Invalid decoder config: expected {CBORDecoderConfig.__name__}, got {type(decoder_config).__name__}")
 
+        decoder_extra_kwargs: dict[str, Any] = {}
+
+        # Disable buffering.
+        # c.f. https://github.com/agronholm/cbor2/pull/268
+        if _cbor_decoder_have_read_size_parameter():
+            decoder_extra_kwargs["read_size"] = 1
+
         self.__encoder_cls = partial(cbor2.CBOREncoder, **dataclass_asdict(encoder_config))
-        self.__decoder_cls = partial(cbor2.CBORDecoder, **dataclass_asdict(decoder_config))
+        self.__decoder_cls = partial(cbor2.CBORDecoder, **dataclass_asdict(decoder_config), **decoder_extra_kwargs)
 
     @final
     def dump_to_file(self, packet: Any, file: IO[bytes]) -> None:
@@ -152,3 +159,27 @@ class CBORSerializer(FileBasedPacketSerializer[Any, Any]):
             the deserialized Python object.
         """
         return self.__decoder_cls(file).decode()
+
+
+def _is_cbor_module_using_c_extension_implementation() -> bool:
+    import cbor2
+
+    try:
+        import _cbor2  # type: ignore[import-not-found]
+    except ModuleNotFoundError:
+        return False
+    else:
+        return cbor2.CBORDecoder is _cbor2.CBORDecoder
+
+
+def _cbor_decoder_have_read_size_parameter() -> bool:
+    # As of v5.8.X, read_size parameter has not been added to pure-python implementation.
+
+    if _is_cbor_module_using_c_extension_implementation():
+        return True
+
+    import inspect
+
+    import cbor2
+
+    return "read_size" in inspect.signature(cbor2.CBORDecoder).parameters
