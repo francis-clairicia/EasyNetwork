@@ -242,7 +242,9 @@ class ListenerSocketAdapter(AsyncListener[_T_Stream]):
                             f,
                         )
                         delayed_retry_handles.append(handle)
-                    elif exc.errno not in constants.IGNORABLE_ACCEPT_ERRNOS:
+                    elif exc.errno in constants.IGNORABLE_ACCEPT_ERRNOS:
+                        continue
+                    else:
                         # Unrelated OS error.
                         f.set_exception(exc)
                         loop.remove_reader(listener_sock)
