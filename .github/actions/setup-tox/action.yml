@@ -28,7 +28,7 @@ runs:
       run: cat ${{ env.WORKFLOW_CACHE_KEY_FILE }}
       shell: bash
     - name: Install PDM
-      uses: pdm-project/setup-pdm@v4.2
+      uses: pdm-project/setup-pdm@v4.4
       id: pdm
       with:
         version: ${{ env.PDM_VERSION }}
