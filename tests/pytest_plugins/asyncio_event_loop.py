@@ -61,6 +61,8 @@ def _set_event_loop_policy_according_to_configuration(config: pytest.Config) -> 
             if UVLoopPolicy is None:
                 raise pytest.UsageError(f"{event_loop} event loop is not available in this platform")
 
+            # Fix policy display
+            UVLoopPolicy.__qualname__ = UVLoopPolicy.__qualname__.rpartition(".")[2]
             asyncio.set_event_loop_policy(UVLoopPolicy())
         case _:
             assert_never(event_loop)

@@ -12,7 +12,7 @@
 
 0. For the `pyenv` users, set the local python :
 ```sh
-pyenv local 3.11 3.12 3.13
+pyenv local 3.11 3.12 3.13 3.14
 ```
 
 1. Create the virtual environment :
