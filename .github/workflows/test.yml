@@ -63,7 +63,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04, windows-2022, macos-14]
-        python_version: ['3.11', '3.12', '3.13']
+        python_version: ['3.11', '3.12', '3.13', '3.14']
         include:
           - python_version: '3.11'
             tox_py: py311
@@ -71,6 +71,8 @@ jobs:
             tox_py: py312
           - python_version: '3.13'
             tox_py: py313
+          - python_version: '3.14'
+            tox_py: py314
 
     name: test (${{ matrix.os }}, ${{ matrix.python_version }})
     steps:

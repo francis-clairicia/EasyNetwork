@@ -30,6 +30,7 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Internet",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: System :: Networking",
@@ -236,6 +237,7 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "strict"  # Avoid some unwanted behaviour
+asyncio_debug = true
 addopts = "--dist=worksteal --strict-markers -p 'no:anyio' -p 'no:benchmark'"  # hatch CLI dependencies installs anyio
 doctest_optionflags = "ELLIPSIS"
 minversion = "7.1.2"
@@ -252,7 +254,6 @@ filterwarnings = [
 ]
 
 [tool.coverage.run]
-core = "ctrace"
 branch = true
 source_pkgs = [
     "easynetwork",

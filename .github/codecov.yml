@@ -5,9 +5,10 @@ comment:
   # Python 3.11: Linux, Windows, MacOS, FreeBSD, OpenBSD, NetBSD.
   # Python 3.12: Linux, Windows, MacOS, FreeBSD, OpenBSD, NetBSD.
   # Python 3.13: Linux, Windows, MacOS.
+  # Python 3.14: Linux, Windows, MacOS.
   # Final calculation:
-  # (nb_builds_per_python_version(==6 + 6 + 3) * (nb_test_runs (unit + functional) (==2))
-  after_n_builds: 30
+  # (nb_builds_per_python_version(==6 + 6 + 3 + 3) * (nb_test_runs (unit + functional) (==2))
+  after_n_builds: 36
 coverage:
   status:
     project:
