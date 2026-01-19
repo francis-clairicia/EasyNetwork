@@ -193,6 +193,7 @@ class AsyncStreamSocket:
         cls,
         sock: socket.socket,
     ) -> Self:
+        sock.setblocking(False)
         match sniffio.current_async_library():
             case "asyncio":
                 if is_unix_socket_family(sock.family):
@@ -541,6 +542,7 @@ class AsyncDatagramSocket:
     ) -> Self:
         if sock.type != socket.SOCK_DGRAM:
             raise ValueError(sock)
+        sock.setblocking(False)
         match sniffio.current_async_library():
             case "asyncio":
                 from easynetwork.lowlevel.api_async.backend._asyncio.datagram.endpoint import create_datagram_endpoint

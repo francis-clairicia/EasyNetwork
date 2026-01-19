@@ -39,13 +39,19 @@ if sys.platform != "win32":
     from easynetwork.lowlevel.api_async.transports.utils import aclose_forcefully
     from easynetwork.lowlevel.constants import DEFAULT_ANCILLARY_DATA_BUFSIZE as ANCILLARY_DATA_BUFSIZE
     from easynetwork.lowlevel.request_handler import RecvAncillaryDataParams, RecvParams
-    from easynetwork.lowlevel.socket import SCMCredentials, SocketAncillary, SocketProxy, UnixSocketAddress, enable_socket_linger
+    from easynetwork.lowlevel.socket import (
+        SCMCredentials,
+        SocketAncillary,
+        SocketCredential,
+        SocketProxy,
+        UnixSocketAddress,
+        enable_socket_linger,
+    )
     from easynetwork.protocol import AnyStreamProtocolType
     from easynetwork.servers.async_unix_stream import AsyncUnixStreamServer
     from easynetwork.servers.handlers import (
         AsyncStreamClient,
         AsyncStreamRequestHandler,
-        INETClientAttribute,
         UNIXClientAttribute,
     )
 
@@ -72,6 +78,7 @@ if sys.platform != "win32":
         server: AsyncUnixStreamServer[str, str]
         fail_on_disconnection: bool = False
         use_recvmsg_by_default: bool = False
+        use_sendmsg_by_default: bool = False
 
         async def service_init(self, exit_stack: contextlib.AsyncExitStack, server: AsyncUnixStreamServer[str, str]) -> None:
             await super().service_init(exit_stack, server)
@@ -102,9 +109,9 @@ if sys.platform != "win32":
             assert fetch_client_address(client) not in self.connected_clients
             self.connected_clients[fetch_client_address(client)] = client
             if self.use_recvmsg_by_default:
-                client.extra(INETClientAttribute.socket).setsockopt(SOL_SOCKET, SO_PASSCRED, True)
+                client.extra(UNIXClientAttribute.socket).setsockopt(SOL_SOCKET, SO_PASSCRED, True)
             if self.milk_handshake:
-                await client.send_packet("milk")
+                await self._send_response_to_client(client, "milk")
             if self.close_all_clients_on_connection:
                 await self.server.backend().sleep(0.1)
                 await client.aclose()
@@ -146,14 +153,14 @@ if sys.platform != "win32":
                         await client.aclose()
                     assert client.is_closing()
                     with pytest.raises(ClientClosedError):
-                        await client.send_packet("something never sent")
+                        await self._send_response_to_client(client, "something never sent")
                 case "__closed_client_error__":
                     await client.aclose()
-                    await client.send_packet("something never sent")
+                    await self._send_response_to_client(client, "something never sent")
                 case "__closed_client_error_excgrp__":
                     await client.aclose()
                     try:
-                        await client.send_packet("something never sent")
+                        await self._send_response_to_client(client, "something never sent")
                     except Exception as exc:
                         raise ExceptionGroup("ClosedClientError", [exc]) from None
                 case "__connection_error__":
@@ -163,14 +170,14 @@ if sys.platform != "win32":
                     raise OSError("Server issue.")
                 case "__stop_listening__":
                     await self.server.server_close()
-                    await client.send_packet("successfully stop listening")
+                    await self._send_response_to_client(client, "successfully stop listening")
                 case "__wait__":
                     while True:
                         async with self.handle_bad_requests(client):
                             request = yield None
                             break
                     self.request_received[fetch_client_address(client)].append(request)
-                    await client.send_packet(f"After wait: {request}")
+                    await self._send_response_to_client(client, f"After wait: {request}")
                 case "__recvmsg__":
                     ancillary = SocketAncillary()
                     while True:
@@ -183,22 +190,37 @@ if sys.platform != "win32":
                     fds = list(ancillary.iter_fds())
                     for fd in fds:
                         os.close(fd)
-                    await client.send_packet(f"Received {len(fds)} file descriptors.")
+                    await self._send_response_to_client(client, f"Received {len(fds)} file descriptors.")
                 case "__sendmsg__":
                     ancillary = SocketAncillary()
                     with contextlib.ExitStack() as files:
                         ancillary.add_fds(files.enter_context(open(os.devnull, "rb", buffering=0)).fileno() for _ in range(3))
-                        await client.send_packet_with_ancillary("fds", ancillary.as_raw())
+                        await self._send_response_to_client(client, "fds", ancillary)
                 case _:
                     self.request_received[fetch_client_address(client)].append(request)
                     try:
-                        await client.send_packet(request.upper())
+                        await self._send_response_to_client(client, request.upper())
                     except Exception as exc:
                         msg = f"{exc.__class__.__name__}: {exc}"
                         if exc.__cause__:
                             msg = f"{msg} (caused by {exc.__cause__.__class__.__name__}: {exc.__cause__})"
                         LOGGER.error(msg, exc_info=exc)
                         await client.aclose()
+
+        async def _send_response_to_client(
+            self,
+            client: AsyncStreamClient[str],
+            response: str,
+            ancillary_data: SocketAncillary | None = None,
+        ) -> None:
+            if ancillary_data is None and self.use_sendmsg_by_default:
+                ancillary_data = SocketAncillary()
+                ancillary_data.add_creds([SocketCredential(os.getpid(), os.getuid(), os.getgid())])
+
+            if ancillary_data:
+                await client.send_packet_with_ancillary(response, ancillary_data.as_raw())
+            else:
+                await client.send_packet(response)
 
         @contextlib.asynccontextmanager
         async def handle_bad_requests(self, client: AsyncStreamClient[str]) -> AsyncIterator[None]:
@@ -294,13 +316,13 @@ if sys.platform != "win32":
 
         async def on_connection(self, client: AsyncStreamClient[str]) -> AsyncGenerator[RecvParams | None, str]:
             if self.check_sent_credential:
-                client.extra(INETClientAttribute.socket).setsockopt(SOL_SOCKET, SO_PASSCRED, True)
+                client.extra(UNIXClientAttribute.socket).setsockopt(SOL_SOCKET, SO_PASSCRED, True)
             await client.send_packet("milk")
             if self.bypass_handshake:
                 return
             try:
                 if self.check_sent_credential:
-                    client.extra(INETClientAttribute.socket).setsockopt(SOL_SOCKET, SO_PASSCRED, True)
+                    client.extra(UNIXClientAttribute.socket).setsockopt(SOL_SOCKET, SO_PASSCRED, True)
                     ancillary = SocketAncillary()
                     password = yield RecvParams(
                         timeout=1.0,
@@ -310,13 +332,13 @@ if sys.platform != "win32":
                     for msg in ancillary.messages():
                         if isinstance(msg, SCMCredentials):
                             cred = next(msg.credentials)
-                            credential_is_valid = (cred.uid, cred.gid) == (os.getuid(), os.getgid())
+                            credential_is_valid |= (cred.uid, cred.gid) == (os.getuid(), os.getgid())
                     if not credential_is_valid:
                         await client.send_packet(f"Invalid socket credential. {list(ancillary.messages())=!r}")
                         await client.aclose()
                         return
                     ancillary.clear()
-                    client.extra(INETClientAttribute.socket).setsockopt(SOL_SOCKET, SO_PASSCRED, False)
+                    client.extra(UNIXClientAttribute.socket).setsockopt(SOL_SOCKET, SO_PASSCRED, False)
                 else:
                     password = yield RecvParams(timeout=1.0)
 
@@ -434,6 +456,7 @@ if sys.platform != "win32":
 
     _UnixAddressTypeLiteral = Literal["PATHNAME", "ABSTRACT"]
     _RecvMethodLiteral = Literal["RECV", "RECVMSG"]
+    _SendMethodLiteral = Literal["SEND", "SENDMSG"]
 
     @pytest.mark.flaky(retries=3, delay=0.1)
     class _BaseTestAsyncUnixStreamServer(BaseTestAsyncServer):
@@ -469,11 +492,21 @@ if sys.platform != "win32":
                 case _:
                     pytest.fail(f"Invalid server_recv_method parameter: {request.param}")
 
+        @pytest.fixture(params=["SEND"])
+        @staticmethod
+        def server_send_method(request: pytest.FixtureRequest) -> _SendMethodLiteral:
+            match request.param:
+                case "SEND" | "SENDMSG" as param:
+                    return param
+                case _:
+                    pytest.fail(f"Invalid server_send_method parameter: {request.param}")
+
         @pytest.fixture
         @staticmethod
         def request_handler(
             request: pytest.FixtureRequest,
             server_recv_method: _RecvMethodLiteral,
+            server_send_method: _SendMethodLiteral,
         ) -> AsyncStreamRequestHandler[str, str]:
             request_handler_cls: type[AsyncStreamRequestHandler[str, str]] = getattr(request, "param", MyStreamRequestHandler)
             request_handler = request_handler_cls()
@@ -486,6 +519,14 @@ if sys.platform != "win32":
                     request_handler.use_recvmsg = True
                 case _ if server_recv_method == "RECVMSG":
                     pytest.fail(f"{request_handler_cls.__name__} will ignore {server_recv_method=} parameter.")
+                case _:
+                    pass
+
+            match request_handler:
+                case MyStreamRequestHandler() if server_send_method == "SENDMSG":
+                    request_handler.use_sendmsg_by_default = True
+                case _ if server_send_method == "SENDMSG":
+                    pytest.fail(f"{request_handler_cls.__name__} will ignore {server_send_method=} parameter.")
                 case _:
                     pass
 
@@ -649,6 +690,7 @@ if sys.platform != "win32":
             indirect=True,
         )
         @pytest.mark.parametrize("server_recv_method", ["RECV", "RECVMSG"], indirect=True)
+        @pytest.mark.parametrize("server_send_method", ["SEND", "SENDMSG"], indirect=True)
         async def test____serve_forever____accept_client(
             self,
             log_client_connection: bool | None,
@@ -1033,6 +1075,7 @@ if sys.platform != "win32":
                 assert type(caplog.records[1].exc_info[1]) is RandomError
 
         @pytest.mark.parametrize("stream_protocol", [pytest.param("bad_serialize", id="serializer_crash")], indirect=True)
+        @pytest.mark.parametrize("server_send_method", ["SEND", "SENDMSG"], indirect=True)
         async def test____serve_forever____unexpected_error_during_response_serialization(
             self,
             client_factory_no_handshake: Callable[[], Awaitable[AsyncStreamSocket]],
@@ -1079,6 +1122,7 @@ if sys.platform != "win32":
             assert type(caplog.records[1].exc_info[1]) is OSError
 
         @pytest.mark.parametrize("excgrp", [False, True], ids=lambda p: f"exception_group_raised=={p}")
+        @pytest.mark.parametrize("server_send_method", ["SEND", "SENDMSG"], indirect=True)
         async def test____serve_forever____use_of_a_closed_client_in_request_handler(
             self,
             excgrp: bool,
@@ -1135,6 +1179,7 @@ if sys.platform != "win32":
             assert caplog.records[0].levelno == logging.WARNING
 
         @pytest.mark.parametrize("forcefully_closed", [False, True], ids=lambda p: f"forcefully_closed=={p}")
+        @pytest.mark.parametrize("server_send_method", ["SEND", "SENDMSG"], indirect=True)
         async def test____serve_forever____explicitly_closed_by_request_handler(
             self,
             forcefully_closed: bool,

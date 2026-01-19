@@ -24,6 +24,8 @@ if TYPE_CHECKING:
 
 
 if sys.platform != "win32":
+    from socket import SO_PASSCRED, SOL_SOCKET
+
     from easynetwork.exceptions import (
         BaseProtocolParseError,
         ClientClosedError,
@@ -33,8 +35,9 @@ if sys.platform != "win32":
     )
     from easynetwork.lowlevel._utils import remove_traceback_frames_in_place
     from easynetwork.lowlevel.api_async.backend.abc import IEvent
-    from easynetwork.lowlevel.request_handler import RecvParams
-    from easynetwork.lowlevel.socket import SocketProxy, UnixSocketAddress
+    from easynetwork.lowlevel.constants import DEFAULT_ANCILLARY_DATA_BUFSIZE as ANCILLARY_DATA_BUFSIZE
+    from easynetwork.lowlevel.request_handler import RecvAncillaryDataParams, RecvParams
+    from easynetwork.lowlevel.socket import SocketAncillary, SocketCredential, SocketProxy, UnixSocketAddress
     from easynetwork.protocol import DatagramProtocol
     from easynetwork.servers.async_unix_datagram import AsyncUnixDatagramServer, _UnnamedAddressesBehavior
     from easynetwork.servers.handlers import AsyncDatagramClient, AsyncDatagramRequestHandler, UNIXClientAttribute
@@ -57,6 +60,8 @@ if sys.platform != "win32":
         created_clients: set[AsyncDatagramClient[str]]
         created_clients_map: dict[str | bytes, AsyncDatagramClient[str]]
         server: AsyncUnixDatagramServer[str, str]
+        use_recvmsg_by_default: bool = False
+        use_sendmsg_by_default: bool = False
 
         async def service_init(self, exit_stack: contextlib.AsyncExitStack, server: AsyncUnixDatagramServer[str, str]) -> None:
             await super().service_init(exit_stack, server)
@@ -77,6 +82,10 @@ if sys.platform != "win32":
             exit_stack.callback(self.created_clients_map.clear)
             exit_stack.callback(self.created_clients.clear)
 
+            if self.use_recvmsg_by_default:
+                for socket in server.get_sockets():
+                    socket.setsockopt(SOL_SOCKET, SO_PASSCRED, True)
+
             exit_stack.push_async_callback(self.service_quit)
 
         async def service_quit(self) -> None:
@@ -84,19 +93,26 @@ if sys.platform != "win32":
             for client in self.created_clients:
                 assert client.is_closing()
                 with pytest.raises(ClientClosedError):
-                    await client.send_packet("something")
+                    await self._send_response_to_client(client, "something")
 
-        async def handle(self, client: AsyncDatagramClient[str]) -> AsyncGenerator[None, str]:
+        async def handle(self, client: AsyncDatagramClient[str]) -> AsyncGenerator[RecvParams | None, str]:
             self.created_clients.add(client)
             self.created_clients_map.setdefault(fetch_client_address(client), client)
             while True:
                 async with self.handle_bad_requests(client):
-                    request = yield
+                    if self.use_recvmsg_by_default:
+                        ancillary = SocketAncillary()
+                        request = yield RecvParams(
+                            recv_with_ancillary=RecvAncillaryDataParams(ANCILLARY_DATA_BUFSIZE, ancillary.update_from_raw)
+                        )
+                        ancillary.clear()
+                    else:
+                        request = yield None
                     break
             self.request_count[fetch_client_address(client)] += 1
             match request:
                 case "__ping__":
-                    await client.send_packet("pong")
+                    await self._send_response_to_client(client, "pong")
                 case "__error__":
                     raise RandomError("Sorry man!")
                 case "__error_excgrp__":
@@ -112,35 +128,68 @@ if sys.platform != "win32":
                         assert client in list(self.created_clients), "client not in list(self.created_clients)"
                         assert object() not in list(self.created_clients), "object() in list(self.created_clients)"
                     except AssertionError as exc:
-                        await client.send_packet(f"False: {exc}")
+                        await self._send_response_to_client(client, f"False: {exc}")
                         LOGGER.error("AssertionError", exc_info=exc)
                     else:
-                        await client.send_packet("True")
+                        await self._send_response_to_client(client, "True")
                 case "__cache__":
                     stored_client_object = self.created_clients_map[fetch_client_address(client)]
                     try:
                         assert client is stored_client_object, "client is not stored_client_object"
                     except AssertionError as exc:
-                        await client.send_packet(f"False: {exc}")
+                        await self._send_response_to_client(client, f"False: {exc}")
                         LOGGER.error("AssertionError", exc_info=exc)
                     else:
-                        await client.send_packet("True")
+                        await self._send_response_to_client(client, "True")
                 case "__wait__":
                     while True:
                         async with self.handle_bad_requests(client):
-                            request = yield
+                            request = yield None
                             break
                     self.request_received[fetch_client_address(client)].append(request)
-                    await client.send_packet(f"After wait: {request}")
+                    await self._send_response_to_client(client, f"After wait: {request}")
+                case "__recvmsg__":
+                    ancillary = SocketAncillary()
+                    while True:
+                        async with self.handle_bad_requests(client):
+                            request = yield RecvParams(
+                                recv_with_ancillary=RecvAncillaryDataParams(ANCILLARY_DATA_BUFSIZE, ancillary.update_from_raw)
+                            )
+                            break
+                    assert request == "fds"
+                    fds = list(ancillary.iter_fds())
+                    for fd in fds:
+                        os.close(fd)
+                    await self._send_response_to_client(client, f"Received {len(fds)} file descriptors.")
+                case "__sendmsg__":
+                    ancillary = SocketAncillary()
+                    with contextlib.ExitStack() as files:
+                        ancillary.add_fds(files.enter_context(open(os.devnull, "rb", buffering=0)).fileno() for _ in range(3))
+                        await self._send_response_to_client(client, "fds", ancillary)
                 case _:
                     self.request_received[fetch_client_address(client)].append(request)
                     try:
-                        await client.send_packet(request.upper())
+                        await self._send_response_to_client(client, request.upper())
                     except Exception as exc:
                         msg = f"{exc.__class__.__name__}: {exc}"
                         if exc.__cause__:
                             msg = f"{msg} (caused by {exc.__cause__.__class__.__name__}: {exc.__cause__})"
                         LOGGER.error(msg, exc_info=exc)
+
+        async def _send_response_to_client(
+            self,
+            client: AsyncDatagramClient[str],
+            response: str,
+            ancillary_data: SocketAncillary | None = None,
+        ) -> None:
+            if ancillary_data is None and self.use_sendmsg_by_default:
+                ancillary_data = SocketAncillary()
+                ancillary_data.add_creds([SocketCredential(os.getpid(), os.getuid(), os.getgid())])
+
+            if ancillary_data:
+                await client.send_packet_with_ancillary(response, ancillary_data.as_raw())
+            else:
+                await client.send_packet(response)
 
         @contextlib.asynccontextmanager
         async def handle_bad_requests(self, client: AsyncDatagramClient[str]) -> AsyncIterator[None]:
@@ -173,6 +222,7 @@ if sys.platform != "win32":
     class TimeoutYieldedRequestHandler(AsyncDatagramRequestHandler[str, str]):
         request_timeout: float = 1.0
         timeout_on_third_yield: bool = False
+        use_recvmsg: bool = False
 
         async def handle(self, client: AsyncDatagramClient[str]) -> AsyncGenerator[RecvParams | None, str]:
             assert (yield None) == "something"
@@ -181,7 +231,16 @@ if sys.platform != "win32":
                 await client.send_packet(request)
             try:
                 with pytest.raises(TimeoutError):
-                    yield RecvParams(timeout=self.request_timeout)
+                    if self.use_recvmsg:
+                        yield RecvParams(
+                            timeout=self.request_timeout,
+                            recv_with_ancillary=RecvAncillaryDataParams(
+                                bufsize=ANCILLARY_DATA_BUFSIZE,
+                                data_received=lambda _: None,
+                            ),
+                        )
+                    else:
+                        yield RecvParams(timeout=self.request_timeout)
                 await client.send_packet("successfully timed out")
             except BaseException:
                 await client.send_packet("error occurred")
@@ -214,17 +273,35 @@ if sys.platform != "win32":
         sleep_time_before_response: float | None = None
         recreate_generator: bool = True
         ignore_cancellation: bool = False
+        use_recvmsg: bool = False
 
-        async def handle(self, client: AsyncDatagramClient[str]) -> AsyncGenerator[None, str]:
+        async def handle(self, client: AsyncDatagramClient[str]) -> AsyncGenerator[RecvParams | None, str]:
             backend = client.backend()
             while True:
-                assert (yield) == "something"
+                if self.use_recvmsg:
+                    request = yield RecvParams(
+                        recv_with_ancillary=RecvAncillaryDataParams(
+                            bufsize=ANCILLARY_DATA_BUFSIZE,
+                            data_received=lambda _: None,
+                        ),
+                    )
+                else:
+                    request = yield None
+                assert request == "something"
                 if self.sleep_time_before_second_yield is not None:
                     if self.ignore_cancellation:
                         await backend.ignore_cancellation(backend.sleep(self.sleep_time_before_second_yield))
                     else:
                         await backend.sleep(self.sleep_time_before_second_yield)
-                request = yield
+                if self.use_recvmsg:
+                    request = yield RecvParams(
+                        recv_with_ancillary=RecvAncillaryDataParams(
+                            bufsize=ANCILLARY_DATA_BUFSIZE,
+                            data_received=lambda _: None,
+                        ),
+                    )
+                else:
+                    request = yield None
                 if self.sleep_time_before_response is not None:
                     if self.ignore_cancellation:
                         await backend.ignore_cancellation(backend.sleep(self.sleep_time_before_response))
@@ -260,10 +337,21 @@ if sys.platform != "win32":
 
     class ErrorInRequestHandler(AsyncDatagramRequestHandler[str, str]):
         mute_thrown_exception: bool = False
+        use_recvmsg: bool = False
+        ancillary_data_callback: Callable[[Any], None] = staticmethod(lambda _: None)
 
-        async def handle(self, client: AsyncDatagramClient[str]) -> AsyncGenerator[None, str]:
+        async def handle(self, client: AsyncDatagramClient[str]) -> AsyncGenerator[RecvParams | None, str]:
             try:
-                request = yield
+                if self.use_recvmsg:
+                    request = yield RecvParams(
+                        timeout=None,
+                        recv_with_ancillary=RecvAncillaryDataParams(
+                            bufsize=ANCILLARY_DATA_BUFSIZE,
+                            data_received=self.ancillary_data_callback,
+                        ),
+                    )
+                else:
+                    request = yield None
             except Exception as exc:
                 msg = f"{exc.__class__.__name__}: {exc}"
                 if exc.__cause__:
@@ -287,6 +375,8 @@ if sys.platform != "win32":
         __slots__ = ()
 
     _UnixAddressTypeLiteral = Literal["PATHNAME", "ABSTRACT"]
+    _RecvMethodLiteral = Literal["RECV", "RECVMSG"]
+    _SendMethodLiteral = Literal["SEND", "SENDMSG"]
     _ServerModeLiteral = Literal["SERVE", "SERVE_WITH_CMSG"]
 
     @pytest.mark.flaky(retries=3, delay=0.1)
@@ -328,11 +418,58 @@ if sys.platform != "win32":
                 case _:
                     pytest.fail(f"Invalid server_mode parameter: {request.param}")
 
+        @pytest.fixture(params=["RECV"])
+        @staticmethod
+        def server_recv_method(request: pytest.FixtureRequest, server_mode: _ServerModeLiteral) -> _RecvMethodLiteral:
+            match request.param:
+                case "RECVMSG" if server_mode != "SERVE_WITH_CMSG":
+                    pytest.xfail(f"server_recv_method={request.param} whereas {server_mode=}.")
+                case "RECV" | "RECVMSG" as param:
+                    return param
+                case _:
+                    pytest.fail(f"Invalid server_recv_method parameter: {request.param}")
+
+        @pytest.fixture(params=["SEND"])
+        @staticmethod
+        def server_send_method(request: pytest.FixtureRequest) -> _SendMethodLiteral:
+            match request.param:
+                case "SEND" | "SENDMSG" as param:
+                    return param
+                case _:
+                    pytest.fail(f"Invalid server_send_method parameter: {request.param}")
+
         @pytest.fixture
         @staticmethod
-        def request_handler(request: pytest.FixtureRequest) -> AsyncDatagramRequestHandler[str, str]:
+        def request_handler(
+            request: pytest.FixtureRequest,
+            server_recv_method: _RecvMethodLiteral,
+            server_send_method: _SendMethodLiteral,
+        ) -> AsyncDatagramRequestHandler[str, str]:
             request_handler_cls: type[AsyncDatagramRequestHandler[str, str]] = getattr(request, "param", MyDatagramRequestHandler)
-            return request_handler_cls()
+            request_handler = request_handler_cls()
+            match request_handler:
+                case MyDatagramRequestHandler() if server_recv_method == "RECVMSG":
+                    request_handler.use_recvmsg_by_default = True
+                case TimeoutYieldedRequestHandler() if server_recv_method == "RECVMSG":
+                    request_handler.use_recvmsg = True
+                case ErrorInRequestHandler() if server_recv_method == "RECVMSG":
+                    request_handler.use_recvmsg = True
+                case ConcurrencyTestRequestHandler() if server_recv_method == "RECVMSG":
+                    request_handler.use_recvmsg = True
+                case _ if server_recv_method == "RECVMSG":
+                    pytest.fail(f"{request_handler_cls.__name__} will ignore {server_recv_method=} parameter.")
+                case _:
+                    pass
+
+            match request_handler:
+                case MyDatagramRequestHandler() if server_send_method == "SENDMSG":
+                    request_handler.use_sendmsg_by_default = True
+                case _ if server_send_method == "SENDMSG":
+                    pytest.fail(f"{request_handler_cls.__name__} will ignore {server_send_method=} parameter.")
+                case _:
+                    pass
+
+            return request_handler
 
         @pytest.fixture
         @staticmethod
@@ -340,8 +477,11 @@ if sys.platform != "win32":
             return getattr(request, "param", None)
 
         @staticmethod
-        async def __ping_server(endpoint: AsyncDatagramSocket) -> None:
-            await endpoint.sendto(b"__ping__", None)
+        async def __ping_server(endpoint: AsyncDatagramSocket, ancillary_data: SocketAncillary | None = None) -> None:
+            if ancillary_data is None:
+                await endpoint.sendto(b"__ping__", None)
+            else:
+                await endpoint.sendmsg([b"__ping__"], ancillary_data.as_raw(), None)
             with endpoint.backend().timeout(1):
                 pong, _ = await endpoint.recvfrom()
                 assert pong == b"pong"
@@ -453,6 +593,8 @@ if sys.platform != "win32":
             await run_server.wait()
             assert request_handler.server == server
 
+        @pytest.mark.parametrize("server_recv_method", ["RECV", "RECVMSG"], indirect=True)
+        @pytest.mark.parametrize("server_send_method", ["SEND", "SENDMSG"], indirect=True)
         async def test____serve_forever____handle_request(
             self,
             client_factory: Callable[[], Awaitable[AsyncDatagramSocket]],
@@ -489,6 +631,8 @@ if sys.platform != "win32":
             indirect=True,
             ids=lambda p: f"unnamed_addresses_behavior=={p!r}",
         )
+        @pytest.mark.parametrize("server_recv_method", ["RECV", "RECVMSG"], indirect=True)
+        @pytest.mark.parametrize("server_send_method", ["SEND", "SENDMSG"], indirect=True)
         async def test____serve_forever____handle_request____from_unbound_socket(
             self,
             unnamed_addresses_behavior: _UnnamedAddressesBehavior | None,
@@ -580,6 +724,7 @@ if sys.platform != "win32":
                 await endpoint.sendto(b"__cache__", None)
                 assert (await endpoint.recvfrom())[0] == b"True"
 
+        @pytest.mark.parametrize("server_recv_method", ["RECV", "RECVMSG"], indirect=True)
         async def test____serve_forever____save_request_handler_context(
             self,
             client_factory: Callable[[], Awaitable[AsyncDatagramSocket]],
@@ -594,6 +739,7 @@ if sys.platform != "win32":
 
             assert request_handler.request_received[client_address] == ["hello, world."]
 
+        @pytest.mark.parametrize("server_recv_method", ["RECV", "RECVMSG"], indirect=True)
         async def test____serve_forever____save_request_handler_context____extra_datagram_are_rescheduled(
             self,
             client_factory: Callable[[], Awaitable[AsyncDatagramSocket]],
@@ -611,6 +757,7 @@ if sys.platform != "win32":
 
             assert set(request_handler.request_received[client_address]) == {"hello, world.", "Test 2."}
 
+        @pytest.mark.parametrize("server_recv_method", ["RECV", "RECVMSG"], indirect=True)
         async def test____serve_forever____save_request_handler_context____server_shutdown(
             self,
             server: MyAsyncUnixDatagramServer,
@@ -628,6 +775,57 @@ if sys.platform != "win32":
             with endpoint.backend().timeout(1):
                 await server.shutdown()
 
+        @pytest.mark.parametrize("server_mode", ["SERVE_WITH_CMSG"], indirect=True)
+        async def test____serve_forever____recv_with_ancillary_data(
+            self,
+            client_factory: Callable[[], Awaitable[AsyncDatagramSocket]],
+        ) -> None:
+            endpoint = await client_factory()
+
+            with endpoint.backend().timeout(5), contextlib.ExitStack() as files:
+                await endpoint.sendto(b"__recvmsg__", None)
+                ancillary = SocketAncillary()
+                ancillary.add_fds(files.enter_context(open(os.devnull, "rb", buffering=0)).fileno() for _ in range(3))
+                await endpoint.sendmsg([b"fds"], ancillary.as_raw(), None)
+                assert (await endpoint.recvfrom())[0] == b"Received 3 file descriptors."
+
+        @pytest.mark.parametrize("server_mode", ["SERVE_WITH_CMSG"], indirect=True)
+        async def test____serve_forever____send_with_ancillary_data(
+            self,
+            client_factory: Callable[[], Awaitable[AsyncDatagramSocket]],
+        ) -> None:
+            endpoint = await client_factory()
+
+            with endpoint.backend().timeout(5), contextlib.ExitStack() as files:
+                await endpoint.sendto(b"__sendmsg__", None)
+                msg, ancillary, _ = await endpoint.recvmsg()
+                assert msg == b"fds"
+                fds = list(ancillary.iter_fds())
+                for fd in fds:
+                    files.callback(os.close, fd)
+                assert len(fds) == 3
+
+        @pytest.mark.parametrize("server_recv_method", ["RECV"], indirect=True)
+        @pytest.mark.parametrize("server_mode", ["SERVE_WITH_CMSG"], indirect=True)
+        async def test____serve_forever____ancillary_data_unused(
+            self,
+            client_factory: Callable[[], Awaitable[AsyncDatagramSocket]],
+            mocker: MockerFixture,
+        ) -> None:
+            endpoint = await client_factory()
+            # mock to check call count, but always call the original.
+            mock_os_close = mocker.patch("os.close", autospec=True, side_effect=os.close)
+
+            with endpoint.backend().timeout(5), contextlib.ExitStack() as stack:
+                ancillary = SocketAncillary()
+                ancillary.add_fds(stack.enter_context(open(os.devnull, "rb", buffering=0)).fileno() for _ in range(3))
+                stack.callback(mocker.stop, mock_os_close)
+
+                await self.__ping_server(endpoint, ancillary)
+
+                assert mock_os_close.call_count == 3
+
+        @pytest.mark.parametrize("server_recv_method", ["RECV", "RECVMSG"], indirect=True)
         async def test____serve_forever____bad_request(
             self,
             client_factory: Callable[[], Awaitable[AsyncDatagramSocket]],
@@ -646,6 +844,7 @@ if sys.platform != "win32":
 
         @pytest.mark.parametrize("mute_thrown_exception", [False, True])
         @pytest.mark.parametrize("request_handler", [ErrorInRequestHandler], indirect=True)
+        @pytest.mark.parametrize("server_recv_method", ["RECV", "RECVMSG"], indirect=True)
         @pytest.mark.parametrize("datagram_protocol", [pytest.param("invalid", id="serializer_crash")], indirect=True)
         async def test____serve_forever____internal_error(
             self,
@@ -662,6 +861,43 @@ if sys.platform != "win32":
             endpoint = await client_factory()
 
             expected_message = b"RuntimeError: protocol.build_packet_from_datagram() crashed (caused by SystemError: CRASH)"
+
+            await endpoint.sendto(b"something", None)
+            await endpoint.backend().sleep(0.2)
+
+            assert (await endpoint.recvfrom())[0] == expected_message
+            if mute_thrown_exception:
+                await endpoint.sendto(b"something", None)
+                await endpoint.backend().sleep(0.2)
+                assert (await endpoint.recvfrom())[0] == expected_message
+                assert len(caplog.records) == 0  # After two attempts
+            else:
+                assert len(caplog.records) == 3
+                assert caplog.records[1].exc_info is not None
+                assert type(caplog.records[1].exc_info[1]) is RuntimeError
+
+        @pytest.mark.parametrize("mute_thrown_exception", [False, True])
+        @pytest.mark.parametrize("request_handler", [ErrorInRequestHandler], indirect=True)
+        @pytest.mark.parametrize("server_recv_method", ["RECVMSG"], indirect=True)
+        @pytest.mark.parametrize("server_mode", ["SERVE_WITH_CMSG"], indirect=True)
+        @pytest.mark.parametrize("datagram_protocol", [pytest.param("invalid", id="serializer_crash")], indirect=True)
+        async def test____serve_forever____internal_error____ancillary_data_callback(
+            self,
+            mute_thrown_exception: bool,
+            request_handler: ErrorInRequestHandler,
+            client_factory: Callable[[], Awaitable[AsyncDatagramSocket]],
+            caplog: pytest.LogCaptureFixture,
+            logger_crash_maximum_nb_lines: dict[str, int],
+            mocker: MockerFixture,
+        ) -> None:
+            caplog.set_level(logging.ERROR, LOGGER.name)
+            if not mute_thrown_exception:
+                logger_crash_maximum_nb_lines[LOGGER.name] = 3
+            request_handler.ancillary_data_callback = mocker.MagicMock(side_effect=SystemError("CRASH"))
+            request_handler.mute_thrown_exception = mute_thrown_exception
+            endpoint = await client_factory()
+
+            expected_message = b"RuntimeError: RecvAncillaryDataParams.data_received() crashed (caused by SystemError: CRASH)"
 
             await endpoint.sendto(b"something", None)
             await endpoint.backend().sleep(0.2)
@@ -704,6 +940,7 @@ if sys.platform != "win32":
                 assert type(caplog.records[1].exc_info[1]) is RandomError
 
         @pytest.mark.parametrize("datagram_protocol", [pytest.param("bad_serialize", id="serializer_crash")], indirect=True)
+        @pytest.mark.parametrize("server_send_method", ["SEND", "SENDMSG"], indirect=True)
         async def test____serve_forever____unexpected_error_during_response_serialization(
             self,
             client_factory: Callable[[], Awaitable[AsyncDatagramSocket]],
@@ -766,7 +1003,10 @@ if sys.platform != "win32":
         @pytest.mark.parametrize(
             "request_handler",
             [
-                TimeoutYieldedRequestHandler,
+                pytest.param(
+                    TimeoutYieldedRequestHandler,
+                    marks=[pytest.mark.parametrize("server_recv_method", ["RECV", "RECVMSG"], indirect=True)],
+                ),
                 pytest.param(
                     TimeoutYieldedDeprecatedWayRequestHandler,
                     marks=pytest.mark.filterwarnings("ignore::DeprecationWarning:easynetwork"),
@@ -864,6 +1104,7 @@ if sys.platform != "win32":
             assert (await endpoint.recvfrom())[0] == b"hello world"
 
         @pytest.mark.parametrize("request_handler", [ConcurrencyTestRequestHandler], indirect=True)
+        @pytest.mark.parametrize("server_recv_method", ["RECV", "RECVMSG"], indirect=True)
         async def test____serve_forever____datagram_while_request_handle_is_performed(
             self,
             request_handler: ConcurrencyTestRequestHandler,
@@ -879,6 +1120,7 @@ if sys.platform != "win32":
 
         @pytest.mark.parametrize("request_handler", [ConcurrencyTestRequestHandler], indirect=True)
         @pytest.mark.parametrize("ignore_cancellation", [False, True], ids=lambda p: f"ignore_cancellation=={p}")
+        @pytest.mark.parametrize("server_recv_method", ["RECV", "RECVMSG"], indirect=True)
         async def test____serve_forever____datagram_while_request_handle_is_performed____server_shutdown(
             self,
             server: MyAsyncUnixDatagramServer,
@@ -902,6 +1144,7 @@ if sys.platform != "win32":
 
         @pytest.mark.parametrize("request_handler", [ConcurrencyTestRequestHandler], indirect=True)
         @pytest.mark.parametrize("recreate_generator", [False, True], ids=lambda p: f"recreate_generator=={p}")
+        @pytest.mark.parametrize("server_recv_method", ["RECV", "RECVMSG"], indirect=True)
         async def test____serve_forever____too_many_datagrams_while_request_handle_is_performed(
             self,
             recreate_generator: bool,

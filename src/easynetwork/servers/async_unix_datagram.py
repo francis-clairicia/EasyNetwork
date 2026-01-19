@@ -153,6 +153,8 @@ else:
 
             if not receive_ancillary_data and ancillary_bufsize is not None:
                 raise ValueError("ancillary_bufsize is only meaningful with receive_ancillary_data set to True")
+            if ancillary_bufsize is None:
+                ancillary_bufsize = constants.DEFAULT_ANCILLARY_DATA_BUFSIZE
 
             self.__listener_factory: Callable[[], Coroutine[Any, Any, AsyncDatagramListener[str | bytes]]]
             self.__listener_factory = _utils.make_callback(
@@ -230,10 +232,7 @@ else:
                 weakref.WeakValueDictionary(),
             )
             if self.__receive_ancillary_data:
-                ancillary_bufsize = self.__ancillary_bufsize
-                if ancillary_bufsize is None:
-                    ancillary_bufsize = constants.DEFAULT_ANCILLARY_DATA_BUFSIZE
-                await server.serve_with_ancillary(handler, ancillary_bufsize, self.__ancillary_data_unused, task_group)
+                await server.serve_with_ancillary(handler, self.__ancillary_bufsize, self.__ancillary_data_unused, task_group)
             else:
                 await server.serve(handler, task_group)
 
