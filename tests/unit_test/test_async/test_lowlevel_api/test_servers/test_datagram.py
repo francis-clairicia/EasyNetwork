@@ -611,6 +611,33 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
         assert not caplog.records
         ancillary_data_unused.assert_not_called()
 
+    @pytest.mark.parametrize("ancillary_data_bufsize", [0, -42, 3.14])
+    async def test____serve_with_ancillary____invalid_bufsize(
+        self,
+        ancillary_data_bufsize: Any,
+        server: AsyncDatagramServer[Any, Any, Any],
+        mock_datagram_listener: MagicMock,
+        mock_backend: MagicMock,
+        caplog: pytest.LogCaptureFixture,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        caplog.set_level(logging.ERROR)
+
+        mock_datagram_listener.serve_with_ancillary.side_effect = AssertionError
+        mock_backend.create_condition_var.side_effect = asyncio.Condition
+
+        @stub_decorator(mocker)
+        async def datagram_received_cb(_: Any) -> AsyncGenerator[RecvParams | None, Any]:
+            yield None
+
+        # Act & Assert
+        with pytest.raises(ValueError, match=r"^ancillary_bufsize must be a strictly positive integer$"):
+            await server.serve_with_ancillary(datagram_received_cb, ancillary_bufsize=ancillary_data_bufsize)
+
+        assert not caplog.records
+        mock_datagram_listener.serve_with_ancillary.assert_not_called()
+
     async def test____extra_attributes____default(
         self,
         server: AsyncDatagramServer[Any, Any, Any],

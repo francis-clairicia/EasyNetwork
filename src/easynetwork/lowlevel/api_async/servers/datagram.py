@@ -219,6 +219,9 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
             ancillary_data_unused: Action to perform if the request handler did not claim the received ancillary data.
             task_group: the task group that will be used to start tasks for handling each received datagram.
         """
+        if not isinstance(ancillary_bufsize, int) or ancillary_bufsize <= 0:
+            raise ValueError("ancillary_bufsize must be a strictly positive integer")
+
         await self.__serve_impl(
             datagram_received_cb,
             task_group,

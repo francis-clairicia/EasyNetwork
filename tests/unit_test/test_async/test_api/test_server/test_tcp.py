@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Literal
 
-from easynetwork.exceptions import ClientClosedError
+from easynetwork.exceptions import ClientClosedError, UnsupportedOperation
 from easynetwork.lowlevel.socket import INETSocketAttribute, SocketProxy, new_socket_address
 from easynetwork.servers.async_tcp import AsyncTCPNetworkServer, _ConnectedClientAPI
 from easynetwork.servers.handlers import INETClientAttribute
@@ -230,6 +230,17 @@ class TestConnectedClientAPI(BaseTestSocket):
         # Assert
         mock_connected_stream_client.send_packet.assert_not_awaited()
         mock_tcp_socket.getsockopt.assert_not_called()
+
+    async def test____send_packet_with_ancillary____unsupported(
+        self,
+        client: _ConnectedClientAPI[Any],
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        with pytest.raises(UnsupportedOperation):
+            await client.send_packet_with_ancillary(mocker.sentinel.packet, mocker.sentinel.ancdata)
 
     async def test____special_case____close_cancelled_during_lock_acquisition(
         self,

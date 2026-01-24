@@ -155,6 +155,8 @@ else:
                 raise ValueError("ancillary_bufsize is only meaningful with receive_ancillary_data set to True")
             if ancillary_bufsize is None:
                 ancillary_bufsize = constants.DEFAULT_ANCILLARY_DATA_BUFSIZE
+            elif not isinstance(ancillary_bufsize, int) or ancillary_bufsize <= 0:
+                raise ValueError("ancillary_bufsize must be a strictly positive integer")
 
             self.__listener_factory: Callable[[], Coroutine[Any, Any, AsyncDatagramListener[str | bytes]]]
             self.__listener_factory = _utils.make_callback(

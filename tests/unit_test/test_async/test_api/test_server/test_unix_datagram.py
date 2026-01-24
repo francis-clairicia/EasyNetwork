@@ -207,6 +207,30 @@ if sys.platform != "win32":
                     ancillary_bufsize=1234,
                 )
 
+        @pytest.mark.parametrize("invalid_bufsize", [0, -42, 3.14])
+        async def test____dunder_init____ancillary_bufsize____invalid_value(
+            self,
+            invalid_bufsize: Any,
+            mock_datagram_protocol: MagicMock,
+            mock_datagram_request_handler: MagicMock,
+            mock_backend: MagicMock,
+        ) -> None:
+            # Arrange
+
+            # Act & Assert
+            with pytest.raises(
+                ValueError,
+                match=r"^ancillary_bufsize must be a strictly positive integer$",
+            ):
+                _ = AsyncUnixDatagramServer(
+                    "/path/to/sock",
+                    mock_datagram_protocol,
+                    mock_datagram_request_handler,
+                    mock_backend,
+                    receive_ancillary_data=True,
+                    ancillary_bufsize=invalid_bufsize,
+                )
+
         async def test____dunder_init____backend____invalid_value(
             self,
             mock_datagram_protocol: MagicMock,
