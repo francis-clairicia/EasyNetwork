@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 
 
 if sys.platform != "win32":
-    from socket import SO_PASSCRED, SOL_SOCKET
+    from socket import SOL_SOCKET
 
     from easynetwork.exceptions import (
         BaseProtocolParseError,
@@ -37,7 +37,7 @@ if sys.platform != "win32":
     from easynetwork.lowlevel.api_async.backend.abc import IEvent
     from easynetwork.lowlevel.constants import DEFAULT_ANCILLARY_DATA_BUFSIZE as ANCILLARY_DATA_BUFSIZE
     from easynetwork.lowlevel.request_handler import RecvAncillaryDataParams, RecvParams
-    from easynetwork.lowlevel.socket import SocketAncillary, SocketCredential, SocketProxy, UnixSocketAddress
+    from easynetwork.lowlevel.socket import SocketAncillary, SocketProxy, UnixSocketAddress
     from easynetwork.protocol import DatagramProtocol
     from easynetwork.servers.async_unix_datagram import AsyncUnixDatagramServer, _UnnamedAddressesBehavior
     from easynetwork.servers.handlers import AsyncDatagramClient, AsyncDatagramRequestHandler, UNIXClientAttribute
@@ -83,8 +83,12 @@ if sys.platform != "win32":
             exit_stack.callback(self.created_clients.clear)
 
             if self.use_recvmsg_by_default:
-                for socket in server.get_sockets():
-                    socket.setsockopt(SOL_SOCKET, SO_PASSCRED, True)
+                import socket
+
+                SO_PASSCRED: int | None = getattr(socket, "SO_PASSCRED", None)
+                if SO_PASSCRED is not None:
+                    for s in server.get_sockets():
+                        s.setsockopt(SOL_SOCKET, SO_PASSCRED, True)
 
             exit_stack.push_async_callback(self.service_quit)
 
@@ -184,7 +188,6 @@ if sys.platform != "win32":
         ) -> None:
             if ancillary_data is None and self.use_sendmsg_by_default:
                 ancillary_data = SocketAncillary()
-                ancillary_data.add_creds([SocketCredential(os.getpid(), os.getuid(), os.getgid())])
 
             if ancillary_data:
                 await client.send_packet_with_ancillary(response, ancillary_data.as_raw())

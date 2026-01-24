@@ -231,6 +231,26 @@ if sys.platform != "win32":
                     ancillary_bufsize=invalid_bufsize,
                 )
 
+        @pytest.mark.parametrize("valid_bufsize", [1, 8192, 2**16])
+        async def test____dunder_init____ancillary_bufsize____valid_value(
+            self,
+            valid_bufsize: Any,
+            mock_datagram_protocol: MagicMock,
+            mock_datagram_request_handler: MagicMock,
+            mock_backend: MagicMock,
+        ) -> None:
+            # Arrange
+
+            # Act & Assert
+            _ = AsyncUnixDatagramServer(
+                "/path/to/sock",
+                mock_datagram_protocol,
+                mock_datagram_request_handler,
+                mock_backend,
+                receive_ancillary_data=True,
+                ancillary_bufsize=valid_bufsize,
+            )
+
         async def test____dunder_init____backend____invalid_value(
             self,
             mock_datagram_protocol: MagicMock,

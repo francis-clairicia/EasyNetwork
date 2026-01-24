@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 
 
 if sys.platform != "win32":
-    from socket import AF_UNIX, SO_PASSCRED, SOL_SOCKET
+    from socket import AF_UNIX, SOL_SOCKET
 
     from easynetwork.exceptions import (
         BaseProtocolParseError,
@@ -40,9 +40,7 @@ if sys.platform != "win32":
     from easynetwork.lowlevel.constants import DEFAULT_ANCILLARY_DATA_BUFSIZE as ANCILLARY_DATA_BUFSIZE
     from easynetwork.lowlevel.request_handler import RecvAncillaryDataParams, RecvParams
     from easynetwork.lowlevel.socket import (
-        SCMCredentials,
         SocketAncillary,
-        SocketCredential,
         SocketProxy,
         UnixSocketAddress,
         enable_socket_linger,
@@ -109,7 +107,11 @@ if sys.platform != "win32":
             assert fetch_client_address(client) not in self.connected_clients
             self.connected_clients[fetch_client_address(client)] = client
             if self.use_recvmsg_by_default:
-                client.extra(UNIXClientAttribute.socket).setsockopt(SOL_SOCKET, SO_PASSCRED, True)
+                import socket
+
+                SO_PASSCRED: int | None = getattr(socket, "SO_PASSCRED", None)
+                if SO_PASSCRED is not None:
+                    client.extra(UNIXClientAttribute.socket).setsockopt(SOL_SOCKET, SO_PASSCRED, True)
             if self.milk_handshake:
                 await self._send_response_to_client(client, "milk")
             if self.close_all_clients_on_connection:
@@ -215,7 +217,6 @@ if sys.platform != "win32":
         ) -> None:
             if ancillary_data is None and self.use_sendmsg_by_default:
                 ancillary_data = SocketAncillary()
-                ancillary_data.add_creds([SocketCredential(os.getpid(), os.getuid(), os.getgid())])
 
             if ancillary_data:
                 await client.send_packet_with_ancillary(response, ancillary_data.as_raw())
@@ -316,29 +317,37 @@ if sys.platform != "win32":
 
         async def on_connection(self, client: AsyncStreamClient[str]) -> AsyncGenerator[RecvParams | None, str]:
             if self.check_sent_credential:
+                import socket
+
+                SO_PASSCRED: int | None = getattr(socket, "SO_PASSCRED", None)
+                if SO_PASSCRED is None:
+                    raise AssertionError("SO_PASSCRED is not defined")
                 client.extra(UNIXClientAttribute.socket).setsockopt(SOL_SOCKET, SO_PASSCRED, True)
             await client.send_packet("milk")
             if self.bypass_handshake:
                 return
             try:
                 if self.check_sent_credential:
-                    client.extra(UNIXClientAttribute.socket).setsockopt(SOL_SOCKET, SO_PASSCRED, True)
                     ancillary = SocketAncillary()
                     password = yield RecvParams(
                         timeout=1.0,
                         recv_with_ancillary=RecvAncillaryDataParams(ANCILLARY_DATA_BUFSIZE, ancillary.update_from_raw),
                     )
                     credential_is_valid: bool = False
-                    for msg in ancillary.messages():
-                        if isinstance(msg, SCMCredentials):
-                            cred = next(msg.credentials)
-                            credential_is_valid |= (cred.uid, cred.gid) == (os.getuid(), os.getgid())
+                    received_credentials: list[Any] = []
+                    if sys.platform != "darwin":
+                        from easynetwork.lowlevel.socket import SCMCredentials
+
+                        for msg in ancillary.messages():
+                            if isinstance(msg, SCMCredentials):
+                                cred = next(msg.credentials)
+                                received_credentials.append(cred)
+                                credential_is_valid |= (cred.uid, cred.gid) == (os.getuid(), os.getgid())
                     if not credential_is_valid:
-                        await client.send_packet(f"Invalid socket credential. {list(ancillary.messages())=!r}")
+                        await client.send_packet(f"Invalid socket credential. {received_credentials=!r}")
                         await client.aclose()
                         return
                     ancillary.clear()
-                    client.extra(UNIXClientAttribute.socket).setsockopt(SOL_SOCKET, SO_PASSCRED, False)
                 else:
                     password = yield RecvParams(timeout=1.0)
 
@@ -1328,7 +1337,14 @@ if sys.platform != "win32":
 
         @pytest.mark.parametrize("request_handler", [InitialHandshakeRequestHandler], indirect=True)
         @pytest.mark.parametrize("handshake_2fa", [True, False], ids=lambda p: f"handshake_2fa=={p}")
-        @pytest.mark.parametrize("check_sent_credential", [True, False], ids=lambda p: f"check_sent_credential=={p}")
+        @pytest.mark.parametrize(
+            "check_sent_credential",
+            [
+                pytest.param(True, marks=[PlatformMarkers.supports_sending_unix_credentials]),
+                False,
+            ],
+            ids=lambda p: f"check_sent_credential=={p}",
+        )
         async def test____serve_forever____request_handler_on_connection_is_async_gen(
             self,
             client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
@@ -1351,7 +1367,14 @@ if sys.platform != "win32":
 
         @pytest.mark.parametrize("request_handler", [InitialHandshakeRequestHandler], indirect=True)
         @pytest.mark.parametrize("handshake_2fa", [True, False], ids=lambda p: f"handshake_2fa=={p}")
-        @pytest.mark.parametrize("check_sent_credential", [True, False], ids=lambda p: f"check_sent_credential=={p}")
+        @pytest.mark.parametrize(
+            "check_sent_credential",
+            [
+                pytest.param(True, marks=[PlatformMarkers.supports_sending_unix_credentials]),
+                False,
+            ],
+            ids=lambda p: f"check_sent_credential=={p}",
+        )
         async def test____serve_forever____request_handler_on_connection_is_async_gen____close_connection(
             self,
             client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
@@ -1375,7 +1398,14 @@ if sys.platform != "win32":
 
         @pytest.mark.parametrize("request_handler", [InitialHandshakeRequestHandler], indirect=True)
         @pytest.mark.parametrize("handshake_2fa", [True, False], ids=lambda p: f"handshake_2fa=={p}")
-        @pytest.mark.parametrize("check_sent_credential", [True, False], ids=lambda p: f"check_sent_credential=={p}")
+        @pytest.mark.parametrize(
+            "check_sent_credential",
+            [
+                pytest.param(True, marks=[PlatformMarkers.supports_sending_unix_credentials]),
+                False,
+            ],
+            ids=lambda p: f"check_sent_credential=={p}",
+        )
         async def test____serve_forever____request_handler_on_connection_is_async_gen____throw_cancel_error_within_generator(
             self,
             client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
