@@ -94,15 +94,14 @@ def build_lowlevel_stream_server_handler(
                     while True:
                         try:
                             try:
-                                try:
-                                    request = yield recv_params
-                                finally:
-                                    del recv_params
+                                request = yield recv_params
                             except GeneratorExit:  # pragma: no cover
                                 raise
                             except BaseException as exc:
+                                del recv_params
                                 recv_params = await _on_connection_hook.athrow(exc)
                             else:
+                                del recv_params
                                 recv_params = await _on_connection_hook.asend(request)
                             finally:
                                 request = None
@@ -143,15 +142,14 @@ def build_lowlevel_stream_server_handler(
                     while True:
                         try:
                             try:
-                                try:
-                                    request = yield recv_params
-                                finally:
-                                    del recv_params
+                                request = yield recv_params
                             except GeneratorExit:  # pragma: no cover
                                 raise
                             except BaseException as exc:
+                                del recv_params
                                 recv_params = await request_handler_generator.athrow(exc)
                             else:
+                                del recv_params
                                 recv_params = await request_handler_generator.asend(request)
                             finally:
                                 request = None
@@ -220,8 +218,10 @@ def build_lowlevel_datagram_server_handler(
                         except GeneratorExit:  # pragma: no cover
                             raise
                         except BaseException as exc:
+                            del recv_params
                             recv_params = await request_handler_generator.athrow(exc)
                         else:
+                            del recv_params
                             recv_params = await request_handler_generator.asend(request)
                         finally:
                             request = None

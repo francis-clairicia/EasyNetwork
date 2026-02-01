@@ -35,10 +35,8 @@ def SO_PASSCRED_or_None() -> tuple[int, int] | None:
         (
             (level, msg_type)
             for level, option_name in (
-                # Linux/MacOS
+                # Linux/FreeBSD
                 (socket.SOL_SOCKET, "SO_PASSCRED"),
-                # FreeBSD/OpenBSD
-                (SOL_LOCAL, "LOCAL_PEERCRED"),
                 # NetBSD
                 (SOL_LOCAL, "LOCAL_CREDS"),
             )

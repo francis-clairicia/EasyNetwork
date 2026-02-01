@@ -313,17 +313,18 @@ class AsyncStreamServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T_R
                                     timeout_scope = _no_timeout_scope
                                 case timeout:
                                     timeout_scope = _timeout_scope_ctx(timeout)
-                            ancillary_data_params: RecvAncillaryDataParams | None = recv_params.recv_with_ancillary
                             with timeout_scope:
-                                if ancillary_data_params is None:
+                                if recv_params.recv_with_ancillary is None:
                                     request = await _next_packet()
                                 else:
-                                    request = await _next_packet_with_ancillary(ancillary_data_params)
+                                    request = await _next_packet_with_ancillary(recv_params.recv_with_ancillary)
                         except StopAsyncIteration:
                             raise
                         except BaseException as exc:
+                            del recv_params
                             recv_params = _rcv(await request_handler_generator.athrow(exc))
                         else:
+                            del recv_params
                             recv_params = _rcv(await _request_handler_generator_asend(request))
                         finally:
                             request = None
