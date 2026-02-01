@@ -1244,6 +1244,7 @@ if sys.platform != "win32":
 
                     endpoint = await AsyncDatagramSocket.open_unix_connection(server_address.as_raw(), local_path=local_path)
                     await stack.enter_async_context(endpoint)
+                    endpoint.set_read_timeout(10.0)
                     return endpoint
 
                 yield factory
@@ -1337,6 +1338,7 @@ if sys.platform != "win32":
 
                     endpoint = await AsyncDatagramSocket.open_unix_connection(server_address.as_raw(), local_path=local_path)
                     await stack.enter_async_context(endpoint)
+                    endpoint.set_read_timeout(10.0)
                     return endpoint
 
                 yield factory

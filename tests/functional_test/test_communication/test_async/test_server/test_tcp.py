@@ -1230,6 +1230,7 @@ class TestAsyncTCPNetworkServerWithAsyncIO(_BaseTestAsyncTCPNetworkServer, BaseT
                         ssl_shutdown_timeout=1 if client_ssl_context else None,
                     )
                     await stack.enter_async_context(sock)
+                sock.set_read_timeout(10.0)
                 return sock
 
             yield factory
@@ -1319,6 +1320,7 @@ class TestAsyncTCPNetworkServerWithTrio(_BaseTestAsyncTCPNetworkServer, BaseTest
                         ssl_shutdown_timeout=1 if client_ssl_context else None,
                     )
                     await stack.enter_async_context(sock)
+                sock.set_read_timeout(10.0)
                 return sock
 
             yield factory

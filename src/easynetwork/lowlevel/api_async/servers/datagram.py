@@ -375,9 +375,10 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
                         )
                     request = self.__parse_datagram(datagram, self.__protocol)
                 except BaseException as exc:
+                    del recv_params
                     recv_params = _rcv(await request_handler_generator.athrow(exc))
                 else:
-                    del datagram  # Drop datagram reference before proceeding.
+                    del recv_params, datagram  # Drop datagram reference before proceeding.
                     recv_params = _rcv(await request_handler_generator.asend(request))
                 finally:
                     request = ancillary_data = None
@@ -407,7 +408,7 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
                         del recv_params
                         recv_params = _rcv(await request_handler_generator.athrow(exc))
                     else:
-                        del datagram, recv_params
+                        del recv_params, datagram
                         recv_params = _rcv(await request_handler_generator.asend(request))
                     finally:
                         request = ancillary_data = None

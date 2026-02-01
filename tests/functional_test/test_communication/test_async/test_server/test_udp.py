@@ -801,6 +801,7 @@ class TestAsyncUDPNetworkServerWithAsyncIO(_BaseTestAsyncUDPNetworkServer, BaseT
                     family=socket_family,
                 )
                 await stack.enter_async_context(endpoint)
+                endpoint.set_read_timeout(10.0)
                 return endpoint
 
             yield factory
@@ -876,6 +877,7 @@ class TestAsyncUDPNetworkServerWithTrio(_BaseTestAsyncUDPNetworkServer, BaseTest
                     family=socket_family,
                 )
                 await stack.enter_async_context(endpoint)
+                endpoint.set_read_timeout(10.0)
                 return endpoint
 
             yield factory
