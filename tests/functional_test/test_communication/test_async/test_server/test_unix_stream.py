@@ -16,6 +16,7 @@ from weakref import WeakValueDictionary
 import pytest
 import pytest_asyncio
 
+from .....fixtures.socket import SO_PASSCRED_or_None
 from .....fixtures.trio import trio_fixture
 from .....tools import PlatformMarkers
 from ..socket import AsyncStreamSocket
@@ -26,7 +27,7 @@ if TYPE_CHECKING:
 
 
 if sys.platform != "win32":
-    from socket import AF_UNIX, SOL_SOCKET
+    from socket import AF_UNIX
 
     from easynetwork.exceptions import (
         BaseProtocolParseError,
@@ -106,11 +107,9 @@ if sys.platform != "win32":
             assert fetch_client_address(client) not in self.connected_clients
             self.connected_clients[fetch_client_address(client)] = client
             if self.use_recvmsg_by_default:
-                import socket
-
-                SO_PASSCRED: int | None = getattr(socket, "SO_PASSCRED", None)
+                SO_PASSCRED: tuple[int, int] | None = SO_PASSCRED_or_None()
                 if SO_PASSCRED is not None:
-                    client.extra(UNIXClientAttribute.socket).setsockopt(SOL_SOCKET, SO_PASSCRED, True)
+                    client.extra(UNIXClientAttribute.socket).setsockopt(*SO_PASSCRED, True)
             if self.milk_handshake:
                 await self._send_response_to_client(client, "milk")
             if self.close_all_clients_on_connection:
@@ -309,12 +308,10 @@ if sys.platform != "win32":
 
         async def on_connection(self, client: AsyncStreamClient[str]) -> AsyncGenerator[RecvParams | None, str]:
             if self.check_sent_credential:
-                import socket
-
-                SO_PASSCRED: int | None = getattr(socket, "SO_PASSCRED", None)
+                SO_PASSCRED: tuple[int, int] | None = SO_PASSCRED_or_None()
                 if SO_PASSCRED is None:
                     raise AssertionError("SO_PASSCRED is not defined")
-                client.extra(UNIXClientAttribute.socket).setsockopt(SOL_SOCKET, SO_PASSCRED, True)
+                client.extra(UNIXClientAttribute.socket).setsockopt(*SO_PASSCRED, True)
             await client.send_packet("milk")
             if self.bypass_handshake:
                 return

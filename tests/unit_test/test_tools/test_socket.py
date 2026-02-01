@@ -678,7 +678,7 @@ if sys.platform != "win32":
                 # Assert
                 assert ancdata.as_raw() == [(SOL_SOCKET, SCM_CREDENTIALS, struct.pack("3i", os.getpid(), 1001, 2002))]
 
-            def test____add_creds____empty_iterable(self) -> None:
+            def test____add_creds____empty_iterable(self, SCM_CREDENTIALS: int) -> None:
                 # Arrange
                 ancdata = SocketAncillary()
 

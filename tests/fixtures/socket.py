@@ -26,3 +26,23 @@ def AF_UNIX_or_skip() -> int:
 
 def AF_UNIX_or_None() -> int | None:
     return socket_family_or_None("AF_UNIX")
+
+
+def SO_PASSCRED_or_None() -> tuple[int, int] | None:
+    # The constant is not defined in _socket module (at least on 3.11).
+    SOL_LOCAL: int = 0
+    return next(
+        (
+            (level, msg_type)
+            for level, option_name in (
+                # Linux/MacOS
+                (socket.SOL_SOCKET, "SO_PASSCRED"),
+                # FreeBSD/OpenBSD
+                (SOL_LOCAL, "LOCAL_PEERCRED"),
+                # NetBSD
+                (SOL_LOCAL, "LOCAL_CREDS"),
+            )
+            if (msg_type := getattr(socket, option_name, None)) is not None
+        ),
+        None,
+    )

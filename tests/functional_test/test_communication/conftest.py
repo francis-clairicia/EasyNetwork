@@ -14,7 +14,6 @@ from easynetwork.protocol import AnyStreamProtocolType, BufferedStreamProtocol, 
 
 import pytest
 
-from ...fixtures.socket import AF_UNIX_or_skip
 from .serializer import BadSerializeStringSerializer, NotGoodStringSerializer, StringSerializer
 
 if TYPE_CHECKING:
@@ -68,27 +67,26 @@ def udp_socket_factory(inet_socket_factory: Callable[[int], Socket]) -> Callable
     return partial(inet_socket_factory, SOCK_DGRAM)
 
 
-@pytest.fixture
-def unix_socket_factory() -> Iterator[Callable[[int], Socket]]:
-    from ...fixtures.socket import AF_UNIX_or_skip
+if sys.platform != "win32":
+    from socket import AF_UNIX
 
-    socket_stack = ExitStack()
+    @pytest.fixture
+    def unix_socket_factory() -> Iterator[Callable[[int], Socket]]:
+        socket_stack = ExitStack()
 
-    def unix_socket_factory(type: int) -> Socket:
-        return socket_stack.enter_context(Socket(AF_UNIX_or_skip(), type))
+        def unix_socket_factory(type: int) -> Socket:
+            return socket_stack.enter_context(Socket(AF_UNIX, type))
 
-    with socket_stack:
-        yield unix_socket_factory
+        with socket_stack:
+            yield unix_socket_factory
 
+    @pytest.fixture
+    def unix_stream_socket_factory(unix_socket_factory: Callable[[int], Socket]) -> Callable[[], Socket]:
+        return partial(unix_socket_factory, SOCK_STREAM)
 
-@pytest.fixture
-def unix_stream_socket_factory(unix_socket_factory: Callable[[int], Socket]) -> Callable[[], Socket]:
-    return partial(unix_socket_factory, SOCK_STREAM)
-
-
-@pytest.fixture
-def unix_datagram_socket_factory(unix_socket_factory: Callable[[int], Socket]) -> Callable[[], Socket]:
-    return partial(unix_socket_factory, SOCK_DGRAM)
+    @pytest.fixture
+    def unix_datagram_socket_factory(unix_socket_factory: Callable[[int], Socket]) -> Callable[[], Socket]:
+        return partial(unix_socket_factory, SOCK_DGRAM)
 
 
 @pytest.fixture(params=["data"])
@@ -159,7 +157,7 @@ if sys.platform != "win32":
 
         from easynetwork.lowlevel import _unix_utils
 
-        left_sock, right_sock = socketpair(AF_UNIX_or_skip())
+        left_sock, right_sock = socketpair(AF_UNIX)
         with left_sock, right_sock:
             if _unix_utils.platform_supports_automatic_socket_bind():
                 left_sock.bind("")

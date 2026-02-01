@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import pytest
 import pytest_asyncio
 
+from .....fixtures.socket import SO_PASSCRED_or_None
 from .....fixtures.trio import trio_fixture
 from .....tools import PlatformMarkers
 from ..socket import AsyncDatagramSocket
@@ -24,8 +25,6 @@ if TYPE_CHECKING:
 
 
 if sys.platform != "win32":
-    from socket import SOL_SOCKET
-
     from easynetwork.exceptions import (
         BaseProtocolParseError,
         ClientClosedError,
@@ -82,12 +81,10 @@ if sys.platform != "win32":
             exit_stack.callback(self.created_clients.clear)
 
             if self.use_recvmsg_by_default:
-                import socket
-
-                SO_PASSCRED: int | None = getattr(socket, "SO_PASSCRED", None)
+                SO_PASSCRED: tuple[int, int] | None = SO_PASSCRED_or_None()
                 if SO_PASSCRED is not None:
                     for s in server.get_sockets():
-                        s.setsockopt(SOL_SOCKET, SO_PASSCRED, True)
+                        s.setsockopt(*SO_PASSCRED, True)
 
             exit_stack.push_async_callback(self.service_quit)
 
