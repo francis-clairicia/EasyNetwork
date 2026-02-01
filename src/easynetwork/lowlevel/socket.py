@@ -985,11 +985,9 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
             Parameters:
                 fds: Any iterable of opened file descriptors.
             """
-            scm_rights, inserted = self.__get_or_insert(_socket.SOL_SOCKET, _socket.SCM_RIGHTS)
-            assert type(scm_rights) is _RawSCMRights  # nosec assert_used
+            scm_rights = self.__get_or_insert(_socket.SOL_SOCKET, _socket.SCM_RIGHTS)
+            assert type(scm_rights) is _RawSCMRights, f"{scm_rights=!r}"  # nosec assert_used
             scm_rights.append(fds)
-            if inserted and scm_rights.is_empty():
-                del self.__data[_socket.SOL_SOCKET, _socket.SCM_RIGHTS]
 
         if sys.platform != "darwin" and (TYPE_CHECKING or constants.SCM_CREDENTIALS is not None):
 
@@ -1006,11 +1004,9 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
                 Availability: Linux, FreeBSD, NetBSD.
                 """
                 assert constants.SCM_CREDENTIALS is not None  # nosec assert_used
-                scm_creds, inserted = self.__get_or_insert(_socket.SOL_SOCKET, constants.SCM_CREDENTIALS)
-                assert type(scm_creds) is _RawSCMCredentials  # nosec assert_used
+                scm_creds = self.__get_or_insert(_socket.SOL_SOCKET, constants.SCM_CREDENTIALS)
+                assert type(scm_creds) is _RawSCMCredentials, f"{scm_creds=!r}"  # nosec assert_used
                 scm_creds.append(credentials)
-                if inserted and scm_creds.is_empty():
-                    del self.__data[_socket.SOL_SOCKET, constants.SCM_CREDENTIALS]
 
         def messages(self) -> Iterator[SocketAncillaryMessages]:
             """
@@ -1035,7 +1031,8 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
                                 print(f"Received unix credential: {ucred}")
             """
             for cmsg_data in self.__data.values():
-                yield cmsg_data.messages()
+                if not cmsg_data.is_empty():
+                    yield cmsg_data.messages()
 
         def iter_fds(self) -> Iterator[int]:
             """
@@ -1074,13 +1071,16 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
                 messages: Any iterable of socket control messages in the form ``(level, type, data)``.
 
             Raises:
-                ExceptionGroup[ValueError]: Unknown message level/type pair.
+                ExceptionGroup: Failed to parse some messages.
             """
             parse_errors: list[Exception] = []
             try:
-                for cmsg_level, cmsg_type, cmsg_data in messages:
+                for cmsg in messages:
                     try:
-                        raw_scm_data, _ = self.__get_or_insert(cmsg_level, cmsg_type)
+                        cmsg_level, cmsg_type, cmsg_data = cmsg
+                        raw_scm_data = self.__get_or_insert(cmsg_level, cmsg_type)
+                        if raw_scm_data is None:
+                            continue
                         with self.__shrink_truncated_data(memoryview(cmsg_data).cast("B"), raw_scm_data.itemsize) as cmsg_data:
                             raw_scm_data.append_raw(cmsg_data)
                     except Exception as exc:
@@ -1108,7 +1108,11 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
             Returns:
                 A list of socket control messages in the form ``(level, type, data)``.
             """
-            return [(cmsg_level, cmsg_type, cmsg_data.as_raw()) for (cmsg_level, cmsg_type), cmsg_data in self.__data.items()]
+            return [
+                (cmsg_level, cmsg_type, cmsg_data.as_raw())
+                for (cmsg_level, cmsg_type), cmsg_data in self.__data.items()
+                if not cmsg_data.is_empty()
+            ]
 
         def clear(self) -> None:
             """
@@ -1116,23 +1120,22 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
             """
             self.__data.clear()
 
-        def __get_or_insert(self, cmsg_level: int, cmsg_type: int) -> tuple[_RawSCMessage, bool]:
+        def __get_or_insert(self, cmsg_level: int, cmsg_type: int) -> _RawSCMessage | None:
             raw_scm_data: _RawSCMessage | None = self.__data.get((cmsg_level, cmsg_type))
-            inserted = False
             if raw_scm_data is None:
                 raw_scm_data = self.__determine_scm_data_type(cmsg_level, cmsg_type)
-                self.__data[cmsg_level, cmsg_type] = raw_scm_data
-                inserted = True
-            return raw_scm_data, inserted
+                if raw_scm_data is not None:
+                    self.__data[cmsg_level, cmsg_type] = raw_scm_data
+            return raw_scm_data
 
-        def __determine_scm_data_type(self, cmsg_level: int, cmsg_type: int) -> _RawSCMessage:
+        def __determine_scm_data_type(self, cmsg_level: int, cmsg_type: int) -> _RawSCMessage | None:
             match (cmsg_level, cmsg_type):
                 case (int(_socket.SOL_SOCKET), int(_socket.SCM_RIGHTS)):
                     return _RawSCMRights()
                 case (int(_socket.SOL_SOCKET), int(constants.SCM_CREDENTIALS)) if sys.platform != "darwin":
                     return _RawSCMCredentials()
                 case _:
-                    raise ValueError(f"Unknown message level/type pair: {(cmsg_level, cmsg_type)}")
+                    return None
 
         @staticmethod
         def __shrink_truncated_data(cmsg_data: memoryview, itemsize: int) -> memoryview:

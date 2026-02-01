@@ -651,6 +651,7 @@ if sys.platform != "win32":
 
             # Assert
             assert ancdata.as_raw() == []
+            assert list(ancdata.messages()) == []
 
         if sys.platform != "darwin":
 
@@ -687,6 +688,7 @@ if sys.platform != "win32":
 
                 # Assert
                 assert ancdata.as_raw() == []
+                assert list(ancdata.messages()) == []
 
         @pytest.mark.parametrize(
             ["cmsg_level_name", "cmsg_type_name", "cmsg_data"],
@@ -734,15 +736,28 @@ if sys.platform != "win32":
             # Assert
             assert ancdata.as_raw() == [(SOL_SOCKET, SCM_RIGHTS, struct.pack("4i", 3, 4, 5, 10))]
 
-        def test____update_from_raw____raise_error_after_all_messages_has_been_parsed(self) -> None:
+        def test____update_from_raw____ignore_invalid_level_type_pair(self) -> None:
             # Arrange
             ancdata = SocketAncillary()
 
             # Act & Assert
-            with pytest.RaisesGroup(pytest.RaisesExc(ValueError, match=r"Unknown message level/type pair: \(-42, -999\)")):
+            ancdata.update_from_raw(
+                [
+                    (-42, -999, b"unknown_message_type"),
+                    (SOL_SOCKET, SCM_RIGHTS, struct.pack("4i", 3, 4, 5, 10)),
+                ]
+            )
+            assert ancdata.as_raw() == [(SOL_SOCKET, SCM_RIGHTS, struct.pack("4i", 3, 4, 5, 10))]
+
+        def test____update_from_raw____raise_error_after_all_messages_has_been_parsed(self, mocker: MockerFixture) -> None:
+            # Arrange
+            ancdata = SocketAncillary()
+
+            # Act & Assert
+            with pytest.RaisesGroup(TypeError):
                 ancdata.update_from_raw(
                     [
-                        (-42, -999, b"unknown_message_type"),
+                        (SOL_SOCKET, SCM_RIGHTS, mocker.sentinel.not_a_buffer),
                         (SOL_SOCKET, SCM_RIGHTS, struct.pack("4i", 3, 4, 5, 10)),
                     ]
                 )
@@ -753,10 +768,10 @@ if sys.platform != "win32":
             ancdata = SocketAncillary()
 
             # Act
-            ancdata.update_from_raw([(SOL_SOCKET, SCM_RIGHTS, struct.pack("i", 3)[:-2])])
+            ancdata.update_from_raw([(SOL_SOCKET, SCM_RIGHTS, struct.pack("3i", 3, 4, 5)[:-2])])
 
             # Assert
-            assert ancdata.as_raw() == [(SOL_SOCKET, SCM_RIGHTS, b"")]
+            assert ancdata.as_raw() == [(SOL_SOCKET, SCM_RIGHTS, struct.pack("2i", 3, 4))]
 
         if sys.platform != "darwin":
 
@@ -768,7 +783,7 @@ if sys.platform != "win32":
                 ancdata.update_from_raw([(SOL_SOCKET, SCM_CREDENTIALS, struct.pack("3i", 12345, 1001, 2002)[:-2])])
 
                 # Assert
-                assert ancdata.as_raw() == [(SOL_SOCKET, SCM_CREDENTIALS, b"")]
+                assert ancdata.as_raw() == []
 
         def test____messages____scm_rights(self) -> None:
             # Arrange

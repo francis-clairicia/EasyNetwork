@@ -718,7 +718,8 @@ if sys.platform != "win32":
 
             await endpoint.sendto(b"__wait__", None)
             await endpoint.sendto(b"hello, world.", None)
-            assert (await endpoint.recvfrom())[0] == b"After wait: hello, world."
+            with endpoint.backend().timeout(1.0):
+                assert (await endpoint.recvfrom())[0] == b"After wait: hello, world."
 
             assert request_handler.request_received[client_address] == ["hello, world."]
 
@@ -820,7 +821,9 @@ if sys.platform != "win32":
             await endpoint.sendto("\u00e9".encode("latin-1"), None)  # StringSerializer does not accept unicode
             await endpoint.backend().sleep(0.1)
 
-            assert (await endpoint.recvfrom())[0] == b"wrong encoding man."
+            with endpoint.backend().timeout(1.0):
+                assert (await endpoint.recvfrom())[0] == b"wrong encoding man."
+
             assert request_handler.request_received[client_address] == []
             assert isinstance(request_handler.bad_request_received[client_address][0], DatagramProtocolParseError)
             assert isinstance(request_handler.bad_request_received[client_address][0].error, DeserializeError)
@@ -848,16 +851,17 @@ if sys.platform != "win32":
             await endpoint.sendto(b"something", None)
             await endpoint.backend().sleep(0.2)
 
-            assert (await endpoint.recvfrom())[0] == expected_message
-            if mute_thrown_exception:
-                await endpoint.sendto(b"something", None)
-                await endpoint.backend().sleep(0.2)
+            with endpoint.backend().timeout(5):
                 assert (await endpoint.recvfrom())[0] == expected_message
-                assert len(caplog.records) == 0  # After two attempts
-            else:
-                assert len(caplog.records) == 3
-                assert caplog.records[1].exc_info is not None
-                assert type(caplog.records[1].exc_info[1]) is RuntimeError
+                if mute_thrown_exception:
+                    await endpoint.sendto(b"something", None)
+                    await endpoint.backend().sleep(0.2)
+                    assert (await endpoint.recvfrom())[0] == expected_message
+                    assert len(caplog.records) == 0  # After two attempts
+                else:
+                    assert len(caplog.records) == 3
+                    assert caplog.records[1].exc_info is not None
+                    assert type(caplog.records[1].exc_info[1]) is RuntimeError
 
         @pytest.mark.parametrize("mute_thrown_exception", [False, True])
         @pytest.mark.parametrize("request_handler", [ErrorInRequestHandler], indirect=True)
@@ -885,16 +889,17 @@ if sys.platform != "win32":
             await endpoint.sendto(b"something", None)
             await endpoint.backend().sleep(0.2)
 
-            assert (await endpoint.recvfrom())[0] == expected_message
-            if mute_thrown_exception:
-                await endpoint.sendto(b"something", None)
-                await endpoint.backend().sleep(0.2)
+            with endpoint.backend().timeout(5):
                 assert (await endpoint.recvfrom())[0] == expected_message
-                assert len(caplog.records) == 0  # After two attempts
-            else:
-                assert len(caplog.records) == 3
-                assert caplog.records[1].exc_info is not None
-                assert type(caplog.records[1].exc_info[1]) is RuntimeError
+                if mute_thrown_exception:
+                    await endpoint.sendto(b"something", None)
+                    await endpoint.backend().sleep(0.2)
+                    assert (await endpoint.recvfrom())[0] == expected_message
+                    assert len(caplog.records) == 0  # After two attempts
+                else:
+                    assert len(caplog.records) == 3
+                    assert caplog.records[1].exc_info is not None
+                    assert type(caplog.records[1].exc_info[1]) is RuntimeError
 
         @pytest.mark.parametrize("excgrp", [False, True], ids=lambda p: f"exception_group_raised=={p}")
         async def test____serve_forever____unexpected_error_during_process(
@@ -935,8 +940,7 @@ if sys.platform != "win32":
             endpoint = await client_factory()
 
             await endpoint.sendto(b"request", None)
-            while not caplog.records:
-                await endpoint.backend().sleep(0.2)
+            await endpoint.backend().sleep(0.2)
 
             assert len(caplog.records) == 1
             assert (
@@ -1014,11 +1018,10 @@ if sys.platform != "win32":
             endpoint = await client_factory()
 
             await endpoint.sendto(b"something", None)
-            if timeout_on_third_yield:
-                await endpoint.sendto(b"something", None)
-                assert (await endpoint.recvfrom())[0] == b"something"
-
             with endpoint.backend().timeout(request_timeout + 1):
+                if timeout_on_third_yield:
+                    await endpoint.sendto(b"something", None)
+                    assert (await endpoint.recvfrom())[0] == b"something"
                 assert (await endpoint.recvfrom())[0] == b"successfully timed out"
 
         @pytest.mark.parametrize("request_handler", [CancellationRequestHandler], indirect=True)
