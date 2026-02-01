@@ -29,6 +29,8 @@ if TYPE_CHECKING:
     import trio
 
 if sys.platform != "win32":
+    from socket import MSG_CTRUNC, MSG_TRUNC, MsgFlag
+
     from easynetwork.lowlevel.socket import SocketAncillary
 
     try:
@@ -41,6 +43,9 @@ if sys.platform != "win32":
 
     _MAX_ANCDATA_SIZE = 8192
 
+    def _check_recvmsg_return_flags(flags: int) -> None:
+        assert (flags & (MSG_TRUNC | MSG_CTRUNC)) == 0, f"messages truncated (flags=={MsgFlag(flags)})"
+
     async def _asyncio_sock_recvmsg(sock: socket.socket, bufsize: int) -> tuple[bytes, SocketAncillary, _RetAddress]:
         loop = asyncio.get_running_loop()
         while True:
@@ -49,7 +54,7 @@ if sys.platform != "win32":
             except (BlockingIOError, InterruptedError):
                 pass
             else:
-                assert flags == 0, "messages truncated"
+                _check_recvmsg_return_flags(flags)
                 ancillary = SocketAncillary()
                 ancillary.update_from_raw(cmsgs)
                 return data, ancillary, address
@@ -57,7 +62,7 @@ if sys.platform != "win32":
 
     async def _trio_sock_recvmsg(sock: trio.socket.SocketType, bufsize: int) -> tuple[bytes, SocketAncillary, _RetAddress]:
         data, cmsgs, flags, address = await sock.recvmsg(bufsize, CMSG_SPACE(_MAX_ANCDATA_SIZE))
-        assert flags == 0, "messages truncated"
+        _check_recvmsg_return_flags(flags)
         ancillary = SocketAncillary()
         ancillary.update_from_raw(cmsgs)
         return data, ancillary, address

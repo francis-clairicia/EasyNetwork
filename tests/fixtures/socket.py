@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import socket
+import sys
 
 import pytest
 
@@ -29,6 +30,9 @@ def AF_UNIX_or_None() -> int | None:
 
 
 def SO_PASSCRED_or_None() -> tuple[int, int] | None:
+    if not sys.platform.startswith(("linux", "freebsd", "netbsd")):
+        return None
+
     # The constant is not defined in _socket module (at least on 3.11).
     SOL_LOCAL: int = 0
     return next(
