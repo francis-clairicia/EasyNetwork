@@ -30,7 +30,11 @@ if sys.platform != "win32":
     from easynetwork.exceptions import ClientClosedError, DatagramProtocolParseError, DeserializeError
     from easynetwork.lowlevel.api_sync.endpoints.datagram import DatagramEndpoint
     from easynetwork.lowlevel.api_sync.transports.socket import SocketDatagramTransport
-    from easynetwork.lowlevel.constants import CLOSED_SOCKET_ERRNOS, DEFAULT_ANCILLARY_DATA_BUFSIZE, MAX_DATAGRAM_BUFSIZE
+    from easynetwork.lowlevel.constants import (
+        CLOSED_SOCKET_ERRNOS,
+        DEFAULT_UNIX_SOCKETS_ANCILLARY_DATA_BUFSIZE,
+        MAX_DATAGRAM_BUFSIZE,
+    )
     from easynetwork.lowlevel.socket import SocketAncillary, SocketProxy, UnixSocketAddress, _get_socket_extra
 
     class TestUnixDatagramClient(BaseTestClient):
@@ -790,7 +794,7 @@ if sys.platform != "win32":
             if ancillary_data:
                 mock_datagram_endpoint.recv_packet.assert_not_called()
                 mock_datagram_endpoint.recv_packet_with_ancillary.assert_called_once_with(
-                    DEFAULT_ANCILLARY_DATA_BUFSIZE,
+                    DEFAULT_UNIX_SOCKETS_ANCILLARY_DATA_BUFSIZE,
                     ancillary_data.update_from_raw,
                     timeout=recv_timeout,
                 )

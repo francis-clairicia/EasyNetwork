@@ -852,7 +852,7 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
 
     @final
     @runtime_final_class
-    @dataclasses.dataclass(kw_only=True, eq=False, frozen=True, slots=True, match_args=True)
+    @dataclasses.dataclass(eq=False, frozen=True, slots=True, match_args=True)
     class SCMRights:
         """
         This control message contains file descriptors.
@@ -889,7 +889,7 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
             return bytes(self._data)
 
         def messages(self) -> SCMRights:
-            return SCMRights(fds=iter(self._data))
+            return SCMRights(iter(self._data))
 
     if sys.platform != "darwin" and (TYPE_CHECKING or constants.SCM_CREDENTIALS is not None):
         __all__ += ["SCMCredentials", "SocketCredential"]
@@ -914,7 +914,7 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
 
         @final
         @runtime_final_class
-        @dataclasses.dataclass(kw_only=True, eq=False, frozen=True, slots=True, match_args=True)
+        @dataclasses.dataclass(eq=False, frozen=True, slots=True, match_args=True)
         class SCMCredentials:
             """
             This control message contains unix credentials.
@@ -953,7 +953,7 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
                 return bytes(self._data)
 
             def messages(self) -> SCMCredentials:
-                return SCMCredentials(credentials=map(SocketCredential._make, self.struct.iter_unpack(self._data)))
+                return SCMCredentials(map(SocketCredential._make, self.struct.iter_unpack(self._data)))
 
         SocketAncillaryMessages: TypeAlias = SCMRights | SCMCredentials
         """Unix socket control messages."""
@@ -988,7 +988,7 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
             scm_rights, inserted = self.__get_or_insert(_socket.SOL_SOCKET, _socket.SCM_RIGHTS)
             assert type(scm_rights) is _RawSCMRights  # nosec assert_used
             scm_rights.append(fds)
-            if scm_rights.is_empty() and inserted:
+            if inserted and scm_rights.is_empty():
                 del self.__data[_socket.SOL_SOCKET, _socket.SCM_RIGHTS]
 
         if sys.platform != "darwin" and (TYPE_CHECKING or constants.SCM_CREDENTIALS is not None):
@@ -1009,7 +1009,7 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
                 scm_creds, inserted = self.__get_or_insert(_socket.SOL_SOCKET, constants.SCM_CREDENTIALS)
                 assert type(scm_creds) is _RawSCMCredentials  # nosec assert_used
                 scm_creds.append(credentials)
-                if scm_creds.is_empty() and inserted:
+                if inserted and scm_creds.is_empty():
                     del self.__data[_socket.SOL_SOCKET, constants.SCM_CREDENTIALS]
 
         def messages(self) -> Iterator[SocketAncillaryMessages]:
@@ -1127,11 +1127,9 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
 
         def __determine_scm_data_type(self, cmsg_level: int, cmsg_type: int) -> _RawSCMessage:
             match (cmsg_level, cmsg_type):
-                case (_socket.SOL_SOCKET, _socket.SCM_RIGHTS):
+                case (int(_socket.SOL_SOCKET), int(_socket.SCM_RIGHTS)):
                     return _RawSCMRights()
-                case (_socket.SOL_SOCKET, constants.SCM_CREDENTIALS) if (
-                    sys.platform != "darwin" and constants.SCM_CREDENTIALS is not None
-                ):
+                case (int(_socket.SOL_SOCKET), int(constants.SCM_CREDENTIALS)) if sys.platform != "darwin":
                     return _RawSCMCredentials()
                 case _:
                     raise ValueError(f"Unknown message level/type pair: {(cmsg_level, cmsg_type)}")

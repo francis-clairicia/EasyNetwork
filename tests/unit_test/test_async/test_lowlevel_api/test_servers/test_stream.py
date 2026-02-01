@@ -10,6 +10,7 @@ import warnings
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
 from typing import TYPE_CHECKING, Any, NoReturn
 
+from easynetwork.exceptions import UnsupportedOperation
 from easynetwork.lowlevel._stream import StreamDataProducer
 from easynetwork.lowlevel.api_async.backend._asyncio.backend import AsyncIOBackend
 from easynetwork.lowlevel.api_async.backend._asyncio.tasks import TaskGroup
@@ -168,7 +169,7 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
 
     @pytest.fixture
     @staticmethod
-    def max_recv_size(request: Any) -> int:
+    def max_recv_size(request: pytest.FixtureRequest) -> int:
         return getattr(request, "param", 256 * 1024)
 
     @pytest_asyncio.fixture
@@ -213,7 +214,7 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
         with pytest.raises(TypeError, match=r"^Expected a StreamProtocol or a BufferedStreamProtocol object, got .*$"):
             _ = AsyncStreamServer(mock_listener, mock_invalid_protocol, max_recv_size)
 
-    @pytest.mark.parametrize("max_recv_size", [0, -1, 10.4], ids=lambda p: f"max_recv_size=={p}")
+    @pytest.mark.parametrize("max_recv_size", [0, -1, 10.4], ids=lambda p: f"max_recv_size=={p}", indirect=True)
     async def test____dunder_init____max_recv_size____invalid_value(
         self,
         mock_listener: MagicMock,
@@ -357,7 +358,7 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
             try:
                 if recv_with_ancillary:
                     ancillary_data_received = mocker.stub("ancillary_data_received")
-                    yield RecvParams(recv_with_ancillary=RecvAncillaryDataParams(1024, ancillary_data_received))
+                    yield RecvParams(recv_with_ancillary=RecvAncillaryDataParams(ancillary_data_received))
                 else:
                     yield None
             except ConnectionResetError:
@@ -376,9 +377,10 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
                         client_connected_cb,
                         tg,
                         disconnect_error_filter=lambda exc: isinstance(exc, ConnectionError),
+                        ancillary_bufsize=(1024 if recv_with_ancillary else None),
                     )
                 else:
-                    await server.serve(client_connected_cb, tg)
+                    await server.serve(client_connected_cb, tg, ancillary_bufsize=(1024 if recv_with_ancillary else None))
 
         exception_caught.assert_called_once_with(True if give_filter else False)
 
@@ -409,7 +411,7 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
             try:
                 if recv_with_ancillary:
                     ancillary_data_received = mocker.stub("ancillary_data_received")
-                    yield RecvParams(recv_with_ancillary=RecvAncillaryDataParams(1024, ancillary_data_received))
+                    yield RecvParams(recv_with_ancillary=RecvAncillaryDataParams(ancillary_data_received))
                 else:
                     yield None
             except OSError:
@@ -425,6 +427,7 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
                     client_connected_cb,
                     tg,
                     disconnect_error_filter=lambda exc: isinstance(exc, ConnectionError),
+                    ancillary_bufsize=(1024 if recv_with_ancillary else None),
                 )
 
         exception_caught.assert_called_once_with(False)
@@ -492,7 +495,7 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
                     ancillary_data_received = mocker.stub("ancillary_data_received")
                     yield RecvParams(
                         timeout=invalid_timeout,
-                        recv_with_ancillary=RecvAncillaryDataParams(1024, ancillary_data_received),
+                        recv_with_ancillary=RecvAncillaryDataParams(ancillary_data_received),
                     )
                 else:
                     yield RecvParams(timeout=invalid_timeout)
@@ -500,7 +503,7 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
         # Act & Assert
         async with TaskGroup() as tg:
             with pytest.raises(asyncio.CancelledError, match=r"^serve_side_effect$"):
-                await server.serve(client_connected_cb, tg)
+                await server.serve(client_connected_cb, tg, ancillary_bufsize=(1024 if recv_with_ancillary else None))
 
         assert not caplog.records
 
@@ -531,14 +534,14 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
         async def client_connected_cb(_: Any) -> AsyncGenerator[RecvParams | None, Any]:
             if recv_with_ancillary:
                 ancillary_data_received = mocker.stub("ancillary_data_received")
-                yield RecvParams(recv_with_ancillary=RecvAncillaryDataParams(1024, ancillary_data_received))
+                yield RecvParams(recv_with_ancillary=RecvAncillaryDataParams(ancillary_data_received))
             else:
                 yield None
 
         # Act & Assert
         async with TaskGroup() as tg:
             with pytest.raises(asyncio.CancelledError, match=r"^serve_side_effect$"):
-                await server.serve(client_connected_cb, tg)
+                await server.serve(client_connected_cb, tg, ancillary_bufsize=(1024 if recv_with_ancillary else None))
 
         assert len(caplog.records) == 1 and caplog.records[0].exc_info is not None
         assert isinstance(caplog.records[0].exc_info[1], OSError)
@@ -573,7 +576,7 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
         async def client_connected_cb(_: Any) -> AsyncGenerator[RecvParams | None, Any]:
             if recv_with_ancillary:
                 ancillary_data_received = mocker.stub("ancillary_data_received")
-                yield RecvParams(recv_with_ancillary=RecvAncillaryDataParams(1024, ancillary_data_received))
+                yield RecvParams(recv_with_ancillary=RecvAncillaryDataParams(ancillary_data_received))
                 ancillary_data_received.assert_called_once_with(mocker.sentinel.ancdata)
             else:
                 yield None
@@ -582,11 +585,72 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
         # Act & Assert
         async with TaskGroup() as tg:
             with pytest.raises(asyncio.CancelledError, match=r"^serve_side_effect$"):
-                await server.serve(client_connected_cb, tg)
+                await server.serve(client_connected_cb, tg, ancillary_bufsize=(1024 if recv_with_ancillary else None))
 
         assert len(caplog.records) == 1 and caplog.records[0].exc_info is not None
         assert isinstance(caplog.records[0].exc_info[1], ValueError)
         assert caplog.records[0].getMessage() == "Unhandled exception: something bad happened"
+
+    @pytest.mark.parametrize("ancillary_bufsize", [0, -42, 3.14])
+    async def test____serve____recv_with_ancillary____invalid_bufsize(
+        self,
+        ancillary_bufsize: Any,
+        server: AsyncStreamServer[Any, Any],
+        mock_listener: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_listener.serve.side_effect = asyncio.CancelledError("serve_side_effect")
+        client_connected_cb = mocker.stub()
+
+        # Act & Assert
+        with pytest.raises(ValueError, match=r"^ancillary_bufsize must be a strictly positive integer$"):
+            await server.serve(client_connected_cb, ancillary_bufsize=ancillary_bufsize)
+        mock_listener.serve.assert_not_called()
+
+    async def test____serve____recv_with_ancillary____unsupported_by_default(
+        self,
+        server: AsyncStreamServer[Any, Any],
+        mock_stream_transport: MagicMock,
+        mock_listener: MagicMock,
+        caplog: pytest.LogCaptureFixture,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        caplog.set_level(logging.ERROR)
+
+        async def serve_side_effect(handler: Callable[[Any], Awaitable[None]], task_group: Any) -> NoReturn:
+            await handler(mock_stream_transport)
+            raise asyncio.CancelledError("serve_side_effect")
+
+        mock_listener.serve.side_effect = serve_side_effect
+        mock_stream_transport.recv.side_effect = OSError
+        mock_stream_transport.recv_into.side_effect = OSError
+        mock_stream_transport.recv_with_ancillary.side_effect = [(b"packet\n", mocker.sentinel.ancdata)]
+        mock_stream_transport.recv_with_ancillary_into.side_effect = make_recv_with_ancillary_into_side_effect(
+            [(b"packet\n", mocker.sentinel.ancdata)]
+        )
+
+        @stub_decorator(mocker)
+        async def client_connected_cb(_: Any) -> AsyncGenerator[RecvParams, Any]:
+            ancillary_data_received = mocker.stub("ancillary_data_received")
+
+            with pytest.raises(
+                UnsupportedOperation,
+                match=r"^The server does not have ancillary data support \(ancillary_bufsize=None\)\.$",
+            ):
+                yield RecvParams(recv_with_ancillary=RecvAncillaryDataParams(ancillary_data_received))
+
+            ancillary_data_received.assert_not_called()
+
+        # Act & Assert
+        async with TaskGroup() as tg:
+            with pytest.raises(asyncio.CancelledError, match=r"^serve_side_effect$"):
+                await server.serve(client_connected_cb, tg)
+
+        mock_stream_transport.recv_with_ancillary.assert_not_called()
+        mock_stream_transport.recv_with_ancillary_into.assert_not_called()
+        assert not caplog.records
 
     async def test____serve____recv_with_ancillary____ancillary_data_received_callback_crashed(
         self,
@@ -618,7 +682,7 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
 
             with pytest.raises(RuntimeError, match=r"^RecvAncillaryDataParams\.data_received\(\) crashed$") as exc_info:
                 yield RecvParams(
-                    recv_with_ancillary=RecvAncillaryDataParams(1024, ancillary_data_received),
+                    recv_with_ancillary=RecvAncillaryDataParams(ancillary_data_received),
                 )
 
             assert exc_info.value.__cause__ is expected_error
@@ -626,7 +690,7 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
         # Act & Assert
         async with TaskGroup() as tg:
             with pytest.raises(asyncio.CancelledError, match=r"^serve_side_effect$"):
-                await server.serve(client_connected_cb, tg)
+                await server.serve(client_connected_cb, tg, ancillary_bufsize=1024)
 
         assert not caplog.records
 
@@ -659,7 +723,7 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
 
             with pytest.raises(EOFError, match=r"^Received partial packet data$"):
                 yield RecvParams(
-                    recv_with_ancillary=RecvAncillaryDataParams(1024, ancillary_data_received),
+                    recv_with_ancillary=RecvAncillaryDataParams(ancillary_data_received),
                 )
 
             ancillary_data_received.assert_called_once_with(mocker.sentinel.ancdata)
@@ -667,7 +731,7 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
         # Act & Assert
         async with TaskGroup() as tg:
             with pytest.raises(asyncio.CancelledError, match=r"^serve_side_effect$"):
-                await server.serve(client_connected_cb, tg)
+                await server.serve(client_connected_cb, tg, ancillary_bufsize=1024)
 
         assert not caplog.records
 

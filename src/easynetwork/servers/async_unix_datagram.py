@@ -99,7 +99,6 @@ else:
             logger: logging.Logger | None = None,
         ) -> None:
             """
-
             .. versionchanged:: NEXT_VERSION
                 Added `receive_ancillary_data` and `ancillary_bufsize` parameters.
 
@@ -119,7 +118,7 @@ else:
 
                                             * ``"warn"``: Drop the datagram and issue a :data:`~logging.WARNING` log.
                 receive_ancillary_data: ask the socket to read the ancillary data sent along with a datagram.
-                ancillary_bufsize: read buffer size for ancillary data.
+                ancillary_bufsize: read buffer size for ancillary data. Defaults to ~8KiB.
                 logger: If given, the logger instance to use.
             """
             super().__init__(
@@ -154,8 +153,8 @@ else:
             if not receive_ancillary_data and ancillary_bufsize is not None:
                 raise ValueError("ancillary_bufsize is only meaningful with receive_ancillary_data set to True")
             if ancillary_bufsize is None:
-                ancillary_bufsize = constants.DEFAULT_ANCILLARY_DATA_BUFSIZE
-            elif not isinstance(ancillary_bufsize, int) or ancillary_bufsize <= 0:
+                ancillary_bufsize = constants.DEFAULT_UNIX_SOCKETS_ANCILLARY_DATA_BUFSIZE
+            if not isinstance(ancillary_bufsize, int) or ancillary_bufsize <= 0:
                 raise ValueError("ancillary_bufsize must be a strictly positive integer")
 
             self.__listener_factory: Callable[[], Coroutine[Any, Any, AsyncDatagramListener[str | bytes]]]

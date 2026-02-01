@@ -175,7 +175,7 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
         Receive incoming datagrams as they come in and start tasks to handle them.
 
         .. versionchanged:: NEXT_VERSION
-            The async generator returned by `datagram_received_cb` may (and should) yield a :class:`.RecvParams` object.
+            The async generator returned by `datagram_received_cb` may yield a :class:`.RecvParams` object.
 
         .. deprecated:: NEXT_VERSION
             If the async generator returned by `datagram_received_cb` yields a number, a :exc:`DeprecationWarning` will be emitted.
@@ -212,6 +212,10 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
         Receive incoming datagrams with ancillary data as they come in and start tasks to handle them.
 
         See :meth:`serve` methods for more information.
+
+        .. deprecated:: NEXT_VERSION
+            If the async generator returned by `datagram_received_cb` yields a number, a :exc:`DeprecationWarning` will be emitted.
+            Use :class:`.RecvParams` instead.
 
         Parameters:
             datagram_received_cb: a callable that will be used to handle each received datagram.

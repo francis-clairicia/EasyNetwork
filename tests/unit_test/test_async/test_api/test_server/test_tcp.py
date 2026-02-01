@@ -68,6 +68,45 @@ class TestAsyncTCPNetworkServer:
         with pytest.raises(TypeError, match=r"^Expected either a string literal or a backend instance, got .*$"):
             _ = AsyncTCPNetworkServer(None, 0, mock_stream_protocol, mock_stream_request_handler, invalid_backend)
 
+    @pytest.mark.parametrize("ssl_parameter", ["ssl_handshake_timeout", "ssl_shutdown_timeout", "ssl_standard_compatible"])
+    async def test____dunder_init____useless_parameter_if_no_ssl_context(
+        self,
+        ssl_parameter: str,
+        mock_stream_protocol: MagicMock,
+        mock_stream_request_handler: MagicMock,
+        mock_backend: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        kwargs: dict[str, Any] = {ssl_parameter: mocker.sentinel.value}
+        with pytest.raises(ValueError, match=rf"^{ssl_parameter} is only meaningful with ssl$"):
+            _ = AsyncTCPNetworkServer(
+                None,
+                0,
+                mock_stream_protocol,
+                mock_stream_request_handler,
+                mock_backend,
+                ssl=None,
+                **kwargs,
+            )
+
+    @pytest.mark.parametrize("max_recv_size", [0, -1, 10.4], ids=lambda p: f"max_recv_size=={p}")
+    async def test____dunder_init____max_recv_size____invalid_value(
+        self,
+        max_recv_size: Any,
+        mock_stream_protocol: MagicMock,
+        mock_stream_request_handler: MagicMock,
+        mock_backend: MagicMock,
+    ) -> None:
+        with pytest.raises(ValueError, match=r"^'max_recv_size' must be a strictly positive integer$"):
+            _ = AsyncTCPNetworkServer(
+                None,
+                0,
+                mock_stream_protocol,
+                mock_stream_request_handler,
+                mock_backend,
+                max_recv_size=max_recv_size,
+            )
+
     async def test____get_backend____returns_linked_instance(
         self,
         server: AsyncTCPNetworkServer[Any, Any],

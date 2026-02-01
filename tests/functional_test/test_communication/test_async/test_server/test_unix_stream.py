@@ -37,7 +37,6 @@ if sys.platform != "win32":
     from easynetwork.lowlevel._utils import remove_traceback_frames_in_place
     from easynetwork.lowlevel.api_async.backend.abc import IEvent, Task
     from easynetwork.lowlevel.api_async.transports.utils import aclose_forcefully
-    from easynetwork.lowlevel.constants import DEFAULT_ANCILLARY_DATA_BUFSIZE as ANCILLARY_DATA_BUFSIZE
     from easynetwork.lowlevel.request_handler import RecvAncillaryDataParams, RecvParams
     from easynetwork.lowlevel.socket import (
         SocketAncillary,
@@ -135,9 +134,7 @@ if sys.platform != "win32":
                 async with self.handle_bad_requests(client):
                     if self.use_recvmsg_by_default:
                         ancillary = SocketAncillary()
-                        request = yield RecvParams(
-                            recv_with_ancillary=RecvAncillaryDataParams(ANCILLARY_DATA_BUFSIZE, ancillary.update_from_raw)
-                        )
+                        request = yield RecvParams(recv_with_ancillary=RecvAncillaryDataParams(ancillary.update_from_raw))
                         ancillary.clear()
                     else:
                         request = yield None
@@ -184,9 +181,7 @@ if sys.platform != "win32":
                     ancillary = SocketAncillary()
                     while True:
                         async with self.handle_bad_requests(client):
-                            request = yield RecvParams(
-                                recv_with_ancillary=RecvAncillaryDataParams(ANCILLARY_DATA_BUFSIZE, ancillary.update_from_raw)
-                            )
+                            request = yield RecvParams(recv_with_ancillary=RecvAncillaryDataParams(ancillary.update_from_raw))
                             break
                     assert request == "fds"
                     fds = list(ancillary.iter_fds())
@@ -271,10 +266,7 @@ if sys.platform != "win32":
                     if self.use_recvmsg:
                         yield RecvParams(
                             timeout=self.request_timeout,
-                            recv_with_ancillary=RecvAncillaryDataParams(
-                                bufsize=ANCILLARY_DATA_BUFSIZE,
-                                data_received=lambda _: None,
-                            ),
+                            recv_with_ancillary=RecvAncillaryDataParams(lambda _: None),
                         )
                     else:
                         yield RecvParams(timeout=self.request_timeout)
@@ -331,7 +323,7 @@ if sys.platform != "win32":
                     ancillary = SocketAncillary()
                     password = yield RecvParams(
                         timeout=1.0,
-                        recv_with_ancillary=RecvAncillaryDataParams(ANCILLARY_DATA_BUFSIZE, ancillary.update_from_raw),
+                        recv_with_ancillary=RecvAncillaryDataParams(ancillary.update_from_raw),
                     )
                     credential_is_valid: bool = False
                     received_credentials: list[Any] = []
@@ -411,10 +403,7 @@ if sys.platform != "win32":
                 if self.use_recvmsg:
                     request = yield RecvParams(
                         timeout=None,
-                        recv_with_ancillary=RecvAncillaryDataParams(
-                            bufsize=ANCILLARY_DATA_BUFSIZE,
-                            data_received=self.ancillary_data_callback,
-                        ),
+                        recv_with_ancillary=RecvAncillaryDataParams(self.ancillary_data_callback),
                     )
                 else:
                     request = yield None
@@ -433,10 +422,7 @@ if sys.platform != "win32":
                 if self.use_recvmsg:
                     request = yield RecvParams(
                         timeout=None,
-                        recv_with_ancillary=RecvAncillaryDataParams(
-                            bufsize=ANCILLARY_DATA_BUFSIZE,
-                            data_received=self.ancillary_data_callback,
-                        ),
+                        recv_with_ancillary=RecvAncillaryDataParams(self.ancillary_data_callback),
                     )
                 else:
                     request = yield None
@@ -562,28 +548,6 @@ if sys.platform != "win32":
         async def _wait_client_disconnected(client: AsyncStreamSocket) -> None:
             await client.aclose()
             await client.backend().sleep(0.1)
-
-        @pytest.mark.parametrize(
-            "max_recv_size",
-            [
-                pytest.param(0, id="null size"),
-                pytest.param(-20, id="negative size"),
-            ],
-        )
-        async def test____dunder_init____negative_or_null_recv_size(
-            self,
-            unix_socket_path_factory: UnixSocketPathFactory,
-            max_recv_size: int,
-            request_handler: MyStreamRequestHandler,
-            stream_protocol: AnyStreamProtocolType[str, str],
-        ) -> None:
-            with pytest.raises(ValueError, match=r"^'max_recv_size' must be a strictly positive integer$"):
-                _ = MyAsyncUnixStreamServer(
-                    unix_socket_path_factory(),
-                    stream_protocol,
-                    request_handler,
-                    max_recv_size=max_recv_size,
-                )
 
         async def test____server_close____while_server_is_running(
             self,

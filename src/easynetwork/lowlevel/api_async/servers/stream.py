@@ -29,6 +29,7 @@ from collections.abc import AsyncGenerator, Callable, Mapping
 from typing import Any, Generic, NoReturn, assert_never
 
 from ...._typevars import _T_Request, _T_Response
+from ....exceptions import UnsupportedOperation
 from ....protocol import AnyStreamProtocolType
 from ... import _stream, _utils
 from ...request_handler import RecvAncillaryDataParams, RecvParams
@@ -200,12 +201,16 @@ class AsyncStreamServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T_R
         task_group: TaskGroup | None = None,
         *,
         disconnect_error_filter: Callable[[Exception], bool] | None = None,
+        ancillary_bufsize: int | None = None,
     ) -> NoReturn:
         """
         Accept incoming connections as they come in and start tasks to handle them.
 
         .. versionchanged:: NEXT_VERSION
-            The async generator returned by `client_connected_cb` may (and should) yield a :class:`.RecvParams` object.
+                Added `ancillary_bufsize` parameter.
+
+        .. versionchanged:: NEXT_VERSION
+            The async generator returned by `client_connected_cb` may yield a :class:`.RecvParams` object.
 
         .. deprecated:: NEXT_VERSION
             If the async generator returned by `client_connected_cb` yields a number, a :exc:`DeprecationWarning` will be emitted.
@@ -215,9 +220,15 @@ class AsyncStreamServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T_R
             client_connected_cb: a callable that will be used to handle each accepted connection.
             task_group: the task group that will be used to start tasks for handling each accepted connection.
             disconnect_error_filter: a callable that returns :data:`True` if the exception is the result of a pipe disconnect.
+            ancillary_bufsize: the maximum buffer size for ancillary data.
+                               If :data:`None`, using :class:`.RecvAncillaryDataParams` will raise :exc:`.UnsupportedOperation`.
         """
+        if ancillary_bufsize is not None:
+            if not isinstance(ancillary_bufsize, int) or ancillary_bufsize <= 0:
+                raise ValueError("ancillary_bufsize must be a strictly positive integer")
+
         with self.__serve_guard:
-            handler = functools.partial(self.__client_coroutine, client_connected_cb, disconnect_error_filter)
+            handler = functools.partial(self.__client_coroutine, client_connected_cb, disconnect_error_filter, ancillary_bufsize)
             await self.__listener.serve(handler, task_group)
 
     async def __client_coroutine(
@@ -226,6 +237,7 @@ class AsyncStreamServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T_R
             [ConnectedStreamClient[_T_Response]], AsyncGenerator[float | RecvParams | None, _T_Request]
         ],
         disconnect_error_filter: Callable[[Exception], bool] | None,
+        ancillary_bufsize: int | None,
         transport: _transports.AsyncStreamTransport,
     ) -> None:
         if not isinstance(transport, _transports.AsyncStreamTransport):
@@ -250,6 +262,7 @@ class AsyncStreamServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T_R
                     request_receiver = _BufferedRequestReceiver(
                         transport=transport,
                         consumer=consumer,
+                        ancillary_bufsize=ancillary_bufsize,
                         disconnect_error_filter=disconnect_error_filter,
                     )
                 case StreamProtocol():
@@ -258,6 +271,7 @@ class AsyncStreamServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T_R
                         transport=transport,
                         consumer=consumer,
                         max_recv_size=self.__max_recv_size,
+                        ancillary_bufsize=ancillary_bufsize,
                         disconnect_error_filter=disconnect_error_filter,
                     )
                 case _:  # pragma: no cover
@@ -346,6 +360,7 @@ class _RequestReceiver(Generic[_T_Request]):
     transport: _transports.AsyncStreamReadTransport
     consumer: _stream.StreamDataConsumer[_T_Request]
     max_recv_size: int
+    ancillary_bufsize: int | None
     disconnect_error_filter: Callable[[Exception], bool] | None
     __backend: AsyncBackend = dataclasses.field(init=False)
 
@@ -384,6 +399,10 @@ class _RequestReceiver(Generic[_T_Request]):
         raise StopAsyncIteration
 
     async def next_with_ancillary(self, ancillary_data_params: RecvAncillaryDataParams) -> _T_Request:
+        ancillary_bufsize = self.ancillary_bufsize
+        if not ancillary_bufsize:
+            raise UnsupportedOperation("The server does not have ancillary data support (ancillary_bufsize=None).")
+
         consumer = self.consumer
         try:
             request = consumer.next(None)
@@ -395,7 +414,7 @@ class _RequestReceiver(Generic[_T_Request]):
 
         data: bytes
         try:
-            data, ancdata = await self.transport.recv_with_ancillary(self.max_recv_size, ancillary_data_params.bufsize)
+            data, ancdata = await self.transport.recv_with_ancillary(self.max_recv_size, ancillary_bufsize)
         except Exception as exc:
             if self.disconnect_error_filter is not None and self.disconnect_error_filter(exc):
                 raise StopAsyncIteration from None
@@ -422,6 +441,7 @@ class _RequestReceiver(Generic[_T_Request]):
 class _BufferedRequestReceiver(Generic[_T_Request]):
     transport: _transports.AsyncStreamReadTransport
     consumer: _stream.BufferedStreamDataConsumer[_T_Request]
+    ancillary_bufsize: int | None
     disconnect_error_filter: Callable[[Exception], bool] | None
     __backend: AsyncBackend = dataclasses.field(init=False)
 
@@ -457,6 +477,10 @@ class _BufferedRequestReceiver(Generic[_T_Request]):
         raise StopAsyncIteration
 
     async def next_with_ancillary(self, ancillary_data_params: RecvAncillaryDataParams) -> _T_Request:
+        ancillary_bufsize = self.ancillary_bufsize
+        if not ancillary_bufsize:
+            raise UnsupportedOperation("The server does not have ancillary data support (ancillary_bufsize=None).")
+
         consumer = self.consumer
         try:
             request = consumer.next(None)
@@ -469,7 +493,7 @@ class _BufferedRequestReceiver(Generic[_T_Request]):
         nbytes: int
         with consumer.get_write_buffer() as buffer:
             try:
-                nbytes, ancdata = await self.transport.recv_with_ancillary_into(buffer, ancillary_data_params.bufsize)
+                nbytes, ancdata = await self.transport.recv_with_ancillary_into(buffer, ancillary_bufsize)
             except Exception as exc:
                 if self.disconnect_error_filter is not None and self.disconnect_error_filter(exc):
                     raise StopAsyncIteration from None

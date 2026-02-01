@@ -245,7 +245,7 @@ class AsyncStreamRequestHandler(Generic[_T_Request, _T_Response], metaclass=ABCM
             the connection is forcibly closed.
 
         .. versionchanged:: NEXT_VERSION
-            The async generator may (and should) yield a :class:`.RecvParams` object.
+            The async generator may yield a :class:`.RecvParams` object.
 
         .. deprecated:: NEXT_VERSION
             If the async generator yields a number, a :exc:`DeprecationWarning` will be emitted. Use :class:`.RecvParams` instead.
@@ -288,7 +288,7 @@ class AsyncStreamRequestHandler(Generic[_T_Request, _T_Response], metaclass=ABCM
         the `client` is needed.
 
         .. versionchanged:: NEXT_VERSION
-            The async generator may (and should) yield a :class:`.RecvParams` object.
+            The async generator may yield a :class:`.RecvParams` object.
 
         .. deprecated:: NEXT_VERSION
             If the async generator yields a number, a :exc:`DeprecationWarning` will be emitted. Use :class:`.RecvParams` instead.
@@ -382,7 +382,7 @@ class AsyncDatagramRequestHandler(Generic[_T_Request, _T_Response], metaclass=AB
             the generator hits a :keyword:`yield` statement.
 
         .. versionchanged:: NEXT_VERSION
-            The async generator may (and should) yield a :class:`.RecvParams` object.
+            The async generator may yield a :class:`.RecvParams` object.
 
         .. deprecated:: NEXT_VERSION
             If the async generator yields a number, a :exc:`DeprecationWarning` will be emitted. Use :class:`.RecvParams` instead.

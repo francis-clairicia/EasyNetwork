@@ -297,7 +297,7 @@ else:
 
             Parameters:
                 ancillary_data: where to write received ancillary data.
-                ancillary_bufsize: read buffer size for ancillary data.
+                ancillary_bufsize: read buffer size for ancillary data. Defaults to ~8KiB.
 
             Raises:
                 ClientClosedError: the client object is closed.
@@ -312,7 +312,7 @@ else:
                 with self.__convert_socket_error(endpoint=endpoint):
                     if ancillary_data is not None:
                         if ancillary_bufsize is None:
-                            ancillary_bufsize = constants.DEFAULT_ANCILLARY_DATA_BUFSIZE
+                            ancillary_bufsize = constants.DEFAULT_UNIX_SOCKETS_ANCILLARY_DATA_BUFSIZE
                         return await endpoint.recv_packet_with_ancillary(
                             ancillary_bufsize,
                             ancillary_data.update_from_raw,

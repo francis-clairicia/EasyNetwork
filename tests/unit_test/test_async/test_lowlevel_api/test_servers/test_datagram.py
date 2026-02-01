@@ -265,7 +265,7 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
             ancillary_data_received = mocker.stub("ancillary_data_received")
             if invalid_timeout_after_first_yield:
                 if recv_with_ancillary:
-                    yield RecvParams(timeout=1.0, recv_with_ancillary=RecvAncillaryDataParams(0, ancillary_data_received))
+                    yield RecvParams(timeout=1.0, recv_with_ancillary=RecvAncillaryDataParams(ancillary_data_received))
                     ancillary_data_received.assert_called_once_with(mocker.sentinel.ancdata)
                 else:
                     yield RecvParams(timeout=1.0)
@@ -273,7 +273,7 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
                 if recv_with_ancillary:
                     yield RecvParams(
                         timeout=invalid_timeout,
-                        recv_with_ancillary=RecvAncillaryDataParams(0, ancillary_data_received),
+                        recv_with_ancillary=RecvAncillaryDataParams(ancillary_data_received),
                     )
                 else:
                     yield RecvParams(timeout=invalid_timeout)
@@ -328,7 +328,7 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
             if recv_with_ancillary:
                 ancillary_data_received = mocker.stub("ancillary_data_received")
                 try:
-                    yield RecvParams(recv_with_ancillary=RecvAncillaryDataParams(0, ancillary_data_received))
+                    yield RecvParams(recv_with_ancillary=RecvAncillaryDataParams(ancillary_data_received))
                 finally:
                     ancillary_data_received.assert_called_once_with(mocker.sentinel.ancdata)
             else:
@@ -427,7 +427,7 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
 
             ancillary_data_received = mocker.stub("ancillary_data_received")
             with pytest.raises(UnsupportedOperation, match=r"^The server is not configured to handle ancillary data\.$"):
-                yield RecvParams(recv_with_ancillary=RecvAncillaryDataParams(0, ancillary_data_received))
+                yield RecvParams(recv_with_ancillary=RecvAncillaryDataParams(ancillary_data_received))
 
         # Act & Assert
         async with TaskGroup() as tg:
@@ -468,12 +468,12 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
         async def datagram_received_cb(_: Any) -> AsyncGenerator[RecvParams | None, Any]:
             ancillary_data_received = mocker.stub("ancillary_data_received")
             if after_first_yield:
-                yield RecvParams(recv_with_ancillary=RecvAncillaryDataParams(0, ancillary_data_received))
+                yield RecvParams(recv_with_ancillary=RecvAncillaryDataParams(ancillary_data_received))
                 ancillary_data_received.assert_called_once_with(mocker.sentinel.ancdata)
 
             ancillary_data_received.side_effect = expected_error = Exception("Error")
             with pytest.raises(RuntimeError, match=r"^RecvAncillaryDataParams\.data_received\(\) crashed$") as exc_info:
-                yield RecvParams(recv_with_ancillary=RecvAncillaryDataParams(0, ancillary_data_received))
+                yield RecvParams(recv_with_ancillary=RecvAncillaryDataParams(ancillary_data_received))
 
             assert exc_info.value.__cause__ is expected_error
 
@@ -597,7 +597,7 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
                 yield None
             try:
                 if try_to_handle_ancillary_data:
-                    yield RecvParams(recv_with_ancillary=RecvAncillaryDataParams(0, ancillary_data_received))
+                    yield RecvParams(recv_with_ancillary=RecvAncillaryDataParams(ancillary_data_received))
                 else:
                     yield None
             finally:
@@ -611,10 +611,10 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
         assert not caplog.records
         ancillary_data_unused.assert_not_called()
 
-    @pytest.mark.parametrize("ancillary_data_bufsize", [0, -42, 3.14])
+    @pytest.mark.parametrize("ancillary_bufsize", [0, -42, 3.14])
     async def test____serve_with_ancillary____invalid_bufsize(
         self,
-        ancillary_data_bufsize: Any,
+        ancillary_bufsize: Any,
         server: AsyncDatagramServer[Any, Any, Any],
         mock_datagram_listener: MagicMock,
         mock_backend: MagicMock,
@@ -633,7 +633,7 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
 
         # Act & Assert
         with pytest.raises(ValueError, match=r"^ancillary_bufsize must be a strictly positive integer$"):
-            await server.serve_with_ancillary(datagram_received_cb, ancillary_bufsize=ancillary_data_bufsize)
+            await server.serve_with_ancillary(datagram_received_cb, ancillary_bufsize=ancillary_bufsize)
 
         assert not caplog.records
         mock_datagram_listener.serve_with_ancillary.assert_not_called()

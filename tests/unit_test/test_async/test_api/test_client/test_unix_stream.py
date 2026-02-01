@@ -32,7 +32,11 @@ if sys.platform != "win32":
     from easynetwork.clients.async_unix_stream import AsyncUnixStreamClient
     from easynetwork.exceptions import ClientClosedError, IncrementalDeserializeError, StreamProtocolParseError
     from easynetwork.lowlevel.api_async.endpoints.stream import AsyncStreamEndpoint
-    from easynetwork.lowlevel.constants import CLOSED_SOCKET_ERRNOS, DEFAULT_ANCILLARY_DATA_BUFSIZE, DEFAULT_STREAM_BUFSIZE
+    from easynetwork.lowlevel.constants import (
+        CLOSED_SOCKET_ERRNOS,
+        DEFAULT_STREAM_BUFSIZE,
+        DEFAULT_UNIX_SOCKETS_ANCILLARY_DATA_BUFSIZE,
+    )
     from easynetwork.lowlevel.socket import SocketAncillary, SocketProxy, UnixCredentials, UnixSocketAddress, _get_socket_extra
 
     @pytest.mark.asyncio
@@ -1046,7 +1050,7 @@ if sys.platform != "win32":
             if ancillary_data:
                 mock_stream_endpoint.recv_packet.assert_not_called()
                 mock_stream_endpoint.recv_packet_with_ancillary.assert_awaited_once_with(
-                    DEFAULT_ANCILLARY_DATA_BUFSIZE,
+                    DEFAULT_UNIX_SOCKETS_ANCILLARY_DATA_BUFSIZE,
                     ancillary_data.update_from_raw,
                 )
             else:

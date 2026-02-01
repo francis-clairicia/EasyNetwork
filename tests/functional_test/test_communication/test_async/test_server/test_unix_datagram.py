@@ -35,7 +35,6 @@ if sys.platform != "win32":
     )
     from easynetwork.lowlevel._utils import remove_traceback_frames_in_place
     from easynetwork.lowlevel.api_async.backend.abc import IEvent
-    from easynetwork.lowlevel.constants import DEFAULT_ANCILLARY_DATA_BUFSIZE as ANCILLARY_DATA_BUFSIZE
     from easynetwork.lowlevel.request_handler import RecvAncillaryDataParams, RecvParams
     from easynetwork.lowlevel.socket import SocketAncillary, SocketProxy, UnixSocketAddress
     from easynetwork.protocol import DatagramProtocol
@@ -106,9 +105,7 @@ if sys.platform != "win32":
                 async with self.handle_bad_requests(client):
                     if self.use_recvmsg_by_default:
                         ancillary = SocketAncillary()
-                        request = yield RecvParams(
-                            recv_with_ancillary=RecvAncillaryDataParams(ANCILLARY_DATA_BUFSIZE, ancillary.update_from_raw)
-                        )
+                        request = yield RecvParams(recv_with_ancillary=RecvAncillaryDataParams(ancillary.update_from_raw))
                         ancillary.clear()
                     else:
                         request = yield None
@@ -156,9 +153,7 @@ if sys.platform != "win32":
                     ancillary = SocketAncillary()
                     while True:
                         async with self.handle_bad_requests(client):
-                            request = yield RecvParams(
-                                recv_with_ancillary=RecvAncillaryDataParams(ANCILLARY_DATA_BUFSIZE, ancillary.update_from_raw)
-                            )
+                            request = yield RecvParams(recv_with_ancillary=RecvAncillaryDataParams(ancillary.update_from_raw))
                             break
                     assert request == "fds"
                     fds = list(ancillary.iter_fds())
@@ -237,10 +232,7 @@ if sys.platform != "win32":
                     if self.use_recvmsg:
                         yield RecvParams(
                             timeout=self.request_timeout,
-                            recv_with_ancillary=RecvAncillaryDataParams(
-                                bufsize=ANCILLARY_DATA_BUFSIZE,
-                                data_received=lambda _: None,
-                            ),
+                            recv_with_ancillary=RecvAncillaryDataParams(lambda _: None),
                         )
                     else:
                         yield RecvParams(timeout=self.request_timeout)
@@ -283,10 +275,7 @@ if sys.platform != "win32":
             while True:
                 if self.use_recvmsg:
                     request = yield RecvParams(
-                        recv_with_ancillary=RecvAncillaryDataParams(
-                            bufsize=ANCILLARY_DATA_BUFSIZE,
-                            data_received=lambda _: None,
-                        ),
+                        recv_with_ancillary=RecvAncillaryDataParams(lambda _: None),
                     )
                 else:
                     request = yield None
@@ -298,10 +287,7 @@ if sys.platform != "win32":
                         await backend.sleep(self.sleep_time_before_second_yield)
                 if self.use_recvmsg:
                     request = yield RecvParams(
-                        recv_with_ancillary=RecvAncillaryDataParams(
-                            bufsize=ANCILLARY_DATA_BUFSIZE,
-                            data_received=lambda _: None,
-                        ),
+                        recv_with_ancillary=RecvAncillaryDataParams(lambda _: None),
                     )
                 else:
                     request = yield None
@@ -348,10 +334,7 @@ if sys.platform != "win32":
                 if self.use_recvmsg:
                     request = yield RecvParams(
                         timeout=None,
-                        recv_with_ancillary=RecvAncillaryDataParams(
-                            bufsize=ANCILLARY_DATA_BUFSIZE,
-                            data_received=self.ancillary_data_callback,
-                        ),
+                        recv_with_ancillary=RecvAncillaryDataParams(self.ancillary_data_callback),
                     )
                 else:
                     request = yield None

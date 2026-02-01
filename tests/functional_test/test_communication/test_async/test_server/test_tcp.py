@@ -458,33 +458,6 @@ class _BaseTestAsyncTCPNetworkServer(BaseTestAsyncServer):
                 finally:
                     await s.shutdown()
 
-    @pytest.mark.parametrize("ssl_parameter", ["ssl_handshake_timeout", "ssl_shutdown_timeout", "ssl_standard_compatible"])
-    async def test____dunder_init____useless_parameter_if_no_ssl_context(
-        self,
-        ssl_parameter: str,
-        request_handler: MyStreamRequestHandler,
-        stream_protocol: AnyStreamProtocolType[str, str],
-    ) -> None:
-        kwargs: dict[str, Any] = {ssl_parameter: 30}
-        with pytest.raises(ValueError, match=rf"^{ssl_parameter} is only meaningful with ssl$"):
-            _ = MyAsyncTCPServer(None, 0, stream_protocol, request_handler, ssl=None, **kwargs)
-
-    @pytest.mark.parametrize(
-        "max_recv_size",
-        [
-            pytest.param(0, id="null size"),
-            pytest.param(-20, id="negative size"),
-        ],
-    )
-    async def test____dunder_init____negative_or_null_recv_size(
-        self,
-        max_recv_size: int,
-        request_handler: MyStreamRequestHandler,
-        stream_protocol: AnyStreamProtocolType[str, str],
-    ) -> None:
-        with pytest.raises(ValueError, match=r"^'max_recv_size' must be a strictly positive integer$"):
-            _ = MyAsyncTCPServer(None, 0, stream_protocol, request_handler, max_recv_size=max_recv_size)
-
     async def test____serve_forever____server_assignment(
         self,
         server: MyAsyncTCPServer,

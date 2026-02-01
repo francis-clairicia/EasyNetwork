@@ -33,9 +33,6 @@ class RecvAncillaryDataParams(NamedTuple):
     .. versionadded:: NEXT_VERSION
     """
 
-    bufsize: int
-    """Read buffer size for ancillary data."""
-
     data_received: Callable[[Any], object]
     """Action to perform on ancillary data reception."""
 
