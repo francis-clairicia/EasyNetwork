@@ -1301,7 +1301,13 @@ if sys.platform != "win32":
         @pytest.mark.parametrize(
             "check_sent_credential",
             [
-                pytest.param(True, marks=[PlatformMarkers.supports_sending_unix_credentials]),
+                pytest.param(
+                    True,
+                    marks=[
+                        PlatformMarkers.supports_sending_unix_credentials,
+                        PlatformMarkers.skipif_platform_freebsd_because("the socket with SO_PASSCRED option reads corrupted data"),  # fmt: skip
+                    ],
+                ),
                 False,
             ],
             ids=lambda p: f"check_sent_credential=={p}",
@@ -1331,7 +1337,13 @@ if sys.platform != "win32":
         @pytest.mark.parametrize(
             "check_sent_credential",
             [
-                pytest.param(True, marks=[PlatformMarkers.supports_sending_unix_credentials]),
+                pytest.param(
+                    True,
+                    marks=[
+                        PlatformMarkers.supports_sending_unix_credentials,
+                        PlatformMarkers.skipif_platform_freebsd_because("the socket with SO_PASSCRED option reads corrupted data"),  # fmt: skip
+                    ],
+                ),
                 False,
             ],
             ids=lambda p: f"check_sent_credential=={p}",
@@ -1362,7 +1374,13 @@ if sys.platform != "win32":
         @pytest.mark.parametrize(
             "check_sent_credential",
             [
-                pytest.param(True, marks=[PlatformMarkers.supports_sending_unix_credentials]),
+                pytest.param(
+                    True,
+                    marks=[
+                        PlatformMarkers.supports_sending_unix_credentials,
+                        PlatformMarkers.skipif_platform_freebsd_because("the socket with SO_PASSCRED option reads corrupted data"),  # fmt: skip
+                    ],
+                ),
                 False,
             ],
             ids=lambda p: f"check_sent_credential=={p}",
