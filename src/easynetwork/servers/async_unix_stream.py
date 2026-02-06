@@ -44,7 +44,7 @@ else:
 
     from .._typevars import _T_Request, _T_Response
     from ..exceptions import ClientClosedError
-    from ..lowlevel import _unix_utils, _utils, constants
+    from ..lowlevel import _unix_utils, _utils
     from ..lowlevel._final import runtime_final_class
     from ..lowlevel.api_async.backend.abc import AsyncBackend, TaskGroup
     from ..lowlevel.api_async.backend.utils import BuiltinAsyncBackendLiteral
@@ -139,14 +139,8 @@ else:
             if log_client_connection is None:
                 log_client_connection = True
 
-            if max_recv_size is None:
-                max_recv_size = constants.DEFAULT_STREAM_BUFSIZE
-            if not isinstance(max_recv_size, int) or max_recv_size <= 0:
-                raise ValueError("'max_recv_size' must be a strictly positive integer")
-            if ancillary_bufsize is None:
-                ancillary_bufsize = constants.DEFAULT_UNIX_SOCKETS_ANCILLARY_DATA_BUFSIZE
-            if not isinstance(ancillary_bufsize, int) or ancillary_bufsize <= 0:
-                raise ValueError("ancillary_bufsize must be a strictly positive integer")
+            max_recv_size = _base.validate_max_recv_size(max_recv_size)
+            ancillary_bufsize = _base.validate_unix_socket_ancillary_buffer_size(ancillary_bufsize)
 
             self.__listener_factory: Callable[[], Coroutine[Any, Any, AsyncListener[AsyncStreamTransport]]]
             self.__listener_factory = _utils.make_callback(
@@ -160,11 +154,7 @@ else:
             self.__request_handler: AsyncStreamRequestHandler[_T_Request, _T_Response] = request_handler
             self.__max_recv_size: int = max_recv_size
             self.__ancillary_bufsize: int = ancillary_bufsize
-            self.__client_connection_log_level: int
-            if log_client_connection:
-                self.__client_connection_log_level = logging.INFO
-            else:
-                self.__client_connection_log_level = logging.DEBUG
+            self.__client_connection_log_level: int = logging.INFO if log_client_connection else logging.DEBUG
             self.__unix_socket_to_delete: dict[pathlib.Path, int] = {}
 
         async def server_close(self) -> None:

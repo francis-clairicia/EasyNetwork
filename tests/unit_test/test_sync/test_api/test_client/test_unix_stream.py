@@ -512,11 +512,9 @@ if sys.platform != "win32":
             mock_stream_endpoint_cls: MagicMock,
             mock_stream_protocol: MagicMock,
             mock_unix_stream_socket: MagicMock,
-            mock_socket_stream_transport: MagicMock,
+            mock_socket_stream_transport_cls: MagicMock,
         ) -> None:
             # Arrange
-            ## The check is performed by the StreamEndpoint constructor, so we simulate an error raised.
-            mock_stream_endpoint_cls.side_effect = ValueError("'max_recv_size' must be a strictly positive integer")
 
             # Act & Assert
             with pytest.raises(ValueError, match=r"^'max_recv_size' must be a strictly positive integer$"):
@@ -532,12 +530,8 @@ if sys.platform != "win32":
                         protocol=mock_stream_protocol,
                         max_recv_size=max_recv_size,
                     )
-            mock_stream_endpoint_cls.assert_called_once_with(
-                mock_socket_stream_transport,
-                mock_stream_protocol,
-                max_recv_size=max_recv_size,
-            )
-            mock_socket_stream_transport.close.assert_called_once()
+            mock_socket_stream_transport_cls.assert_not_called()
+            mock_stream_endpoint_cls.assert_not_called()
 
         def test____dunder_del____ResourceWarning(
             self,

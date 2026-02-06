@@ -149,19 +149,14 @@ class AsyncTCPNetworkServer(
         if log_client_connection is None:
             log_client_connection = True
 
-        if max_recv_size is None:
-            max_recv_size = constants.DEFAULT_STREAM_BUFSIZE
-        if not isinstance(max_recv_size, int) or max_recv_size <= 0:
-            raise ValueError("'max_recv_size' must be a strictly positive integer")
+        max_recv_size = _base.validate_max_recv_size(max_recv_size)
 
-        if ssl_handshake_timeout is not None and not ssl:
-            raise ValueError("ssl_handshake_timeout is only meaningful with ssl")
-
-        if ssl_shutdown_timeout is not None and not ssl:
-            raise ValueError("ssl_shutdown_timeout is only meaningful with ssl")
-
-        if ssl_standard_compatible is not None and not ssl:
-            raise ValueError("ssl_standard_compatible is only meaningful with ssl")
+        _base.validate_ssl_arguments(
+            ssl=ssl,
+            ssl_handshake_timeout=ssl_handshake_timeout,
+            ssl_shutdown_timeout=ssl_shutdown_timeout,
+            ssl_standard_compatible=ssl_standard_compatible,
+        )
 
         if ssl_standard_compatible is None:
             ssl_standard_compatible = True
@@ -193,11 +188,7 @@ class AsyncTCPNetworkServer(
         self.__protocol: AnyStreamProtocolType[_T_Response, _T_Request] = protocol
         self.__request_handler: AsyncStreamRequestHandler[_T_Request, _T_Response] = request_handler
         self.__max_recv_size: int = max_recv_size
-        self.__client_connection_log_level: int
-        if log_client_connection:
-            self.__client_connection_log_level = logging.INFO
-        else:
-            self.__client_connection_log_level = logging.DEBUG
+        self.__client_connection_log_level: int = logging.INFO if log_client_connection else logging.DEBUG
 
     @classmethod
     async def __create_ssl_over_tcp_listeners(

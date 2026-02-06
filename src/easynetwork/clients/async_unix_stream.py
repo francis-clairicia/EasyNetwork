@@ -126,10 +126,7 @@ else:
 
             backend = ensure_backend(backend)
 
-            if max_recv_size is None:
-                max_recv_size = constants.DEFAULT_STREAM_BUFSIZE
-            if not isinstance(max_recv_size, int) or max_recv_size <= 0:
-                raise ValueError("'max_recv_size' must be a strictly positive integer")
+            max_recv_size = _base.validate_max_recv_size(max_recv_size)
 
             self.__backend: AsyncBackend = backend
             self.__socket_proxy: SocketProxy | None = None

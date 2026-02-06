@@ -47,7 +47,7 @@ else:
 
     from .._typevars import _T_Request, _T_Response
     from ..exceptions import ClientClosedError
-    from ..lowlevel import _unix_utils, _utils, constants
+    from ..lowlevel import _unix_utils, _utils
     from ..lowlevel._final import runtime_final_class
     from ..lowlevel.api_async.backend.abc import AsyncBackend, TaskGroup
     from ..lowlevel.api_async.backend.utils import BuiltinAsyncBackendLiteral
@@ -152,10 +152,7 @@ else:
 
             if not receive_ancillary_data and ancillary_bufsize is not None:
                 raise ValueError("ancillary_bufsize is only meaningful with receive_ancillary_data set to True")
-            if ancillary_bufsize is None:
-                ancillary_bufsize = constants.DEFAULT_UNIX_SOCKETS_ANCILLARY_DATA_BUFSIZE
-            if not isinstance(ancillary_bufsize, int) or ancillary_bufsize <= 0:
-                raise ValueError("ancillary_bufsize must be a strictly positive integer")
+            ancillary_bufsize = _base.validate_unix_socket_ancillary_buffer_size(ancillary_bufsize)
 
             self.__listener_factory: Callable[[], Coroutine[Any, Any, AsyncDatagramListener[str | bytes]]]
             self.__listener_factory = _utils.make_callback(

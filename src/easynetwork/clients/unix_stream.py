@@ -48,6 +48,7 @@ else:
     from ..lowlevel.api_sync.transports import socket as _transport_socket
     from ..lowlevel.socket import SocketAncillary, SocketProxy, UnixCredentials, UnixSocketAddress, UNIXSocketAttribute
     from ..protocol import AnyStreamProtocolType
+    from . import _base
     from .abc import AbstractNetworkClient
 
     class UnixStreamClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
@@ -124,8 +125,7 @@ else:
 
             _check_any_protocol(protocol)
 
-            if max_recv_size is None:
-                max_recv_size = constants.DEFAULT_STREAM_BUFSIZE
+            max_recv_size = _base.validate_max_recv_size(max_recv_size)
 
             socket: _socket.socket
             match __arg:

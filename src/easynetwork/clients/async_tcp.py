@@ -162,36 +162,19 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
 
         backend = ensure_backend(backend)
 
-        if max_recv_size is None:
-            max_recv_size = constants.DEFAULT_STREAM_BUFSIZE
-        if not isinstance(max_recv_size, int) or max_recv_size <= 0:
-            raise ValueError("'max_recv_size' must be a strictly positive integer")
+        max_recv_size = _base.validate_max_recv_size(max_recv_size)
 
         self.__backend: AsyncBackend = backend
         self.__socket_proxy: SocketProxy | None = None
 
-        if ssl:
-            if _ssl_module is None:
-                raise RuntimeError("stdlib ssl module not available")
-            if isinstance(ssl, bool):
-                ssl = _ssl_module.create_default_context()
-                assert isinstance(ssl, _ssl_module.SSLContext)  # nosec assert_used
-                if server_hostname is not None and not server_hostname:
-                    ssl.check_hostname = False
-                with contextlib.suppress(AttributeError):
-                    ssl.options &= ~_ssl_module.OP_IGNORE_UNEXPECTED_EOF
-        else:
-            if server_hostname is not None:
-                raise ValueError("server_hostname is only meaningful with ssl")
-
-            if ssl_handshake_timeout is not None:
-                raise ValueError("ssl_handshake_timeout is only meaningful with ssl")
-
-            if ssl_shutdown_timeout is not None:
-                raise ValueError("ssl_shutdown_timeout is only meaningful with ssl")
-
-            if ssl_standard_compatible is not None:
-                raise ValueError("ssl_standard_compatible is only meaningful with ssl")
+        _base.validate_ssl_arguments(
+            ssl=ssl,
+            server_hostname=server_hostname,
+            ssl_handshake_timeout=ssl_handshake_timeout,
+            ssl_shutdown_timeout=ssl_shutdown_timeout,
+            ssl_standard_compatible=ssl_standard_compatible,
+        )
+        ssl = _base.resolve_ssl_context(ssl, server_hostname)
 
         if ssl_standard_compatible is None:
             ssl_standard_compatible = True
@@ -224,20 +207,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
                     socket_factory = _utils.make_callback(backend.wrap_stream_socket, socket, **kwargs)
             case (str(host), int(port)):
                 if ssl:
-                    if server_hostname is None:
-                        # Use host as default for server_hostname.  It is an error
-                        # if host is empty or not set, e.g. when an
-                        # already-connected socket was passed or when only a port
-                        # is given.  To avoid this error, you can pass
-                        # server_hostname='' -- this will bypass the hostname
-                        # check.  (This also means that if host is a numeric
-                        # IP/IPv6 address, we will attempt to verify that exact
-                        # address; this will probably fail, but it is possible to
-                        # create a certificate for a specific IP address, so we
-                        # don't judge it here.)
-                        if not host:
-                            raise ValueError("You must set server_hostname when using ssl without a host")
-                        server_hostname = host
+                    server_hostname = _base.resolve_server_hostname_for_ssl(server_hostname, host)
                     socket_factory = _utils.make_callback(
                         self.__create_ssl_over_tcp_connection,
                         backend,
