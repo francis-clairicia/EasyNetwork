@@ -91,12 +91,7 @@ If the socket is not connected, an :exc:`OSError` is raised.
 Sending Packets
 ===============
 
-There's not much to say, except that objects passed as arguments are automatically converted to bytes to send to the remote host
-thanks to the :term:`protocol object`.
-
-.. warning::
-
-   Sending socket control messages ( with :manpage:`sendmsg(2)` ) is not supported yet.
+Objects passed as arguments are automatically converted to bytes to send to the remote host thanks to the :term:`protocol object`.
 
 .. tabs::
 
@@ -117,14 +112,34 @@ thanks to the :term:`protocol object`.
          :linenos:
 
 
+Sending Packets with socket control messages
+--------------------------------------------
+
+By using :class:`.SocketAncillary`, you can send SCM data. See the Unix manual page :manpage:`sendmsg(2)` for details.
+
+.. tabs::
+
+   .. group-tab:: Synchronous
+
+      .. literalinclude:: ../../_include/examples/alternatives/unix_datagram_clients/usage/api_sync.py
+         :pyobject: send_packet_with_ancillary_example1
+         :start-after: [start]
+         :dedent:
+         :linenos:
+
+   .. group-tab:: Asynchronous
+
+      .. literalinclude:: ../../_include/examples/alternatives/unix_datagram_clients/usage/api_async.py
+         :pyobject: send_packet_with_ancillary_example1
+         :start-after: [start]
+         :dedent:
+         :linenos:
+
+
 Receiving Packets
 =================
 
 You get the next available packet, already parsed.
-
-.. warning::
-
-   Receiving socket control messages ( with :manpage:`recvmsg(2)` ) is not supported yet.
 
 .. tabs::
 
@@ -226,6 +241,52 @@ You get the next available packet, already parsed.
                   :dedent:
                   :linenos:
                   :emphasize-lines: 4-5
+
+
+Receiving Packets with socket control messages
+----------------------------------------------
+
+By using :class:`.SocketAncillary`, you can receive SCM data. See the Unix manual page :manpage:`recvmsg(2)` for details.
+
+.. tabs::
+
+   .. group-tab:: Synchronous
+
+      .. literalinclude:: ../../_include/examples/alternatives/unix_datagram_clients/usage/api_sync.py
+         :pyobject: recv_packet_with_ancillary_example1
+         :start-after: [start]
+         :dedent:
+         :linenos:
+
+   .. group-tab:: Asynchronous
+
+      .. literalinclude:: ../../_include/examples/alternatives/unix_datagram_clients/usage/api_async.py
+         :pyobject: recv_packet_with_ancillary_example1
+         :start-after: [start]
+         :dedent:
+         :linenos:
+
+.. tip::
+
+   The default buffer size for this operation is approximately 8 KiB. However, you can customize this behavior.
+
+   .. tabs::
+
+      .. group-tab:: Synchronous
+
+         .. literalinclude:: ../../_include/examples/alternatives/unix_datagram_clients/usage/api_sync.py
+            :pyobject: recv_packet_with_ancillary_example2
+            :start-after: [start]
+            :dedent:
+            :linenos:
+
+      .. group-tab:: Asynchronous
+
+         .. literalinclude:: ../../_include/examples/alternatives/unix_datagram_clients/usage/api_async.py
+            :pyobject: recv_packet_with_ancillary_example2
+            :start-after: [start]
+            :dedent:
+            :linenos:
 
 
 Receiving Multiple Packets At Once

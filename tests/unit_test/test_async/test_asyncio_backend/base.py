@@ -6,53 +6,62 @@ import asyncio
 import contextlib
 from collections.abc import Callable, Coroutine, Iterator
 from socket import socket as Socket
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypedDict, TypeVar
 
 import pytest
 import pytest_asyncio
 
+from ..._utils import restore_mock_side_effect
+
 if TYPE_CHECKING:
-    from unittest.mock import MagicMock
+    from unittest.mock import AsyncMock, MagicMock
 
     from pytest_mock import MockerFixture
 
 _T = TypeVar("_T")
 
 
+class MockedEventLoopSockMethods(TypedDict):
+    sock_accept: AsyncMock
+    sock_recv: AsyncMock
+    sock_recv_into: AsyncMock
+    sock_recvfrom: AsyncMock
+    sock_sendall: AsyncMock
+    sock_sendto: AsyncMock
+
+
 @pytest.mark.asyncio
 class BaseTestAsyncSocket:
     @pytest_asyncio.fixture(autouse=True)
     @classmethod
-    async def event_loop_sock_method_replace(cls, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def mock_event_loop_sock_method(cls, mocker: MockerFixture) -> MockedEventLoopSockMethods:
         event_loop = asyncio.get_running_loop()
-        to_patch = [
-            ("sock_accept", "accept"),
-            ("sock_recv", "recv"),
-            ("sock_recv_into", "recv_into"),
-            ("sock_recvfrom", "recvfrom"),
-            ("sock_sendall", "send"),
-            ("sock_sendto", "sendto"),
-        ]
-
-        for event_loop_method, sock_method in to_patch:
-            cls.__patch_async_sock_method(event_loop, event_loop_method, sock_method, monkeypatch)
+        return {
+            "sock_accept": cls.__patch_async_sock_method(event_loop, "sock_accept", "accept", mocker),
+            "sock_recv": cls.__patch_async_sock_method(event_loop, "sock_recv", "recv", mocker),
+            "sock_recv_into": cls.__patch_async_sock_method(event_loop, "sock_recv_into", "recv_into", mocker),
+            "sock_recvfrom": cls.__patch_async_sock_method(event_loop, "sock_recvfrom", "recvfrom", mocker),
+            "sock_sendall": cls.__patch_async_sock_method(event_loop, "sock_sendall", "send", mocker),
+            "sock_sendto": cls.__patch_async_sock_method(event_loop, "sock_sendto", "sendto", mocker),
+        }
 
     @staticmethod
     def __patch_async_sock_method(
         event_loop: asyncio.AbstractEventLoop,
         event_loop_method: str,
         sock_method: str,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
+        mocker: MockerFixture,
+    ) -> MagicMock:
         async def sock_method_patch(sock: Socket, *args: Any, **kwargs: Any) -> Any:
             method: Callable[..., Any] = getattr(sock, sock_method)
             while True:
                 try:
                     return method(*args, **kwargs)
                 except BlockingIOError:
-                    await asyncio.sleep(0)
+                    pass
+                await asyncio.sleep(0)
 
-        monkeypatch.setattr(event_loop, event_loop_method, sock_method_patch)
+        return mocker.patch.object(event_loop, event_loop_method, side_effect=sock_method_patch)
 
     @pytest_asyncio.fixture(autouse=True)
     @classmethod
@@ -94,27 +103,25 @@ class BaseTestAsyncSocket:
         remove_event_func_name: str,
         mocker: MockerFixture,
     ) -> dict[str, MagicMock]:
-        registered_fds: dict[int, asyncio.Handle] = {}
+        registered_fds: dict[object, asyncio.Handle] = {}
 
-        def ready_for_event(fileno: int, cb: Callable[..., Any], args: tuple[Any, ...]) -> None:
-            former_cb_handle = registered_fds.pop(fileno, None)
+        def ready_for_event(fileobj: object, cb: Callable[..., Any], args: tuple[Any, ...]) -> None:
+            former_cb_handle = registered_fds.pop(fileobj, None)
             if former_cb_handle is None or not former_cb_handle.cancelled():
-                registered_fds[fileno] = event_loop.call_soon(ready_for_event, fileno, cb, args)
+                registered_fds[fileobj] = event_loop.call_soon(ready_for_event, fileobj, cb, args)
             cb(*args)
 
-        def add_event_side_effect(sock: MagicMock, cb: Callable[..., Any], *args: Any) -> None:
-            fileno = sock.fileno()
+        def add_event_side_effect(fileobj: object, cb: Callable[..., Any], *args: Any) -> None:
             try:
-                registered_fds[fileno].cancel()
+                registered_fds[fileobj].cancel()
             except KeyError:
                 pass
 
-            registered_fds[fileno] = event_loop.call_soon(ready_for_event, fileno, cb, args)
+            registered_fds[fileobj] = event_loop.call_soon(ready_for_event, fileobj, cb, args)
 
-        def remove_event_side_effect(sock: MagicMock) -> bool:
-            fileno = sock.fileno()
+        def remove_event_side_effect(fileobj: object) -> bool:
             try:
-                former_cb_handle = registered_fds.pop(fileno)
+                former_cb_handle = registered_fds.pop(fileobj)
             except KeyError:
                 return False
             else:
@@ -132,13 +139,9 @@ class BaseTestAsyncSocket:
         mock_socket_method: MagicMock,
         exception: type[Exception] | Exception = BlockingIOError,
     ) -> Iterator[None]:
-        default_side_effect = mock_socket_method.side_effect
-        default_return_value = mock_socket_method.return_value
-        try:
+        with restore_mock_side_effect(mock_socket_method):
             mock_socket_method.side_effect = exception
             yield
-        finally:
-            mock_socket_method.configure_mock(side_effect=default_side_effect, return_value=default_return_value)
 
     @staticmethod
     async def _busy_socket_task(

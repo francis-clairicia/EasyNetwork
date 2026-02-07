@@ -126,6 +126,51 @@ class BaseEndpointSendTests(BaseEndpointTests):
         assert exc_info.value.__cause__ is expected_error
         mock_datagram_transport.send.assert_not_called()
 
+    def test____send_packet_with_ancillary____send_bytes_to_transport(
+        self,
+        send_timeout: float | None,
+        expected_send_timeout: float,
+        endpoint: SupportsSending,
+        mock_datagram_transport: MagicMock,
+        mock_datagram_protocol: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_datagram_transport.send_with_ancillary.return_value = None
+
+        # Act
+        endpoint.send_packet_with_ancillary(mocker.sentinel.packet, mocker.sentinel.ancdata, timeout=send_timeout)
+
+        # Assert
+        mock_datagram_protocol.make_datagram.assert_called_once_with(mocker.sentinel.packet)
+        mock_datagram_transport.send_with_ancillary.assert_called_once_with(
+            b"packet",
+            mocker.sentinel.ancdata,
+            expected_send_timeout,
+        )
+
+    def test____send_packet_with_ancillary____protocol_crashed(
+        self,
+        endpoint: SupportsSending,
+        send_timeout: float | None,
+        mock_datagram_transport: MagicMock,
+        mock_datagram_protocol: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_datagram_transport.send_with_ancillary.return_value = None
+        expected_error = Exception("Error")
+        mock_datagram_protocol.make_datagram.side_effect = expected_error
+
+        # Act
+        with pytest.raises(RuntimeError, match=r"^protocol\.make_datagram\(\) crashed$") as exc_info:
+            endpoint.send_packet_with_ancillary(mocker.sentinel.packet, mocker.sentinel.ancdata, timeout=send_timeout)
+
+        # Assert
+        assert exc_info.value.__cause__ is expected_error
+        mock_datagram_transport.send_with_ancillary.assert_not_called()
+        mock_datagram_transport.send.assert_not_called()
+
 
 class BaseEndpointReceiveTests(BaseEndpointTests):
     @pytest.fixture(
@@ -146,6 +191,11 @@ class BaseEndpointReceiveTests(BaseEndpointTests):
         if recv_timeout is None:
             return math.inf
         return recv_timeout
+
+    @pytest.fixture
+    @staticmethod
+    def ancillary_data_received(mocker: MockerFixture) -> MagicMock:
+        return mocker.MagicMock(spec=lambda ancdata, /: None, return_value=None)
 
     def test____recv_packet____receive_bytes_from_transport(
         self,
@@ -204,3 +254,91 @@ class BaseEndpointReceiveTests(BaseEndpointTests):
 
         # Assert
         assert exc_info.value.__cause__ is expected_error
+
+    def test____recv_packet_with_ancillary____receive_bytes_from_transport(
+        self,
+        endpoint: SupportsReceiving,
+        recv_timeout: float | None,
+        expected_recv_timeout: float,
+        mock_datagram_transport: MagicMock,
+        mock_datagram_protocol: MagicMock,
+        ancillary_data_received: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_datagram_transport.recv_with_ancillary.side_effect = [(b"packet", mocker.sentinel.ancdata)]
+
+        # Act
+        packet = endpoint.recv_packet_with_ancillary(1024, ancillary_data_received, timeout=recv_timeout)
+
+        # Assert
+        mock_datagram_transport.recv_with_ancillary.assert_called_once_with(1024, expected_recv_timeout)
+        mock_datagram_protocol.build_packet_from_datagram.assert_called_once_with(b"packet")
+        ancillary_data_received.assert_called_once_with(mocker.sentinel.ancdata)
+        assert packet is mocker.sentinel.packet
+
+    def test____recv_packet_with_ancillary____protocol_parse_error(
+        self,
+        endpoint: SupportsReceiving,
+        recv_timeout: float | None,
+        mock_datagram_transport: MagicMock,
+        mock_datagram_protocol: MagicMock,
+        ancillary_data_received: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_datagram_transport.recv_with_ancillary.side_effect = [(b"packet", mocker.sentinel.ancdata)]
+        expected_error = DatagramProtocolParseError(DeserializeError("Invalid packet"))
+        mock_datagram_protocol.build_packet_from_datagram.side_effect = expected_error
+
+        # Act
+        with pytest.raises(DatagramProtocolParseError) as exc_info:
+            endpoint.recv_packet_with_ancillary(1024, ancillary_data_received, timeout=recv_timeout)
+
+        # Assert
+        assert exc_info.value is expected_error
+        ancillary_data_received.assert_called_once_with(mocker.sentinel.ancdata)
+
+    def test____recv_packet_with_ancillary____protocol_crashed(
+        self,
+        endpoint: SupportsReceiving,
+        recv_timeout: float | None,
+        mock_datagram_transport: MagicMock,
+        mock_datagram_protocol: MagicMock,
+        ancillary_data_received: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_datagram_transport.recv_with_ancillary.side_effect = [(b"packet", mocker.sentinel.ancdata)]
+        expected_error = Exception("Error")
+        mock_datagram_protocol.build_packet_from_datagram.side_effect = expected_error
+
+        # Act
+        with pytest.raises(RuntimeError, match=r"^protocol\.build_packet_from_datagram\(\) crashed$") as exc_info:
+            endpoint.recv_packet_with_ancillary(1024, ancillary_data_received, timeout=recv_timeout)
+
+        # Assert
+        assert exc_info.value.__cause__ is expected_error
+        ancillary_data_received.assert_called_once_with(mocker.sentinel.ancdata)
+
+    def test____recv_packet_with_ancillary____ancillary_data_received_callback_crashed(
+        self,
+        endpoint: SupportsReceiving,
+        recv_timeout: float | None,
+        mock_datagram_transport: MagicMock,
+        mock_datagram_protocol: MagicMock,
+        ancillary_data_received: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_datagram_transport.recv_with_ancillary.side_effect = [(b"packet", mocker.sentinel.ancdata)]
+        ancillary_data_received.side_effect = expected_error = Exception("Error")
+        mock_datagram_protocol.build_packet_from_datagram.side_effect = lambda *args: pytest.fail("bytes sent")
+
+        # Act
+        with pytest.raises(RuntimeError, match=r"^ancillary_data_received\(\) crashed$") as exc_info:
+            endpoint.recv_packet_with_ancillary(1024, ancillary_data_received, timeout=recv_timeout)
+
+        # Assert
+        assert exc_info.value.__cause__ is expected_error
+        mock_datagram_protocol.build_packet_from_datagram.assert_not_called()

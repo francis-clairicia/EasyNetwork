@@ -112,6 +112,40 @@ class DatagramReceiverEndpoint(_transports.BaseTransport, Generic[_T_ReceivedPac
 
         return receiver.receive(timeout)
 
+    def recv_packet_with_ancillary(
+        self,
+        ancillary_bufsize: int,
+        ancillary_data_received: Callable[[Any], object],
+        *,
+        timeout: float | None = None,
+    ) -> _T_ReceivedPacket:
+        """
+        Waits for a new packet with ancillary data to arrive from the remote endpoint.
+
+        If `timeout` is not :data:`None`, the entire receive operation will take at most `timeout` seconds.
+
+        .. versionadded:: NEXT_VERSION
+
+        Parameters:
+            ancillary_bufsize: Read buffer size for ancillary data.
+            ancillary_data_received: Action to perform on ancillary data reception.
+            timeout: the allowed time (in seconds) for blocking operations.
+
+        Raises:
+            TimeoutError: the receive operation does not end up after `timeout` seconds.
+            DatagramProtocolParseError: invalid data received.
+            UnsupportedOperation: This transport does not have ancillary data support.
+
+        Returns:
+            the received packet.
+        """
+        receiver = self.__receiver
+
+        if timeout is None:
+            timeout = math.inf
+
+        return receiver.receive_with_ancillary(ancillary_bufsize, ancillary_data_received, timeout)
+
     @property
     @_utils.inherit_doc(_transports.BaseTransport)
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
@@ -189,6 +223,7 @@ class DatagramSenderEndpoint(_transports.BaseTransport, Generic[_T_SentPacket]):
 
         Raises:
             TimeoutError: the send operation does not end up after `timeout` seconds.
+            OSError: Data too big to be sent at once.
         """
         sender = self.__sender
 
@@ -196,6 +231,31 @@ class DatagramSenderEndpoint(_transports.BaseTransport, Generic[_T_SentPacket]):
             timeout = math.inf
 
         return sender.send(packet, timeout)
+
+    def send_packet_with_ancillary(self, packet: _T_SentPacket, ancillary_data: Any, *, timeout: float | None = None) -> None:
+        """
+        Sends `packet` to the remote endpoint with ancillary data.
+
+        If `timeout` is not :data:`None`, the entire send operation will take at most `timeout` seconds.
+
+        .. versionadded:: NEXT_VERSION
+
+        Parameters:
+            packet: the Python object to send.
+            ancillary_data: The ancillary data to send along with the message.
+            timeout: the allowed time (in seconds) for blocking operations.
+
+        Raises:
+            TimeoutError: the send operation does not end up after `timeout` seconds.
+            OSError: Data too big to be sent at once.
+            UnsupportedOperation: This transport does not have ancillary data support.
+        """
+        sender = self.__sender
+
+        if timeout is None:
+            timeout = math.inf
+
+        return sender.send_with_ancillary(packet, ancillary_data, timeout)
 
     @property
     @_utils.inherit_doc(_transports.BaseTransport)
@@ -276,6 +336,7 @@ class DatagramEndpoint(_transports.BaseTransport, Generic[_T_SentPacket, _T_Rece
 
         Raises:
             TimeoutError: the send operation does not end up after `timeout` seconds.
+            OSError: Data too big to be sent at once.
         """
         sender = self.__sender
 
@@ -283,6 +344,31 @@ class DatagramEndpoint(_transports.BaseTransport, Generic[_T_SentPacket, _T_Rece
             timeout = math.inf
 
         return sender.send(packet, timeout)
+
+    def send_packet_with_ancillary(self, packet: _T_SentPacket, ancillary_data: Any, *, timeout: float | None = None) -> None:
+        """
+        Sends `packet` to the remote endpoint with ancillary data.
+
+        If `timeout` is not :data:`None`, the entire send operation will take at most `timeout` seconds.
+
+        .. versionadded:: NEXT_VERSION
+
+        Parameters:
+            packet: the Python object to send.
+            ancillary_data: The ancillary data to send along with the message.
+            timeout: the allowed time (in seconds) for blocking operations.
+
+        Raises:
+            TimeoutError: the send operation does not end up after `timeout` seconds.
+            OSError: Data too big to be sent at once.
+            UnsupportedOperation: This transport does not have ancillary data support.
+        """
+        sender = self.__sender
+
+        if timeout is None:
+            timeout = math.inf
+
+        return sender.send_with_ancillary(packet, ancillary_data, timeout)
 
     def recv_packet(self, *, timeout: float | None = None) -> _T_ReceivedPacket:
         """
@@ -307,6 +393,40 @@ class DatagramEndpoint(_transports.BaseTransport, Generic[_T_SentPacket, _T_Rece
 
         return receiver.receive(timeout)
 
+    def recv_packet_with_ancillary(
+        self,
+        ancillary_bufsize: int,
+        ancillary_data_received: Callable[[Any], object],
+        *,
+        timeout: float | None = None,
+    ) -> _T_ReceivedPacket:
+        """
+        Waits for a new packet with ancillary data to arrive from the remote endpoint.
+
+        If `timeout` is not :data:`None`, the entire receive operation will take at most `timeout` seconds.
+
+        .. versionadded:: NEXT_VERSION
+
+        Parameters:
+            ancillary_bufsize: Read buffer size for ancillary data.
+            ancillary_data_received: Action to perform on ancillary data reception.
+            timeout: the allowed time (in seconds) for blocking operations.
+
+        Raises:
+            TimeoutError: the receive operation does not end up after `timeout` seconds.
+            DatagramProtocolParseError: invalid data received.
+            UnsupportedOperation: This transport does not have ancillary data support.
+
+        Returns:
+            the received packet.
+        """
+        receiver = self.__receiver
+
+        if timeout is None:
+            timeout = math.inf
+
+        return receiver.receive_with_ancillary(ancillary_bufsize, ancillary_data_received, timeout)
+
     @property
     @_utils.inherit_doc(_transports.BaseTransport)
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
@@ -328,6 +448,16 @@ class _DataSenderImpl(Generic[_T_SentPacket]):
 
         self.transport.send(datagram, timeout)
 
+    def send_with_ancillary(self, packet: _T_SentPacket, ancillary_data: Any, timeout: float) -> None:
+        try:
+            datagram: bytes = self.protocol.make_datagram(packet)
+        except Exception as exc:
+            raise RuntimeError("protocol.make_datagram() crashed") from exc
+        finally:
+            del packet
+
+        self.transport.send_with_ancillary(datagram, ancillary_data, timeout)
+
 
 @dataclasses.dataclass(slots=True)
 class _DataReceiverImpl(Generic[_T_ReceivedPacket]):
@@ -344,3 +474,24 @@ class _DataReceiverImpl(Generic[_T_ReceivedPacket]):
             raise RuntimeError("protocol.build_packet_from_datagram() crashed") from exc
         finally:
             del datagram
+
+    def receive_with_ancillary(
+        self,
+        ancillary_bufsize: int,
+        ancillary_data_received: Callable[[Any], object],
+        timeout: float,
+    ) -> _T_ReceivedPacket:
+        datagram, ancdata = self.transport.recv_with_ancillary(ancillary_bufsize, timeout)
+        try:
+            try:
+                ancillary_data_received(ancdata)
+            except Exception as exc:
+                raise RuntimeError("ancillary_data_received() crashed") from exc
+            try:
+                return self.protocol.build_packet_from_datagram(datagram)
+            except DatagramProtocolParseError:
+                raise
+            except Exception as exc:
+                raise RuntimeError("protocol.build_packet_from_datagram() crashed") from exc
+        finally:
+            del ancdata, datagram

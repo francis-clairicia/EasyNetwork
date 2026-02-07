@@ -11,6 +11,7 @@ from typing import ClassVar
 import trio
 
 from easynetwork.exceptions import StreamProtocolParseError
+from easynetwork.lowlevel.request_handler import RecvParams
 from easynetwork.lowlevel.socket import SocketAddress
 from easynetwork.servers import AsyncTCPNetworkServer
 from easynetwork.servers.handlers import AsyncStreamClient, AsyncStreamRequestHandler, INETClientAttribute
@@ -218,7 +219,7 @@ class TimeoutContextRequestHandlerWithClientBackend(AsyncStreamRequestHandler[Re
             await client.send_packet(Response())
 
 
-class TimeoutYieldedRequestHandler(AsyncStreamRequestHandler[Request, Response]):
+class TimeoutYieldedDeprecatedWayRequestHandler(AsyncStreamRequestHandler[Request, Response]):
     async def handle(
         self,
         client: AsyncStreamClient[Response],
@@ -226,6 +227,20 @@ class TimeoutYieldedRequestHandler(AsyncStreamRequestHandler[Request, Response])
         try:
             # The client has 30 seconds to send the request to the server.
             request: Request = yield 30.0
+        except TimeoutError:
+            await client.send_packet(TimedOut())
+        else:
+            await client.send_packet(Response())
+
+
+class TimeoutYieldedRequestHandler(AsyncStreamRequestHandler[Request, Response]):
+    async def handle(
+        self,
+        client: AsyncStreamClient[Response],
+    ) -> AsyncGenerator[RecvParams | None, Request]:
+        try:
+            # The client has 30 seconds to send the request to the server.
+            request: Request = yield RecvParams(timeout=30.0)
         except TimeoutError:
             await client.send_packet(TimedOut())
         else:

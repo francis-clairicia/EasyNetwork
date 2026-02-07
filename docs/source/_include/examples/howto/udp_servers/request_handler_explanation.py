@@ -11,6 +11,7 @@ from typing import ClassVar
 import trio
 
 from easynetwork.exceptions import DatagramProtocolParseError
+from easynetwork.lowlevel.request_handler import RecvParams
 from easynetwork.lowlevel.socket import SocketAddress
 from easynetwork.servers import AsyncUDPNetworkServer
 from easynetwork.servers.handlers import AsyncDatagramClient, AsyncDatagramRequestHandler, INETClientAttribute
@@ -186,7 +187,7 @@ class TimeoutContextRequestHandlerWithClientBackend(AsyncDatagramRequestHandler[
             await client.send_packet(Response())
 
 
-class TimeoutYieldedRequestHandler(AsyncDatagramRequestHandler[Request, Response]):
+class TimeoutYieldedDeprecatedWayRequestHandler(AsyncDatagramRequestHandler[Request, Response]):
     async def handle(
         self,
         client: AsyncDatagramClient[Response],
@@ -203,6 +204,29 @@ class TimeoutYieldedRequestHandler(AsyncDatagramRequestHandler[Request, Response
         try:
             # The client has 30 seconds to send the 2nd request to the server.
             another_request: Request = yield 30
+        except TimeoutError:
+            await client.send_packet(TimedOut())
+        else:
+            await client.send_packet(Response())
+
+
+class TimeoutYieldedRequestHandler(AsyncDatagramRequestHandler[Request, Response]):
+    async def handle(
+        self,
+        client: AsyncDatagramClient[Response],
+    ) -> AsyncGenerator[RecvParams | None, Request]:
+        # It is *never* useful to have a timeout for the 1st datagram
+        # because the datagram is already in the queue.
+        # The yielded value is simply ignored.
+        request: Request = yield None
+
+        ...
+
+        await client.send_packet(Response())
+
+        try:
+            # The client has 30 seconds to send the 2nd request to the server.
+            another_request: Request = yield RecvParams(timeout=30.0)
         except TimeoutError:
             await client.send_packet(TimedOut())
         else:

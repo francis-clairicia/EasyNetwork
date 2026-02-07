@@ -185,6 +185,72 @@ if sys.platform != "win32":
                     unnamed_addresses_behavior="unknown",  # type: ignore[arg-type]
                 )
 
+        async def test____dunder_init____ancillary_bufsize____receive_ancillary_data_is_false(
+            self,
+            mock_datagram_protocol: MagicMock,
+            mock_datagram_request_handler: MagicMock,
+            mock_backend: MagicMock,
+        ) -> None:
+            # Arrange
+
+            # Act & Assert
+            with pytest.raises(
+                ValueError,
+                match=r"^ancillary_bufsize is only meaningful with receive_ancillary_data set to True$",
+            ):
+                _ = AsyncUnixDatagramServer(
+                    "/path/to/sock",
+                    mock_datagram_protocol,
+                    mock_datagram_request_handler,
+                    mock_backend,
+                    receive_ancillary_data=False,
+                    ancillary_bufsize=1234,
+                )
+
+        @pytest.mark.parametrize("invalid_bufsize", [0, -42, 3.14])
+        async def test____dunder_init____ancillary_bufsize____invalid_value(
+            self,
+            invalid_bufsize: Any,
+            mock_datagram_protocol: MagicMock,
+            mock_datagram_request_handler: MagicMock,
+            mock_backend: MagicMock,
+        ) -> None:
+            # Arrange
+
+            # Act & Assert
+            with pytest.raises(
+                ValueError,
+                match=r"^ancillary_bufsize must be a strictly positive integer$",
+            ):
+                _ = AsyncUnixDatagramServer(
+                    "/path/to/sock",
+                    mock_datagram_protocol,
+                    mock_datagram_request_handler,
+                    mock_backend,
+                    receive_ancillary_data=True,
+                    ancillary_bufsize=invalid_bufsize,
+                )
+
+        @pytest.mark.parametrize("valid_bufsize", [1, 8192, 2**16])
+        async def test____dunder_init____ancillary_bufsize____valid_value(
+            self,
+            valid_bufsize: Any,
+            mock_datagram_protocol: MagicMock,
+            mock_datagram_request_handler: MagicMock,
+            mock_backend: MagicMock,
+        ) -> None:
+            # Arrange
+
+            # Act & Assert
+            _ = AsyncUnixDatagramServer(
+                "/path/to/sock",
+                mock_datagram_protocol,
+                mock_datagram_request_handler,
+                mock_backend,
+                receive_ancillary_data=True,
+                ancillary_bufsize=valid_bufsize,
+            )
+
         async def test____dunder_init____backend____invalid_value(
             self,
             mock_datagram_protocol: MagicMock,
@@ -377,11 +443,34 @@ if sys.platform != "win32":
                 mocker.sentinel.packet,
                 UnixSocketAddress.from_raw(remote_address),
             )
+            mock_datagram_server.send_packet_with_ancillary_to.assert_not_called()
+
+        async def test____send_packet_with_ancillary____send_bytes_to_socket(
+            self,
+            remote_address: str | bytes,
+            client: _ClientAPI[Any],
+            mock_datagram_server: MagicMock,
+            mocker: MockerFixture,
+        ) -> None:
+            # Arrange
+
+            # Act
+            await client.send_packet_with_ancillary(mocker.sentinel.packet, mocker.sentinel.ancdata)
+
+            # Assert
+            mock_datagram_server.send_packet_with_ancillary_to.assert_awaited_once_with(
+                mocker.sentinel.packet,
+                mocker.sentinel.ancdata,
+                UnixSocketAddress.from_raw(remote_address),
+            )
+            mock_datagram_server.send_packet_to.assert_not_called()
 
         @pytest.mark.parametrize("method", ["server_close", "service_shutdown"])
+        @pytest.mark.parametrize("with_ancillary_data", [False, True], ids=lambda p: f"with_ancillary_data=={p}")
         async def test____send_packet____closed_client(
             self,
             method: Literal["server_close", "service_shutdown"],
+            with_ancillary_data: bool,
             client: _ClientAPI[Any],
             mock_datagram_server: MagicMock,
             service_available: Flag,
@@ -397,8 +486,11 @@ if sys.platform != "win32":
 
             # Act
             with pytest.raises(ClientClosedError):
-                await client.send_packet(mocker.sentinel.packet)
+                if with_ancillary_data:
+                    await client.send_packet_with_ancillary(mocker.sentinel.packet, mocker.sentinel.ancdata)
+                else:
+                    await client.send_packet(mocker.sentinel.packet)
 
             # Assert
             mock_datagram_server.send_packet_to.assert_not_awaited()
-            mock_datagram_server.send_packet_to.assert_not_awaited()
+            mock_datagram_server.send_packet_with_ancillary_to.assert_not_awaited()

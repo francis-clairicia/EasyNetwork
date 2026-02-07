@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import pathlib
 import socketserver
 import sys
@@ -14,7 +15,11 @@ from .....tools import PlatformMarkers
 if sys.platform != "win32":
     from easynetwork.clients.unix_datagram import UnixDatagramClient
     from easynetwork.exceptions import ClientClosedError, DatagramProtocolParseError
+    from easynetwork.lowlevel import _unix_utils
+    from easynetwork.lowlevel.socket import SocketAncillary
     from easynetwork.protocol import DatagramProtocol
+
+    from .common import readmsg
 
     if TYPE_CHECKING:
         from .....pytest_plugins.unix_sockets import UnixSocketPathFactory
@@ -79,6 +84,22 @@ if sys.platform != "win32":
             client.send_packet("ABCDEF")
             assert server.recvfrom(1024) == (b"ABCDEF", client.get_local_name().as_raw())
 
+        def test____send_packet____with_ancillary_data(
+            self,
+            tmp_file: io.FileIO,
+            client: UnixDatagramClient[str, str],
+            server: Socket,
+        ) -> None:
+            sent_ancillary = SocketAncillary()
+            sent_ancillary.add_fds([tmp_file.fileno()])
+            client.send_packet("ABCDEF", ancillary_data=sent_ancillary)
+
+            received_packet, received_ancillary, sender_address = readmsg(server)
+            _unix_utils.close_fds_in_socket_ancillary(received_ancillary)
+            assert received_packet == b"ABCDEF"
+            assert sender_address == client.get_local_name().as_raw()
+            assert len(list(received_ancillary.iter_fds())) == 1
+
         @PlatformMarkers.runs_only_on_platform("linux", "Windows, MacOS and BSD-like do not raise error")
         def test____send_packet____connection_refused(self, client: UnixDatagramClient[str, str], server: Socket) -> None:
             server.close()
@@ -106,16 +127,37 @@ if sys.platform != "win32":
             server.sendto(b"ABCDEF", client.get_local_name().as_raw())
             assert client.recv_packet() == "ABCDEF"
 
+        def test____recv_packet____with_ancillary_data(
+            self,
+            tmp_file: io.FileIO,
+            client: UnixDatagramClient[str, str],
+            server: Socket,
+        ) -> None:
+            sent_ancillary = SocketAncillary()
+            sent_ancillary.add_fds([tmp_file.fileno()])
+            server.sendmsg([b"ABCDEF"], sent_ancillary.as_raw(), 0, client.get_local_name().as_raw())
+
+            received_ancillary = SocketAncillary()
+            try:
+                received_packet = client.recv_packet(ancillary_data=received_ancillary)
+            finally:
+                _unix_utils.close_fds_in_socket_ancillary(received_ancillary)
+            assert received_packet == "ABCDEF"
+            assert len(list(received_ancillary.iter_fds())) == 1
+
+        @pytest.mark.parametrize("with_ancillary_data", [False, True], ids=lambda p: f"with_ancillary_data=={p}")
         def test____recv_packet____timeout(
             self,
+            with_ancillary_data: bool,
             client: UnixDatagramClient[str, str],
             server: Socket,
             schedule_call_in_thread: Callable[[float, Callable[[], Any]], None],
         ) -> None:
+            received_ancillary = SocketAncillary() if with_ancillary_data else None
             schedule_call_in_thread(0.1, lambda: server.sendto(b"ABCDEF", client.get_local_name().as_raw()))
             with pytest.raises(TimeoutError):
-                client.recv_packet(timeout=0)
-            assert client.recv_packet(timeout=None) == "ABCDEF"
+                client.recv_packet(timeout=0, ancillary_data=received_ancillary)
+            assert client.recv_packet(timeout=None, ancillary_data=received_ancillary) == "ABCDEF"
 
         def test____recv_packet____closed_client(self, client: UnixDatagramClient[str, str]) -> None:
             client.close()

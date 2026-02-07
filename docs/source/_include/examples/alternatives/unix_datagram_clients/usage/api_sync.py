@@ -62,3 +62,43 @@ def recv_packet_example5(client: UnixDatagramClient[Any, Any]) -> None:
 def socket_proxy_example(client: UnixDatagramClient[Any, Any]) -> None:
     # [start]
     client.socket.setsockopt(socket.SOL_SOCKET, socket.SO_DEBUG, True)
+
+
+def send_packet_with_ancillary_example1(client: UnixDatagramClient[Any, Any]) -> None:
+    # [start]
+    from easynetwork.lowlevel.socket import SocketAncillary
+
+    ancillary = SocketAncillary()
+    ancillary.add_fds([4])
+    client.send_packet({"data": 42}, ancillary_data=ancillary)
+
+
+def recv_packet_with_ancillary_example1(client: UnixDatagramClient[Any, Any]) -> None:
+    # [start]
+    from easynetwork.lowlevel.socket import SCMCredentials, SCMRights, SocketAncillary
+
+    ancillary = SocketAncillary()
+    packet = client.recv_packet(ancillary_data=ancillary)
+    print(f"Received packet: {packet!r}")
+    for message in ancillary.messages():
+        match message:
+            case SCMRights(fds):
+                for fd in fds:
+                    print(f"Received file descriptor: {fd}")
+            case SCMCredentials(credentials):
+                for ucred in credentials:
+                    print(f"Received unix credential: {ucred}")
+
+
+def recv_packet_with_ancillary_example2(client: UnixDatagramClient[Any, Any]) -> None:
+    # [start]
+    from socket import CMSG_LEN
+
+    from easynetwork.lowlevel.socket import SocketAncillary
+
+    max_fds = 128
+    ancillary = SocketAncillary()
+    packet = client.recv_packet(ancillary_data=ancillary, ancillary_bufsize=CMSG_LEN(max_fds * 4))
+    print(f"Received packet: {packet!r}")
+    for fd in ancillary.iter_fds():
+        print(f"Received file descriptor: {fd}")

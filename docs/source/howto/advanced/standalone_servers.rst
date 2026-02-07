@@ -71,13 +71,13 @@ Unlike asynchronous tasks, it is mandatory to spawn a separate execution thread.
 
       .. literalinclude:: ../../_include/examples/howto/tcp_servers/standalone/background_server.py
          :linenos:
-         :emphasize-lines: 13,54-55
+         :emphasize-lines: 13,54-55,63
 
    .. group-tab:: StandaloneUDPNetworkServer
 
       .. literalinclude:: ../../_include/examples/howto/udp_servers/standalone/background_server.py
          :linenos:
-         :emphasize-lines: 13,54-55
+         :emphasize-lines: 13,54-55,63
 
 The output of the example should look something like this:
 

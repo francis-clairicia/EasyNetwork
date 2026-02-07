@@ -219,6 +219,51 @@ class TestAsyncStapledStreamTransport(BaseAsyncStapledTransportTests):
         assert mock_receive_transport.mock_calls == [mocker.call.recv_into(mocker.sentinel.recv_buffer)]
         assert mock_send_transport.mock_calls == []
 
+    async def test____recv_with_ancillary____calls_receive_transport_recv_with_ancillary(
+        self,
+        mock_send_transport: MagicMock,
+        mock_receive_transport: MagicMock,
+        stapled_transport: AsyncStapledStreamTransport[MagicMock, MagicMock],
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_receive_transport.recv_with_ancillary.return_value = (mocker.sentinel.recv_result, mocker.sentinel.ancdata)
+
+        # Act
+        data, ancdata = await stapled_transport.recv_with_ancillary(mocker.sentinel.recv_bufsize, mocker.sentinel.ancbufsize)
+
+        # Assert
+        assert data is mocker.sentinel.recv_result
+        assert ancdata is mocker.sentinel.ancdata
+        assert mock_receive_transport.mock_calls == [
+            mocker.call.recv_with_ancillary(mocker.sentinel.recv_bufsize, mocker.sentinel.ancbufsize)
+        ]
+        assert mock_send_transport.mock_calls == []
+
+    async def test____recv_with_ancillary_into____calls_receive_transport_recv_with_ancillary_into(
+        self,
+        mock_send_transport: MagicMock,
+        mock_receive_transport: MagicMock,
+        stapled_transport: AsyncStapledStreamTransport[MagicMock, MagicMock],
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_receive_transport.recv_with_ancillary_into.return_value = (mocker.sentinel.recv_into_result, mocker.sentinel.ancdata)
+
+        # Act
+        nbytes, ancdata = await stapled_transport.recv_with_ancillary_into(
+            mocker.sentinel.recv_buffer,
+            mocker.sentinel.ancbufsize,
+        )
+
+        # Assert
+        assert nbytes is mocker.sentinel.recv_into_result
+        assert ancdata is mocker.sentinel.ancdata
+        assert mock_receive_transport.mock_calls == [
+            mocker.call.recv_with_ancillary_into(mocker.sentinel.recv_buffer, mocker.sentinel.ancbufsize)
+        ]
+        assert mock_send_transport.mock_calls == []
+
     async def test____send_all____calls_send_transport_send_all(
         self,
         mock_send_transport: MagicMock,
@@ -251,6 +296,25 @@ class TestAsyncStapledStreamTransport(BaseAsyncStapledTransportTests):
 
         # Assert
         assert mock_send_transport.mock_calls == [mocker.call.send_all_from_iterable(mocker.sentinel.send_data)]
+        assert mock_receive_transport.mock_calls == []
+
+    async def test____send_all_with_ancillary____calls_send_transport_send_all_with_ancillary(
+        self,
+        mock_send_transport: MagicMock,
+        mock_receive_transport: MagicMock,
+        stapled_transport: AsyncStapledStreamTransport[MagicMock, MagicMock],
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_send_transport.send_all_with_ancillary.return_value = None
+
+        # Act
+        await stapled_transport.send_all_with_ancillary(mocker.sentinel.send_data, mocker.sentinel.ancdata)
+
+        # Assert
+        assert mock_send_transport.mock_calls == [
+            mocker.call.send_all_with_ancillary(mocker.sentinel.send_data, mocker.sentinel.ancdata)
+        ]
         assert mock_receive_transport.mock_calls == []
 
     async def test____send_eof____calls_send_transport_send_eof_if_exists_else_aclose(
@@ -358,6 +422,25 @@ class TestAsyncStapledDatagramTransport(BaseAsyncStapledTransportTests):
         assert mock_receive_transport.mock_calls == [mocker.call.recv()]
         assert mock_send_transport.mock_calls == []
 
+    async def test____recv_with_ancillary____calls_receive_transport_recv_with_ancillary(
+        self,
+        mock_send_transport: MagicMock,
+        mock_receive_transport: MagicMock,
+        stapled_transport: AsyncStapledDatagramTransport[MagicMock, MagicMock],
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_receive_transport.recv_with_ancillary.return_value = (mocker.sentinel.recv_result, mocker.sentinel.ancdata)
+
+        # Act
+        data, ancdata = await stapled_transport.recv_with_ancillary(mocker.sentinel.ancbufsize)
+
+        # Assert
+        assert data is mocker.sentinel.recv_result
+        assert ancdata is mocker.sentinel.ancdata
+        assert mock_receive_transport.mock_calls == [mocker.call.recv_with_ancillary(mocker.sentinel.ancbufsize)]
+        assert mock_send_transport.mock_calls == []
+
     async def test____send____calls_send_transport_send(
         self,
         mock_send_transport: MagicMock,
@@ -373,4 +456,23 @@ class TestAsyncStapledDatagramTransport(BaseAsyncStapledTransportTests):
 
         # Assert
         assert mock_send_transport.mock_calls == [mocker.call.send(mocker.sentinel.send_data)]
+        assert mock_receive_transport.mock_calls == []
+
+    async def test____send_with_ancillary____calls_send_transport_send_with_ancillary(
+        self,
+        mock_send_transport: MagicMock,
+        mock_receive_transport: MagicMock,
+        stapled_transport: AsyncStapledDatagramTransport[MagicMock, MagicMock],
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_send_transport.send_with_ancillary.return_value = None
+
+        # Act
+        await stapled_transport.send_with_ancillary(mocker.sentinel.send_data, mocker.sentinel.ancdata)
+
+        # Assert
+        assert mock_send_transport.mock_calls == [
+            mocker.call.send_with_ancillary(mocker.sentinel.send_data, mocker.sentinel.ancdata)
+        ]
         assert mock_receive_transport.mock_calls == []

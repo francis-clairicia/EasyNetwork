@@ -9,29 +9,120 @@ import dataclasses
 import socket
 import ssl
 import sys
+from collections.abc import Iterable
 from errno import ECONNRESET
 from typing import TYPE_CHECKING, Any, Self, assert_never, overload
 
 from easynetwork.lowlevel._unix_utils import is_unix_socket_family
+from easynetwork.lowlevel.api_async.backend._asyncio import _asyncio_utils
 from easynetwork.lowlevel.api_async.backend._asyncio.datagram.endpoint import DatagramEndpoint as _AsyncIODatagramEndpoint
 from easynetwork.lowlevel.api_async.backend.abc import AsyncBackend
 from easynetwork.lowlevel.api_async.backend.utils import new_builtin_backend
 from easynetwork.lowlevel.constants import MAX_DATAGRAM_BUFSIZE
 from easynetwork.serializers.tools import GeneratorStreamReader
 
-import pytest
 import sniffio
 
-from ....tools import is_uvloop_event_loop
-
 if TYPE_CHECKING:
+    from socket import _RetAddress
+
     import trio
+
+if sys.platform != "win32":
+    from socket import MSG_CTRUNC, MSG_TRUNC, MsgFlag
+
+    from easynetwork.lowlevel.socket import SocketAncillary
+
+    try:
+        from socket import CMSG_SPACE
+    except ImportError:
+        from socket import CMSG_LEN as CMSG_SPACE
+
+    if TYPE_CHECKING:
+        from _socket import _CMSGArg
+
+    _MAX_ANCDATA_SIZE = 8192
+
+    def _check_recvmsg_return_flags(flags: int) -> None:
+        assert (flags & (MSG_TRUNC | MSG_CTRUNC)) == 0, f"messages truncated (flags=={MsgFlag(flags)})"
+
+    async def _asyncio_sock_recvmsg(sock: socket.socket, bufsize: int) -> tuple[bytes, SocketAncillary, _RetAddress]:
+        loop = asyncio.get_running_loop()
+        while True:
+            try:
+                data, cmsgs, flags, address = sock.recvmsg(bufsize, CMSG_SPACE(_MAX_ANCDATA_SIZE))
+            except (BlockingIOError, InterruptedError):
+                pass
+            else:
+                _check_recvmsg_return_flags(flags)
+                ancillary = SocketAncillary()
+                ancillary.update_from_raw(cmsgs)
+                return data, ancillary, address
+            await _asyncio_utils.wait_until_readable(sock, loop)
+
+    async def _trio_sock_recvmsg(sock: trio.socket.SocketType, bufsize: int) -> tuple[bytes, SocketAncillary, _RetAddress]:
+        data, cmsgs, flags, address = await sock.recvmsg(bufsize, CMSG_SPACE(_MAX_ANCDATA_SIZE))
+        _check_recvmsg_return_flags(flags)
+        ancillary = SocketAncillary()
+        ancillary.update_from_raw(cmsgs)
+        return data, ancillary, address
 
 
 @dataclasses.dataclass(eq=False, slots=True, match_args=True)
 class _AsyncIOStream:
     reader: asyncio.StreamReader
     writer: asyncio.StreamWriter
+
+
+@dataclasses.dataclass(eq=False, slots=True, match_args=True)
+class _AsyncIORawStreamSock:
+    sock: socket.socket
+    _buffered_stream_reader: GeneratorStreamReader = dataclasses.field(init=False, default_factory=GeneratorStreamReader)
+
+    async def send_all(self, data: bytes | bytearray | memoryview) -> None:
+        loop = asyncio.get_running_loop()
+        return await loop.sock_sendall(self.sock, data)
+
+    async def _recv_from_stream(self, bufsize: int) -> bytes:
+        loop = asyncio.get_running_loop()
+        return await loop.sock_recv(self.sock, bufsize)
+
+    async def read(self, bufsize: int) -> bytes:
+        with contextlib.closing(self._buffered_stream_reader.read(bufsize)) as generator:
+            try:
+                next(generator)
+                while True:
+                    data = await self._recv_from_stream(bufsize)
+                    if not data:
+                        return b""
+                    generator.send(data)
+            except StopIteration as exc:
+                return exc.value
+
+    async def readline(self) -> bytes:
+        with contextlib.closing(self._buffered_stream_reader.read_until(b"\n", limit=65536)) as generator:
+            try:
+                next(generator)
+                while True:
+                    data = await self._recv_from_stream(1024)
+                    if not data:
+                        generator.close()
+                        return self._buffered_stream_reader.read_all()
+                    generator.send(data)
+            except StopIteration as exc:
+                return exc.value
+
+    if sys.platform != "win32":
+
+        async def recvmsg(self, bufsize: int) -> tuple[bytes, SocketAncillary]:
+            with contextlib.closing(self._buffered_stream_reader.read(bufsize)) as generator:
+                try:
+                    next(generator)
+                except StopIteration as exc:
+                    return exc.value, SocketAncillary()
+                else:
+                    data, ancillary, _ = await _asyncio_sock_recvmsg(self.sock, bufsize)
+                    return data, ancillary
 
 
 @dataclasses.dataclass(eq=False, slots=True, match_args=True)
@@ -60,7 +151,7 @@ class _TrioStream:
                     data = await self._recv_from_stream(bufsize)
                     if not data:
                         return b""
-                    generator.send(bytes(data))
+                    generator.send(data)
             except StopIteration as exc:
                 return exc.value
 
@@ -73,23 +164,45 @@ class _TrioStream:
                     if not data:
                         generator.close()
                         return self._buffered_stream_reader.read_all()
-                    generator.send(bytes(data))
+                    generator.send(data)
             except StopIteration as exc:
                 return exc.value
+
+    if sys.platform != "win32":
+
+        async def recvmsg(self, bufsize: int) -> tuple[bytes, SocketAncillary]:
+            import trio
+
+            match self.stream:
+                case trio.SocketStream(socket=sock):
+                    with contextlib.closing(self._buffered_stream_reader.read(bufsize)) as generator:
+                        try:
+                            next(generator)
+                        except StopIteration as exc:
+                            return exc.value, SocketAncillary()
+                        else:
+                            data, ancillary, _ = await _trio_sock_recvmsg(sock, bufsize)
+                            return data, ancillary
+                case _:
+                    raise NotImplementedError
 
 
 @dataclasses.dataclass(kw_only=True, eq=False, frozen=True, slots=True)
 class AsyncStreamSocket:
-    _impl: _AsyncIOStream | _TrioStream
+    _impl: _AsyncIOStream | _AsyncIORawStreamSock | _TrioStream
     _backend: AsyncBackend
+    _read_timeout: float | None = dataclasses.field(init=False, default=None)
 
     @classmethod
     async def from_connected_stdlib_socket(
         cls,
         sock: socket.socket,
     ) -> Self:
+        sock.setblocking(False)
         match sniffio.current_async_library():
             case "asyncio":
+                if is_unix_socket_family(sock.family):
+                    return cls(_impl=_AsyncIORawStreamSock(sock), _backend=new_builtin_backend("asyncio"))
                 reader, writer = await asyncio.open_connection(sock=sock)
                 return cls(_impl=_AsyncIOStream(reader, writer), _backend=new_builtin_backend("asyncio"))
             case "trio":
@@ -176,8 +289,7 @@ class AsyncStreamSocket:
                         event_loop = asyncio.get_running_loop()
                         await event_loop.sock_connect(sock, path)
 
-                        reader, writer = await asyncio.open_unix_connection(sock=sock)
-                        return cls(_impl=_AsyncIOStream(reader, writer), _backend=new_builtin_backend("asyncio"))
+                        return cls(_impl=_AsyncIORawStreamSock(sock), _backend=new_builtin_backend("asyncio"))
                     case "trio":
                         import trio
 
@@ -195,6 +307,8 @@ class AsyncStreamSocket:
             match self._impl:
                 case _AsyncIOStream(writer=writer):
                     writer.close()
+                case _AsyncIORawStreamSock(sock):
+                    sock.close()
                 case _TrioStream(trio_stream):
                     import trio
 
@@ -214,12 +328,18 @@ class AsyncStreamSocket:
     def backend(self) -> AsyncBackend:
         return self._backend
 
+    def set_read_timeout(self, timeout: float | None) -> None:
+        object.__setattr__(self, "_read_timeout", timeout)
+
     async def aclose(self) -> None:
         match self._impl:
             case _AsyncIOStream(writer=writer):
                 writer.close()
                 with contextlib.suppress(ConnectionError):
                     await writer.wait_closed()
+            case _AsyncIORawStreamSock(sock):
+                sock.close()
+                await asyncio.sleep(0)
             case _TrioStream(trio_stream, ssl_shutdown_timeout=ssl_shutdown_timeout):
                 import trio
 
@@ -229,28 +349,46 @@ class AsyncStreamSocket:
                 assert_never(self._impl)
 
     async def recv(self, bufsize: int) -> bytes:
-        match self._impl:
-            case _AsyncIOStream(reader=reader):
-                return await reader.read(bufsize)
-            case _TrioStream() as reader:
-                return await reader.read(bufsize)
-            case _:
-                assert_never(self._impl)
+        with self._backend.timeout(t) if (t := self._read_timeout) is not None else contextlib.nullcontext():
+            match self._impl:
+                case _AsyncIOStream(reader=reader):
+                    return await reader.read(bufsize)
+                case _AsyncIORawStreamSock() as reader:
+                    return await reader.read(bufsize)
+                case _TrioStream() as reader:
+                    return await reader.read(bufsize)
+                case _:
+                    assert_never(self._impl)
 
     async def readline(self) -> bytes:
-        match self._impl:
-            case _AsyncIOStream(reader=reader):
-                return await reader.readline()
-            case _TrioStream() as reader:
-                return await reader.readline()
-            case _:
-                assert_never(self._impl)
+        with self._backend.timeout(t) if (t := self._read_timeout) is not None else contextlib.nullcontext():
+            match self._impl:
+                case _AsyncIOStream(reader=reader):
+                    return await reader.readline()
+                case _AsyncIORawStreamSock() as reader:
+                    return await reader.readline()
+                case _TrioStream() as reader:
+                    return await reader.readline()
+                case _:
+                    assert_never(self._impl)
+
+    if sys.platform != "win32":
+
+        async def recvmsg(self, bufsize: int = 1024) -> tuple[bytes, SocketAncillary]:
+            with self._backend.timeout(t) if (t := self._read_timeout) is not None else contextlib.nullcontext():
+                match self._impl:
+                    case _AsyncIORawStreamSock() | _TrioStream() as reader:
+                        return await reader.recvmsg(bufsize)
+                    case _:
+                        raise NotImplementedError
 
     async def send_all(self, data: bytes | bytearray | memoryview) -> None:
         match self._impl:
             case _AsyncIOStream(writer=writer):
                 writer.write(data)
                 await writer.drain()
+            case _AsyncIORawStreamSock() as writer:
+                await writer.send_all(data)
             case _TrioStream(trio_stream):
                 from easynetwork.lowlevel.api_async.backend._trio._trio_utils import convert_trio_resource_errors
 
@@ -259,10 +397,39 @@ class AsyncStreamSocket:
             case _:
                 assert_never(self._impl)
 
+    if sys.platform != "win32":
+
+        async def sendmsg(self, data: Iterable[bytes | bytearray | memoryview], ancdata: Iterable[_CMSGArg]) -> None:
+            data = list(data)
+            ancdata = list(ancdata)
+            match self._impl:
+                case _AsyncIORawStreamSock(sock):
+                    loop = asyncio.get_running_loop()
+                    while True:
+                        try:
+                            sock.sendmsg(data, ancdata)
+                        except (BlockingIOError, InterruptedError):
+                            pass
+                        else:
+                            return
+                        await _asyncio_utils.wait_until_writable(sock, loop)
+                case _TrioStream(trio_stream):
+                    import trio
+
+                    if isinstance(trio_stream, trio.SSLStream):
+                        raise NotImplementedError
+
+                    await trio_stream.socket.sendmsg(data, ancdata)
+                case _:
+                    raise NotImplementedError
+
     async def send_eof(self) -> None:
         match self._impl:
             case _AsyncIOStream(writer=writer):
                 writer.write_eof()
+                await asyncio.sleep(0)
+            case _AsyncIORawStreamSock(sock):
+                sock.shutdown(socket.SHUT_WR)
                 await asyncio.sleep(0)
             case _TrioStream(trio_stream):
                 import trio
@@ -281,6 +448,8 @@ class AsyncStreamSocket:
         match self._impl:
             case _AsyncIOStream(writer=writer):
                 return writer.get_extra_info("sockname")
+            case _AsyncIORawStreamSock(sock):
+                return sock.getsockname()
             case _TrioStream(trio_stream):
                 import trio
 
@@ -294,6 +463,8 @@ class AsyncStreamSocket:
         match self._impl:
             case _AsyncIOStream(writer=writer):
                 return writer.get_extra_info("peername")
+            case _AsyncIORawStreamSock(sock):
+                return sock.getpeername()
             case _TrioStream(trio_stream):
                 import trio
 
@@ -314,6 +485,8 @@ class AsyncStreamSocket:
             case _AsyncIOStream(writer=writer):
                 trsock: asyncio.trsock.TransportSocket = writer.get_extra_info("socket")
                 return trsock.getsockopt(*args)
+            case _AsyncIORawStreamSock(sock):
+                return sock.getsockopt(*args)
             case _TrioStream(trio_stream):
                 import trio
 
@@ -334,6 +507,8 @@ class AsyncStreamSocket:
             case _AsyncIOStream(writer=writer):
                 trsock: asyncio.trsock.TransportSocket = writer.get_extra_info("socket")
                 trsock.setsockopt(*args)
+            case _AsyncIORawStreamSock(sock):
+                sock.setsockopt(*args)
             case _TrioStream(trio_stream):
                 import trio
 
@@ -350,14 +525,20 @@ class _AsyncIODatagram:
 
 
 @dataclasses.dataclass(eq=False, slots=True, match_args=True)
+class _AsyncIORawDatagramSock:
+    sock: socket.socket
+
+
+@dataclasses.dataclass(eq=False, slots=True, match_args=True)
 class _TrioDatagram:
     socket: trio.socket.SocketType
 
 
 @dataclasses.dataclass(kw_only=True, eq=False, frozen=True, slots=True)
 class AsyncDatagramSocket:
-    _impl: _AsyncIODatagram | _TrioDatagram
+    _impl: _AsyncIODatagram | _AsyncIORawDatagramSock | _TrioDatagram
     _backend: AsyncBackend
+    _read_timeout: float | None = dataclasses.field(init=False, default=None)
 
     @classmethod
     async def from_stdlib_socket(
@@ -366,26 +547,13 @@ class AsyncDatagramSocket:
     ) -> Self:
         if sock.type != socket.SOCK_DGRAM:
             raise ValueError(sock)
+        sock.setblocking(False)
         match sniffio.current_async_library():
             case "asyncio":
                 from easynetwork.lowlevel.api_async.backend._asyncio.datagram.endpoint import create_datagram_endpoint
 
-                if sys.platform == "linux" and is_unix_socket_family(sock.family):
-                    from easynetwork.lowlevel.socket import UnixSocketAddress
-
-                    addresses: list[str | bytes] = [sock.getsockname()]
-                    try:
-                        addresses.append(sock.getpeername())
-                    except OSError:
-                        pass
-
-                    for addr in map(UnixSocketAddress.from_raw, addresses):
-                        if addr.as_abstract_name() and is_uvloop_event_loop(asyncio.get_running_loop()):
-                            # Addresses received through uvloop transports contains extra NULL bytes because the creation of
-                            # the bytes object from the sockaddr_un structure does not take into account the real addrlen.
-                            # https://github.com/MagicStack/uvloop/blob/v0.21.0/uvloop/includes/compat.h#L34-L55
-                            sock.close()
-                            pytest.xfail("uvloop translation of abstract unix sockets to python object is wrong.")
+                if is_unix_socket_family(sock.family):
+                    return cls(_impl=_AsyncIORawDatagramSock(sock), _backend=new_builtin_backend("asyncio"))
 
                 endpoint = await create_datagram_endpoint(sock=sock)
                 return cls(_impl=_AsyncIODatagram(endpoint), _backend=new_builtin_backend("asyncio"))
@@ -451,14 +619,17 @@ class AsyncDatagramSocket:
                     case "asyncio":
                         event_loop = asyncio.get_running_loop()
                         await event_loop.sock_connect(sock, path)
+                        return cls(_impl=_AsyncIORawDatagramSock(sock), _backend=new_builtin_backend("asyncio"))
                     case "trio":
+                        import trio
+
                         from easynetwork.lowlevel.api_async.backend._trio._trio_utils import connect_sock_to_resolved_address
 
+                        backend = new_builtin_backend("trio")
                         await connect_sock_to_resolved_address(sock, path)
+                        return cls(_impl=_TrioDatagram(trio.socket.from_stdlib_socket(sock)), _backend=backend)
                     case lib_name:
                         raise NotImplementedError(lib_name)
-
-                return await cls.from_stdlib_socket(sock)
             except BaseException:
                 sock.close()
                 raise
@@ -468,6 +639,8 @@ class AsyncDatagramSocket:
             match self._impl:
                 case _AsyncIODatagram(endpoint):
                     endpoint.close_nowait()
+                case _AsyncIORawDatagramSock(sock):
+                    sock.close()
                 case _TrioDatagram(sock):
                     sock.close()
                 case _:
@@ -483,10 +656,16 @@ class AsyncDatagramSocket:
     def backend(self) -> AsyncBackend:
         return self._backend
 
+    def set_read_timeout(self, timeout: float | None) -> None:
+        object.__setattr__(self, "_read_timeout", timeout)
+
     async def aclose(self) -> None:
         match self._impl:
             case _AsyncIODatagram(endpoint):
                 await endpoint.aclose()
+            case _AsyncIORawDatagramSock(sock):
+                sock.close()
+                await asyncio.sleep(0)
             case _TrioDatagram(sock):
                 import trio
 
@@ -496,18 +675,54 @@ class AsyncDatagramSocket:
                 assert_never(self._impl)
 
     async def recvfrom(self) -> tuple[bytes, socket._RetAddress]:
-        match self._impl:
-            case _AsyncIODatagram(endpoint):
-                return await endpoint.recvfrom()
-            case _TrioDatagram(sock):
-                return await sock.recvfrom(MAX_DATAGRAM_BUFSIZE)
-            case _:
-                assert_never(self._impl)
+        with self._backend.timeout(t) if (t := self._read_timeout) is not None else contextlib.nullcontext():
+            match self._impl:
+                case _AsyncIODatagram(endpoint):
+                    return await endpoint.recvfrom()
+                case _AsyncIORawDatagramSock(sock):
+                    loop = asyncio.get_running_loop()
+                    # https://github.com/MagicStack/uvloop/issues/561
+                    while True:
+                        try:
+                            return sock.recvfrom(MAX_DATAGRAM_BUFSIZE)
+                        except (BlockingIOError, InterruptedError):
+                            pass
+                        await _asyncio_utils.wait_until_readable(sock, loop)
+                case _TrioDatagram(sock):
+                    return await sock.recvfrom(MAX_DATAGRAM_BUFSIZE)
+                case _:
+                    assert_never(self._impl)
+
+    if sys.platform != "win32":
+
+        async def recvmsg(self) -> tuple[bytes, SocketAncillary, _RetAddress]:
+            with self._backend.timeout(t) if (t := self._read_timeout) is not None else contextlib.nullcontext():
+                match self._impl:
+                    case _AsyncIORawDatagramSock(sock):
+                        return await _asyncio_sock_recvmsg(sock, MAX_DATAGRAM_BUFSIZE)
+                    case _TrioDatagram(sock):
+                        return await _trio_sock_recvmsg(sock, MAX_DATAGRAM_BUFSIZE)
+                    case _:
+                        raise NotImplementedError
 
     async def sendto(self, data: bytes | bytearray | memoryview, address: socket._Address | None) -> None:
         match self._impl:
             case _AsyncIODatagram(endpoint):
                 await endpoint.sendto(data, address)
+            case _AsyncIORawDatagramSock(sock):
+                loop = asyncio.get_running_loop()
+                # https://github.com/MagicStack/uvloop/issues/561
+                while True:
+                    try:
+                        if address is None:
+                            sock.send(data)
+                        else:
+                            sock.sendto(data, address)
+                    except (BlockingIOError, InterruptedError):
+                        pass
+                    else:
+                        return
+                    await _asyncio_utils.wait_until_writable(sock, loop)
             case _TrioDatagram(sock):
                 if address is None:
                     await sock.send(data)
@@ -516,10 +731,38 @@ class AsyncDatagramSocket:
             case _:
                 assert_never(self._impl)
 
+    if sys.platform != "win32":
+
+        async def sendmsg(
+            self,
+            data: Iterable[bytes | bytearray | memoryview],
+            ancdata: Iterable[_CMSGArg],
+            address: socket._Address | None,
+        ) -> None:
+            data = list(data)
+            ancdata = list(ancdata)
+            match self._impl:
+                case _AsyncIORawDatagramSock(sock):
+                    loop = asyncio.get_running_loop()
+                    while True:
+                        try:
+                            sock.sendmsg(data, ancdata, 0, address)
+                        except (BlockingIOError, InterruptedError):
+                            pass
+                        else:
+                            return
+                        await _asyncio_utils.wait_until_writable(sock, loop)
+                case _TrioDatagram(sock):
+                    await sock.sendmsg(data, ancdata, 0, address)
+                case _:
+                    raise NotImplementedError
+
     def getsockname(self) -> socket._RetAddress:
         match self._impl:
             case _AsyncIODatagram(endpoint):
                 return endpoint.get_extra_info("sockname")
+            case _AsyncIORawDatagramSock(sock):
+                return sock.getsockname()
             case _TrioDatagram(sock):
                 return sock.getsockname()
             case _:
@@ -529,7 +772,10 @@ class AsyncDatagramSocket:
         match self._impl:
             case _AsyncIODatagram(endpoint):
                 return endpoint.get_extra_info("peername")
+            case _AsyncIORawDatagramSock(sock):
+                return sock.getpeername()
             case _TrioDatagram(sock):
                 return sock.getpeername()
             case _:
+                assert_never(self._impl)
                 assert_never(self._impl)

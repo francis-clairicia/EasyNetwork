@@ -55,7 +55,7 @@ async def echo_server(path: str) -> NoReturn:
             if addr:
                 task_group.create_task(_echo_datagram_client(loop, lock, sock, datagram, addr))
             else:
-                LOGGER.warning("A datagram received from an unbound UNIX datagram socket was dropped.")
+                LOGGER.warning("A datagram received from an unbound UNIX datagram socket has been dropped.")
 
     raise AssertionError("unreachable")
 
@@ -85,7 +85,7 @@ async def echo_server_stream(path: str) -> NoReturn:
             if addr:
                 task_group.create_task(_echo_datagram_client_stream(stream, datagram, addr))
             else:
-                LOGGER.warning("A datagram received from an unbound UNIX datagram socket was dropped.")
+                LOGGER.warning("A datagram received from an unbound UNIX datagram socket has been dropped.")
 
     raise AssertionError("unreachable")
 
@@ -113,7 +113,7 @@ class EchoProtocol(asyncio.DatagramProtocol):
 
     def datagram_received(self, data: bytes, addr: Any) -> None:
         if not addr:
-            LOGGER.warning("A datagram received from an unbound UNIX datagram socket was dropped.")
+            LOGGER.warning("A datagram received from an unbound UNIX datagram socket has been dropped.")
             return
         with contextlib.suppress(AttributeError):
             self.transport.sendto(data, addr)

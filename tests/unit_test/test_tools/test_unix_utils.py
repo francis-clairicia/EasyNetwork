@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import errno
 import pathlib
 import sys
 from collections.abc import Callable, Iterator
@@ -8,6 +9,7 @@ from socket import SOL_SOCKET
 from struct import Struct
 from typing import TYPE_CHECKING, Any
 
+from easynetwork.lowlevel._errno import error_from_errno
 from easynetwork.lowlevel._unix_utils import check_unix_socket_family, is_unix_socket_family
 
 import pytest
@@ -74,11 +76,12 @@ if sys.platform != "win32":
     from easynetwork.lowlevel._unix_utils import (
         UnixCredsContainer,
         _get_peer_credentials_impl_from_platform,
+        close_fds_in_socket_ancillary,
         convert_optional_unix_socket_address,
         convert_unix_socket_address,
         platform_supports_automatic_socket_bind,
     )
-    from easynetwork.lowlevel.socket import UnixCredentials, UnixSocketAddress
+    from easynetwork.lowlevel.socket import SocketAncillary, UnixCredentials, UnixSocketAddress
 
     @pytest.mark.parametrize(
         ["input", "expected_output"],
@@ -153,6 +156,35 @@ if sys.platform != "win32":
 
         # Act & Assert
         assert not platform_supports_automatic_socket_bind()
+
+    def test____close_fds_in_socket_ancillary____default_behaviour(mocker: MockerFixture) -> None:
+        # Arrange
+        mock_os_close = mocker.patch("os.close", autospec=True)
+        ancillary_data = SocketAncillary()
+        ancillary_data.add_fds([123, 456, 789])
+
+        # Act
+        close_fds_in_socket_ancillary(ancillary_data)
+
+        # Assert
+        assert mock_os_close.mock_calls == [mocker.call(123), mocker.call(456), mocker.call(789)]
+
+    def test____close_fds_in_socket_ancillary____close_all_fds_despite_os_errors(mocker: MockerFixture) -> None:
+        # Arrange
+        mock_os_close = mocker.patch(
+            "os.close",
+            autospec=True,
+            side_effect=[error_from_errno(errno.EBADF), None, error_from_errno(errno.EBADF)],
+        )
+        ancillary_data = SocketAncillary()
+        ancillary_data.add_fds([123, 456, 789])
+
+        # Act
+        with pytest.RaisesGroup(OSError, OSError):
+            close_fds_in_socket_ancillary(ancillary_data)
+
+        # Assert
+        assert mock_os_close.mock_calls == [mocker.call(123), mocker.call(456), mocker.call(789)]
 
     class TestLazyPeerCredsContainer:
         @pytest.fixture

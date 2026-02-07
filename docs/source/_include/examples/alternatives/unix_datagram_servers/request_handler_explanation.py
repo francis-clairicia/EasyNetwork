@@ -6,12 +6,16 @@ import contextvars
 import logging
 import traceback
 from collections.abc import AsyncGenerator
+from socket import SO_PASSCRED, SOL_SOCKET
 from typing import ClassVar
 
 import trio
 
 from easynetwork.exceptions import DatagramProtocolParseError
-from easynetwork.lowlevel.socket import UnixSocketAddress
+from easynetwork.lowlevel.request_handler import RecvAncillaryDataParams, RecvParams
+from easynetwork.lowlevel.socket import SCMCredentials, SCMRights, SocketAncillary, UnixSocketAddress
+from easynetwork.protocol import DatagramProtocol
+from easynetwork.serializers import JSONSerializer
 from easynetwork.servers.async_unix_datagram import AsyncUnixDatagramServer
 from easynetwork.servers.handlers import AsyncDatagramClient, AsyncDatagramRequestHandler, UNIXClientAttribute
 
@@ -186,7 +190,7 @@ class TimeoutContextRequestHandlerWithClientBackend(AsyncDatagramRequestHandler[
             await client.send_packet(Response())
 
 
-class TimeoutYieldedRequestHandler(AsyncDatagramRequestHandler[Request, Response]):
+class TimeoutYieldedDeprecatedWayRequestHandler(AsyncDatagramRequestHandler[Request, Response]):
     async def handle(
         self,
         client: AsyncDatagramClient[Response],
@@ -207,6 +211,83 @@ class TimeoutYieldedRequestHandler(AsyncDatagramRequestHandler[Request, Response
             await client.send_packet(TimedOut())
         else:
             await client.send_packet(Response())
+
+
+class TimeoutYieldedRequestHandler(AsyncDatagramRequestHandler[Request, Response]):
+    async def handle(
+        self,
+        client: AsyncDatagramClient[Response],
+    ) -> AsyncGenerator[RecvParams | None, Request]:
+        # It is *never* useful to have a timeout for the 1st datagram
+        # because the datagram is already in the queue.
+        # The yielded value is simply ignored.
+        request: Request = yield None
+
+        ...
+
+        await client.send_packet(Response())
+
+        try:
+            # The client has 30 seconds to send the 2nd request to the server.
+            another_request: Request = yield RecvParams(timeout=30.0)
+        except TimeoutError:
+            await client.send_packet(TimedOut())
+        else:
+            await client.send_packet(Response())
+
+
+class SCMSendRequestHandler(AsyncDatagramRequestHandler[Request, Response]):
+    async def handle(
+        self,
+        client: AsyncDatagramClient[Response],
+    ) -> AsyncGenerator[None, Request]:
+        request: Request = yield
+
+        ancillary = SocketAncillary()
+        ancillary.add_fds([4])
+        await client.send_packet_with_ancillary(Response(), ancillary)
+
+
+class SCMRecvRequestHandler(AsyncDatagramRequestHandler[Request, Response]):
+    async def handle(
+        self,
+        client: AsyncDatagramClient[Response],
+    ) -> AsyncGenerator[RecvParams | None, Request]:
+        ancillary = SocketAncillary()
+        request: Request = yield RecvParams(recv_with_ancillary=RecvAncillaryDataParams(ancillary.update_from_raw))
+
+        for message in ancillary.messages():
+            match message:
+                case SCMRights(fds):
+                    for fd in fds:
+                        print(f"Received file descriptor: {fd}")
+                case SCMCredentials(credentials):
+                    for ucred in credentials:
+                        print(f"Received unix credential: {ucred}")
+
+    @staticmethod
+    async def receive_ancillary_data() -> None:
+        # [start]
+        server = AsyncUnixDatagramServer(
+            "/var/run/app.sock",
+            DatagramProtocol(JSONSerializer()),
+            SCMRecvRequestHandler(),
+            receive_ancillary_data=True,
+        )
+
+    @staticmethod
+    async def example_custom_ancillary_bufsize() -> None:
+        # [start]
+        from socket import CMSG_LEN
+
+        max_fds = 128
+        server = AsyncUnixDatagramServer(
+            "/var/run/app.sock",
+            DatagramProtocol(JSONSerializer()),
+            SCMRecvRequestHandler(),
+            receive_ancillary_data=True,
+            ancillary_bufsize=CMSG_LEN(max_fds * 4),
+        )
 
 
 class ClientExtraAttributesRequestHandler(AsyncDatagramRequestHandler[Request, Response]):
@@ -291,6 +372,17 @@ class ServiceInitializationHookRequestHandlerWithServerBackend(AsyncDatagramRequ
 
     def _service_quit(self) -> None:
         print("Service stopped")
+
+
+class LowLevelSocketOperationsRequestHandler(AsyncDatagramRequestHandler[Request, Response]):
+    async def service_init(
+        self,
+        exit_stack: contextlib.AsyncExitStack,
+        server: AsyncUnixDatagramServer[Request, Response],
+    ) -> None:
+        for sock in server.get_sockets():
+            # Enable SO_PASSCRED in order to use SCMCredentials
+            sock.setsockopt(SOL_SOCKET, SO_PASSCRED, 1)
 
 
 class ClientContextRequestHandler(AsyncDatagramRequestHandler[Request, Response]):

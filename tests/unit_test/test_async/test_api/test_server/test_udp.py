@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Literal
 
-from easynetwork.exceptions import ClientClosedError
+from easynetwork.exceptions import ClientClosedError, UnsupportedOperation
 from easynetwork.lowlevel._utils import Flag
 from easynetwork.lowlevel.socket import INETSocketAttribute, SocketProxy, new_socket_address
 from easynetwork.servers.async_udp import AsyncUDPNetworkServer, _ClientAPI
@@ -288,3 +288,14 @@ class TestClientAPI(BaseTestSocket):
 
         # Assert
         mock_datagram_server.send_packet_to.assert_not_awaited()
+
+    async def test____send_packet_with_ancillary____unsupported(
+        self,
+        client: _ClientAPI[Any],
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        with pytest.raises(UnsupportedOperation):
+            await client.send_packet_with_ancillary(mocker.sentinel.packet, mocker.sentinel.ancdata)

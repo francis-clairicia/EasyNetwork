@@ -19,35 +19,38 @@ __all__ = [
     "is_unix_socket_family",
 ]
 
-import functools
-import os
 import socket as _socket
 import sys
-from collections.abc import Callable
+from typing import TYPE_CHECKING
 
-from .socket import ISocket
+if sys.platform == "win32" or (not TYPE_CHECKING and not hasattr(_socket, "AF_UNIX")):
 
-
-def is_unix_socket_family(family: int) -> bool:
-    try:
-        AF_UNIX: _socket.AddressFamily = _socket.AddressFamily["AF_UNIX"]
-    except KeyError:
+    def is_unix_socket_family(family: int, /) -> bool:
         return False
-    return family == AF_UNIX
+
+else:
+
+    def is_unix_socket_family(family: int, /) -> bool:
+        return family == _socket.AF_UNIX
 
 
-def check_unix_socket_family(family: int) -> None:
+def check_unix_socket_family(family: int, /) -> None:
     if not is_unix_socket_family(family):
         raise ValueError("Only these families are supported: AF_UNIX")
 
 
 if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
-    from .socket import UnixCredentials, UnixSocketAddress
+    import functools
+    import os
+    from collections.abc import Callable
+
+    from .socket import ISocket, SocketAncillary, UnixCredentials, UnixSocketAddress
 
     __all__ += [
         "UnixCredsContainer",
-        "convert_unix_socket_address",
+        "close_fds_in_socket_ancillary",
         "convert_optional_unix_socket_address",
+        "convert_unix_socket_address",
         "platform_supports_automatic_socket_bind",
     ]
 
@@ -69,6 +72,19 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
         # Automatic socket bind feature is available on platforms supporting abstract unix sockets.
         # Currently, only linux platform has this feature.
         return sys.platform == "linux"
+
+    def close_fds_in_socket_ancillary(ancillary: SocketAncillary) -> None:
+        close_errors: list[OSError] = []
+        try:
+            for fd in ancillary.iter_fds():
+                try:
+                    os.close(fd)
+                except OSError as exc:
+                    close_errors.append(exc)
+            if close_errors:
+                raise ExceptionGroup("OSError", close_errors)
+        finally:
+            close_errors.clear()
 
     class UnixCredsContainer:
         __slots__ = ("__peer_credentials", "__sock")

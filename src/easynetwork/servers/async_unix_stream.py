@@ -44,7 +44,7 @@ else:
 
     from .._typevars import _T_Request, _T_Response
     from ..exceptions import ClientClosedError
-    from ..lowlevel import _unix_utils, _utils, constants
+    from ..lowlevel import _unix_utils, _utils
     from ..lowlevel._final import runtime_final_class
     from ..lowlevel.api_async.backend.abc import AsyncBackend, TaskGroup
     from ..lowlevel.api_async.backend.utils import BuiltinAsyncBackendLiteral
@@ -72,6 +72,7 @@ else:
             "__protocol",
             "__request_handler",
             "__max_recv_size",
+            "__ancillary_bufsize",
             "__client_connection_log_level",
             "__unix_socket_to_delete",
         )
@@ -86,10 +87,14 @@ else:
             backlog: int | None = None,
             mode: int | None = None,
             max_recv_size: int | None = None,
+            ancillary_bufsize: int | None = None,
             log_client_connection: bool | None = None,
             logger: logging.Logger | None = None,
         ) -> None:
             """
+            .. versionchanged:: NEXT_VERSION
+                Added `ancillary_bufsize` parameter.
+
             Parameters:
                 path: Path of the socket.
                 protocol: The :term:`protocol object` to use.
@@ -100,6 +105,7 @@ else:
                 backlog: is the maximum number of queued connections passed to :class:`~socket.socket.listen` (defaults to ``100``).
                 mode: Permissions to set on the socket.
                 max_recv_size: Read buffer size. If not given, a default reasonable value is used.
+                ancillary_bufsize: read buffer size for ancillary data. Defaults to ~8KiB.
                 log_client_connection: If :data:`True` (default), log clients connection/disconnection in :data:`~logging.INFO` level.
                                        (This log will always be available in :data:`~logging.DEBUG` level.)
                 logger: If given, the logger instance to use.
@@ -133,10 +139,8 @@ else:
             if log_client_connection is None:
                 log_client_connection = True
 
-            if max_recv_size is None:
-                max_recv_size = constants.DEFAULT_STREAM_BUFSIZE
-            if not isinstance(max_recv_size, int) or max_recv_size <= 0:
-                raise ValueError("'max_recv_size' must be a strictly positive integer")
+            max_recv_size = _base.validate_max_recv_size(max_recv_size)
+            ancillary_bufsize = _base.validate_unix_socket_ancillary_buffer_size(ancillary_bufsize)
 
             self.__listener_factory: Callable[[], Coroutine[Any, Any, AsyncListener[AsyncStreamTransport]]]
             self.__listener_factory = _utils.make_callback(
@@ -149,11 +153,8 @@ else:
             self.__protocol: AnyStreamProtocolType[_T_Response, _T_Request] = protocol
             self.__request_handler: AsyncStreamRequestHandler[_T_Request, _T_Response] = request_handler
             self.__max_recv_size: int = max_recv_size
-            self.__client_connection_log_level: int
-            if log_client_connection:
-                self.__client_connection_log_level = logging.INFO
-            else:
-                self.__client_connection_log_level = logging.DEBUG
+            self.__ancillary_bufsize: int = ancillary_bufsize
+            self.__client_connection_log_level: int = logging.INFO if log_client_connection else logging.DEBUG
             self.__unix_socket_to_delete: dict[pathlib.Path, int] = {}
 
         async def server_close(self) -> None:
@@ -224,6 +225,7 @@ else:
                 handler,
                 task_group,
                 disconnect_error_filter=disconnect_error_filter,
+                ancillary_bufsize=self.__ancillary_bufsize,
             )
 
         @contextlib.asynccontextmanager
@@ -361,6 +363,12 @@ else:
                 if self.__closing:
                     raise ClientClosedError("Closed client")
                 await self.__client.send_packet(packet)
+
+        async def send_packet_with_ancillary(self, packet: _T_Response, ancillary_data: Any, /) -> None:
+            async with self.__send_lock:
+                if self.__closing:
+                    raise ClientClosedError("Closed client")
+                await self.__client.send_packet_with_ancillary(packet, ancillary_data)
 
         def backend(self) -> AsyncBackend:
             return self.__client.backend()

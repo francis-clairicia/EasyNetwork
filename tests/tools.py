@@ -5,6 +5,7 @@ import contextlib
 import dataclasses
 import importlib
 import os
+import socket
 import sys
 import time
 from collections.abc import Callable, Generator, Iterator
@@ -55,12 +56,28 @@ class PlatformMarkers:
         return _make_skipif_platform("linux", reason, skip_only_on_ci=skip_only_on_ci)
 
     @staticmethod
+    def skipif_platform_freebsd_because(reason: str, *, skip_only_on_ci: bool = False) -> pytest.MarkDecorator:
+        return _make_skipif_platform("freebsd", reason, skip_only_on_ci=skip_only_on_ci)
+
+    @staticmethod
+    def skipif_platform_openbsd_because(reason: str, *, skip_only_on_ci: bool = False) -> pytest.MarkDecorator:
+        return _make_skipif_platform("openbsd", reason, skip_only_on_ci=skip_only_on_ci)
+
+    @staticmethod
+    def skipif_platform_netbsd_because(reason: str, *, skip_only_on_ci: bool = False) -> pytest.MarkDecorator:
+        return _make_skipif_platform("netbsd", reason, skip_only_on_ci=skip_only_on_ci)
+
+    @staticmethod
     def skipif_platform_bsd_because(reason: str, *, skip_only_on_ci: bool = False) -> pytest.MarkDecorator:
         return _make_skipif_platform(("freebsd", "openbsd", "netbsd"), reason, skip_only_on_ci=skip_only_on_ci)
 
     skipif_platform_win32 = skipif_platform_win32_because("cannot run on Windows")
     skipif_platform_macOS = skipif_platform_macOS_because("cannot run on MacOS")
     skipif_platform_linux = skipif_platform_linux_because("cannot run on Linux")
+
+    skipif_platform_freebsd = skipif_platform_freebsd_because("Cannot run on FreeBSD")
+    skipif_platform_openbsd = skipif_platform_openbsd_because("Cannot run on OpenBSD")
+    skipif_platform_netbsd = skipif_platform_netbsd_because("Cannot run on NetBSD")
     skipif_platform_bsd = skipif_platform_bsd_because("Cannot run on BSD-related platforms (e.g. FreeBSD)")
 
     ###### RESTRICT TESTS FOR PLATFORMS ######
@@ -71,6 +88,28 @@ class PlatformMarkers:
 
     supports_abstract_sockets = runs_only_on_platform("linux", "abstract sockets are available only on Linux")
     abstract_sockets_unsupported = skipif_platform_linux_because("abstract sockets are available only on Linux")
+
+    supports_sending_unix_credentials = runs_only_on_platform(("linux", "freebsd", "netbsd"), "Cannot send unix credentials")
+
+    supports_socket_sendmsg = pytest.mark.skipif(
+        not hasattr(socket.socket, "sendmsg"), reason=f"socket.sendmsg() is not available on {sys.platform}"
+    )
+    supports_socket_recvmsg = pytest.mark.skipif(
+        not hasattr(socket.socket, "recvmsg"), reason=f"socket.recvmsg() is not available on {sys.platform}"
+    )
+    supports_socket_recvmsg_into = pytest.mark.skipif(
+        not hasattr(socket.socket, "recvmsg_into"), reason=f"socket.recvmsg_into() is not available on {sys.platform}"
+    )
+
+    socket_sendmsg_unsupported = pytest.mark.skipif(
+        hasattr(socket.socket, "sendmsg"), reason=f"socket.sendmsg() is available on {sys.platform}"
+    )
+    socket_recvmsg_unsupported = pytest.mark.skipif(
+        hasattr(socket.socket, "recvmsg"), reason=f"socket.recvmsg() is available on {sys.platform}"
+    )
+    socket_recvmsg_into_unsupported = pytest.mark.skipif(
+        hasattr(socket.socket, "recvmsg_into"), reason=f"socket.recvmsg_into() is available on {sys.platform}"
+    )
 
 
 def send_return(gen: Generator[Any, _T_contra, _V_co], value: _T_contra, /) -> _V_co:

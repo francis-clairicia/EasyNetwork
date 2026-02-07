@@ -72,6 +72,7 @@ else:
             backlog: int | None = None,
             mode: int | None = None,
             max_recv_size: int | None = None,
+            ancillary_bufsize: int | None = None,
             log_client_connection: bool | None = None,
             logger: logging.Logger | None = None,
         ) -> None:
@@ -92,6 +93,7 @@ else:
                     backlog=backlog,
                     mode=mode,
                     max_recv_size=max_recv_size,
+                    ancillary_bufsize=ancillary_bufsize,
                     log_client_connection=log_client_connection,
                     logger=logger,
                 ),

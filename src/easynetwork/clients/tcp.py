@@ -48,6 +48,7 @@ from ..lowlevel.socket import (
     set_tcp_nodelay,
 )
 from ..protocol import AnyStreamProtocolType
+from . import _base
 from .abc import AbstractNetworkClient
 
 if TYPE_CHECKING:
@@ -156,20 +157,15 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
 
         _check_any_protocol(protocol)
 
-        if max_recv_size is None:
-            max_recv_size = constants.DEFAULT_STREAM_BUFSIZE
+        max_recv_size = _base.validate_max_recv_size(max_recv_size)
 
-        if server_hostname is not None and not ssl:
-            raise ValueError("server_hostname is only meaningful with ssl")
-
-        if ssl_handshake_timeout is not None and not ssl:
-            raise ValueError("ssl_handshake_timeout is only meaningful with ssl")
-
-        if ssl_shutdown_timeout is not None and not ssl:
-            raise ValueError("ssl_shutdown_timeout is only meaningful with ssl")
-
-        if ssl_standard_compatible is not None and not ssl:
-            raise ValueError("ssl_standard_compatible is only meaningful with ssl")
+        _base.validate_ssl_arguments(
+            ssl=ssl,
+            server_hostname=server_hostname,
+            ssl_handshake_timeout=ssl_handshake_timeout,
+            ssl_shutdown_timeout=ssl_shutdown_timeout,
+            ssl_standard_compatible=ssl_standard_compatible,
+        )
 
         if ssl_standard_compatible is None:
             ssl_standard_compatible = True
@@ -181,20 +177,8 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
             case _socket.socket() as socket if not kwargs:
                 pass
             case (str(host), int(port)):
-                if server_hostname is None and ssl:
-                    # Use host as default for server_hostname.  It is an error
-                    # if host is empty or not set, e.g. when an
-                    # already-connected socket was passed or when only a port
-                    # is given.  To avoid this error, you can pass
-                    # server_hostname='' -- this will bypass the hostname
-                    # check.  (This also means that if host is a numeric
-                    # IP/IPv6 address, we will attempt to verify that exact
-                    # address; this will probably fail, but it is possible to
-                    # create a certificate for a specific IP address, so we
-                    # don't judge it here.)
-                    if not host:
-                        raise ValueError("You must set server_hostname when using ssl without a host")
-                    server_hostname = host
+                if ssl:
+                    server_hostname = _base.resolve_server_hostname_for_ssl(server_hostname, host)
                 _utils.replace_kwargs(kwargs, {"local_address": "source_address", "connect_timeout": "timeout"})
                 kwargs.setdefault("timeout", None)
                 socket = _socket.create_connection((host, port), **kwargs, all_errors=True)
@@ -207,32 +191,19 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
 
             transport: _transport_socket.SocketStreamTransport | _transport_socket.SSLStreamTransport
 
+            ssl = _base.resolve_ssl_context(ssl, server_hostname)
             if ssl:
-                if _ssl_module is None:
-                    raise RuntimeError("stdlib ssl module not available")
-
-                if isinstance(ssl, bool):
-                    ssl = _ssl_module.create_default_context()
-                    assert isinstance(ssl, _ssl_module.SSLContext)  # nosec assert_used
-                    if not server_hostname:
-                        ssl.check_hostname = False
-                    with contextlib.suppress(AttributeError):
-                        ssl.options &= ~_ssl_module.OP_IGNORE_UNEXPECTED_EOF
-                if not server_hostname:
-                    server_hostname = None
-
                 with self.__convert_socket_error(endpoint=None):
                     transport = _transport_socket.SSLStreamTransport(
                         socket,
                         ssl_context=ssl,
                         retry_interval=retry_interval,
-                        server_hostname=server_hostname,
+                        server_hostname=server_hostname or None,
                         server_side=False,
                         standard_compatible=ssl_standard_compatible,
                         handshake_timeout=ssl_handshake_timeout,
                         shutdown_timeout=ssl_shutdown_timeout,
                     )
-
             else:
                 transport = _transport_socket.SocketStreamTransport(socket, retry_interval=retry_interval)
         except BaseException:

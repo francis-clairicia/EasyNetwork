@@ -168,6 +168,65 @@ if sys.platform != "win32":
             with pytest.raises(TypeError, match=r"^Expected an AsyncStreamRequestHandler object, got .*$"):
                 _ = AsyncUnixStreamServer("/path/to/sock", mock_stream_protocol, mock_datagram_request_handler, mock_backend)
 
+        @pytest.mark.parametrize("max_recv_size", [0, -1, 10.4], ids=lambda p: f"max_recv_size=={p}")
+        async def test____dunder_init____max_recv_size____invalid_value(
+            self,
+            max_recv_size: Any,
+            mock_stream_protocol: MagicMock,
+            mock_stream_request_handler: MagicMock,
+            mock_backend: MagicMock,
+        ) -> None:
+            with pytest.raises(ValueError, match=r"^'max_recv_size' must be a strictly positive integer$"):
+                _ = AsyncUnixStreamServer(
+                    "/path/to/sock",
+                    mock_stream_protocol,
+                    mock_stream_request_handler,
+                    mock_backend,
+                    max_recv_size=max_recv_size,
+                )
+
+        @pytest.mark.parametrize("invalid_bufsize", [0, -42, 3.14])
+        async def test____dunder_init____ancillary_bufsize____invalid_value(
+            self,
+            invalid_bufsize: Any,
+            mock_stream_protocol: MagicMock,
+            mock_stream_request_handler: MagicMock,
+            mock_backend: MagicMock,
+        ) -> None:
+            # Arrange
+
+            # Act & Assert
+            with pytest.raises(
+                ValueError,
+                match=r"^ancillary_bufsize must be a strictly positive integer$",
+            ):
+                _ = AsyncUnixStreamServer(
+                    "/path/to/sock",
+                    mock_stream_protocol,
+                    mock_stream_request_handler,
+                    mock_backend,
+                    ancillary_bufsize=invalid_bufsize,
+                )
+
+        @pytest.mark.parametrize("valid_bufsize", [1, 8192, 2**16])
+        async def test____dunder_init____ancillary_bufsize____valid_value(
+            self,
+            valid_bufsize: Any,
+            mock_stream_protocol: MagicMock,
+            mock_stream_request_handler: MagicMock,
+            mock_backend: MagicMock,
+        ) -> None:
+            # Arrange
+
+            # Act & Assert
+            _ = AsyncUnixStreamServer(
+                "/path/to/sock",
+                mock_stream_protocol,
+                mock_stream_request_handler,
+                mock_backend,
+                ancillary_bufsize=valid_bufsize,
+            )
+
         async def test____dunder_init____backend____invalid_value(
             self,
             mock_stream_protocol: MagicMock,
@@ -425,13 +484,37 @@ if sys.platform != "win32":
 
             # Assert
             mock_connected_stream_client.send_packet.assert_awaited_once_with(mocker.sentinel.packet)
+            mock_connected_stream_client.send_packet_with_ancillary.assert_not_called()
+            ## This client object should not check SO_ERROR
+            mock_unix_stream_socket.getsockopt.assert_not_called()
+
+        async def test____send_packet_with_ancillary____send_bytes_to_socket(
+            self,
+            client: _ConnectedClientAPI[Any],
+            mock_connected_stream_client: MagicMock,
+            mock_unix_stream_socket: MagicMock,
+            mocker: MockerFixture,
+        ) -> None:
+            # Arrange
+
+            # Act
+            await client.send_packet_with_ancillary(mocker.sentinel.packet, mocker.sentinel.ancdata)
+
+            # Assert
+            mock_connected_stream_client.send_packet_with_ancillary.assert_awaited_once_with(
+                mocker.sentinel.packet,
+                mocker.sentinel.ancdata,
+            )
+            mock_connected_stream_client.send_packet.assert_not_called()
             ## This client object should not check SO_ERROR
             mock_unix_stream_socket.getsockopt.assert_not_called()
 
         @pytest.mark.parametrize("method", ["close", "force_disconnect"])
+        @pytest.mark.parametrize("with_ancillary_data", [False, True], ids=lambda p: f"with_ancillary_data=={p}")
         async def test____send_packet____closed_client(
             self,
             method: Literal["close", "force_disconnect"],
+            with_ancillary_data: bool,
             client: _ConnectedClientAPI[Any],
             mock_connected_stream_client: MagicMock,
             mock_unix_stream_socket: MagicMock,
@@ -448,10 +531,14 @@ if sys.platform != "win32":
 
             # Act
             with pytest.raises(ClientClosedError):
-                await client.send_packet(mocker.sentinel.packet)
+                if with_ancillary_data:
+                    await client.send_packet_with_ancillary(mocker.sentinel.packet, mocker.sentinel.ancdata)
+                else:
+                    await client.send_packet(mocker.sentinel.packet)
 
             # Assert
             mock_connected_stream_client.send_packet.assert_not_awaited()
+            mock_connected_stream_client.send_packet_with_ancillary.assert_not_awaited()
             mock_unix_stream_socket.getsockopt.assert_not_called()
 
         async def test____special_case____close_cancelled_during_lock_acquisition(

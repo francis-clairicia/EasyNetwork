@@ -26,18 +26,22 @@ import concurrent.futures
 import contextlib
 import dataclasses
 import logging
+import sys
 import threading as _threading
 from abc import abstractmethod
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from types import TracebackType
-from typing import Any, Generic, Literal, NoReturn, Protocol, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, Literal, NoReturn, Protocol, TypeVar
 
 from ..exceptions import ClientClosedError, ServerAlreadyRunning, ServerClosedError
-from ..lowlevel import _utils
+from ..lowlevel import _utils, constants
 from ..lowlevel._lock import ForkSafeLock
 from ..lowlevel.api_async.backend.abc import AsyncBackend, CancelScope, Task, TaskGroup, ThreadsPortal
 from ..lowlevel.api_async.backend.utils import BuiltinAsyncBackendLiteral, ensure_backend
 from .abc import AbstractAsyncNetworkServer, AbstractNetworkServer, SupportsEventSet
+
+if TYPE_CHECKING:
+    from ssl import SSLContext
 
 
 class _SupportsAclose(Protocol):
@@ -536,3 +540,38 @@ class ClientErrorHandler(Generic[_T_Address]):
         with contextlib.suppress(Exception):
             client_address = self.__client_address_cb()
         return client_address
+
+
+def validate_max_recv_size(max_recv_size: int | None) -> int:
+    if max_recv_size is None:
+        max_recv_size = constants.DEFAULT_STREAM_BUFSIZE
+    if not isinstance(max_recv_size, int) or max_recv_size <= 0:
+        raise ValueError("'max_recv_size' must be a strictly positive integer")
+    return max_recv_size
+
+
+def validate_ssl_arguments(
+    *,
+    ssl: SSLContext | bool | None,
+    ssl_handshake_timeout: float | None,
+    ssl_shutdown_timeout: float | None,
+    ssl_standard_compatible: bool | None,
+) -> None:
+    if ssl_handshake_timeout is not None and not ssl:
+        raise ValueError("ssl_handshake_timeout is only meaningful with ssl")
+
+    if ssl_shutdown_timeout is not None and not ssl:
+        raise ValueError("ssl_shutdown_timeout is only meaningful with ssl")
+
+    if ssl_standard_compatible is not None and not ssl:
+        raise ValueError("ssl_standard_compatible is only meaningful with ssl")
+
+
+if sys.platform != "win32":
+
+    def validate_unix_socket_ancillary_buffer_size(ancillary_bufsize: int | None) -> int:
+        if ancillary_bufsize is None:
+            ancillary_bufsize = constants.DEFAULT_UNIX_SOCKETS_ANCILLARY_DATA_BUFSIZE
+        if not isinstance(ancillary_bufsize, int) or ancillary_bufsize <= 0:
+            raise ValueError("ancillary_bufsize must be a strictly positive integer")
+        return ancillary_bufsize

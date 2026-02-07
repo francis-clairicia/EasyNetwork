@@ -165,6 +165,16 @@ Cancellation And Timeouts
          :linenos:
          :emphasize-lines: 4,7-9
 
+      .. deprecated:: NEXT_VERSION
+         Yielding a timeout without using :class:`.RecvParams`. Will be removed in 2.0.
+
+         .. literalinclude:: ../_include/examples/howto/tcp_servers/request_handler_explanation.py
+            :pyobject: TimeoutYieldedDeprecatedWayRequestHandler.handle
+            :start-at: try:
+            :dedent:
+            :linenos:
+            :emphasize-lines: 3
+
    .. tab:: Using ``with``
 
       Since all :exc:`BaseException` subclasses are thrown into the generator, you can apply a timeout to the read stream

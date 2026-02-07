@@ -258,8 +258,6 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         """
         Waits for a new packet to arrive from the remote endpoint. Does not require task synchronization.
 
-        Calls :meth:`wait_connected`.
-
         Raises:
             ClientClosedError: the client object is closed.
             OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.

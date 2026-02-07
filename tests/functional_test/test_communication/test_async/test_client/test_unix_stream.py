@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import io
 import os
 import sys
 from collections.abc import AsyncIterator, Callable
@@ -19,7 +20,8 @@ from ..socket import AsyncStreamSocket
 if sys.platform != "win32":
     from easynetwork.clients.async_unix_stream import AsyncUnixStreamClient
     from easynetwork.exceptions import ClientClosedError, StreamProtocolParseError
-    from easynetwork.lowlevel.socket import SocketProxy
+    from easynetwork.lowlevel import _unix_utils
+    from easynetwork.lowlevel.socket import SocketAncillary, SocketProxy
     from easynetwork.protocol import AnyStreamProtocolType
 
     if TYPE_CHECKING:
@@ -50,6 +52,21 @@ if sys.platform != "win32":
         ) -> None:
             await client.send_packet("ABCDEF")
             assert await server.readline() == b"ABCDEF\n"
+
+        async def test____send_packet____with_ancillary_data(
+            self,
+            tmp_file: io.FileIO,
+            client: AsyncUnixStreamClient[str, str],
+            server: AsyncStreamSocket,
+        ) -> None:
+            sent_ancillary = SocketAncillary()
+            sent_ancillary.add_fds([tmp_file.fileno()])
+            await client.send_packet("ABCDEF", ancillary_data=sent_ancillary)
+
+            received_packet, received_ancillary = await server.recvmsg()
+            _unix_utils.close_fds_in_socket_ancillary(received_ancillary)
+            assert received_packet == b"ABCDEF\n"
+            assert len(list(received_ancillary.iter_fds())) == 1
 
         async def test____send_packet____closed_client(self, client: AsyncUnixStreamClient[str, str]) -> None:
             await client.aclose()
@@ -101,6 +118,24 @@ if sys.platform != "win32":
             await server.send_all(b"ABCDEF\n")
             assert await client.recv_packet() == "ABCDEF"
 
+        async def test____recv_packet____with_ancillary_data(
+            self,
+            tmp_file: io.FileIO,
+            client: AsyncUnixStreamClient[str, str],
+            server: AsyncStreamSocket,
+        ) -> None:
+            sent_ancillary = SocketAncillary()
+            sent_ancillary.add_fds([tmp_file.fileno()])
+            await server.sendmsg([b"ABCDEF\n"], sent_ancillary.as_raw())
+
+            received_ancillary = SocketAncillary()
+            try:
+                received_packet = await client.recv_packet(ancillary_data=received_ancillary)
+            finally:
+                _unix_utils.close_fds_in_socket_ancillary(received_ancillary)
+            assert received_packet == "ABCDEF"
+            assert len(list(received_ancillary.iter_fds())) == 1
+
         async def test____recv_packet____partial(
             self,
             client: AsyncUnixStreamClient[str, str],
@@ -133,6 +168,50 @@ if sys.platform != "win32":
                 await server.send_all(b"J\n")
 
             assert await task.join() == "IJ"
+
+        async def test____recv_packet____partial____with_ancillary_data(
+            self,
+            tmp_file: io.FileIO,
+            client: AsyncUnixStreamClient[str, str],
+            server: AsyncStreamSocket,
+        ) -> None:
+            sent_ancillary = SocketAncillary()
+            sent_ancillary.add_fds([tmp_file.fileno()])
+            await server.sendmsg([b"ABC"], sent_ancillary.as_raw())
+
+            received_ancillary = SocketAncillary()
+            with pytest.raises(EOFError):
+                try:
+                    await client.recv_packet(ancillary_data=received_ancillary)
+                finally:
+                    _unix_utils.close_fds_in_socket_ancillary(received_ancillary)
+            assert len(list(received_ancillary.iter_fds())) == 1
+
+        async def test____recv_packet____buffer____with_ancillary_data(
+            self,
+            tmp_file: io.FileIO,
+            client: AsyncUnixStreamClient[str, str],
+            server: AsyncStreamSocket,
+        ) -> None:
+            sent_ancillary = SocketAncillary()
+            sent_ancillary.add_fds([tmp_file.fileno()])
+            await server.sendmsg([b"A\nB\n"], sent_ancillary.as_raw())
+
+            received_ancillary = SocketAncillary()
+            try:
+                received_packet = await client.recv_packet(ancillary_data=received_ancillary)
+            finally:
+                _unix_utils.close_fds_in_socket_ancillary(received_ancillary)
+            assert received_packet == "A"
+            assert len(list(received_ancillary.iter_fds())) == 1
+
+            received_ancillary.clear()
+            try:
+                received_packet = await client.recv_packet(ancillary_data=received_ancillary)
+            finally:
+                _unix_utils.close_fds_in_socket_ancillary(received_ancillary)
+            assert received_packet == "B"
+            assert len(list(received_ancillary.messages())) == 0
 
         async def test____recv_packet____eof____closed_remote(
             self,

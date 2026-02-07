@@ -3,16 +3,19 @@ from __future__ import annotations
 import contextlib
 import errno
 import logging
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Iterable
 from typing import TYPE_CHECKING, Any
 
+from easynetwork.exceptions import UnsupportedOperation
 from easynetwork.lowlevel.api_async.backend._trio.backend import TrioBackend
 from easynetwork.lowlevel.api_async.backend.abc import TaskGroup
+from easynetwork.lowlevel.constants import MAX_DATAGRAM_BUFSIZE
 from easynetwork.lowlevel.socket import SocketAttribute, SocketProxy
 
 import pytest
 
 from ....fixtures.trio import trio_fixture
+from ....tools import PlatformMarkers
 from ...base import BaseTestSocketTransport
 
 if TYPE_CHECKING:
@@ -23,6 +26,10 @@ if TYPE_CHECKING:
 
     from _typeshed import ReadableBuffer
     from pytest_mock import MockerFixture
+
+
+_SUPPORTS_ANCILLARY = ("AF_UNIX",)
+_ANCILLARY_UNSUPPORTED = ("AF_INET",)
 
 
 @pytest.mark.feature_trio(async_test_auto_mark=True)
@@ -115,15 +122,13 @@ class TestTrioDatagramSocketAdapter(BaseTestSocketTransport):
         mock_trio_datagram_socket: MagicMock,
     ) -> None:
         # Arrange
-        from easynetwork.lowlevel.api_async.backend._trio.datagram.socket import TrioDatagramSocketAdapter
-
         mock_trio_datagram_socket.recv.return_value = b"data"
 
         # Act
         data: bytes = await transport.recv()
 
         # Assert
-        mock_trio_datagram_socket.recv.assert_awaited_once_with(TrioDatagramSocketAdapter.MAX_DATAGRAM_BUFSIZE)
+        mock_trio_datagram_socket.recv.assert_awaited_once_with(MAX_DATAGRAM_BUFSIZE)
         assert data == b"data"
 
     async def test____recv____convert_trio_ClosedResourceError(
@@ -139,6 +144,59 @@ class TestTrioDatagramSocketAdapter(BaseTestSocketTransport):
         # Act & Assert
         with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EBADF):
             await transport.recv()
+
+    @PlatformMarkers.supports_socket_recvmsg
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
+    async def test____recv_with_ancillary____read_from_reader(
+        self,
+        transport: TrioDatagramSocketAdapter,
+        mock_trio_datagram_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_trio_datagram_socket.recvmsg.return_value = (b"data", mocker.sentinel.ancdata, 0, None)
+
+        # Act
+        data, ancdata = await transport.recv_with_ancillary(2048)
+
+        # Assert
+        mock_trio_datagram_socket.recvmsg.assert_awaited_once_with(MAX_DATAGRAM_BUFSIZE, 2048)
+        assert data == b"data"
+        assert ancdata is mocker.sentinel.ancdata
+
+    @PlatformMarkers.supports_socket_recvmsg
+    @pytest.mark.parametrize("socket_family_name", _ANCILLARY_UNSUPPORTED, indirect=True)
+    async def test____recv_with_ancillary____socket_family_unsupported(
+        self,
+        transport: TrioDatagramSocketAdapter,
+        mock_trio_datagram_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_trio_datagram_socket.recvmsg.return_value = (b"data", mocker.sentinel.ancdata, 0, None)
+
+        # Act
+        with pytest.raises(UnsupportedOperation):
+            await transport.recv_with_ancillary(2048)
+
+        # Assert
+        mock_trio_datagram_socket.recvmsg.assert_not_called()
+
+    @PlatformMarkers.supports_socket_recvmsg
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
+    async def test____recv_with_ancillary____convert_trio_ClosedResourceError(
+        self,
+        transport: TrioDatagramSocketAdapter,
+        mock_trio_datagram_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        import trio
+
+        mock_trio_datagram_socket.recvmsg.side_effect = trio.ClosedResourceError
+
+        # Act & Assert
+        with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EBADF):
+            await transport.recv_with_ancillary(2048)
 
     async def test____send____write_on_socket(
         self,
@@ -167,6 +225,92 @@ class TestTrioDatagramSocketAdapter(BaseTestSocketTransport):
         # Act & Assert
         with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EBADF):
             await transport.send(b"data to send")
+
+    @PlatformMarkers.supports_socket_sendmsg
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
+    async def test____send_with_ancillary____default(
+        self,
+        transport: TrioDatagramSocketAdapter,
+        mock_trio_datagram_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_trio_datagram_socket.sendmsg.side_effect = lambda buffers, *args: sum(memoryview(v).nbytes for v in buffers)
+
+        # Act
+        await transport.send_with_ancillary(b"data to send", mocker.sentinel.ancdata)
+
+        # Assert
+        mock_trio_datagram_socket.sendmsg.assert_awaited_once_with([b"data to send"], mocker.sentinel.ancdata)
+
+    @PlatformMarkers.supports_socket_sendmsg
+    @pytest.mark.parametrize("socket_family_name", _ANCILLARY_UNSUPPORTED, indirect=True)
+    async def test____send_with_ancillary____socket_family_unsupported(
+        self,
+        transport: TrioDatagramSocketAdapter,
+        mock_trio_datagram_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_trio_datagram_socket.sendmsg.return_value = mocker.sentinel.nb_bytes_sent
+
+        # Act
+        with pytest.raises(UnsupportedOperation):
+            await transport.send_with_ancillary(mocker.sentinel.data, mocker.sentinel.ancdata)
+
+        # Assert
+        mock_trio_datagram_socket.sendmsg.assert_not_called()
+
+    @PlatformMarkers.supports_socket_sendmsg
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
+    async def test____send_with_ancillary____convert_trio_ClosedResourceError(
+        self,
+        transport: TrioDatagramSocketAdapter,
+        mock_trio_datagram_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        import trio
+
+        mock_trio_datagram_socket.sendmsg.side_effect = trio.ClosedResourceError
+
+        # Act & Assert
+        with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EBADF):
+            await transport.send_with_ancillary(b"data to send", mocker.sentinel.ancdata)
+
+    @PlatformMarkers.supports_socket_sendmsg
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
+    @pytest.mark.parametrize("ancillary_data_is_iterator", [False, True], ids=lambda p: f"ancillary_data_is_iterator=={p}")
+    async def test____send_with_ancillary____correctly_handle_iterables(
+        self,
+        ancillary_data_is_iterator: bool,
+        transport: TrioDatagramSocketAdapter,
+        mock_trio_datagram_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        chunks: list[list[bytes]] = []
+        ancillary_data_sent: list[list[Any]] = []
+
+        def sendmsg_side_effect(buffers: Iterable[ReadableBuffer], ancdata: Iterable[Any]) -> int:
+            for _ in range(2):
+                chunks.append(list(map(bytes, buffers)))
+                ancillary_data_sent.append(list(ancdata))
+            return sum(memoryview(v).nbytes for v in buffers)
+
+        mock_trio_datagram_socket.sendmsg.side_effect = sendmsg_side_effect
+
+        ancillary_data: Iterable[Any] = [mocker.sentinel.ancdata]
+        if ancillary_data_is_iterator:
+            ancillary_data = iter(ancillary_data)
+
+        # Act
+        await transport.send_with_ancillary(b"data", ancillary_data)
+
+        # Assert
+        assert mock_trio_datagram_socket.sendmsg.await_count == 1
+        assert chunks == [[b"data"], [b"data"]]
+        assert ancillary_data_sent == [[mocker.sentinel.ancdata], [mocker.sentinel.ancdata]]
 
     async def test____get_backend____returns_linked_instance(
         self,
@@ -422,10 +566,116 @@ class TestTrioDatagramListenerSocketAdapter(BaseTestSocketTransport):
         mock_trio_lowlevel_wait_readable.side_effect = trio.ClosedResourceError
 
         # Act
-        task_group: TaskGroup | None
         async with trio_backend.create_task_group() as task_group:
             with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EBADF):
                 await listener.serve(handler, task_group)
+
+        handler.assert_not_awaited()
+
+    @PlatformMarkers.supports_socket_recvmsg
+    @pytest.mark.parametrize("external_group", [True, False], ids=lambda p: f"external_group=={p}")
+    @pytest.mark.parametrize(
+        ["socket_family_name", "sender_address_1", "sender_address_2", "sender_address_3"],
+        [
+            pytest.param("AF_UNIX", "/path/to/unix.sock", "/path/to/other.sock", "/path/to/third.sock"),
+            pytest.param("AF_UNIX", b"\x00abstract_address", b"\x00abstract_other_address", b"\x00abstract_third_address"),
+            pytest.param("AF_UNIX", None, None, None),
+            pytest.param("AF_UNIX", b"", b"", b""),
+            pytest.param("AF_UNIX", "", "", ""),
+        ],
+        indirect=["socket_family_name"],
+    )
+    async def test____serve_with_ancillary____default(
+        self,
+        trio_backend: TrioBackend,
+        listener: TrioDatagramListenerSocketAdapter,
+        external_group: bool,
+        sender_address_1: tuple[str, int] | str | bytes | None,
+        sender_address_2: tuple[str, int] | str | bytes | None,
+        sender_address_3: tuple[str, int] | str | bytes | None,
+        handler: AsyncMock,
+        mock_datagram_listener_socket: MagicMock,
+        mock_trio_lowlevel_wait_readable: AsyncMock,
+        mocker: MockerFixture,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        # Arrange
+        caplog.set_level("INFO", listener.__class__.__module__)
+
+        import trio
+
+        mock_datagram_listener_socket.recvmsg.side_effect = [
+            BlockingIOError,
+            (b"received_datagram", mocker.sentinel.ancdata, 0, sender_address_1),
+            (b"received_datagram_2", mocker.sentinel.ancdata_2, 0, sender_address_2),
+            BlockingIOError,
+            OSError("Unrelated OS Error"),
+            (b"received_datagram_3", mocker.sentinel.ancdata_3, 0, sender_address_3),
+            BlockingIOError,
+            (await self._get_cancelled_exc()),
+        ]
+
+        # Act
+        task_group: TaskGroup | None
+        async with trio_backend.create_task_group() if external_group else contextlib.nullcontext() as task_group:
+            with pytest.raises(trio.Cancelled):
+                await listener.serve_with_ancillary(handler, 1024, task_group)
+
+        # Assert
+        assert handler.await_args_list == [
+            mocker.call(b"received_datagram", mocker.sentinel.ancdata, sender_address_1),
+            mocker.call(b"received_datagram_2", mocker.sentinel.ancdata_2, sender_address_2),
+            mocker.call(b"received_datagram_3", mocker.sentinel.ancdata_3, sender_address_3),
+        ]
+        assert mock_trio_lowlevel_wait_readable.await_args_list == [mocker.call(mock_datagram_listener_socket) for _ in range(3)]
+        assert len(caplog.records) == 1
+        assert caplog.records[0].levelno == logging.WARNING
+        assert caplog.records[0].getMessage() == "Unrelated error occurred on datagram reception: OSError: Unrelated OS Error"
+        assert caplog.records[0].exc_info is not None and isinstance(caplog.records[0].exc_info[1], OSError)
+
+    @PlatformMarkers.supports_socket_recvmsg
+    @pytest.mark.parametrize("socket_family_name", _ANCILLARY_UNSUPPORTED, indirect=True)
+    async def test____serve_with_ancillary____socket_family_unsupported(
+        self,
+        trio_backend: TrioBackend,
+        listener: TrioDatagramListenerSocketAdapter,
+        handler: AsyncMock,
+        mock_datagram_listener_socket: MagicMock,
+        mock_trio_lowlevel_wait_readable: AsyncMock,
+    ) -> None:
+        # Arrange
+        mock_datagram_listener_socket.recvmsg.side_effect = BlockingIOError
+
+        # Act
+        async with trio_backend.create_task_group() as task_group:
+            with pytest.raises(UnsupportedOperation):
+                await listener.serve_with_ancillary(handler, 1024, task_group)
+
+        # Assert
+        handler.assert_not_awaited()
+        mock_datagram_listener_socket.recvmsg.assert_not_called()
+        mock_trio_lowlevel_wait_readable.assert_not_awaited()
+
+    @PlatformMarkers.supports_socket_recvmsg
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
+    async def test____serve_with_ancillary____convert_trio_ClosedResourceError(
+        self,
+        trio_backend: TrioBackend,
+        listener: TrioDatagramListenerSocketAdapter,
+        handler: AsyncMock,
+        mock_datagram_listener_socket: MagicMock,
+        mock_trio_lowlevel_wait_readable: AsyncMock,
+    ) -> None:
+        # Arrange
+        import trio
+
+        mock_datagram_listener_socket.recvmsg.side_effect = BlockingIOError
+        mock_trio_lowlevel_wait_readable.side_effect = trio.ClosedResourceError
+
+        # Act
+        async with trio_backend.create_task_group() as task_group:
+            with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EBADF):
+                await listener.serve_with_ancillary(handler, 1024, task_group)
 
         handler.assert_not_awaited()
 
@@ -495,6 +745,144 @@ class TestTrioDatagramListenerSocketAdapter(BaseTestSocketTransport):
         # Act & Assert
         with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EBADF):
             await listener.send_to(b"data to send", destination_address)
+
+    @pytest.mark.parametrize("block_count", [2, 1, 0], ids=lambda count: f"block_count=={count}")
+    @pytest.mark.parametrize(
+        ["socket_family_name", "destination_address"],
+        [
+            pytest.param("AF_UNIX", "/path/to/unix.sock"),
+            pytest.param("AF_UNIX", b"\x00abstract_address"),
+        ],
+        indirect=["socket_family_name"],
+    )
+    async def test____send_with_ancillary_to____write_on_socket(
+        self,
+        block_count: int,
+        destination_address: tuple[str, int] | str | bytes,
+        listener: TrioDatagramListenerSocketAdapter,
+        mock_datagram_listener_socket: MagicMock,
+        mock_trio_lowlevel_wait_writable: AsyncMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        expected_wait_writable_nb_calls: int = block_count
+
+        def sendmsg_side_effect(buffers: Iterable[ReadableBuffer], *args: Any) -> int:
+            nonlocal block_count
+
+            if block_count > 0:
+                block_count -= 1
+                raise BlockingIOError
+            return sum(memoryview(v).nbytes for v in buffers)
+
+        mock_datagram_listener_socket.sendmsg.side_effect = sendmsg_side_effect
+
+        # Act
+        await listener.send_with_ancillary_to(b"data to send", mocker.sentinel.ancdata, destination_address)
+
+        # Assert
+        mock_datagram_listener_socket.sendmsg.assert_called_with(
+            [b"data to send"],
+            mocker.sentinel.ancdata,
+            0,
+            destination_address,
+        )
+        assert mock_trio_lowlevel_wait_writable.await_args_list == [
+            mocker.call(mock_datagram_listener_socket) for _ in range(expected_wait_writable_nb_calls)
+        ]
+
+    @PlatformMarkers.supports_socket_sendmsg
+    @pytest.mark.parametrize("socket_family_name", _ANCILLARY_UNSUPPORTED, indirect=True)
+    async def test____send_with_ancillary_to____socket_family_unsupported(
+        self,
+        listener: TrioDatagramListenerSocketAdapter,
+        mock_datagram_listener_socket: MagicMock,
+        mock_trio_lowlevel_wait_writable: AsyncMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_datagram_listener_socket.sendmsg.return_value = mocker.sentinel.nb_bytes_sent
+
+        # Act
+        with pytest.raises(UnsupportedOperation):
+            await listener.send_with_ancillary_to(mocker.sentinel.data, mocker.sentinel.ancdata, mocker.sentinel.address)
+
+        # Assert
+        mock_datagram_listener_socket.sendmsg.assert_not_called()
+        mock_trio_lowlevel_wait_writable.assert_not_awaited()
+
+    @PlatformMarkers.supports_socket_sendmsg
+    @pytest.mark.parametrize(
+        ["socket_family_name", "destination_address"],
+        [
+            pytest.param("AF_UNIX", "/path/to/unix.sock"),
+            pytest.param("AF_UNIX", b"\x00abstract_address"),
+        ],
+        indirect=["socket_family_name"],
+    )
+    async def test____send_with_ancillary_to____convert_trio_ClosedResourceError(
+        self,
+        destination_address: tuple[str, int] | str | bytes,
+        listener: TrioDatagramListenerSocketAdapter,
+        mock_datagram_listener_socket: MagicMock,
+        mock_trio_lowlevel_wait_writable: AsyncMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        import trio
+
+        mock_datagram_listener_socket.sendmsg.side_effect = BlockingIOError
+        mock_trio_lowlevel_wait_writable.side_effect = trio.ClosedResourceError
+
+        # Act & Assert
+        with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EBADF):
+            await listener.send_with_ancillary_to(b"data to send", mocker.sentinel.ancdata, destination_address)
+
+    @PlatformMarkers.supports_socket_sendmsg
+    @pytest.mark.parametrize(
+        ["socket_family_name", "destination_address"],
+        [
+            pytest.param("AF_UNIX", "/path/to/unix.sock"),
+            pytest.param("AF_UNIX", b"\x00abstract_address"),
+        ],
+        indirect=["socket_family_name"],
+    )
+    @pytest.mark.parametrize("ancillary_data_is_iterator", [False, True], ids=lambda p: f"ancillary_data_is_iterator=={p}")
+    async def test____send_with_ancillary____correctly_handle_iterables(
+        self,
+        ancillary_data_is_iterator: bool,
+        destination_address: tuple[str, int] | str | bytes,
+        listener: TrioDatagramListenerSocketAdapter,
+        mock_datagram_listener_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        to_raise: list[type[OSError]] = [BlockingIOError]
+        chunks: list[list[bytes]] = []
+        ancillary_data_sent: list[list[Any]] = []
+
+        def sendmsg_side_effect(buffers: Iterable[ReadableBuffer], ancdata: Iterable[Any], *args: Any) -> int:
+            buffers = list(buffers)
+            ancdata = list(ancdata)
+            if to_raise:
+                raise to_raise.pop(0)
+            chunks.append(list(map(bytes, buffers)))
+            ancillary_data_sent.append(ancdata)
+            return sum(memoryview(v).nbytes for v in buffers)
+
+        mock_datagram_listener_socket.sendmsg.side_effect = sendmsg_side_effect
+
+        ancillary_data: Iterable[Any] = [mocker.sentinel.ancdata]
+        if ancillary_data_is_iterator:
+            ancillary_data = iter(ancillary_data)
+
+        # Act
+        await listener.send_with_ancillary_to(b"data", ancillary_data, destination_address)
+
+        # Assert
+        assert mock_datagram_listener_socket.sendmsg.call_count == 2
+        assert chunks == [[b"data"]]
+        assert ancillary_data_sent == [[mocker.sentinel.ancdata]]
 
     async def test____get_backend____returns_linked_instance(
         self,
