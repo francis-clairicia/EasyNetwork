@@ -530,6 +530,27 @@ class TestTCPNetworkClient(BaseTestClient):
         mock_stream_endpoint_cls.assert_not_called()
 
     @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+    def test____dunder_init____unexpected_error(
+        self,
+        use_socket: bool,
+        remote_address: tuple[str, int],
+        mock_stream_endpoint_cls: MagicMock,
+        mock_stream_protocol: MagicMock,
+        mock_tcp_socket: MagicMock,
+        mock_socket_stream_transport: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_stream_endpoint_cls.side_effect = ValueError("test trigger")
+
+        # Act & Assert
+        with pytest.raises(ValueError, match=r"^test trigger$"):
+            if use_socket:
+                _ = TCPNetworkClient(mock_tcp_socket, protocol=mock_stream_protocol)
+            else:
+                _ = TCPNetworkClient(remote_address, protocol=mock_stream_protocol)
+        mock_socket_stream_transport.close.assert_called_once()
+
+    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
     @pytest.mark.parametrize("max_recv_size", [None, 123456789], ids=lambda p: f"max_recv_size=={p}")
     @pytest.mark.parametrize("retry_interval", [1.0, float("+inf")], ids=lambda p: f"retry_interval=={p}")
     def test____dunder_init____ssl(

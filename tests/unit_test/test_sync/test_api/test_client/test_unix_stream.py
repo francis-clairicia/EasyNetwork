@@ -533,6 +533,27 @@ if sys.platform != "win32":
             mock_socket_stream_transport_cls.assert_not_called()
             mock_stream_endpoint_cls.assert_not_called()
 
+        @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+        def test____dunder_init____unexpected_error(
+            self,
+            use_socket: bool,
+            remote_address: str | bytes,
+            mock_stream_endpoint_cls: MagicMock,
+            mock_stream_protocol: MagicMock,
+            mock_unix_stream_socket: MagicMock,
+            mock_socket_stream_transport: MagicMock,
+        ) -> None:
+            # Arrange
+            mock_stream_endpoint_cls.side_effect = ValueError("test trigger")
+
+            # Act & Assert
+            with pytest.raises(ValueError, match=r"^test trigger$"):
+                if use_socket:
+                    _ = UnixStreamClient(mock_unix_stream_socket, protocol=mock_stream_protocol)
+                else:
+                    _ = UnixStreamClient(remote_address, protocol=mock_stream_protocol)
+            mock_socket_stream_transport.close.assert_called_once()
+
         def test____dunder_del____ResourceWarning(
             self,
             mock_stream_endpoint: MagicMock,

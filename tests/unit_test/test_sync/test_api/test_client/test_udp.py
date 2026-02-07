@@ -441,6 +441,21 @@ class TestUDPNetworkClient(BaseTestClient):
             )
         assert mock_datagram_transport.mock_calls == [mocker.call.close()]
 
+    def test____dunder_init____unexpected_error(
+        self,
+        mock_datagram_endpoint_cls: MagicMock,
+        mock_datagram_protocol: MagicMock,
+        mock_udp_socket: MagicMock,
+        mock_datagram_transport: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_datagram_endpoint_cls.side_effect = ValueError("test trigger")
+
+        # Act & Assert
+        with pytest.raises(ValueError, match=r"^test trigger$"):
+            _ = UDPNetworkClient(mock_udp_socket, mock_datagram_protocol)
+        mock_datagram_transport.close.assert_called_once()
+
     def test____dunder_del____ResourceWarning(
         self,
         mock_udp_socket: MagicMock,
