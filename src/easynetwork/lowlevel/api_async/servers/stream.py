@@ -401,8 +401,8 @@ class _RequestReceiver(Generic[_T_Request]):
 
     async def next_with_ancillary(self, ancillary_data_params: RecvAncillaryDataParams) -> _T_Request:
         ancillary_bufsize = self.ancillary_bufsize
-        if not ancillary_bufsize:
-            raise UnsupportedOperation("The server does not have ancillary data support (ancillary_bufsize=None).")
+        if ancillary_bufsize is None:
+            raise UnsupportedOperation("The server is not configured to handle ancillary data (ancillary_bufsize=None).")
 
         consumer = self.consumer
         try:
@@ -479,8 +479,8 @@ class _BufferedRequestReceiver(Generic[_T_Request]):
 
     async def next_with_ancillary(self, ancillary_data_params: RecvAncillaryDataParams) -> _T_Request:
         ancillary_bufsize = self.ancillary_bufsize
-        if not ancillary_bufsize:
-            raise UnsupportedOperation("The server does not have ancillary data support (ancillary_bufsize=None).")
+        if ancillary_bufsize is None:
+            raise UnsupportedOperation("The server is not configured to handle ancillary data (ancillary_bufsize=None).")
 
         consumer = self.consumer
         try:

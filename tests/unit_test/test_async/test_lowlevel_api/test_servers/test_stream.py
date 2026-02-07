@@ -637,7 +637,7 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
 
             with pytest.raises(
                 UnsupportedOperation,
-                match=r"^The server does not have ancillary data support \(ancillary_bufsize=None\)\.$",
+                match=r"^The server is not configured to handle ancillary data \(ancillary_bufsize=None\)\.$",
             ):
                 yield RecvParams(recv_with_ancillary=RecvAncillaryDataParams(ancillary_data_received))
 
