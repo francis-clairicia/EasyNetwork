@@ -233,7 +233,7 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
         await self.__serve_impl(
             datagram_received_cb,
             task_group,
-            ancillary_data_params=_ServerAncillaryDataParams(
+            server_ancillary_data_params=_ServerAncillaryDataParams(
                 bufsize=ancillary_bufsize,
                 data_unused=ancillary_data_unused,
             ),
@@ -246,7 +246,7 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
         ],
         task_group: TaskGroup | None,
         *,
-        ancillary_data_params: _ServerAncillaryDataParams[_T_Address] | None = None,
+        server_ancillary_data_params: _ServerAncillaryDataParams[_T_Address] | None = None,
     ) -> NoReturn:
         with self.__serve_guard:
             listener = self.__listener
@@ -283,16 +283,16 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
                             client_ctx,
                             client_data,
                             task_group,
-                            ancillary_data_params,
+                            server_ancillary_data_params,
                             default_context,
                         )
 
-                if ancillary_data_params is None:
+                if server_ancillary_data_params is None:
                     await listener.serve(handler, task_group)
                 else:
                     await listener.serve_with_ancillary(
                         lambda datagram, ancillary_data, address: handler(datagram, address, ancillary_data),
-                        ancillary_data_params.bufsize,
+                        server_ancillary_data_params.bufsize,
                         task_group,
                     )
 
@@ -304,7 +304,7 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
         client_ctx: DatagramClientContext[_T_Response, _T_Address],
         client_data: _ClientData,
         task_group: TaskGroup,
-        ancillary_data_params: _ServerAncillaryDataParams[_T_Address] | None,
+        server_ancillary_data_params: _ServerAncillaryDataParams[_T_Address] | None,
         default_context: contextvars.Context,
     ) -> None:
         client_data.mark_running()
@@ -313,7 +313,7 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
                 request_handler_generator=datagram_received_cb(client_ctx),
                 client_data=client_data,
                 client_address=client_ctx.address,
-                server_ancillary_data_params=ancillary_data_params,
+                server_ancillary_data_params=server_ancillary_data_params,
             )
         except Exception as exc:
             _utils.remove_traceback_frames_in_place(exc, 1)
@@ -327,7 +327,7 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
                 client_ctx=client_ctx,
                 client_data=client_data,
                 task_group=task_group,
-                ancillary_data_params=ancillary_data_params,
+                server_ancillary_data_params=server_ancillary_data_params,
                 default_context=default_context,
             )
         except Exception as exc:
@@ -430,7 +430,7 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
         client_ctx: DatagramClientContext[_T_Response, _T_Address],
         client_data: _ClientData,
         task_group: TaskGroup,
-        ancillary_data_params: _ServerAncillaryDataParams[_T_Address] | None,
+        server_ancillary_data_params: _ServerAncillaryDataParams[_T_Address] | None,
         default_context: contextvars.Context,
     ) -> None:
         if client_data.queue_is_empty():
@@ -455,7 +455,7 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
             client_ctx,
             client_data,
             task_group,
-            ancillary_data_params,
+            server_ancillary_data_params,
             default_context,
         )
 
