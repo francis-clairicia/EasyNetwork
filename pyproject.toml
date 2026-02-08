@@ -138,7 +138,7 @@ benchmark-servers = [
 benchmark-servers-deps = [
     {include-group = "uvloop"},
     "easynetwork[trio]",
-    "asyncio-dgram==2.1.2",
+    "asyncio-dgram~=3.0",
 ]
 
 [tool.pdm]
