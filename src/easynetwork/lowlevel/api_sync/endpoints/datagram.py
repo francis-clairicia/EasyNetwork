@@ -124,7 +124,7 @@ class DatagramReceiverEndpoint(_transports.BaseTransport, Generic[_T_ReceivedPac
 
         If `timeout` is not :data:`None`, the entire receive operation will take at most `timeout` seconds.
 
-        .. versionadded:: NEXT_VERSION
+        .. versionadded:: 1.2
 
         Parameters:
             ancillary_bufsize: Read buffer size for ancillary data.
@@ -238,7 +238,7 @@ class DatagramSenderEndpoint(_transports.BaseTransport, Generic[_T_SentPacket]):
 
         If `timeout` is not :data:`None`, the entire send operation will take at most `timeout` seconds.
 
-        .. versionadded:: NEXT_VERSION
+        .. versionadded:: 1.2
 
         Parameters:
             packet: the Python object to send.
@@ -351,7 +351,7 @@ class DatagramEndpoint(_transports.BaseTransport, Generic[_T_SentPacket, _T_Rece
 
         If `timeout` is not :data:`None`, the entire send operation will take at most `timeout` seconds.
 
-        .. versionadded:: NEXT_VERSION
+        .. versionadded:: 1.2
 
         Parameters:
             packet: the Python object to send.
@@ -405,7 +405,7 @@ class DatagramEndpoint(_transports.BaseTransport, Generic[_T_SentPacket, _T_Rece
 
         If `timeout` is not :data:`None`, the entire receive operation will take at most `timeout` seconds.
 
-        .. versionadded:: NEXT_VERSION
+        .. versionadded:: 1.2
 
         Parameters:
             ancillary_bufsize: Read buffer size for ancillary data.

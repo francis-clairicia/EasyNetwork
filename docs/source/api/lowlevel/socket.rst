@@ -58,7 +58,7 @@ Unix-related
 
       Displays the Unix address in a similar way to that seen in ``/proc/net/unix``.
 
-      .. versionchanged:: NEXT_VERSION
+      .. versionchanged:: 1.2
          Prior to this version, ``str(addr)`` used to return something like ``repr(addr)``.
 
       .. note::

@@ -114,7 +114,7 @@ class AsyncBaseClientInterface(typed_attr.TypedAttributeProvider, Generic[_T_Res
         """
         Sends `packet` to the remote endpoint with ancillary data. Does not require task synchronization.
 
-        .. versionadded:: NEXT_VERSION
+        .. versionadded:: 1.2
 
         Warning:
             In the case of a cancellation, it is impossible to know if all the packet data has been sent.
@@ -244,10 +244,10 @@ class AsyncStreamRequestHandler(Generic[_T_Request, _T_Response], metaclass=ABCM
             There is one exception: if the generator returns before the first :keyword:`yield` statement,
             the connection is forcibly closed.
 
-        .. versionchanged:: NEXT_VERSION
+        .. versionchanged:: 1.2
             The async generator may yield a :class:`.RecvParams` object.
 
-        .. deprecated:: NEXT_VERSION
+        .. deprecated:: 1.2
             If the async generator yields a number, a :exc:`DeprecationWarning` will be emitted. Use :class:`.RecvParams` instead.
 
         Parameters:
@@ -287,10 +287,10 @@ class AsyncStreamRequestHandler(Generic[_T_Request, _T_Response], metaclass=ABCM
         In the latter case, as for :meth:`handle`, :meth:`on_connection` can :keyword:`yield` whenever a request from
         the `client` is needed.
 
-        .. versionchanged:: NEXT_VERSION
+        .. versionchanged:: 1.2
             The async generator may yield a :class:`.RecvParams` object.
 
-        .. deprecated:: NEXT_VERSION
+        .. deprecated:: 1.2
             If the async generator yields a number, a :exc:`DeprecationWarning` will be emitted. Use :class:`.RecvParams` instead.
 
         Parameters:
@@ -381,10 +381,10 @@ class AsyncDatagramRequestHandler(Generic[_T_Request, _T_Response], metaclass=AB
             This is useful when a client that you do not expect to see sends something; the datagrams are parsed only when
             the generator hits a :keyword:`yield` statement.
 
-        .. versionchanged:: NEXT_VERSION
+        .. versionchanged:: 1.2
             The async generator may yield a :class:`.RecvParams` object.
 
-        .. deprecated:: NEXT_VERSION
+        .. deprecated:: 1.2
             If the async generator yields a number, a :exc:`DeprecationWarning` will be emitted. Use :class:`.RecvParams` instead.
 
         Parameters:

@@ -216,7 +216,7 @@ else:
 
             If `timeout` is not :data:`None`, the entire send operation will take at most `timeout` seconds.
 
-            .. versionchanged:: NEXT_VERSION
+            .. versionchanged:: 1.2
                 Added `ancillary_data` parameter.
 
             Warning:
@@ -284,7 +284,7 @@ else:
 
             If `timeout` is not :data:`None`, the entire receive operation will take at most `timeout` seconds.
 
-            .. versionchanged:: NEXT_VERSION
+            .. versionchanged:: 1.2
                 Added `ancillary_data` and `ancillary_bufsize` parameters.
 
             Important:

@@ -137,7 +137,7 @@ Cancellation And Timeouts
          :linenos:
          :emphasize-lines: 4,16-18
 
-      .. deprecated:: NEXT_VERSION
+      .. deprecated:: 1.2
          Yielding a timeout without using :class:`.RecvParams`. Will be removed in 2.0.
 
          .. literalinclude:: ../_include/examples/howto/udp_servers/request_handler_explanation.py

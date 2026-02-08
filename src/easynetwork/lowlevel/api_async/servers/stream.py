@@ -99,7 +99,7 @@ class ConnectedStreamClient(_transports.AsyncBaseTransport, Generic[_T_Response]
         """
         Sends `packet` to the remote endpoint with ancillary data.
 
-        .. versionadded:: NEXT_VERSION
+        .. versionadded:: 1.2
 
         Warning:
             In the case of a cancellation, it is impossible to know if all the packet data has been sent.
@@ -206,13 +206,13 @@ class AsyncStreamServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T_R
         """
         Accept incoming connections as they come in and start tasks to handle them.
 
-        .. versionchanged:: NEXT_VERSION
+        .. versionchanged:: 1.2
                 Added `ancillary_bufsize` parameter.
 
-        .. versionchanged:: NEXT_VERSION
+        .. versionchanged:: 1.2
             The async generator returned by `client_connected_cb` may yield a :class:`.RecvParams` object.
 
-        .. deprecated:: NEXT_VERSION
+        .. deprecated:: 1.2
             If the async generator returned by `client_connected_cb` yields a number, a :exc:`DeprecationWarning` will be emitted.
             Use :class:`.RecvParams` instead.
 

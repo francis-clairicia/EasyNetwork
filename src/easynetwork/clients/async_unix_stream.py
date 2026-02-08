@@ -273,7 +273,7 @@ else:
             """
             Sends `packet` to the remote endpoint. Does not require task synchronization.
 
-            .. versionchanged:: NEXT_VERSION
+            .. versionchanged:: 1.2
                 Added `ancillary_data` parameter.
 
             Warning:
@@ -326,7 +326,7 @@ else:
             """
             Waits for a new packet to arrive from the remote endpoint. Does not require task synchronization.
 
-            .. versionchanged:: NEXT_VERSION
+            .. versionchanged:: 1.2
                 Added `ancillary_data` and `ancillary_bufsize` parameters.
 
             Parameters:

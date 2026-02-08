@@ -114,7 +114,7 @@ class AsyncDatagramReceiverEndpoint(_transports.AsyncBaseTransport, Generic[_T_R
         """
         Waits for a new packet with ancillary data to arrive from the remote endpoint.
 
-        .. versionadded:: NEXT_VERSION
+        .. versionadded:: 1.2
 
         Parameters:
             ancillary_bufsize: Read buffer size for ancillary data.
@@ -220,7 +220,7 @@ class AsyncDatagramSenderEndpoint(_transports.AsyncBaseTransport, Generic[_T_Sen
         """
         Sends `packet` to the remote endpoint with ancillary data.
 
-        .. versionadded:: NEXT_VERSION
+        .. versionadded:: 1.2
 
         Parameters:
             packet: the Python object to send.
@@ -327,7 +327,7 @@ class AsyncDatagramEndpoint(_transports.AsyncBaseTransport, Generic[_T_SentPacke
         """
         Sends `packet` to the remote endpoint with ancillary data.
 
-        .. versionadded:: NEXT_VERSION
+        .. versionadded:: 1.2
 
         Parameters:
             packet: the Python object to send.
@@ -365,7 +365,7 @@ class AsyncDatagramEndpoint(_transports.AsyncBaseTransport, Generic[_T_SentPacke
         """
         Waits for a new packet with ancillary data to arrive from the remote endpoint.
 
-        .. versionadded:: NEXT_VERSION
+        .. versionadded:: 1.2
 
         Parameters:
             ancillary_bufsize: Read buffer size for ancillary data.

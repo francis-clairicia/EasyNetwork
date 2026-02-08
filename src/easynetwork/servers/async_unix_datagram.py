@@ -99,7 +99,7 @@ else:
             logger: logging.Logger | None = None,
         ) -> None:
             """
-            .. versionchanged:: NEXT_VERSION
+            .. versionchanged:: 1.2
                 Added `receive_ancillary_data` and `ancillary_bufsize` parameters.
 
             Parameters:

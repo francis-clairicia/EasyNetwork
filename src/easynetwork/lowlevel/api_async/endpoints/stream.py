@@ -128,7 +128,7 @@ class AsyncStreamReceiverEndpoint(_transports.AsyncBaseTransport, Generic[_T_Rec
         """
         Waits for a new packet with ancillary data to arrive from the remote endpoint.
 
-        .. versionadded:: NEXT_VERSION
+        .. versionadded:: 1.2
 
         Parameters:
             ancillary_bufsize: Read buffer size for ancillary data.
@@ -237,7 +237,7 @@ class AsyncStreamSenderEndpoint(_transports.AsyncBaseTransport, Generic[_T_SentP
         """
         Sends `packet` to the remote endpoint with ancillary data.
 
-        .. versionadded:: NEXT_VERSION
+        .. versionadded:: 1.2
 
         Parameters:
             packet: the Python object to send.
@@ -364,7 +364,7 @@ class AsyncStreamEndpoint(_transports.AsyncBaseTransport, Generic[_T_SentPacket,
         """
         Sends `packet` to the remote endpoint with ancillary data.
 
-        .. versionadded:: NEXT_VERSION
+        .. versionadded:: 1.2
 
         Parameters:
             packet: the Python object to send.
@@ -424,7 +424,7 @@ class AsyncStreamEndpoint(_transports.AsyncBaseTransport, Generic[_T_SentPacket,
         """
         Waits for a new packet with ancillary data to arrive from the remote endpoint.
 
-        .. versionadded:: NEXT_VERSION
+        .. versionadded:: 1.2
 
         Parameters:
             ancillary_bufsize: Read buffer size for ancillary data.

@@ -859,7 +859,7 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
 
         The level is equal to :data:`~socket.SOL_SOCKET` and the type is equal to :data:`~socket.SCM_RIGHTS`.
 
-        .. versionadded:: NEXT_VERSION
+        .. versionadded:: 1.2
         """
 
         fds: Iterator[int]
@@ -900,7 +900,7 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
 
             Availability: Linux, FreeBSD, NetBSD.
 
-            .. versionadded:: NEXT_VERSION
+            .. versionadded:: 1.2
             """
 
             pid: int = 0
@@ -924,7 +924,7 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
 
             Availability: Linux, FreeBSD, NetBSD.
 
-            .. versionadded:: NEXT_VERSION
+            .. versionadded:: 1.2
             """
 
             credentials: Iterator[SocketCredential]
@@ -967,7 +967,7 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
         """
         A Unix socket Ancillary data object.
 
-        .. versionadded:: NEXT_VERSION
+        .. versionadded:: 1.2
         """
 
         __slots__ = ("__data",)

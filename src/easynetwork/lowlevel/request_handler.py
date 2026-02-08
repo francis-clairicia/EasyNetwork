@@ -14,7 +14,7 @@
 #
 """Low-level server's helpers module for request handlers.
 
-.. versionadded:: NEXT_VERSION
+.. versionadded:: 1.2
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ class RecvAncillaryDataParams(NamedTuple):
     """
     Parameters for ancillary data reception by server.
 
-    .. versionadded:: NEXT_VERSION
+    .. versionadded:: 1.2
     """
 
     data_received: Callable[[Any], object]
@@ -42,7 +42,7 @@ class RecvParams:
     """
     Parameters yielded by request handlers for servers.
 
-    .. versionadded:: NEXT_VERSION
+    .. versionadded:: 1.2
     """
 
     timeout: float | None = None

@@ -92,7 +92,7 @@ class StapledStreamTransport(_transports.StreamTransport, Generic[_T_SendStreamT
         """
         Calls :meth:`self.receive_transport.recv_with_ancillary() <.StreamReadTransport.recv_with_ancillary>`.
 
-        .. versionadded:: NEXT_VERSION
+        .. versionadded:: 1.2
         """
         return self.receive_transport.recv_with_ancillary(bufsize, ancillary_bufsize, timeout)
 
@@ -100,7 +100,7 @@ class StapledStreamTransport(_transports.StreamTransport, Generic[_T_SendStreamT
         """
         Calls :meth:`self.receive_transport.recv_with_ancillary_into() <.StreamReadTransport.recv_with_ancillary_into>`.
 
-        .. versionadded:: NEXT_VERSION
+        .. versionadded:: 1.2
         """
         return self.receive_transport.recv_with_ancillary_into(buffer, ancillary_bufsize, timeout)
 
@@ -131,7 +131,7 @@ class StapledStreamTransport(_transports.StreamTransport, Generic[_T_SendStreamT
         """
         Calls :meth:`self.send_transport.send_all_with_ancillary() <.StreamWriteTransport.send_all_with_ancillary>`.
 
-        .. versionadded:: NEXT_VERSION
+        .. versionadded:: 1.2
         """
         return self.send_transport.send_all_with_ancillary(iterable_of_data, ancillary_data, timeout)
 
@@ -207,7 +207,7 @@ class StapledDatagramTransport(_transports.DatagramTransport, Generic[_T_SendDat
         """
         Calls :meth:`self.receive_transport.recv_with_ancillary() <.DatagramReadTransport.recv_with_ancillary>`.
 
-        .. versionadded:: NEXT_VERSION
+        .. versionadded:: 1.2
         """
         return self.receive_transport.recv_with_ancillary(ancillary_bufsize, timeout)
 
@@ -221,7 +221,7 @@ class StapledDatagramTransport(_transports.DatagramTransport, Generic[_T_SendDat
         """
         Calls :meth:`self.send_transport.send_with_ancillary() <.DatagramWriteTransport.send_with_ancillary>`.
 
-        .. versionadded:: NEXT_VERSION
+        .. versionadded:: 1.2
         """
         return self.send_transport.send_with_ancillary(data, ancillary_data, timeout)
 

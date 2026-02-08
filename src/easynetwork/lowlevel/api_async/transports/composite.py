@@ -107,7 +107,7 @@ class AsyncStapledStreamTransport(_transports.AsyncStreamTransport, Generic[_T_S
         """
         Calls :meth:`self.receive_transport.recv_with_ancillary() <.AsyncStreamReadTransport.recv_with_ancillary>`.
 
-        .. versionadded:: NEXT_VERSION
+        .. versionadded:: 1.2
         """
         return await self.receive_transport.recv_with_ancillary(bufsize, ancillary_bufsize)
 
@@ -115,7 +115,7 @@ class AsyncStapledStreamTransport(_transports.AsyncStreamTransport, Generic[_T_S
         """
         Calls :meth:`self.receive_transport.recv_with_ancillary_into() <.AsyncStreamReadTransport.recv_with_ancillary_into>`.
 
-        .. versionadded:: NEXT_VERSION
+        .. versionadded:: 1.2
         """
         return await self.receive_transport.recv_with_ancillary_into(buffer, ancillary_bufsize)
 
@@ -139,7 +139,7 @@ class AsyncStapledStreamTransport(_transports.AsyncStreamTransport, Generic[_T_S
         """
         Calls :meth:`self.send_transport.send_all_with_ancillary() <.AsyncStreamWriteTransport.send_all_with_ancillary>`.
 
-        .. versionadded:: NEXT_VERSION
+        .. versionadded:: 1.2
         """
         return await self.send_transport.send_all_with_ancillary(iterable_of_data, ancillary_data)
 
@@ -233,7 +233,7 @@ class AsyncStapledDatagramTransport(
         """
         Calls :meth:`self.receive_transport.recv_with_ancillary() <.AsyncDatagramReadTransport.recv_with_ancillary>`.
 
-        .. versionadded:: NEXT_VERSION
+        .. versionadded:: 1.2
         """
         return await self.receive_transport.recv_with_ancillary(ancillary_bufsize)
 
@@ -247,7 +247,7 @@ class AsyncStapledDatagramTransport(
         """
         Calls :meth:`self.send_transport.send_with_ancillary() <.AsyncDatagramWriteTransport.send_with_ancillary>`.
 
-        .. versionadded:: NEXT_VERSION
+        .. versionadded:: 1.2
         """
         return await self.send_transport.send_with_ancillary(data, ancillary_data)
 

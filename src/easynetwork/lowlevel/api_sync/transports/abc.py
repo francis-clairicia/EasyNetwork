@@ -131,7 +131,7 @@ class StreamReadTransport(BaseTransport):
         """
         Read and return up to `bufsize` bytes with ancillary data.
 
-        .. versionadded:: NEXT_VERSION
+        .. versionadded:: 1.2
 
         Parameters:
             bufsize: the maximum buffer size.
@@ -163,7 +163,7 @@ class StreamReadTransport(BaseTransport):
         """
         Read into the given `buffer` with ancillary data.
 
-        .. versionadded:: NEXT_VERSION
+        .. versionadded:: 1.2
 
         Parameters:
             buffer: where to write the received bytes.
@@ -282,7 +282,7 @@ class StreamWriteTransport(BaseTransport):
         could be sent, an exception is raised. :data:`None` is returned on success.
         On error, an exception is raised, and there is no way to determine how much data, if any, was successfully sent.
 
-        .. versionadded:: NEXT_VERSION
+        .. versionadded:: 1.2
 
         Parameters:
             iterable_of_data: An :term:`iterable` yielding the bytes to send.
@@ -345,7 +345,7 @@ class DatagramReadTransport(BaseTransport):
         """
         Read and return the next available packet with ancillary data.
 
-        .. versionadded:: NEXT_VERSION
+        .. versionadded:: 1.2
 
         Parameters:
             ancillary_bufsize: the maximum buffer size for ancillary data.
@@ -397,7 +397,7 @@ class DatagramWriteTransport(BaseTransport):
         """
         Send the `data` bytes to the remote peer with ancillary data.
 
-        .. versionadded:: NEXT_VERSION
+        .. versionadded:: 1.2
 
         Parameters:
             data: the bytes to send.

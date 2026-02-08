@@ -243,7 +243,7 @@ class SelectorStreamReadTransport(SelectorBaseTransport, transports.StreamReadTr
         """
         Read and return up to `bufsize` bytes with ancillary data.
 
-        .. versionadded:: NEXT_VERSION
+        .. versionadded:: 1.2
 
         Parameters:
             bufsize: the maximum buffer size.
@@ -272,7 +272,7 @@ class SelectorStreamReadTransport(SelectorBaseTransport, transports.StreamReadTr
         The default implementation will retry to call :meth:`recv_noblock_with_ancillary` until it succeeds
         under the given `timeout`.
 
-        .. versionadded:: NEXT_VERSION
+        .. versionadded:: 1.2
         """
         return self._retry(lambda: self.recv_noblock_with_ancillary(bufsize, ancillary_bufsize), timeout)[0]
 
@@ -284,7 +284,7 @@ class SelectorStreamReadTransport(SelectorBaseTransport, transports.StreamReadTr
         """
         Read into the given `buffer` with ancillary data.
 
-        .. versionadded:: NEXT_VERSION
+        .. versionadded:: 1.2
 
         Parameters:
             buffer: where to write the received bytes.
@@ -312,7 +312,7 @@ class SelectorStreamReadTransport(SelectorBaseTransport, transports.StreamReadTr
         The default implementation will retry to call :meth:`recv_noblock_with_ancillary` until it succeeds
         under the given `timeout`.
 
-        .. versionadded:: NEXT_VERSION
+        .. versionadded:: 1.2
         """
         return self._retry(lambda: self.recv_noblock_with_ancillary_into(buffer, ancillary_bufsize), timeout)[0]
 
@@ -354,7 +354,7 @@ class SelectorStreamWriteTransport(SelectorBaseTransport, transports.StreamWrite
         """
         An efficient way to send a bunch of data via the transport with ancillary data.
 
-        .. versionadded:: NEXT_VERSION
+        .. versionadded:: 1.2
 
         Parameters:
             iterable_of_data: An :term:`iterable` yielding the bytes to send.
@@ -382,7 +382,7 @@ class SelectorStreamWriteTransport(SelectorBaseTransport, transports.StreamWrite
         The default implementation will retry to call :meth:`send_all_noblock_with_ancillary` until it succeeds
         under the given `timeout`.
 
-        .. versionadded:: NEXT_VERSION
+        .. versionadded:: 1.2
         """
         if hasattr(iterable_of_data, "__next__"):
             # Do not send the iterator directly because if sendmsg() blocks,
@@ -432,7 +432,7 @@ class SelectorDatagramReadTransport(SelectorBaseTransport, transports.DatagramRe
         """
         Read and return the next available packet with ancillary data.
 
-        .. versionadded:: NEXT_VERSION
+        .. versionadded:: 1.2
 
         Parameters:
             ancillary_bufsize: the maximum buffer size for ancillary data.
@@ -457,7 +457,7 @@ class SelectorDatagramReadTransport(SelectorBaseTransport, transports.DatagramRe
         The default implementation will retry to call :meth:`recv_noblock_with_ancillary` until it succeeds
         under the given `timeout`.
 
-        .. versionadded:: NEXT_VERSION
+        .. versionadded:: 1.2
         """
         return self._retry(lambda: self.recv_noblock_with_ancillary(ancillary_bufsize), timeout)[0]
 
@@ -495,7 +495,7 @@ class SelectorDatagramWriteTransport(SelectorBaseTransport, transports.DatagramW
         """
         Send the `data` bytes with ancillary data to the remote peer.
 
-        .. versionadded:: NEXT_VERSION
+        .. versionadded:: 1.2
 
         Parameters:
             data: the bytes to send.
@@ -517,7 +517,7 @@ class SelectorDatagramWriteTransport(SelectorBaseTransport, transports.DatagramW
         The default implementation will retry to call :meth:`send_noblock_with_ancillary` until it succeeds
         under the given `timeout`.
 
-        .. versionadded:: NEXT_VERSION
+        .. versionadded:: 1.2
         """
         return self._retry(lambda: self.send_noblock_with_ancillary(data, ancillary_data), timeout)[0]
 
