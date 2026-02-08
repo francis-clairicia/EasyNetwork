@@ -21,6 +21,8 @@ __all__ = ["AsyncioTransportStreamSocketAdapter"]
 import asyncio
 import asyncio.trsock
 import errno as _errno
+import socket as _socket
+import sys
 import traceback
 import warnings
 from collections.abc import Callable, Iterable, Mapping
@@ -134,6 +136,134 @@ class AsyncioTransportStreamSocketAdapter(AsyncStreamTransport):
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         return self.__extra_attributes
+
+
+if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
+
+    __all__ += ["RawUnixStreamSocketAdapter"]
+
+    import itertools
+    from collections import deque
+
+    from ..... import _unix_utils, constants
+    from .. import _base_raw_transport
+
+    if TYPE_CHECKING:
+        from _typeshed import ReadableBuffer
+
+    @final
+    class RawUnixStreamSocketAdapter(AsyncStreamTransport, _base_raw_transport.BaseRawSocketTransport):
+        __slots__ = ()
+
+        def __init__(
+            self,
+            backend: AsyncBackend,
+            socket: _socket.socket,
+        ) -> None:
+            _unix_utils.check_unix_socket_family(socket.family)
+            if socket.type != _socket.SOCK_STREAM:
+                raise ValueError("A 'SOCK_STREAM' socket is expected")
+
+            super().__init__(backend, socket)
+
+        async def recv(self, bufsize: int) -> bytes:
+            return await self._sock_recv(
+                "recv",
+                try_async_recv=lambda loop, sock: loop.sock_recv(sock, bufsize),
+                recv=lambda sock: sock.recv(bufsize),
+            )
+
+        async def recv_into(self, buffer: WriteableBuffer) -> int:
+            return await self._sock_recv(
+                "recv_into",
+                try_async_recv=lambda loop, sock: loop.sock_recv_into(sock, buffer),
+                recv=lambda sock: sock.recv_into(buffer),
+            )
+
+        if hasattr(_socket.socket, "recvmsg"):  # pragma: no branch
+
+            async def recv_with_ancillary(
+                self,
+                bufsize: int,
+                ancillary_bufsize: int,
+            ) -> tuple[bytes, list[tuple[int, int, bytes]]]:
+                msg, ancdata, _, _ = await self._sock_recv(
+                    "recv_with_ancillary",
+                    recv=lambda sock: sock.recvmsg(bufsize, ancillary_bufsize),
+                )
+                return msg, ancdata
+
+        if hasattr(_socket.socket, "recvmsg_into"):  # pragma: no branch
+
+            async def recv_with_ancillary_into(
+                self,
+                buffer: WriteableBuffer,
+                ancillary_bufsize: int,
+            ) -> tuple[int, list[tuple[int, int, bytes]]]:
+                msg, ancdata, _, _ = await self._sock_recv(
+                    "recv_with_ancillary_into",
+                    recv=lambda sock: sock.recvmsg_into([buffer], ancillary_bufsize),
+                )
+                return msg, ancdata
+
+        async def send_all(self, data: bytes | bytearray | memoryview) -> None:
+            return await self._sock_send_all(
+                "send_all",
+                data=memoryview(data).cast("B"),
+                try_async_send=lambda loop, sock, data: loop.sock_sendall(sock, data),
+                send=lambda sock, data: sock.send(data),
+                send_success=lambda sent, data: data[sent:],
+                retry_send=lambda data: data.nbytes > 0,
+            )
+
+        if hasattr(_socket.socket, "sendmsg") and constants.SC_IOV_MAX > 0:  # pragma: no branch
+
+            async def send_all_with_ancillary(
+                self,
+                iterable_of_data: Iterable[bytes | bytearray | memoryview],
+                ancillary_data: Iterable[tuple[int, int, ReadableBuffer]],
+            ) -> None:
+                buffers: deque[memoryview] = deque(map(memoryview, iterable_of_data))  # type: ignore[arg-type]
+                del iterable_of_data
+                if hasattr(ancillary_data, "__next__"):
+                    # Do not send the iterator directly because if sendmsg() blocks,
+                    # it would retry with an already consumed iterator.
+                    ancillary_data = list(ancillary_data)
+
+                sent = await self._sock_send(
+                    "send_all_with_ancillary",
+                    send=lambda sock: sock.sendmsg(itertools.islice(buffers, constants.SC_IOV_MAX), ancillary_data),
+                )
+                _utils.adjust_leftover_buffer(buffers, sent)
+                if buffers:
+                    raise _utils.error_from_errno(_errno.EMSGSIZE)
+
+            async def send_all_from_iterable(self, iterable_of_data: Iterable[bytes | bytearray | memoryview]) -> None:
+                buffers: deque[memoryview] = deque(map(memoryview, iterable_of_data))  # type: ignore[arg-type]
+                del iterable_of_data
+                return await self._sock_send_all(
+                    "send_all_from_iterable",
+                    data=buffers,
+                    send=lambda sock, buffers: sock.sendmsg(itertools.islice(buffers, constants.SC_IOV_MAX)),
+                    send_success=lambda sent, buffers: _utils.adjust_leftover_buffer(buffers, sent),
+                    retry_send=bool,
+                )
+
+        async def send_eof(self) -> None:
+            with self._write_task_context("send_eof", accept_closed_sockets=True) as sock:
+                await TaskUtils.coro_yield()
+                if sock is None or sock.fileno() < 0:
+                    return
+                try:
+                    sock.shutdown(_socket.SHUT_WR)
+                except OSError as exc:
+                    if exc.errno in constants.NOT_CONNECTED_SOCKET_ERRNOS:
+                        # On some platforms (e.g. macOS), shutdown() raises if the socket is already disconnected.
+                        pass
+                    elif exc.errno in constants.CLOSED_SOCKET_ERRNOS:
+                        pass
+                    else:
+                        raise
 
 
 class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):

@@ -88,6 +88,22 @@ class StapledStreamTransport(_transports.StreamTransport, Generic[_T_SendStreamT
         """
         return self.receive_transport.recv_into(buffer, timeout)
 
+    def recv_with_ancillary(self, bufsize: int, ancillary_bufsize: int, timeout: float) -> tuple[bytes, Any]:
+        """
+        Calls :meth:`self.receive_transport.recv_with_ancillary() <.StreamReadTransport.recv_with_ancillary>`.
+
+        .. versionadded:: NEXT_VERSION
+        """
+        return self.receive_transport.recv_with_ancillary(bufsize, ancillary_bufsize, timeout)
+
+    def recv_with_ancillary_into(self, buffer: WriteableBuffer, ancillary_bufsize: int, timeout: float) -> tuple[int, Any]:
+        """
+        Calls :meth:`self.receive_transport.recv_with_ancillary_into() <.StreamReadTransport.recv_with_ancillary_into>`.
+
+        .. versionadded:: NEXT_VERSION
+        """
+        return self.receive_transport.recv_with_ancillary_into(buffer, ancillary_bufsize, timeout)
+
     def send(self, data: bytes | bytearray | memoryview, timeout: float) -> int:
         """
         Calls :meth:`self.send_transport.send() <.StreamWriteTransport.send>`.
@@ -105,6 +121,19 @@ class StapledStreamTransport(_transports.StreamTransport, Generic[_T_SendStreamT
         Calls :meth:`self.send_transport.send_all_from_iterable() <.StreamWriteTransport.send_all_from_iterable>`.
         """
         return self.send_transport.send_all_from_iterable(iterable_of_data, timeout)
+
+    def send_all_with_ancillary(
+        self,
+        iterable_of_data: Iterable[bytes | bytearray | memoryview],
+        ancillary_data: Any,
+        timeout: float,
+    ) -> None:
+        """
+        Calls :meth:`self.send_transport.send_all_with_ancillary() <.StreamWriteTransport.send_all_with_ancillary>`.
+
+        .. versionadded:: NEXT_VERSION
+        """
+        return self.send_transport.send_all_with_ancillary(iterable_of_data, ancillary_data, timeout)
 
     def send_eof(self) -> None:
         """
@@ -174,11 +203,27 @@ class StapledDatagramTransport(_transports.DatagramTransport, Generic[_T_SendDat
         """
         return self.receive_transport.recv(timeout)
 
+    def recv_with_ancillary(self, ancillary_bufsize: int, timeout: float) -> tuple[bytes, Any]:
+        """
+        Calls :meth:`self.receive_transport.recv_with_ancillary() <.DatagramReadTransport.recv_with_ancillary>`.
+
+        .. versionadded:: NEXT_VERSION
+        """
+        return self.receive_transport.recv_with_ancillary(ancillary_bufsize, timeout)
+
     def send(self, data: bytes | bytearray | memoryview, timeout: float) -> None:
         """
         Calls :meth:`self.send_transport.send() <.DatagramWriteTransport.send>`.
         """
         return self.send_transport.send(data, timeout)
+
+    def send_with_ancillary(self, data: bytes | bytearray | memoryview, ancillary_data: Any, timeout: float) -> None:
+        """
+        Calls :meth:`self.send_transport.send_with_ancillary() <.DatagramWriteTransport.send_with_ancillary>`.
+
+        .. versionadded:: NEXT_VERSION
+        """
+        return self.send_transport.send_with_ancillary(data, ancillary_data, timeout)
 
     @property
     @_utils.inherit_doc(_transports.BaseTransport)

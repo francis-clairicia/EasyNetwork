@@ -145,14 +145,18 @@ class BaseTestSocketTransport(BaseTestSocket):
                 pytest.fail(f"Invalid param: {socket_family_name!r}")
 
 
+class BaseTestUnixSocketTransport(BaseTestSocketTransport):
+    @pytest.fixture
+    @staticmethod
+    def socket_family_name() -> str:
+        return "AF_UNIX"
+
+
 class MixinTestSocketSendMSG:
-    @pytest.fixture(autouse=True)
+    @pytest.fixture
     @staticmethod
     def SC_IOV_MAX(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> int:
-        try:
-            value: int = request.param
-        except AttributeError:
-            value = 1024
+        value: int = request.param
         monkeypatch.setattr("easynetwork.lowlevel.constants.SC_IOV_MAX", value)
         return value
 

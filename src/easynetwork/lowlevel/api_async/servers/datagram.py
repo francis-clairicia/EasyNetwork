@@ -31,9 +31,10 @@ from collections.abc import AsyncGenerator, Callable, Hashable, Mapping
 from typing import Any, Generic, NoReturn, TypeVar
 
 from ...._typevars import _T_Request, _T_Response
-from ....exceptions import DatagramProtocolParseError
+from ....exceptions import DatagramProtocolParseError, UnsupportedOperation
 from ....protocol import DatagramProtocol
 from ... import _utils
+from ...request_handler import RecvAncillaryDataParams, RecvParams
 from ..backend.abc import AsyncBackend, ICondition, TaskGroup
 from ..transports import abc as _transports
 
@@ -144,15 +145,43 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
 
         await self.__listener.send_to(datagram, address)
 
+    async def send_packet_with_ancillary_to(self, packet: _T_Response, ancillary_data: Any, address: _T_Address) -> None:
+        """
+        Sends `packet` to the remote endpoint `address` with ancillary data.
+
+        .. versionadded:: NEXT_VERSION
+
+        Warning:
+            In the case of a cancellation, it is impossible to know if all the packet data has been sent.
+
+        Parameters:
+            packet: the Python object to send.
+            ancillary_data: The ancillary data to send along with the message.
+            address: the remote endpoint address.
+        """
+        try:
+            datagram: bytes = self.__protocol.make_datagram(packet)
+        except Exception as exc:
+            raise RuntimeError("protocol.make_datagram() crashed") from exc
+
+        await self.__listener.send_with_ancillary_to(datagram, ancillary_data, address)
+
     async def serve(
         self,
         datagram_received_cb: Callable[
-            [DatagramClientContext[_T_Response, _T_Address]], AsyncGenerator[float | None, _T_Request]
+            [DatagramClientContext[_T_Response, _T_Address]], AsyncGenerator[float | RecvParams | None, _T_Request]
         ],
         task_group: TaskGroup | None = None,
     ) -> NoReturn:
         """
         Receive incoming datagrams as they come in and start tasks to handle them.
+
+        .. versionchanged:: NEXT_VERSION
+            The async generator returned by `datagram_received_cb` may yield a :class:`.RecvParams` object.
+
+        .. deprecated:: NEXT_VERSION
+            If the async generator returned by `datagram_received_cb` yields a number, a :exc:`DeprecationWarning` will be emitted.
+            Use :class:`.RecvParams` instead.
 
         Important:
             There will always be only one active generator per client.
@@ -170,26 +199,76 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
             datagram_received_cb: a callable that will be used to handle each received datagram.
             task_group: the task group that will be used to start tasks for handling each received datagram.
         """
+        await self.__serve_impl(datagram_received_cb, task_group)
+
+    async def serve_with_ancillary(
+        self,
+        datagram_received_cb: Callable[
+            [DatagramClientContext[_T_Response, _T_Address]], AsyncGenerator[float | RecvParams | None, _T_Request]
+        ],
+        ancillary_bufsize: int,
+        ancillary_data_unused: Callable[[Any, _T_Address], object] | None = None,
+        task_group: TaskGroup | None = None,
+    ) -> NoReturn:
+        """
+        Receive incoming datagrams with ancillary data as they come in and start tasks to handle them.
+
+        See :meth:`serve` methods for more information.
+
+        .. versionadded:: NEXT_VERSION
+
+        .. deprecated:: NEXT_VERSION
+            If the async generator returned by `datagram_received_cb` yields a number, a :exc:`DeprecationWarning` will be emitted.
+            Use :class:`.RecvParams` instead.
+
+        Parameters:
+            datagram_received_cb: a callable that will be used to handle each received datagram.
+            ancillary_bufsize: the maximum buffer size for ancillary data.
+            ancillary_data_unused: Action to perform if the request handler did not claim the received ancillary data.
+            task_group: the task group that will be used to start tasks for handling each received datagram.
+        """
+        if not isinstance(ancillary_bufsize, int) or ancillary_bufsize <= 0:
+            raise ValueError("ancillary_bufsize must be a strictly positive integer")
+
+        await self.__serve_impl(
+            datagram_received_cb,
+            task_group,
+            server_ancillary_data_params=_ServerAncillaryDataParams(
+                bufsize=ancillary_bufsize,
+                data_unused=ancillary_data_unused,
+            ),
+        )
+
+    async def __serve_impl(
+        self,
+        datagram_received_cb: Callable[
+            [DatagramClientContext[_T_Response, _T_Address]], AsyncGenerator[float | RecvParams | None, _T_Request]
+        ],
+        task_group: TaskGroup | None,
+        *,
+        server_ancillary_data_params: _ServerAncillaryDataParams[_T_Address] | None = None,
+    ) -> NoReturn:
         with self.__serve_guard:
             listener = self.__listener
             backend = listener.backend()
 
             client_data_cache: weakref.WeakValueDictionary[_T_Address, _ClientData] = weakref.WeakValueDictionary()
-            client_ctx_cache: weakref.WeakValueDictionary[_T_Address, DatagramClientContext[_T_Response, _T_Address]]
-            client_ctx_cache = weakref.WeakValueDictionary()
+            client_ctx_cache: weakref.WeakValueDictionary[_T_Address, DatagramClientContext[_T_Response, _T_Address]] = (
+                weakref.WeakValueDictionary()
+            )
 
             default_context = contextvars.copy_context()
 
             async with backend.create_task_group() if task_group is None else contextlib.nullcontext(task_group) as task_group:
 
                 # The responsibility for ordering datagram reception is shifted to the listener.
-                async def handler(datagram: bytes, address: _T_Address, /) -> None:
+                async def handler(datagram: bytes, address: _T_Address, ancillary_data: Any | None = None, /) -> None:
                     try:
                         client_data = client_data_cache[address]
                     except KeyError:
                         client_data_cache[address] = client_data = _ClientData(backend)
 
-                    nb_datagrams_in_queue = await client_data.push_datagram(datagram)
+                    nb_datagrams_in_queue = await client_data.push_datagram(datagram, ancillary_data)
                     del datagram
 
                     if client_data.state is None and nb_datagrams_in_queue > 0:
@@ -199,18 +278,33 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
                             client_ctx_cache[address] = client_ctx = DatagramClientContext(address, self)
 
                         client_data.mark_pending()
-                        await self.__client_coroutine(datagram_received_cb, client_ctx, client_data, task_group, default_context)
+                        await self.__client_coroutine(
+                            datagram_received_cb,
+                            client_ctx,
+                            client_data,
+                            task_group,
+                            server_ancillary_data_params,
+                            default_context,
+                        )
 
-                await listener.serve(handler, task_group)
+                if server_ancillary_data_params is None:
+                    await listener.serve(handler, task_group)
+                else:
+                    await listener.serve_with_ancillary(
+                        lambda datagram, ancillary_data, address: handler(datagram, address, ancillary_data),
+                        server_ancillary_data_params.bufsize,
+                        task_group,
+                    )
 
     async def __client_coroutine(
         self,
         datagram_received_cb: Callable[
-            [DatagramClientContext[_T_Response, _T_Address]], AsyncGenerator[float | None, _T_Request]
+            [DatagramClientContext[_T_Response, _T_Address]], AsyncGenerator[float | RecvParams | None, _T_Request]
         ],
         client_ctx: DatagramClientContext[_T_Response, _T_Address],
         client_data: _ClientData,
         task_group: TaskGroup,
+        server_ancillary_data_params: _ServerAncillaryDataParams[_T_Address] | None,
         default_context: contextvars.Context,
     ) -> None:
         client_data.mark_running()
@@ -218,6 +312,8 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
             await self.__client_coroutine_inner_loop(
                 request_handler_generator=datagram_received_cb(client_ctx),
                 client_data=client_data,
+                client_address=client_ctx.address,
+                server_ancillary_data_params=server_ancillary_data_params,
             )
         except Exception as exc:
             _utils.remove_traceback_frames_in_place(exc, 1)
@@ -231,6 +327,7 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
                 client_ctx=client_ctx,
                 client_data=client_data,
                 task_group=task_group,
+                server_ancillary_data_params=server_ancillary_data_params,
                 default_context=default_context,
             )
         except Exception as exc:
@@ -244,50 +341,81 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
     async def __client_coroutine_inner_loop(
         self,
         *,
-        request_handler_generator: AsyncGenerator[float | None, _T_Request],
+        request_handler_generator: AsyncGenerator[float | RecvParams | None, _T_Request],
         client_data: _ClientData,
+        client_address: _T_Address,
+        server_ancillary_data_params: _ServerAncillaryDataParams[_T_Address] | None,
     ) -> None:
-        timeout: float | None
+        timeout: float
+        recv_params: RecvParams
+        datagram: bytes
+        ancillary_data: Any | None = None
         try:
-            datagram: bytes = client_data.pop_datagram_no_wait()
-            timeout = await anext(request_handler_generator)
+            datagram, ancillary_data = client_data.pop_datagram_no_wait()
+            recv_params = _rcv(await anext(request_handler_generator))
         except StopAsyncIteration:
+            self.__handle_ancillary_data(
+                ancillary_data=ancillary_data,
+                recv_with_ancillary=None,
+                server_ancillary_data_params=server_ancillary_data_params,
+                client_address=client_address,
+            )
             return
         else:
             request: _T_Request | None
             try:
                 try:
-                    _utils.validate_optional_timeout_delay(timeout, positive_check=True)
-                    # Ignore sent timeout here, we already have the datagram.
+                    try:
+                        _utils.validate_optional_timeout_delay(recv_params.timeout, positive_check=True)
+                        # Ignore sent timeout here, we already have the datagram.
+                    finally:
+                        # Handle ancillary data in finally block for stack manipulation.
+                        # The original error (invalid timeout) will appear even if the callback fails too.
+                        self.__handle_ancillary_data(
+                            ancillary_data=ancillary_data,
+                            recv_with_ancillary=recv_params.recv_with_ancillary,
+                            server_ancillary_data_params=server_ancillary_data_params,
+                            client_address=client_address,
+                        )
                     request = self.__parse_datagram(datagram, self.__protocol)
                 except BaseException as exc:
-                    timeout = await request_handler_generator.athrow(exc)
+                    del recv_params
+                    recv_params = _rcv(await request_handler_generator.athrow(exc))
                 else:
-                    del datagram  # Drop datagram reference before proceeding.
-                    timeout = await request_handler_generator.asend(request)
+                    del recv_params, datagram  # Drop datagram reference before proceeding.
+                    recv_params = _rcv(await request_handler_generator.asend(request))
                 finally:
-                    request = None
+                    request = ancillary_data = None
             except StopAsyncIteration:
                 return
 
-            backend = client_data.backend
+            _timeout_scope_ctx = client_data.backend.timeout
+            _no_timeout_scope = contextlib.nullcontext()
             while True:
                 try:
                     try:
-                        match _utils.validate_optional_timeout_delay(timeout, positive_check=True):
+                        match _utils.validate_optional_timeout_delay(recv_params.timeout, positive_check=True):
                             case math.inf:
-                                datagram = await client_data.pop_datagram()
+                                timeout_scope = _no_timeout_scope
                             case timeout:
-                                with backend.timeout(timeout):
-                                    datagram = await client_data.pop_datagram()
+                                timeout_scope = _timeout_scope_ctx(timeout)
+                        with timeout_scope:
+                            datagram, ancillary_data = await client_data.pop_datagram()
+                        self.__handle_ancillary_data(
+                            ancillary_data=ancillary_data,
+                            recv_with_ancillary=recv_params.recv_with_ancillary,
+                            server_ancillary_data_params=server_ancillary_data_params,
+                            client_address=client_address,
+                        )
                         request = self.__parse_datagram(datagram, self.__protocol)
                     except BaseException as exc:
-                        timeout = await request_handler_generator.athrow(exc)
+                        del recv_params
+                        recv_params = _rcv(await request_handler_generator.athrow(exc))
                     else:
-                        del datagram
-                        timeout = await request_handler_generator.asend(request)
+                        del recv_params, datagram
+                        recv_params = _rcv(await request_handler_generator.asend(request))
                     finally:
-                        request = None
+                        request = ancillary_data = None
                 except StopAsyncIteration:
                     break
         finally:
@@ -295,12 +423,14 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
 
     def __on_client_coroutine_task_done(
         self,
+        *,
         datagram_received_cb: Callable[
-            [DatagramClientContext[_T_Response, _T_Address]], AsyncGenerator[float | None, _T_Request]
+            [DatagramClientContext[_T_Response, _T_Address]], AsyncGenerator[float | RecvParams | None, _T_Request]
         ],
         client_ctx: DatagramClientContext[_T_Response, _T_Address],
         client_data: _ClientData,
         task_group: TaskGroup,
+        server_ancillary_data_params: _ServerAncillaryDataParams[_T_Address] | None,
         default_context: contextvars.Context,
     ) -> None:
         if client_data.queue_is_empty():
@@ -325,6 +455,7 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
             client_ctx,
             client_data,
             task_group,
+            server_ancillary_data_params,
             default_context,
         )
 
@@ -340,10 +471,39 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
         except Exception as exc:
             raise RuntimeError("protocol.build_packet_from_datagram() crashed") from exc
 
+    @staticmethod
+    def __handle_ancillary_data(
+        *,
+        ancillary_data: Any | None,
+        recv_with_ancillary: RecvAncillaryDataParams | None,
+        server_ancillary_data_params: _ServerAncillaryDataParams[_T_Address] | None,
+        client_address: _T_Address,
+    ) -> None:
+        if server_ancillary_data_params is None:
+            if recv_with_ancillary is not None:
+                raise UnsupportedOperation("The server is not configured to handle ancillary data.")
+        elif ancillary_data is not None:
+            if recv_with_ancillary is not None:
+                try:
+                    recv_with_ancillary.data_received(ancillary_data)
+                except Exception as exc:
+                    raise RuntimeError("RecvAncillaryDataParams.data_received() crashed") from exc
+            elif (ancillary_data_unused := server_ancillary_data_params.data_unused) is not None:
+                try:
+                    ancillary_data_unused(ancillary_data, client_address)
+                except Exception as exc:
+                    raise RuntimeError("ancillary_data_unused() crashed") from exc
+
     @property
     @_utils.inherit_doc(_transports.AsyncBaseTransport)
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         return self.__listener.extra_attributes
+
+
+@dataclasses.dataclass(kw_only=True, frozen=True, slots=True)
+class _ServerAncillaryDataParams(Generic[_T_Address]):
+    bufsize: int
+    data_unused: Callable[[Any, _T_Address], object] | None
 
 
 @enum.unique
@@ -365,7 +525,7 @@ class _ClientData:
         self.__backend: AsyncBackend = backend
         self.__state: _ClientState | None = None
         self._queue_condition: ICondition = backend.create_condition_var()
-        self._datagram_queue: deque[bytes] = deque()
+        self._datagram_queue: deque[tuple[bytes, Any | None]] = deque()
 
     @property
     def backend(self) -> AsyncBackend:
@@ -378,8 +538,8 @@ class _ClientData:
     def queue_is_empty(self) -> bool:
         return not self._datagram_queue
 
-    async def push_datagram(self, datagram: bytes) -> int:
-        self._datagram_queue.append(datagram)
+    async def push_datagram(self, datagram: bytes, ancillary_data: Any | None) -> int:
+        self._datagram_queue.append((datagram, ancillary_data))
 
         # Do not need to notify anyone if state is None.
         if self.__state is not None:
@@ -388,10 +548,10 @@ class _ClientData:
 
         return len(self._datagram_queue)
 
-    def pop_datagram_no_wait(self) -> bytes:
+    def pop_datagram_no_wait(self) -> tuple[bytes, Any | None]:
         return self._datagram_queue.popleft()
 
-    async def pop_datagram(self) -> bytes:
+    async def pop_datagram(self) -> tuple[bytes, Any | None]:
         async with (queue_condition := self._queue_condition):
             queue = self._datagram_queue
             while not queue:
@@ -418,3 +578,14 @@ class _ClientData:
         msg = "The server has created too many tasks and ends up in an inconsistent state."
         note = "Please fill an issue (https://github.com/francis-clairicia/EasyNetwork/issues)"
         raise _utils.exception_with_notes(RuntimeError(msg), note)
+
+
+def _rcv(param: float | RecvParams | None, /) -> RecvParams:
+    match param:
+        case RecvParams():
+            return param
+        case None:
+            return RecvParams()
+        case _:
+            warnings.warn("Yielding a flat number is deprecated. Use RecvParams instead.", DeprecationWarning, stacklevel=2)
+            return RecvParams(timeout=param)

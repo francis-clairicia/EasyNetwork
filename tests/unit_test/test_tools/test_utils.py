@@ -624,9 +624,10 @@ def test____adjust_leftover_buffer____consume_whole_buffer() -> None:
     buffers: deque[memoryview] = deque(map(lambda v: memoryview(v), [b"abc", b"de", b"fgh"]))
 
     # Act
-    adjust_leftover_buffer(buffers, 8)
+    res = adjust_leftover_buffer(buffers, 8)
 
     # Assert
+    assert res is buffers
     assert not buffers
 
 
@@ -635,9 +636,10 @@ def test____adjust_leftover_buffer____remove_some_buffers() -> None:
     buffers: deque[memoryview] = deque(map(lambda v: memoryview(v), [b"abc", b"de", b"fgh"]))
 
     # Act
-    adjust_leftover_buffer(buffers, 5)
+    res = adjust_leftover_buffer(buffers, 5)
 
     # Assert
+    assert res is buffers
     assert list(buffers) == [b"fgh"]
 
 
@@ -646,9 +648,10 @@ def test____adjust_leftover_buffer____partial_buffer_remove() -> None:
     buffers: deque[memoryview] = deque(map(lambda v: memoryview(v), [b"abc", b"de", b"fgh"]))
 
     # Act
-    adjust_leftover_buffer(buffers, 4)
+    res = adjust_leftover_buffer(buffers, 4)
 
     # Assert
+    assert res is buffers
     assert list(buffers) == [b"e", b"fgh"]
 
 
@@ -661,9 +664,10 @@ def test____adjust_leftover_buffer____handle_view_with_different_item_sizes() ->
     buffers: deque[memoryview] = deque([memoryview(item)])
 
     # Act
-    adjust_leftover_buffer(buffers, item.itemsize * 2)
+    res = adjust_leftover_buffer(buffers, item.itemsize * 2)
 
     # Assert
+    assert res is buffers
     assert list(buffers) == [bytes(item[2:])]
 
 

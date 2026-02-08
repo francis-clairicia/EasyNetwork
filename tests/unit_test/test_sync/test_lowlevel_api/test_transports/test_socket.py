@@ -6,7 +6,6 @@ import errno
 import math
 import os
 import ssl
-import sys
 from collections.abc import Callable, Iterable, Iterator
 from socket import AF_INET, SHUT_RDWR, SHUT_WR
 from typing import TYPE_CHECKING, Any
@@ -24,6 +23,7 @@ from easynetwork.lowlevel.socket import SocketAttribute, SocketProxy, TLSAttribu
 
 import pytest
 
+from .....tools import PlatformMarkers
 from ....base import BaseTestSocketTransport, MixinTestSocketSendMSG
 
 if TYPE_CHECKING:
@@ -39,6 +39,10 @@ def _retry_side_effect(self: Any, callback: Callable[[], Any], timeout: float) -
             return callback(), timeout
         except (WouldBlockOnRead, WouldBlockOnWrite):
             pass
+
+
+_SUPPORTS_ANCILLARY = ("AF_UNIX",)
+_ANCILLARY_UNSUPPORTED = ("AF_INET",)
 
 
 class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG):
@@ -86,7 +90,7 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
         cls.set_remote_address_to_socket_mock(mock_stream_socket, mock_stream_socket.family, remote_address)
 
         if hasattr(mock_stream_socket, "sendmsg"):
-            mock_stream_socket.sendmsg.side_effect = lambda buffers, *args: sum(map(len, map(lambda v: memoryview(v), buffers)))
+            mock_stream_socket.sendmsg.side_effect = lambda buffers, *args: sum(memoryview(v).nbytes for v in buffers)
         return mock_stream_socket
 
     @pytest.fixture
@@ -96,11 +100,6 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
         mock_stream_socket.reset_mock()
         with transport:
             yield transport
-
-    @staticmethod
-    def __assert_sendmsg_is_available_or_skip(mock_stream_socket: MagicMock) -> None:
-        if not hasattr(mock_stream_socket, "sendmsg"):
-            pytest.skip(f"socket.sendmsg() is not available on {sys.platform}")
 
     def test____dunder_init____default(
         self,
@@ -278,6 +277,138 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
         mock_stream_socket.fileno.assert_called_once()
         assert exc_info.value.fileno is mock_stream_socket.fileno.return_value
 
+    @PlatformMarkers.supports_socket_recvmsg
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
+    def test____recv_noblock_with_ancillary____default(
+        self,
+        transport: SocketStreamTransport,
+        mock_stream_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_stream_socket.recvmsg.return_value = (mocker.sentinel.bytes, mocker.sentinel.ancdata, 0, mocker.sentinel.addr)
+
+        # Act
+        result, ancdata = transport.recv_noblock_with_ancillary(mocker.sentinel.bufsize, mocker.sentinel.ancbufsize)
+
+        # Assert
+        mock_stream_socket.recvmsg.assert_called_once_with(mocker.sentinel.bufsize, mocker.sentinel.ancbufsize)
+        mock_stream_socket.fileno.assert_not_called()
+        assert result is mocker.sentinel.bytes
+        assert ancdata is mocker.sentinel.ancdata
+
+    @PlatformMarkers.supports_socket_recvmsg
+    @pytest.mark.parametrize("socket_family_name", _ANCILLARY_UNSUPPORTED, indirect=True)
+    def test____recv_noblock_with_ancillary____socket_family_unsupported(
+        self,
+        transport: SocketStreamTransport,
+        mock_stream_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_stream_socket.recvmsg.return_value = (mocker.sentinel.bytes, mocker.sentinel.ancdata, 0, mocker.sentinel.addr)
+
+        # Act
+        with pytest.raises(UnsupportedOperation):
+            transport.recv_noblock_with_ancillary(mocker.sentinel.bufsize, mocker.sentinel.ancbufsize)
+
+        # Assert
+        mock_stream_socket.recvmsg.assert_not_called()
+        mock_stream_socket.fileno.assert_not_called()
+
+    @PlatformMarkers.supports_socket_recvmsg
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
+    @pytest.mark.parametrize("error", [BlockingIOError, InterruptedError])
+    def test____recv_noblock_with_ancillary____blocking_error(
+        self,
+        error: type[OSError],
+        transport: SocketStreamTransport,
+        mock_stream_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_stream_socket.recvmsg.side_effect = error
+
+        # Act
+        with pytest.raises(WouldBlockOnRead) as exc_info:
+            transport.recv_noblock_with_ancillary(mocker.sentinel.bufsize, mocker.sentinel.ancbufsize)
+
+        # Assert
+        mock_stream_socket.recvmsg.assert_called_once_with(mocker.sentinel.bufsize, mocker.sentinel.ancbufsize)
+        mock_stream_socket.fileno.assert_called_once()
+        assert exc_info.value.fileno is mock_stream_socket.fileno.return_value
+
+    @PlatformMarkers.supports_socket_recvmsg_into
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
+    def test____recv_noblock_with_ancillary_into____default(
+        self,
+        transport: SocketStreamTransport,
+        mock_stream_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_stream_socket.recvmsg_into.return_value = (
+            mocker.sentinel.nb_bytes_written,
+            mocker.sentinel.ancdata,
+            0,
+            mocker.sentinel.addr,
+        )
+
+        # Act
+        result, ancdata = transport.recv_noblock_with_ancillary_into(mocker.sentinel.buffer, mocker.sentinel.ancbufsize)
+
+        # Assert
+        mock_stream_socket.recvmsg_into.assert_called_once_with([mocker.sentinel.buffer], mocker.sentinel.ancbufsize)
+        mock_stream_socket.fileno.assert_not_called()
+        assert result is mocker.sentinel.nb_bytes_written
+        assert ancdata is mocker.sentinel.ancdata
+
+    @PlatformMarkers.supports_socket_recvmsg
+    @pytest.mark.parametrize("socket_family_name", _ANCILLARY_UNSUPPORTED, indirect=True)
+    def test____recv_noblock_with_ancillary_into____socket_family_unsupported(
+        self,
+        transport: SocketStreamTransport,
+        mock_stream_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_stream_socket.recvmsg_into.return_value = (
+            mocker.sentinel.nb_bytes_written,
+            mocker.sentinel.ancdata,
+            0,
+            mocker.sentinel.addr,
+        )
+
+        # Act
+        with pytest.raises(UnsupportedOperation):
+            transport.recv_noblock_with_ancillary_into(mocker.sentinel.buffer, mocker.sentinel.ancbufsize)
+
+        # Assert
+        mock_stream_socket.recvmsg_into.assert_not_called()
+        mock_stream_socket.fileno.assert_not_called()
+
+    @PlatformMarkers.supports_socket_recvmsg_into
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
+    @pytest.mark.parametrize("error", [BlockingIOError, InterruptedError])
+    def test____recv_noblock_with_ancillary_into____blocking_error(
+        self,
+        error: type[OSError],
+        transport: SocketStreamTransport,
+        mock_stream_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_stream_socket.recvmsg_into.side_effect = error
+
+        # Act
+        with pytest.raises(WouldBlockOnRead) as exc_info:
+            transport.recv_noblock_with_ancillary_into(mocker.sentinel.buffer, mocker.sentinel.ancbufsize)
+
+        # Assert
+        mock_stream_socket.recvmsg_into.assert_called_once_with([mocker.sentinel.buffer], mocker.sentinel.ancbufsize)
+        mock_stream_socket.fileno.assert_called_once()
+        assert exc_info.value.fileno is mock_stream_socket.fileno.return_value
+
     def test____send_noblock____default(
         self,
         transport: SocketStreamTransport,
@@ -315,6 +446,185 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
         mock_stream_socket.fileno.assert_called_once()
         assert exc_info.value.fileno is mock_stream_socket.fileno.return_value
 
+    @PlatformMarkers.supports_socket_sendmsg
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
+    def test____send_all_noblock_with_ancillary____default(
+        self,
+        transport: SocketStreamTransport,
+        mock_stream_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        chunks: list[list[bytes]] = []
+
+        def sendmsg_side_effect(buffers: Iterable[ReadableBuffer], *args: Any) -> int:
+            buffers = list(buffers)
+            chunks.append(list(map(bytes, buffers)))
+            return sum(memoryview(v).nbytes for v in buffers)
+
+        mock_stream_socket.sendmsg.side_effect = sendmsg_side_effect
+
+        # Act
+        transport.send_all_noblock_with_ancillary(iter([b"data", b"to", b"send"]), mocker.sentinel.ancdata)
+
+        # Assert
+        mock_stream_socket.sendmsg.assert_called_once_with(mocker.ANY, mocker.sentinel.ancdata)
+        mock_stream_socket.fileno.assert_not_called()
+        assert chunks == [[b"data", b"to", b"send"]]
+
+    @PlatformMarkers.supports_socket_sendmsg
+    @pytest.mark.parametrize("socket_family_name", _ANCILLARY_UNSUPPORTED, indirect=True)
+    def test____send_all_noblock_with_ancillary____socket_family_unsupported(
+        self,
+        transport: SocketStreamTransport,
+        mock_stream_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        chunks: list[list[bytes]] = []
+
+        def sendmsg_side_effect(buffers: Iterable[ReadableBuffer], *args: Any) -> int:
+            buffers = list(buffers)
+            chunks.append(list(map(bytes, buffers)))
+            return sum(memoryview(v).nbytes for v in buffers)
+
+        mock_stream_socket.sendmsg.side_effect = sendmsg_side_effect
+
+        # Act
+        with pytest.raises(UnsupportedOperation):
+            transport.send_all_noblock_with_ancillary(iter([b"data", b"to", b"send"]), mocker.sentinel.ancdata)
+
+        # Assert
+        mock_stream_socket.sendmsg.assert_not_called()
+        mock_stream_socket.fileno.assert_not_called()
+        assert chunks == []
+
+    @PlatformMarkers.supports_socket_sendmsg
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
+    def test____send_all_noblock_with_ancillary____message_too_long(
+        self,
+        transport: SocketStreamTransport,
+        mock_stream_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        chunks: list[list[bytes]] = []
+
+        def sendmsg_side_effect(buffers: Iterable[ReadableBuffer], *args: Any) -> int:
+            buffers = list(buffers)
+            chunks.append(list(map(bytes, buffers)))
+            return min(sum(memoryview(v).nbytes for v in buffers), 3)
+
+        mock_stream_socket.sendmsg.side_effect = sendmsg_side_effect
+
+        # Act
+        with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EMSGSIZE):
+            transport.send_all_noblock_with_ancillary(iter([b"data", b"to", b"send"]), mocker.sentinel.ancdata)
+
+        # Assert
+        mock_stream_socket.sendmsg.assert_called_once_with(mocker.ANY, mocker.sentinel.ancdata)
+        mock_stream_socket.fileno.assert_not_called()
+        assert chunks == [[b"data", b"to", b"send"]]
+
+    @PlatformMarkers.supports_socket_sendmsg
+    @pytest.mark.usefixtures("SC_IOV_MAX")
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
+    @pytest.mark.parametrize("SC_IOV_MAX", [2], ids=lambda p: f"SC_IOV_MAX=={p}", indirect=True)
+    def test____send_all_noblock_with_ancillary____message_too_long____nb_buffers_greather_than_SC_IOV_MAX(
+        self,
+        transport: SocketStreamTransport,
+        mock_stream_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        chunks: list[list[bytes]] = []
+
+        def sendmsg_side_effect(buffers: Iterable[ReadableBuffer], *args: Any) -> int:
+            buffers = list(buffers)
+            chunks.append(list(map(bytes, buffers)))
+            return sum(memoryview(v).nbytes for v in buffers)
+
+        mock_stream_socket.sendmsg.side_effect = sendmsg_side_effect
+
+        # Act
+        with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EMSGSIZE):
+            transport.send_all_noblock_with_ancillary(iter([b"a", b"b", b"c", b"d"]), mocker.sentinel.ancdata)
+
+        # Assert
+        mock_stream_socket.sendmsg.assert_called_once_with(mocker.ANY, mocker.sentinel.ancdata)
+        mock_stream_socket.fileno.assert_not_called()
+        assert chunks == [[b"a", b"b"]]
+
+    @PlatformMarkers.supports_socket_sendmsg
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
+    @pytest.mark.parametrize("error", [BlockingIOError, InterruptedError])
+    def test____send_all_noblock_with_ancillary____blocking_error(
+        self,
+        error: type[OSError],
+        transport: SocketStreamTransport,
+        mock_stream_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_stream_socket.sendmsg.side_effect = error
+
+        # Act
+        with pytest.raises(WouldBlockOnWrite) as exc_info:
+            transport.send_all_noblock_with_ancillary(iter([b"data", b"to", b"send"]), mocker.sentinel.ancdata)
+
+        # Assert
+        mock_stream_socket.sendmsg.assert_called_once_with(mocker.ANY, mocker.sentinel.ancdata)
+        mock_stream_socket.fileno.assert_called_once()
+        assert exc_info.value.fileno is mock_stream_socket.fileno.return_value
+
+    @PlatformMarkers.supports_socket_sendmsg
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
+    @pytest.mark.parametrize("data_is_iterator", [False, True], ids=lambda p: f"data_is_iterator=={p}")
+    @pytest.mark.parametrize("ancillary_data_is_iterator", [False, True], ids=lambda p: f"ancillary_data_is_iterator=={p}")
+    @pytest.mark.parametrize("error", [BlockingIOError, InterruptedError])
+    def test____send_all_with_ancillary____correctly_handle_iterables(
+        self,
+        error: type[OSError],
+        data_is_iterator: bool,
+        ancillary_data_is_iterator: bool,
+        transport: SocketStreamTransport,
+        mock_stream_socket: MagicMock,
+        mock_transport_retry: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        to_raise: list[type[OSError]] = [error]
+        chunks: list[list[bytes]] = []
+        ancillary_data_sent: list[list[Any]] = []
+
+        def sendmsg_side_effect(buffers: Iterable[ReadableBuffer], ancdata: Iterable[Any]) -> int:
+            buffers = list(buffers)
+            ancdata = list(ancdata)
+            if to_raise:
+                raise to_raise.pop(0)
+            chunks.append(list(map(bytes, buffers)))
+            ancillary_data_sent.append(ancdata)
+            return sum(memoryview(v).nbytes for v in buffers)
+
+        mock_stream_socket.sendmsg.side_effect = sendmsg_side_effect
+
+        data: Iterable[bytes] = [b"data"]
+        if data_is_iterator:
+            data = iter(data)
+        ancillary_data: Iterable[Any] = [mocker.sentinel.ancdata]
+        if ancillary_data_is_iterator:
+            ancillary_data = iter(ancillary_data)
+
+        # Act
+        transport.send_all_with_ancillary(data, ancillary_data, 123456)
+
+        # Assert
+        mock_transport_retry.assert_called_once_with(transport, mocker.ANY, 123456)
+        assert mock_stream_socket.sendmsg.call_count == 2
+        assert chunks == [[b"data"]]
+        assert ancillary_data_sent == [[mocker.sentinel.ancdata]]
+
+    @PlatformMarkers.supports_socket_sendmsg
     def test____send_all_from_iterable____use_socket_sendmsg_when_available(
         self,
         transport: SocketStreamTransport,
@@ -324,14 +634,12 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        self.__assert_sendmsg_is_available_or_skip(mock_stream_socket)
-
         chunks: list[list[bytes]] = []
 
         def sendmsg_side_effect(buffers: Iterable[ReadableBuffer]) -> int:
             buffers = list(buffers)
             chunks.append(list(map(bytes, buffers)))
-            return sum(map(len, map(lambda v: memoryview(v), buffers)))
+            return sum(memoryview(v).nbytes for v in buffers)
 
         mock_stream_socket.sendmsg.side_effect = sendmsg_side_effect
 
@@ -344,6 +652,8 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
         mock_stream_socket.sendmsg.assert_called_once()
         assert chunks == [[b"data", b"to", b"send"]]
 
+    @PlatformMarkers.supports_socket_sendmsg
+    @pytest.mark.usefixtures("SC_IOV_MAX")
     @pytest.mark.parametrize("SC_IOV_MAX", [2], ids=lambda p: f"SC_IOV_MAX=={p}", indirect=True)
     def test____send_all_from_iterable____use_socket_sendmsg____nb_buffers_greather_than_SC_IOV_MAX(
         self,
@@ -351,14 +661,12 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
         mock_stream_socket: MagicMock,
     ) -> None:
         # Arrange
-        self.__assert_sendmsg_is_available_or_skip(mock_stream_socket)
-
         chunks: list[list[bytes]] = []
 
         def sendmsg_side_effect(buffers: Iterable[ReadableBuffer]) -> int:
             buffers = list(buffers)
             chunks.append(list(map(bytes, buffers)))
-            return sum(map(len, map(lambda v: memoryview(v), buffers)))
+            return sum(memoryview(v).nbytes for v in buffers)
 
         mock_stream_socket.sendmsg.side_effect = sendmsg_side_effect
 
@@ -373,20 +681,19 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
             [b"e"],
         ]
 
+    @PlatformMarkers.supports_socket_sendmsg
     def test____send_all_from_iterable____use_socket_sendmsg____adjust_leftover_buffer(
         self,
         transport: SocketStreamTransport,
         mock_stream_socket: MagicMock,
     ) -> None:
         # Arrange
-        self.__assert_sendmsg_is_available_or_skip(mock_stream_socket)
-
         chunks: list[list[bytes]] = []
 
         def sendmsg_side_effect(buffers: Iterable[ReadableBuffer]) -> int:
             buffers = list(buffers)
             chunks.append(list(map(bytes, buffers)))
-            return min(sum(map(len, map(lambda v: memoryview(v), buffers))), 3)
+            return min(sum(memoryview(v).nbytes for v in buffers), 3)
 
         mock_stream_socket.sendmsg.side_effect = sendmsg_side_effect
 
@@ -404,6 +711,32 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
             [b"p"],
         ]
 
+    @PlatformMarkers.supports_socket_sendmsg
+    def test____send_all_from_iterable____use_socket_sendmsg____empty_buffer_list(
+        self,
+        transport: SocketStreamTransport,
+        mock_stream_socket: MagicMock,
+        mock_transport_send_all: MagicMock,
+    ) -> None:
+        # Arrange
+        chunks: list[list[bytes]] = []
+
+        def sendmsg_side_effect(buffers: Iterable[ReadableBuffer]) -> int:
+            buffers = list(buffers)
+            chunks.append(list(map(bytes, buffers)))
+            return sum(memoryview(v).nbytes for v in buffers)
+
+        mock_stream_socket.sendmsg.side_effect = sendmsg_side_effect
+
+        # Act
+        transport.send_all_from_iterable(iter([]), 123456)
+
+        # Assert
+        mock_transport_send_all.assert_not_called()
+        assert mock_stream_socket.sendmsg.call_count == 1
+        assert chunks == [[]]
+
+    @PlatformMarkers.supports_socket_sendmsg
     @pytest.mark.parametrize("error", [BlockingIOError, InterruptedError])
     def test____send_all_from_iterable____use_socket_sendmsg____blocking_error(
         self,
@@ -415,8 +748,6 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        self.__assert_sendmsg_is_available_or_skip(mock_stream_socket)
-
         to_raise: list[type[OSError]] = [error]
         chunks: list[list[bytes]] = []
 
@@ -425,7 +756,7 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
                 raise to_raise.pop(0)
             buffers = list(buffers)
             chunks.append(list(map(bytes, buffers)))
-            return sum(map(len, map(lambda v: memoryview(v), buffers)))
+            return sum(memoryview(v).nbytes for v in buffers)
 
         mock_stream_socket.sendmsg.side_effect = sendmsg_side_effect
 
@@ -438,17 +769,15 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
         assert mock_stream_socket.sendmsg.call_count == 2
         assert chunks == [[b"data"]]
 
+    @PlatformMarkers.socket_sendmsg_unsupported
     def test____send_all_from_iterable____fallback_to_send_all____sendmsg_unavailable(
         self,
         transport: SocketStreamTransport,
-        mock_stream_socket: MagicMock,
         mock_transport_retry: MagicMock,
         mock_transport_send_all: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        if hasattr(mock_stream_socket, "sendmsg"):
-            pytest.skip("socket.sendmsg() is available")
 
         # Act
         transport.send_all_from_iterable(iter([b"data", b"to", b"send"]), 123456)
@@ -458,25 +787,6 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
         assert mock_transport_send_all.call_args_list == [
             mocker.call(b"".join([b"data", b"to", b"send"]), mocker.ANY),
         ]
-
-    def test____send_all_from_iterable____fallback_to_send_all____sendmsg_available_but_empty_buffer_list(
-        self,
-        transport: SocketStreamTransport,
-        mock_stream_socket: MagicMock,
-        mock_transport_retry: MagicMock,
-        mock_transport_send_all: MagicMock,
-    ) -> None:
-        # Arrange
-        self.__assert_sendmsg_is_available_or_skip(mock_stream_socket)
-
-        # Act
-        transport.send_all_from_iterable(iter([]), 123456)
-
-        # Assert
-        mock_transport_retry.assert_not_called()
-        if hasattr(mock_stream_socket, "sendmsg"):
-            mock_stream_socket.sendmsg.assert_not_called()
-        mock_transport_send_all.assert_called_once_with(b"", 123456)
 
     @pytest.mark.parametrize(
         "os_error",
@@ -1182,6 +1492,13 @@ class TestSSLStreamTransport:
 
 
 class TestSocketDatagramTransport(BaseTestSocketTransport):
+    @pytest.fixture(autouse=True)
+    @staticmethod
+    def mock_transport_retry(mocker: MockerFixture) -> MagicMock:
+        mock_transport_retry = mocker.patch.object(SocketDatagramTransport, "_retry", autospec=True)
+        mock_transport_retry.side_effect = _retry_side_effect
+        return mock_transport_retry
+
     @pytest.fixture
     @staticmethod
     def socket_fileno(request: pytest.FixtureRequest) -> int:
@@ -1385,6 +1702,77 @@ class TestSocketDatagramTransport(BaseTestSocketTransport):
         mock_datagram_socket.fileno.assert_called_once()
         assert exc_info.value.fileno is mock_datagram_socket.fileno.return_value
 
+    @PlatformMarkers.supports_socket_recvmsg
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
+    @pytest.mark.parametrize("max_datagram_size", [None, 1024], ids=lambda p: f"max_datagram_size=={p}", indirect=True)
+    def test____recv_noblock_with_ancillary____default(
+        self,
+        max_datagram_size: int | None,
+        transport: SocketDatagramTransport,
+        mock_datagram_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_datagram_socket.recvmsg.return_value = (mocker.sentinel.bytes, mocker.sentinel.ancdata, 0, mocker.sentinel.addr)
+
+        # Act
+        result, ancdata = transport.recv_noblock_with_ancillary(mocker.sentinel.ancbufsize)
+
+        # Assert
+        if max_datagram_size is None:
+            mock_datagram_socket.recvmsg.assert_called_once_with(MAX_DATAGRAM_BUFSIZE, mocker.sentinel.ancbufsize)
+        else:
+            mock_datagram_socket.recvmsg.assert_called_once_with(max_datagram_size, mocker.sentinel.ancbufsize)
+        mock_datagram_socket.fileno.assert_not_called()
+        assert result is mocker.sentinel.bytes
+        assert ancdata is mocker.sentinel.ancdata
+
+    @PlatformMarkers.supports_socket_recvmsg
+    @pytest.mark.parametrize("socket_family_name", _ANCILLARY_UNSUPPORTED, indirect=True)
+    def test____recv_noblock_with_ancillary____socket_family_unsupported(
+        self,
+        transport: SocketDatagramTransport,
+        mock_datagram_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_datagram_socket.recvmsg.return_value = (mocker.sentinel.bytes, mocker.sentinel.ancdata, 0, mocker.sentinel.addr)
+
+        # Act
+        with pytest.raises(UnsupportedOperation):
+            transport.recv_noblock_with_ancillary(mocker.sentinel.ancbufsize)
+
+        # Assert
+        mock_datagram_socket.recvmsg.assert_not_called()
+        mock_datagram_socket.fileno.assert_not_called()
+
+    @PlatformMarkers.supports_socket_recvmsg
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
+    @pytest.mark.parametrize("error", [BlockingIOError, InterruptedError])
+    @pytest.mark.parametrize("max_datagram_size", [None, 1024], ids=lambda p: f"max_datagram_size=={p}", indirect=True)
+    def test____recv_noblock_with_ancillary____blocking_error(
+        self,
+        max_datagram_size: int | None,
+        error: type[OSError],
+        transport: SocketDatagramTransport,
+        mock_datagram_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_datagram_socket.recvmsg.side_effect = error
+
+        # Act
+        with pytest.raises(WouldBlockOnRead) as exc_info:
+            transport.recv_noblock_with_ancillary(mocker.sentinel.ancbufsize)
+
+        # Assert
+        if max_datagram_size is None:
+            mock_datagram_socket.recvmsg.assert_called_once_with(MAX_DATAGRAM_BUFSIZE, mocker.sentinel.ancbufsize)
+        else:
+            mock_datagram_socket.recvmsg.assert_called_once_with(max_datagram_size, mocker.sentinel.ancbufsize)
+        mock_datagram_socket.fileno.assert_called_once()
+        assert exc_info.value.fileno is mock_datagram_socket.fileno.return_value
+
     def test____send_noblock____default(
         self,
         transport: SocketDatagramTransport,
@@ -1421,6 +1809,108 @@ class TestSocketDatagramTransport(BaseTestSocketTransport):
         mock_datagram_socket.send.assert_called_once_with(mocker.sentinel.data)
         mock_datagram_socket.fileno.assert_called_once()
         assert exc_info.value.fileno is mock_datagram_socket.fileno.return_value
+
+    @PlatformMarkers.supports_socket_sendmsg
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
+    def test____send_noblock_with_ancillary____default(
+        self,
+        transport: SocketDatagramTransport,
+        mock_datagram_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_datagram_socket.sendmsg.return_value = mocker.sentinel.nb_bytes_sent
+
+        # Act
+        result = transport.send_noblock_with_ancillary(mocker.sentinel.data, mocker.sentinel.ancdata)
+
+        # Assert
+        mock_datagram_socket.sendmsg.assert_called_once_with([mocker.sentinel.data], mocker.sentinel.ancdata)
+        mock_datagram_socket.fileno.assert_not_called()
+        assert result is None
+
+    @PlatformMarkers.supports_socket_sendmsg
+    @pytest.mark.parametrize("socket_family_name", _ANCILLARY_UNSUPPORTED, indirect=True)
+    def test____send_noblock_with_ancillary____socket_family_unsupported(
+        self,
+        transport: SocketDatagramTransport,
+        mock_datagram_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_datagram_socket.sendmsg.return_value = mocker.sentinel.nb_bytes_sent
+
+        # Act
+        with pytest.raises(UnsupportedOperation):
+            transport.send_noblock_with_ancillary(mocker.sentinel.data, mocker.sentinel.ancdata)
+
+        # Assert
+        mock_datagram_socket.sendmsg.assert_not_called()
+        mock_datagram_socket.fileno.assert_not_called()
+
+    @PlatformMarkers.supports_socket_sendmsg
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
+    @pytest.mark.parametrize("error", [BlockingIOError, InterruptedError])
+    def test____send_noblock_with_ancillary____blocking_error(
+        self,
+        error: type[OSError],
+        transport: SocketDatagramTransport,
+        mock_datagram_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_datagram_socket.sendmsg.side_effect = error
+
+        # Act
+        with pytest.raises(WouldBlockOnWrite) as exc_info:
+            transport.send_noblock_with_ancillary(mocker.sentinel.data, mocker.sentinel.ancdata)
+
+        # Assert
+        mock_datagram_socket.sendmsg.assert_called_once_with([mocker.sentinel.data], mocker.sentinel.ancdata)
+        mock_datagram_socket.fileno.assert_called_once()
+        assert exc_info.value.fileno is mock_datagram_socket.fileno.return_value
+
+    @PlatformMarkers.supports_socket_sendmsg
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
+    @pytest.mark.parametrize("ancillary_data_is_iterator", [False, True], ids=lambda p: f"ancillary_data_is_iterator=={p}")
+    @pytest.mark.parametrize("error", [BlockingIOError, InterruptedError])
+    def test____send_with_ancillary____correctly_handle_iterables(
+        self,
+        error: type[OSError],
+        ancillary_data_is_iterator: bool,
+        transport: SocketDatagramTransport,
+        mock_datagram_socket: MagicMock,
+        mock_transport_retry: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        to_raise: list[type[OSError]] = [error]
+        chunks: list[list[bytes]] = []
+        ancillary_data_sent: list[list[Any]] = []
+
+        def sendmsg_side_effect(buffers: Iterable[ReadableBuffer], ancdata: Iterable[Any]) -> int:
+            buffers = list(buffers)
+            ancdata = list(ancdata)
+            if to_raise:
+                raise to_raise.pop(0)
+            chunks.append(list(map(bytes, buffers)))
+            ancillary_data_sent.append(ancdata)
+            return sum(memoryview(v).nbytes for v in buffers)
+
+        mock_datagram_socket.sendmsg.side_effect = sendmsg_side_effect
+
+        ancillary_data: Iterable[Any] = [mocker.sentinel.ancdata]
+        if ancillary_data_is_iterator:
+            ancillary_data = iter(ancillary_data)
+
+        # Act
+        transport.send_with_ancillary(b"data", ancillary_data, 123456)
+
+        # Assert
+        mock_transport_retry.assert_called_once_with(transport, mocker.ANY, 123456)
+        assert mock_datagram_socket.sendmsg.call_count == 2
+        assert chunks == [[b"data"]]
+        assert ancillary_data_sent == [[mocker.sentinel.ancdata]]
 
     @pytest.mark.parametrize(
         ["extra_attribute", "called_socket_method", "os_error"],

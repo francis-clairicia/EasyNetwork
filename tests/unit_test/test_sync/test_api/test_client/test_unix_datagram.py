@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import errno
 import os
 import pathlib
@@ -23,14 +24,18 @@ if TYPE_CHECKING:
 
 
 if sys.platform != "win32":
-    from socket import AF_UNIX
+    from socket import AF_UNIX, SCM_RIGHTS
 
     from easynetwork.clients.unix_datagram import UnixDatagramClient, _create_unix_datagram_socket
     from easynetwork.exceptions import ClientClosedError, DatagramProtocolParseError, DeserializeError
     from easynetwork.lowlevel.api_sync.endpoints.datagram import DatagramEndpoint
     from easynetwork.lowlevel.api_sync.transports.socket import SocketDatagramTransport
-    from easynetwork.lowlevel.constants import CLOSED_SOCKET_ERRNOS, MAX_DATAGRAM_BUFSIZE
-    from easynetwork.lowlevel.socket import SocketProxy, UnixSocketAddress, _get_socket_extra
+    from easynetwork.lowlevel.constants import (
+        CLOSED_SOCKET_ERRNOS,
+        DEFAULT_UNIX_SOCKETS_ANCILLARY_DATA_BUFSIZE,
+        MAX_DATAGRAM_BUFSIZE,
+    )
+    from easynetwork.lowlevel.socket import SocketAncillary, SocketProxy, UnixSocketAddress, _get_socket_extra
 
     class TestUnixDatagramClient(BaseTestClient):
         @pytest.fixture(scope="class", params=UNIX_FAMILIES)
@@ -108,7 +113,9 @@ if sys.platform != "win32":
         def mock_datagram_endpoint(mocker: MockerFixture) -> MagicMock:
             mock_datagram_endpoint = make_transport_mock(mocker=mocker, spec=DatagramEndpoint)
             mock_datagram_endpoint.recv_packet.return_value = mocker.sentinel.packet
+            mock_datagram_endpoint.recv_packet_with_ancillary.return_value = mocker.sentinel.packet
             mock_datagram_endpoint.send_packet.return_value = None
+            mock_datagram_endpoint.send_packet_with_ancillary.return_value = None
             return mock_datagram_endpoint
 
         @pytest.fixture(autouse=True)
@@ -209,6 +216,17 @@ if sys.platform != "win32":
         @staticmethod
         def send_timeout(request: pytest.FixtureRequest) -> Any:
             return request.param
+
+        @pytest.fixture(params=["NO_CMSG", "WITH_CMSG"])
+        @staticmethod
+        def ancillary_data(request: pytest.FixtureRequest) -> SocketAncillary | None:
+            match request.param:
+                case "NO_CMSG":
+                    return None
+                case "WITH_CMSG":
+                    return SocketAncillary()
+                case _:
+                    pytest.fail(f"Invalid ancillary_data param: {request.param}")
 
         @pytest.mark.parametrize("retry_interval", [1.0, float("+inf")], ids=lambda p: f"retry_interval=={p}")
         def test____dunder_init____with_remote_address(
@@ -340,9 +358,9 @@ if sys.platform != "win32":
             with pytest.raises(
                 ValueError,
                 match=r"^local_path parameter is required on this platform and cannot be an empty string\.",
-            ) as exc_info:
+                check=lambda exc: exc.__notes__ == ["Automatic socket bind is not supported."],
+            ):
                 _ = UnixDatagramClient(remote_address, mock_datagram_protocol)
-            assert exc_info.value.__notes__ == ["Automatic socket bind is not supported."]
             mock_create_unix_datagram_socket.assert_not_called()
 
         def test____dunder_init____with_remote_address____explicit_autobind_local_address____autobind_supported(
@@ -386,13 +404,13 @@ if sys.platform != "win32":
             with pytest.raises(
                 ValueError,
                 match=r"^local_path parameter is required on this platform and cannot be an empty string\.",
-            ) as exc_info:
+                check=lambda exc: exc.__notes__ == ["Automatic socket bind is not supported."],
+            ):
                 _ = UnixDatagramClient(
                     remote_address,
                     mock_datagram_protocol,
                     local_path="",
                 )
-            assert exc_info.value.__notes__ == ["Automatic socket bind is not supported."]
             mock_create_unix_datagram_socket.assert_not_called()
 
         @pytest.mark.parametrize("retry_interval", [1.0, float("+inf")], ids=lambda p: f"retry_interval=={p}")
@@ -441,11 +459,10 @@ if sys.platform != "win32":
             self.configure_socket_mock_to_raise_ENOTCONN(mock_unix_datagram_socket)
 
             # Act
-            with pytest.raises(OSError) as exc_info:
+            with pytest.raises(OSError, check=lambda exc: exc.errno == errno.ENOTCONN):
                 _ = UnixDatagramClient(mock_unix_datagram_socket, mock_datagram_protocol)
 
             # Assert
-            assert exc_info.value.errno == errno.ENOTCONN
             assert mock_unix_datagram_socket.mock_calls == [
                 mocker.call.getpeername(),
                 mocker.call.close(),
@@ -535,6 +552,21 @@ if sys.platform != "win32":
                     protocol=mock_stream_protocol,
                 )
             assert mock_datagram_transport.mock_calls == [mocker.call.close()]
+
+        def test____dunder_init____unexpected_error(
+            self,
+            mock_datagram_endpoint_cls: MagicMock,
+            mock_datagram_protocol: MagicMock,
+            mock_unix_datagram_socket: MagicMock,
+            mock_datagram_transport: MagicMock,
+        ) -> None:
+            # Arrange
+            mock_datagram_endpoint_cls.side_effect = ValueError("test trigger")
+
+            # Act & Assert
+            with pytest.raises(ValueError, match=r"^test trigger$"):
+                _ = UnixDatagramClient(mock_unix_datagram_socket, mock_datagram_protocol)
+            mock_datagram_transport.close.assert_called_once()
 
         def test____dunder_del____ResourceWarning(
             self,
@@ -647,23 +679,36 @@ if sys.platform != "win32":
             self,
             client: UnixDatagramClient[Any, Any],
             send_timeout: float | None,
+            ancillary_data: SocketAncillary | None,
             mock_unix_datagram_socket: MagicMock,
             mock_datagram_endpoint: MagicMock,
             mocker: MockerFixture,
         ) -> None:
             # Arrange
+            if ancillary_data:
+                ancillary_data.add_fds((4, 5, 6))
 
             # Act
-            client.send_packet(mocker.sentinel.packet, timeout=send_timeout)
+            client.send_packet(mocker.sentinel.packet, timeout=send_timeout, ancillary_data=ancillary_data)
 
             # Assert
-            mock_datagram_endpoint.send_packet.assert_called_once_with(mocker.sentinel.packet, timeout=send_timeout)
+            if ancillary_data:
+                mock_datagram_endpoint.send_packet.assert_not_called()
+                mock_datagram_endpoint.send_packet_with_ancillary.assert_called_once_with(
+                    mocker.sentinel.packet,
+                    [(SOL_SOCKET, SCM_RIGHTS, mocker.ANY)],
+                    timeout=send_timeout,
+                )
+            else:
+                mock_datagram_endpoint.send_packet.assert_called_once_with(mocker.sentinel.packet, timeout=send_timeout)
+                mock_datagram_endpoint.send_packet_with_ancillary.assert_not_called()
             mock_unix_datagram_socket.getsockopt.assert_called_once_with(SOL_SOCKET, SO_ERROR)
 
         def test____send_packet____raise_error_saved_in_SO_ERROR_option(
             self,
             client: UnixDatagramClient[Any, Any],
             send_timeout: float | None,
+            ancillary_data: SocketAncillary | None,
             mock_unix_datagram_socket: MagicMock,
             mock_datagram_endpoint: MagicMock,
             mocker: MockerFixture,
@@ -672,18 +717,27 @@ if sys.platform != "win32":
             mock_unix_datagram_socket.getsockopt.return_value = errno.ECONNREFUSED
 
             # Act
-            with pytest.raises(OSError) as exc_info:
-                client.send_packet(mocker.sentinel.packet, timeout=send_timeout)
+            with pytest.raises(OSError, check=lambda exc: exc.errno == errno.ECONNREFUSED):
+                client.send_packet(mocker.sentinel.packet, timeout=send_timeout, ancillary_data=ancillary_data)
 
             # Assert
-            assert exc_info.value.errno == errno.ECONNREFUSED
-            mock_datagram_endpoint.send_packet.assert_called_once_with(mocker.sentinel.packet, timeout=send_timeout)
+            if ancillary_data:
+                mock_datagram_endpoint.send_packet.assert_not_called()
+                mock_datagram_endpoint.send_packet_with_ancillary.assert_called_once_with(
+                    mocker.sentinel.packet,
+                    [],
+                    timeout=send_timeout,
+                )
+            else:
+                mock_datagram_endpoint.send_packet.assert_called_once_with(mocker.sentinel.packet, timeout=send_timeout)
+                mock_datagram_endpoint.send_packet_with_ancillary.assert_not_called()
             mock_unix_datagram_socket.getsockopt.assert_called_once_with(SOL_SOCKET, SO_ERROR)
 
         def test____send_packet____closed_client_error(
             self,
             client: UnixDatagramClient[Any, Any],
             send_timeout: float | None,
+            ancillary_data: SocketAncillary | None,
             mock_unix_datagram_socket: MagicMock,
             mock_datagram_endpoint: MagicMock,
             mocker: MockerFixture,
@@ -694,10 +748,11 @@ if sys.platform != "win32":
 
             # Act
             with pytest.raises(ClientClosedError):
-                client.send_packet(mocker.sentinel.packet, timeout=send_timeout)
+                client.send_packet(mocker.sentinel.packet, timeout=send_timeout, ancillary_data=ancillary_data)
 
             # Assert
             mock_datagram_endpoint.send_packet.assert_not_called()
+            mock_datagram_endpoint.send_packet_with_ancillary.assert_not_called()
             mock_unix_datagram_socket.getsockopt.assert_not_called()
 
         @pytest.mark.parametrize("closed_socket_errno", sorted(CLOSED_SOCKET_ERRNOS), ids=errno.errorcode.__getitem__)
@@ -706,22 +761,32 @@ if sys.platform != "win32":
             closed_socket_errno: int,
             client: UnixDatagramClient[Any, Any],
             send_timeout: float | None,
+            ancillary_data: SocketAncillary | None,
             mock_unix_datagram_socket: MagicMock,
             mock_datagram_endpoint: MagicMock,
             mocker: MockerFixture,
         ) -> None:
             # Arrange
-            mock_datagram_endpoint.send_packet.side_effect = OSError(closed_socket_errno, os.strerror(closed_socket_errno))
+            expected_error = OSError(closed_socket_errno, os.strerror(closed_socket_errno))
+            mock_datagram_endpoint.send_packet.side_effect = expected_error
+            mock_datagram_endpoint.send_packet_with_ancillary.side_effect = expected_error
 
             # Act
-            with pytest.raises(OSError) as exc_info:
-                client.send_packet(mocker.sentinel.packet, timeout=send_timeout)
+            with pytest.raises(
+                OSError,
+                check=lambda exc: exc.errno == closed_socket_errno
+                and exc.__notes__ == ["The socket file descriptor was closed unexpectedly."],
+            ):
+                client.send_packet(mocker.sentinel.packet, timeout=send_timeout, ancillary_data=ancillary_data)
 
             # Assert
-            assert exc_info.value.errno == closed_socket_errno
-            assert exc_info.value.__notes__ == ["The socket file descriptor was closed unexpectedly."]
             assert not client.is_closed()
-            mock_datagram_endpoint.send_packet.assert_called_once_with(mocker.sentinel.packet, timeout=send_timeout)
+            if ancillary_data:
+                mock_datagram_endpoint.send_packet.assert_not_called()
+                mock_datagram_endpoint.send_packet_with_ancillary.assert_called_once()
+            else:
+                mock_datagram_endpoint.send_packet.assert_called_once()
+                mock_datagram_endpoint.send_packet_with_ancillary.assert_not_called()
             mock_datagram_endpoint.close.assert_not_called()
             mock_unix_datagram_socket.getsockopt.assert_not_called()
 
@@ -729,41 +794,91 @@ if sys.platform != "win32":
             self,
             client: UnixDatagramClient[Any, Any],
             recv_timeout: float | None,
+            ancillary_data: SocketAncillary | None,
             mock_datagram_endpoint: MagicMock,
             mocker: MockerFixture,
         ) -> None:
             # Arrange
             mock_datagram_endpoint.recv_packet.side_effect = [mocker.sentinel.packet]
+            mock_datagram_endpoint.recv_packet_with_ancillary.side_effect = [mocker.sentinel.packet]
 
             # Act
-            packet = client.recv_packet(timeout=recv_timeout)
+            packet = client.recv_packet(timeout=recv_timeout, ancillary_data=ancillary_data)
 
             # Assert
-            mock_datagram_endpoint.recv_packet.assert_called_once_with(timeout=recv_timeout)
+            if ancillary_data:
+                mock_datagram_endpoint.recv_packet.assert_not_called()
+                mock_datagram_endpoint.recv_packet_with_ancillary.assert_called_once_with(
+                    DEFAULT_UNIX_SOCKETS_ANCILLARY_DATA_BUFSIZE,
+                    ancillary_data.update_from_raw,
+                    timeout=recv_timeout,
+                )
+            else:
+                mock_datagram_endpoint.recv_packet.assert_called_once_with(timeout=recv_timeout)
+                mock_datagram_endpoint.recv_packet_with_ancillary.assert_not_called()
             assert packet is mocker.sentinel.packet
+
+        def test____recv_packet____receive_bytes_from_socket____custom_ancillary_bufsize(
+            self,
+            client: UnixDatagramClient[Any, Any],
+            recv_timeout: float | None,
+            ancillary_data: SocketAncillary | None,
+            mock_datagram_endpoint: MagicMock,
+            mocker: MockerFixture,
+        ) -> None:
+            # Arrange
+
+            # Act
+            packet: Any = None
+            with (
+                pytest.raises(ValueError, match=r"^ancillary_bufsize is only meaningful with ancillary_data")
+                if ancillary_data is None
+                else contextlib.nullcontext()
+            ):
+                packet = client.recv_packet(timeout=recv_timeout, ancillary_bufsize=1234, ancillary_data=ancillary_data)
+
+            # Assert
+            mock_datagram_endpoint.recv_packet.assert_not_called()
+            if ancillary_data:
+                mock_datagram_endpoint.recv_packet_with_ancillary.assert_called_once_with(
+                    1234,
+                    ancillary_data.update_from_raw,
+                    timeout=recv_timeout,
+                )
+                assert packet is mocker.sentinel.packet
+            else:
+                mock_datagram_endpoint.recv_packet_with_ancillary.assert_not_called()
+                assert packet is None
 
         def test____recv_packet____protocol_parse_error(
             self,
             client: UnixDatagramClient[Any, Any],
             recv_timeout: float | None,
+            ancillary_data: SocketAncillary | None,
             mock_datagram_endpoint: MagicMock,
         ) -> None:
             # Arrange
             expected_error = DatagramProtocolParseError(DeserializeError("Sorry"))
             mock_datagram_endpoint.recv_packet.side_effect = expected_error
+            mock_datagram_endpoint.recv_packet_with_ancillary.side_effect = expected_error
 
             # Act
-            with pytest.raises(DatagramProtocolParseError) as exc_info:
-                _ = client.recv_packet(timeout=recv_timeout)
+            with pytest.raises(DatagramProtocolParseError, check=lambda exc: exc is expected_error):
+                _ = client.recv_packet(timeout=recv_timeout, ancillary_data=ancillary_data)
 
             # Assert
-            assert exc_info.value is expected_error
-            mock_datagram_endpoint.recv_packet.assert_called_once_with(timeout=recv_timeout)
+            if ancillary_data:
+                mock_datagram_endpoint.recv_packet.assert_not_called()
+                mock_datagram_endpoint.recv_packet_with_ancillary.assert_called_once()
+            else:
+                mock_datagram_endpoint.recv_packet.assert_called_once()
+                mock_datagram_endpoint.recv_packet_with_ancillary.assert_not_called()
 
         def test____recv_packet____closed_client_error(
             self,
             client: UnixDatagramClient[Any, Any],
             recv_timeout: float | None,
+            ancillary_data: SocketAncillary | None,
             mock_datagram_endpoint: MagicMock,
         ) -> None:
             # Arrange
@@ -772,10 +887,11 @@ if sys.platform != "win32":
 
             # Act
             with pytest.raises(ClientClosedError):
-                _ = client.recv_packet(timeout=recv_timeout)
+                _ = client.recv_packet(timeout=recv_timeout, ancillary_data=ancillary_data)
 
             # Assert
             mock_datagram_endpoint.recv_packet.assert_not_called()
+            mock_datagram_endpoint.recv_packet_with_ancillary.assert_not_called()
 
         @pytest.mark.parametrize("closed_socket_errno", sorted(CLOSED_SOCKET_ERRNOS), ids=errno.errorcode.__getitem__)
         def test____recv_packet____convert_closed_socket_error(
@@ -783,20 +899,30 @@ if sys.platform != "win32":
             closed_socket_errno: int,
             client: UnixDatagramClient[Any, Any],
             recv_timeout: float | None,
+            ancillary_data: SocketAncillary | None,
             mock_datagram_endpoint: MagicMock,
         ) -> None:
             # Arrange
-            mock_datagram_endpoint.recv_packet.side_effect = OSError(closed_socket_errno, os.strerror(closed_socket_errno))
+            expected_error = OSError(closed_socket_errno, os.strerror(closed_socket_errno))
+            mock_datagram_endpoint.recv_packet.side_effect = expected_error
+            mock_datagram_endpoint.recv_packet_with_ancillary.side_effect = expected_error
 
             # Act
-            with pytest.raises(OSError) as exc_info:
-                _ = client.recv_packet(timeout=recv_timeout)
+            with pytest.raises(
+                OSError,
+                check=lambda exc: exc.errno == closed_socket_errno
+                and exc.__notes__ == ["The socket file descriptor was closed unexpectedly."],
+            ):
+                _ = client.recv_packet(timeout=recv_timeout, ancillary_data=ancillary_data)
 
             # Assert
-            assert exc_info.value.errno == closed_socket_errno
-            assert exc_info.value.__notes__ == ["The socket file descriptor was closed unexpectedly."]
             assert not client.is_closed()
-            mock_datagram_endpoint.recv_packet.assert_called_once_with(timeout=recv_timeout)
+            if ancillary_data:
+                mock_datagram_endpoint.recv_packet.assert_not_called()
+                mock_datagram_endpoint.recv_packet_with_ancillary.assert_called_once()
+            else:
+                mock_datagram_endpoint.recv_packet.assert_called_once()
+                mock_datagram_endpoint.recv_packet_with_ancillary.assert_not_called()
             mock_datagram_endpoint.close.assert_not_called()
 
         def test____special_case____separate_send_and_receive_locks(
@@ -945,7 +1071,7 @@ if sys.platform != "win32":
             mock_unix_datagram_socket.connect.return_value = None
 
             # Act
-            with pytest.raises(OSError) as exc_info:
+            with pytest.raises(OSError, check=lambda exc: exc.errno == (bind_error.errno or errno.EINVAL)):
                 _ = _create_unix_datagram_socket(
                     remote_address,
                     local_path=local_address,
@@ -957,10 +1083,6 @@ if sys.platform != "win32":
                 mocker.call.bind(local_address),
                 mocker.call.close(),
             ]
-            if bind_error.errno:
-                assert exc_info.value.errno == bind_error.errno
-            else:
-                assert exc_info.value.errno == errno.EINVAL
 
         @pytest.mark.parametrize(
             "remote_address",
@@ -992,7 +1114,7 @@ if sys.platform != "win32":
             mock_unix_datagram_socket.connect.side_effect = connect_error
 
             # Act
-            with pytest.raises(OSError) as exc_info:
+            with pytest.raises(OSError, check=lambda exc: exc.errno == connect_error.errno):
                 _ = _create_unix_datagram_socket(remote_address)
 
             # Assert
@@ -1001,4 +1123,3 @@ if sys.platform != "win32":
                 mocker.call.connect(remote_address),
                 mocker.call.close(),
             ]
-            assert exc_info.value.errno == connect_error.errno

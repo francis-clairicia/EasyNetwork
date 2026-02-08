@@ -508,11 +508,9 @@ class TestTCPNetworkClient(BaseTestClient):
         mock_stream_endpoint_cls: MagicMock,
         mock_stream_protocol: MagicMock,
         mock_tcp_socket: MagicMock,
-        mock_socket_stream_transport: MagicMock,
+        mock_socket_stream_transport_cls: MagicMock,
     ) -> None:
         # Arrange
-        ## The check is performed by the StreamEndpoint constructor, so we simulate an error raised.
-        mock_stream_endpoint_cls.side_effect = ValueError("'max_recv_size' must be a strictly positive integer")
 
         # Act & Assert
         with pytest.raises(ValueError, match=r"^'max_recv_size' must be a strictly positive integer$"):
@@ -528,11 +526,28 @@ class TestTCPNetworkClient(BaseTestClient):
                     protocol=mock_stream_protocol,
                     max_recv_size=max_recv_size,
                 )
-        mock_stream_endpoint_cls.assert_called_once_with(
-            mock_socket_stream_transport,
-            mock_stream_protocol,
-            max_recv_size=max_recv_size,
-        )
+        mock_socket_stream_transport_cls.assert_not_called()
+        mock_stream_endpoint_cls.assert_not_called()
+
+    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+    def test____dunder_init____unexpected_error(
+        self,
+        use_socket: bool,
+        remote_address: tuple[str, int],
+        mock_stream_endpoint_cls: MagicMock,
+        mock_stream_protocol: MagicMock,
+        mock_tcp_socket: MagicMock,
+        mock_socket_stream_transport: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_stream_endpoint_cls.side_effect = ValueError("test trigger")
+
+        # Act & Assert
+        with pytest.raises(ValueError, match=r"^test trigger$"):
+            if use_socket:
+                _ = TCPNetworkClient(mock_tcp_socket, protocol=mock_stream_protocol)
+            else:
+                _ = TCPNetworkClient(remote_address, protocol=mock_stream_protocol)
         mock_socket_stream_transport.close.assert_called_once()
 
     @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")

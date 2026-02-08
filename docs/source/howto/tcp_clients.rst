@@ -117,8 +117,7 @@ If the socket is not connected, an :exc:`OSError` is raised.
 Sending Packets
 ===============
 
-There's not much to say, except that objects passed as arguments are automatically converted to bytes to send to the remote host
-thanks to the :term:`protocol object`.
+Objects passed as arguments are automatically converted to bytes to send to the remote host thanks to the :term:`protocol object`.
 
 .. tabs::
 

@@ -42,13 +42,13 @@ else:
     del ssl
 
 from ....exceptions import UnsupportedOperation
-from ... import _utils, constants, socket as socket_tools
+from ... import _unix_utils, _utils, constants, socket as socket_tools
 from . import base_selector
 
 if TYPE_CHECKING:
     from ssl import SSLContext, SSLSession, SSLSocket
 
-    from _typeshed import WriteableBuffer
+    from _typeshed import ReadableBuffer, WriteableBuffer
 
 _P = ParamSpec("_P")
 _T_Return = TypeVar("_T_Return")
@@ -125,6 +125,36 @@ class SocketStreamTransport(base_selector.SelectorStreamTransport):
         except (BlockingIOError, InterruptedError):
             raise base_selector.WouldBlockOnRead(self.__socket.fileno()) from None
 
+    if sys.platform != "win32" and hasattr(socket.socket, "recvmsg"):
+
+        @_utils.inherit_doc(base_selector.SelectorStreamTransport)
+        def recv_noblock_with_ancillary(self, bufsize: int, ancillary_bufsize: int) -> tuple[bytes, list[tuple[int, int, bytes]]]:
+            if not _unix_utils.is_unix_socket_family(self.__socket.family):
+                return super().recv_noblock_with_ancillary(bufsize, ancillary_bufsize)
+            try:
+                msg, ancdata, _, _ = self.__socket.recvmsg(bufsize, ancillary_bufsize)
+            except (BlockingIOError, InterruptedError):
+                raise base_selector.WouldBlockOnRead(self.__socket.fileno()) from None
+            else:
+                return msg, ancdata
+
+    if sys.platform != "win32" and hasattr(socket.socket, "recvmsg_into"):
+
+        @_utils.inherit_doc(base_selector.SelectorStreamTransport)
+        def recv_noblock_with_ancillary_into(
+            self,
+            buffer: WriteableBuffer,
+            ancillary_bufsize: int,
+        ) -> tuple[int, list[tuple[int, int, bytes]]]:
+            if not _unix_utils.is_unix_socket_family(self.__socket.family):
+                return super().recv_noblock_with_ancillary_into(buffer, ancillary_bufsize)
+            try:
+                nbytes, ancdata, _, _ = self.__socket.recvmsg_into([buffer], ancillary_bufsize)
+            except (BlockingIOError, InterruptedError):
+                raise base_selector.WouldBlockOnRead(self.__socket.fileno()) from None
+            else:
+                return nbytes, ancdata
+
     @_utils.inherit_doc(base_selector.SelectorStreamTransport)
     def send_noblock(self, data: bytes | bytearray | memoryview) -> int:
         try:
@@ -132,17 +162,45 @@ class SocketStreamTransport(base_selector.SelectorStreamTransport):
         except (BlockingIOError, InterruptedError):
             raise base_selector.WouldBlockOnWrite(self.__socket.fileno()) from None
 
-    if sys.platform != "win32" or (not TYPE_CHECKING and hasattr(socket.socket, "sendmsg")):
+    if sys.platform != "win32" and hasattr(socket.socket, "sendmsg"):
 
         if constants.SC_IOV_MAX > 0:  # pragma: no branch
+
+            @_utils.inherit_doc(base_selector.SelectorStreamTransport)
+            def send_all_noblock_with_ancillary(
+                self,
+                iterable_of_data: Iterable[bytes | bytearray | memoryview],
+                ancillary_data: Iterable[tuple[int, int, ReadableBuffer]],
+            ) -> None:
+                if not _unix_utils.is_unix_socket_family(self.__socket.family):
+                    return super().send_all_noblock_with_ancillary(iterable_of_data, ancillary_data)
+                buffers: deque[memoryview] = deque(map(memoryview, iterable_of_data))  # type: ignore[arg-type]
+                del iterable_of_data
+                try:
+                    sent = self.__socket.sendmsg(itertools.islice(buffers, constants.SC_IOV_MAX), ancillary_data)
+                except (BlockingIOError, InterruptedError):
+                    raise base_selector.WouldBlockOnWrite(self.__socket.fileno()) from None
+                _utils.adjust_leftover_buffer(buffers, sent)
+                if buffers:
+                    raise _utils.error_from_errno(errno.EMSGSIZE)
+
+            @_utils.inherit_doc(base_selector.SelectorStreamTransport)
+            def send_all_with_ancillary(
+                self,
+                iterable_of_data: Iterable[bytes | bytearray | memoryview],
+                ancillary_data: Iterable[tuple[int, int, ReadableBuffer]],
+                timeout: float,
+            ) -> None:
+                if hasattr(ancillary_data, "__next__"):
+                    # Do not send the iterator directly because if sendmsg() blocks,
+                    # it would retry with an already consumed iterator.
+                    ancillary_data = list(ancillary_data)
+                return super().send_all_with_ancillary(iterable_of_data, ancillary_data, timeout)
 
             @_utils.inherit_doc(base_selector.SelectorStreamTransport)
             def send_all_from_iterable(self, iterable_of_data: Iterable[bytes | bytearray | memoryview], timeout: float) -> None:
                 buffers: deque[memoryview] = deque(map(memoryview, iterable_of_data))  # type: ignore[arg-type]
                 del iterable_of_data
-
-                if not buffers:
-                    return self.send_all(b"", timeout)
 
                 socket_sendmsg = self.__socket.sendmsg
 
@@ -152,9 +210,11 @@ class SocketStreamTransport(base_selector.SelectorStreamTransport):
                     except (BlockingIOError, InterruptedError):
                         raise base_selector.WouldBlockOnWrite(self.__socket.fileno()) from None
 
-                while buffers:
+                while True:
                     sent, timeout = self._retry(try_sendmsg, timeout)
                     _utils.adjust_leftover_buffer(buffers, sent)
+                    if not buffers:
+                        break
 
     @_utils.inherit_doc(base_selector.SelectorStreamTransport)
     def send_eof(self) -> None:
@@ -395,12 +455,54 @@ class SocketDatagramTransport(base_selector.SelectorDatagramTransport):
         except (BlockingIOError, InterruptedError):
             raise base_selector.WouldBlockOnRead(self.__socket.fileno()) from None
 
+    if sys.platform != "win32" and hasattr(socket.socket, "recvmsg"):
+
+        @_utils.inherit_doc(base_selector.SelectorDatagramTransport)
+        def recv_noblock_with_ancillary(self, ancillary_bufsize: int) -> tuple[bytes, list[tuple[int, int, bytes]]]:
+            if not _unix_utils.is_unix_socket_family(self.__socket.family):
+                return super().recv_noblock_with_ancillary(ancillary_bufsize)
+            max_datagram_size: int = self.__max_datagram_size
+            try:
+                msg, ancdata, _, _ = self.__socket.recvmsg(max_datagram_size, ancillary_bufsize)
+            except (BlockingIOError, InterruptedError):
+                raise base_selector.WouldBlockOnRead(self.__socket.fileno()) from None
+            else:
+                return msg, ancdata
+
     @_utils.inherit_doc(base_selector.SelectorDatagramTransport)
     def send_noblock(self, data: bytes | bytearray | memoryview) -> None:
         try:
             self.__socket.send(data)
         except (BlockingIOError, InterruptedError):
             raise base_selector.WouldBlockOnWrite(self.__socket.fileno()) from None
+
+    if sys.platform != "win32" and hasattr(socket.socket, "sendmsg"):
+
+        @_utils.inherit_doc(base_selector.SelectorDatagramTransport)
+        def send_noblock_with_ancillary(
+            self,
+            data: bytes | bytearray | memoryview,
+            ancillary_data: Iterable[tuple[int, int, ReadableBuffer]],
+        ) -> None:
+            if not _unix_utils.is_unix_socket_family(self.__socket.family):
+                return super().send_noblock_with_ancillary(data, ancillary_data)
+            try:
+                self.__socket.sendmsg([data], ancillary_data)
+            except (BlockingIOError, InterruptedError):
+                raise base_selector.WouldBlockOnWrite(self.__socket.fileno()) from None
+
+        @_utils.inherit_doc(base_selector.SelectorDatagramTransport)
+        def send_with_ancillary(
+            self,
+            data: bytes | bytearray | memoryview,
+            ancillary_data: Iterable[tuple[int, int, ReadableBuffer]],
+            timeout: float,
+        ) -> None:
+            if hasattr(ancillary_data, "__next__"):
+                # Do not send the iterator directly because if sendmsg() blocks,
+                # it would retry with an already consumed iterator.
+                ancillary_data = list(ancillary_data)
+            return super().send_with_ancillary(data, ancillary_data, timeout)
 
     @property
     @_utils.inherit_doc(base_selector.SelectorDatagramTransport)

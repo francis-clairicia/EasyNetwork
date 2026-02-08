@@ -9,6 +9,7 @@ from typing import Any
 from easynetwork.exceptions import BaseProtocolParseError, ClientClosedError, DatagramProtocolParseError, DeserializeError
 from easynetwork.lowlevel._utils import remove_traceback_frames_in_place
 from easynetwork.lowlevel.api_async.backend.abc import IEvent
+from easynetwork.lowlevel.request_handler import RecvParams
 from easynetwork.lowlevel.socket import SocketAddress, SocketProxy
 from easynetwork.protocol import DatagramProtocol
 from easynetwork.servers.async_udp import AsyncUDPNetworkServer
@@ -135,7 +136,7 @@ class MyDatagramRequestHandler(AsyncDatagramRequestHandler[str, str]):
             await client.send_packet("wrong encoding man.")
 
 
-class TimeoutYieldedRequestHandler(AsyncDatagramRequestHandler[str, str]):
+class TimeoutYieldedDeprecatedWayRequestHandler(AsyncDatagramRequestHandler[str, str]):
     request_timeout: float = 1.0
     timeout_on_third_yield: bool = False
 
@@ -147,6 +148,26 @@ class TimeoutYieldedRequestHandler(AsyncDatagramRequestHandler[str, str]):
         try:
             with pytest.raises(TimeoutError):
                 yield self.request_timeout
+            await client.send_packet("successfully timed out")
+        except BaseException:
+            await client.send_packet("error occurred")
+            raise
+        finally:
+            self.request_timeout = 1.0  # Force reset to 1 second in order not to overload the server
+
+
+class TimeoutYieldedRequestHandler(AsyncDatagramRequestHandler[str, str]):
+    request_timeout: float = 1.0
+    timeout_on_third_yield: bool = False
+
+    async def handle(self, client: AsyncDatagramClient[str]) -> AsyncGenerator[RecvParams | None, str]:
+        assert (yield None) == "something"
+        if self.timeout_on_third_yield:
+            request = yield None
+            await client.send_packet(request)
+        try:
+            with pytest.raises(TimeoutError):
+                yield RecvParams(timeout=self.request_timeout)
             await client.send_packet("successfully timed out")
         except BaseException:
             await client.send_packet("error occurred")
@@ -373,7 +394,8 @@ class _BaseTestAsyncUDPNetworkServer(BaseTestAsyncServer):
 
         await endpoint.sendto(b"__wait__", None)
         await endpoint.sendto(b"hello, world.", None)
-        assert (await endpoint.recvfrom())[0] == b"After wait: hello, world."
+        with endpoint.backend().timeout(1.0):
+            assert (await endpoint.recvfrom())[0] == b"After wait: hello, world."
 
         assert request_handler.request_received[client_address] == ["hello, world."]
 
@@ -422,7 +444,9 @@ class _BaseTestAsyncUDPNetworkServer(BaseTestAsyncServer):
         await endpoint.sendto("\u00e9".encode("latin-1"), None)  # StringSerializer does not accept unicode
         await endpoint.backend().sleep(0.1)
 
-        assert (await endpoint.recvfrom())[0] == b"wrong encoding man."
+        with endpoint.backend().timeout(1.0):
+            assert (await endpoint.recvfrom())[0] == b"wrong encoding man."
+
         assert request_handler.request_received[client_address] == []
         assert isinstance(request_handler.bad_request_received[client_address][0], DatagramProtocolParseError)
         assert isinstance(request_handler.bad_request_received[client_address][0].error, DeserializeError)
@@ -449,16 +473,17 @@ class _BaseTestAsyncUDPNetworkServer(BaseTestAsyncServer):
         await endpoint.sendto(b"something", None)
         await endpoint.backend().sleep(0.2)
 
-        assert (await endpoint.recvfrom())[0] == expected_message
-        if mute_thrown_exception:
-            await endpoint.sendto(b"something", None)
-            await endpoint.backend().sleep(0.2)
+        with endpoint.backend().timeout(5):
             assert (await endpoint.recvfrom())[0] == expected_message
-            assert len(caplog.records) == 0  # After two attempts
-        else:
-            assert len(caplog.records) == 3
-            assert caplog.records[1].exc_info is not None
-            assert type(caplog.records[1].exc_info[1]) is RuntimeError
+            if mute_thrown_exception:
+                await endpoint.sendto(b"something", None)
+                await endpoint.backend().sleep(0.2)
+                assert (await endpoint.recvfrom())[0] == expected_message
+                assert len(caplog.records) == 0  # After two attempts
+            else:
+                assert len(caplog.records) == 3
+                assert caplog.records[1].exc_info is not None
+                assert type(caplog.records[1].exc_info[1]) is RuntimeError
 
     @pytest.mark.parametrize("excgrp", [False, True], ids=lambda p: f"exception_group_raised=={p}")
     async def test____serve_forever____unexpected_error_during_process(
@@ -498,8 +523,7 @@ class _BaseTestAsyncUDPNetworkServer(BaseTestAsyncServer):
         endpoint = await client_factory()
 
         await endpoint.sendto(b"request", None)
-        while not caplog.records:
-            await endpoint.backend().sleep(0.2)
+        await endpoint.backend().sleep(0.2)
 
         assert len(caplog.records) == 1
         assert caplog.records[0].getMessage() == "RuntimeError: protocol.make_datagram() crashed (caused by SystemError: CRASH)"
@@ -545,14 +569,25 @@ class _BaseTestAsyncUDPNetworkServer(BaseTestAsyncServer):
         assert caplog.records[0].getMessage() == f"There have been attempts to do operation on closed client ({host!r}, {port})"
         assert caplog.records[0].levelno == logging.WARNING
 
-    @pytest.mark.parametrize("request_handler", [TimeoutYieldedRequestHandler, TimeoutContextRequestHandler], indirect=True)
+    @pytest.mark.parametrize(
+        "request_handler",
+        [
+            TimeoutYieldedRequestHandler,
+            pytest.param(
+                TimeoutYieldedDeprecatedWayRequestHandler,
+                marks=pytest.mark.filterwarnings("ignore::DeprecationWarning:easynetwork"),
+            ),
+            TimeoutContextRequestHandler,
+        ],
+        indirect=True,
+    )
     @pytest.mark.parametrize("request_timeout", [0.0, 1.0], ids=lambda p: f"timeout=={p}")
     @pytest.mark.parametrize("timeout_on_third_yield", [False, True], ids=lambda p: f"timeout_on_third_yield=={p}")
     async def test____serve_forever____throw_cancelled_error(
         self,
         request_timeout: float,
         timeout_on_third_yield: bool,
-        request_handler: TimeoutYieldedRequestHandler | TimeoutContextRequestHandler,
+        request_handler: TimeoutYieldedRequestHandler | TimeoutYieldedDeprecatedWayRequestHandler | TimeoutContextRequestHandler,
         client_factory: Callable[[], Awaitable[AsyncDatagramSocket]],
     ) -> None:
         request_handler.request_timeout = request_timeout
@@ -560,11 +595,10 @@ class _BaseTestAsyncUDPNetworkServer(BaseTestAsyncServer):
         endpoint = await client_factory()
 
         await endpoint.sendto(b"something", None)
-        if timeout_on_third_yield:
-            await endpoint.sendto(b"something", None)
-            assert (await endpoint.recvfrom())[0] == b"something"
-
         with endpoint.backend().timeout(request_timeout + 1):
+            if timeout_on_third_yield:
+                await endpoint.sendto(b"something", None)
+                assert (await endpoint.recvfrom())[0] == b"something"
             assert (await endpoint.recvfrom())[0] == b"successfully timed out"
 
     @pytest.mark.parametrize("request_handler", [CancellationRequestHandler], indirect=True)
@@ -769,6 +803,7 @@ class TestAsyncUDPNetworkServerWithAsyncIO(_BaseTestAsyncUDPNetworkServer, BaseT
                     family=socket_family,
                 )
                 await stack.enter_async_context(endpoint)
+                endpoint.set_read_timeout(10.0)
                 return endpoint
 
             yield factory
@@ -844,6 +879,7 @@ class TestAsyncUDPNetworkServerWithTrio(_BaseTestAsyncUDPNetworkServer, BaseTest
                     family=socket_family,
                 )
                 await stack.enter_async_context(endpoint)
+                endpoint.set_read_timeout(10.0)
                 return endpoint
 
             yield factory

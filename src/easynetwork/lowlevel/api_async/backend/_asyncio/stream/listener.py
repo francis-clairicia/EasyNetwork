@@ -31,6 +31,7 @@ import errno as _errno
 import logging
 import os
 import socket as _socket
+import sys
 import warnings
 from abc import abstractmethod
 from collections.abc import Callable, Coroutine, Mapping
@@ -241,7 +242,9 @@ class ListenerSocketAdapter(AsyncListener[_T_Stream]):
                             f,
                         )
                         delayed_retry_handles.append(handle)
-                    elif exc.errno not in constants.IGNORABLE_ACCEPT_ERRNOS:
+                    elif exc.errno in constants.IGNORABLE_ACCEPT_ERRNOS:
+                        continue
+                    else:
                         # Unrelated OS error.
                         f.set_exception(exc)
                         loop.remove_reader(listener_sock)
@@ -302,3 +305,23 @@ class AcceptedSocketFactory(AbstractAcceptedSocketFactory[AsyncioTransportStream
             socket,
         )
         return AsyncioTransportStreamSocketAdapter(backend, transport, protocol)
+
+
+if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
+
+    __all__ += ["AcceptedUnixSocketFactory"]
+
+    from .socket import RawUnixStreamSocketAdapter
+
+    @final
+    @dataclasses.dataclass(frozen=True, slots=True, kw_only=True)
+    class AcceptedUnixSocketFactory(AbstractAcceptedSocketFactory[RawUnixStreamSocketAdapter]):
+        def log_connection_error(self, logger: logging.Logger, exc: BaseException) -> None:
+            logger.error("Error in client task", exc_info=exc)
+
+        async def connect(
+            self,
+            backend: AsyncBackend,
+            socket: _socket.socket,
+        ) -> RawUnixStreamSocketAdapter:
+            return RawUnixStreamSocketAdapter(backend, socket)

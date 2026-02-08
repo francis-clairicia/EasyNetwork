@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import errno
 import os
+import sys
 from collections.abc import Callable, Sequence
 from socket import AF_INET, AF_INET6, AF_UNSPEC, IPPROTO_TCP, IPPROTO_UDP, SOCK_DGRAM, SOCK_STREAM
 from typing import TYPE_CHECKING, Any, Final
@@ -215,220 +216,222 @@ class TestTrioBackend:
         mock_TrioStreamSocketAdapter.assert_called_once_with(backend, mock_trio_socket_stream)
         assert socket is mocker.sentinel.socket
 
-    @pytest.mark.parametrize(
-        "local_address",
-        [
-            None,
-            "/path/to/local.sock",
-            b"/path/to/local.sock",
-            "\0local_sock",
-            b"\x00local_sock",
-            "",  # <- Arbitrary abstract Unix address given by kernel
-            b"",  # <- Arbitrary abstract Unix address given by kernel
-        ],
-        ids=lambda addr: f"local_address=={addr!r}",
-    )
-    @pytest.mark.parametrize(
-        "remote_address",
-        [
-            "/path/to/unix.sock",
-            b"/path/to/unix.sock",
-            "\0unix_sock",
-            b"\x00unix_sock",
-        ],
-        ids=lambda addr: f"remote_address=={addr!r}",
-    )
-    async def test____create_unix_stream_connection____create_trio_stream(
-        self,
-        local_address: str | bytes | None,
-        remote_address: str | bytes,
-        backend: TrioBackend,
-        mock_unix_stream_socket: MagicMock,
-        mock_trio_unix_stream_socket: MagicMock,
-        mock_trio_socket_stream_factory: Callable[[MagicMock], MagicMock],
-        mock_trio_socket_from_stdlib: MagicMock,
-        mock_trio_connect_sock: AsyncMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
+    if sys.platform != "win32":
 
-        AF_UNIX = AF_UNIX_or_skip()
-        mock_socket_cls = mocker.patch("socket.socket", return_value=mock_unix_stream_socket)
-
-        mock_trio_socket_stream = mock_trio_socket_stream_factory(mock_trio_unix_stream_socket)
-        mock_TrioStreamSocketAdapter: MagicMock = mocker.patch(
-            f"{_TRIO_BACKEND_MODULE}.stream.socket.TrioStreamSocketAdapter",
-            return_value=mocker.sentinel.socket,
+        @pytest.mark.parametrize(
+            "local_address",
+            [
+                None,
+                "/path/to/local.sock",
+                b"/path/to/local.sock",
+                "\0local_sock",
+                b"\x00local_sock",
+                "",  # <- Arbitrary abstract Unix address given by kernel
+                b"",  # <- Arbitrary abstract Unix address given by kernel
+            ],
+            ids=lambda addr: f"local_address=={addr!r}",
         )
-        mock_trio_SocketStream = mocker.patch(
-            "trio.SocketStream",
-            return_value=mock_trio_socket_stream,
+        @pytest.mark.parametrize(
+            "remote_address",
+            [
+                "/path/to/unix.sock",
+                b"/path/to/unix.sock",
+                "\0unix_sock",
+                b"\x00unix_sock",
+            ],
+            ids=lambda addr: f"remote_address=={addr!r}",
         )
-        mock_trio_socket_from_stdlib.return_value = mock_trio_unix_stream_socket
+        async def test____create_unix_stream_connection____create_trio_stream(
+            self,
+            local_address: str | bytes | None,
+            remote_address: str | bytes,
+            backend: TrioBackend,
+            mock_unix_stream_socket: MagicMock,
+            mock_trio_unix_stream_socket: MagicMock,
+            mock_trio_socket_stream_factory: Callable[[MagicMock], MagicMock],
+            mock_trio_socket_from_stdlib: MagicMock,
+            mock_trio_connect_sock: AsyncMock,
+            mocker: MockerFixture,
+        ) -> None:
+            # Arrange
 
-        # Act
-        socket = await backend.create_unix_stream_connection(remote_address, local_path=local_address)
+            AF_UNIX = AF_UNIX_or_skip()
+            mock_socket_cls = mocker.patch("socket.socket", return_value=mock_unix_stream_socket)
 
-        # Assert
-        mock_socket_cls.assert_called_once_with(AF_UNIX, SOCK_STREAM, 0)
-        if local_address is None:
-            assert mock_unix_stream_socket.mock_calls == [
-                mocker.call.setblocking(False),
-                mocker.call.connect(remote_address),
-            ]
-        else:
+            mock_trio_socket_stream = mock_trio_socket_stream_factory(mock_trio_unix_stream_socket)
+            mock_TrioStreamSocketAdapter: MagicMock = mocker.patch(
+                f"{_TRIO_BACKEND_MODULE}.stream.socket.TrioStreamSocketAdapter",
+                return_value=mocker.sentinel.socket,
+            )
+            mock_trio_SocketStream = mocker.patch(
+                "trio.SocketStream",
+                return_value=mock_trio_socket_stream,
+            )
+            mock_trio_socket_from_stdlib.return_value = mock_trio_unix_stream_socket
+
+            # Act
+            socket = await backend.create_unix_stream_connection(remote_address, local_path=local_address)
+
+            # Assert
+            mock_socket_cls.assert_called_once_with(AF_UNIX, SOCK_STREAM, 0)
+            if local_address is None:
+                assert mock_unix_stream_socket.mock_calls == [
+                    mocker.call.setblocking(False),
+                    mocker.call.connect(remote_address),
+                ]
+            else:
+                assert mock_unix_stream_socket.mock_calls == [
+                    mocker.call.bind(local_address),
+                    mocker.call.setblocking(False),
+                    mocker.call.connect(remote_address),
+                ]
+
+            mock_trio_connect_sock.assert_awaited_once_with(mock_unix_stream_socket, remote_address)
+            mock_trio_socket_from_stdlib.assert_called_once_with(mock_unix_stream_socket)
+            mock_trio_SocketStream.assert_called_once_with(mock_trio_unix_stream_socket)
+            mock_TrioStreamSocketAdapter.assert_called_once_with(backend, mock_trio_socket_stream)
+            assert socket is mocker.sentinel.socket
+
+        @pytest.mark.parametrize(
+            "local_address",
+            [
+                "/path/to/local.sock",
+                b"/path/to/local.sock",
+                "\0local_sock",
+                b"\x00local_sock",
+            ],
+            ids=lambda addr: f"local_address=={addr!r}",
+        )
+        @pytest.mark.parametrize(
+            "remote_address",
+            [
+                "/path/to/unix.sock",
+                b"/path/to/unix.sock",
+                "\0unix_sock",
+                b"\x00unix_sock",
+            ],
+            ids=lambda addr: f"remote_address=={addr!r}",
+        )
+        @pytest.mark.parametrize(
+            "bind_error",
+            [
+                OSError(errno.EPERM, os.strerror(errno.EPERM)),
+                OSError("AF_UNIX path too long."),
+            ],
+            ids=lambda exc: f"bind_error=={exc!r}",
+        )
+        async def test____create_unix_stream_connection____bind_error(
+            self,
+            backend: TrioBackend,
+            local_address: str | bytes,
+            remote_address: str | bytes,
+            bind_error: OSError,
+            mock_unix_stream_socket: MagicMock,
+            mock_trio_unix_stream_socket: MagicMock,
+            mock_trio_socket_stream_factory: Callable[[MagicMock], MagicMock],
+            mock_trio_socket_from_stdlib: MagicMock,
+            mock_trio_connect_sock: AsyncMock,
+            mocker: MockerFixture,
+        ) -> None:
+            # Arrange
+            AF_UNIX = AF_UNIX_or_skip()
+            mock_socket_cls = mocker.patch("socket.socket", return_value=mock_unix_stream_socket)
+            mock_unix_stream_socket.bind.side_effect = bind_error
+
+            mock_trio_socket_stream = mock_trio_socket_stream_factory(mock_trio_unix_stream_socket)
+            mock_TrioStreamSocketAdapter: MagicMock = mocker.patch(
+                f"{_TRIO_BACKEND_MODULE}.stream.socket.TrioStreamSocketAdapter",
+                return_value=mocker.sentinel.socket,
+            )
+            mock_trio_SocketStream = mocker.patch(
+                "trio.SocketStream",
+                return_value=mock_trio_socket_stream,
+            )
+            mock_trio_socket_from_stdlib.return_value = mock_trio_unix_stream_socket
+
+            # Act
+            with pytest.raises(OSError) as exc_info:
+                _ = await backend.create_unix_stream_connection(remote_address, local_path=local_address)
+
+            # Assert
+            mock_socket_cls.assert_called_once_with(AF_UNIX, SOCK_STREAM, 0)
             assert mock_unix_stream_socket.mock_calls == [
                 mocker.call.bind(local_address),
+                mocker.call.close(),
+            ]
+            if bind_error.errno:
+                assert exc_info.value.errno == bind_error.errno
+            else:
+                assert exc_info.value.errno == errno.EINVAL
+
+            mock_trio_connect_sock.assert_not_awaited()
+            mock_trio_socket_from_stdlib.assert_not_called()
+            mock_trio_SocketStream.assert_not_called()
+            mock_TrioStreamSocketAdapter.assert_not_called()
+
+        @pytest.mark.parametrize(
+            "remote_address",
+            [
+                "/path/to/unix.sock",
+                b"/path/to/unix.sock",
+                "\0unix_sock",
+                b"\x00unix_sock",
+            ],
+            ids=lambda addr: f"remote_address=={addr!r}",
+        )
+        @pytest.mark.parametrize(
+            "connect_error",
+            [
+                OSError(errno.ECONNREFUSED, os.strerror(errno.ECONNREFUSED)),
+                OSError(errno.EPERM, os.strerror(errno.EPERM)),
+            ],
+            ids=lambda exc: f"connect_error=={exc!r}",
+        )
+        async def test____create_unix_stream_connection____connect_error(
+            self,
+            backend: TrioBackend,
+            remote_address: str | bytes,
+            connect_error: OSError,
+            mock_unix_stream_socket: MagicMock,
+            mock_trio_unix_stream_socket: MagicMock,
+            mock_trio_socket_stream_factory: Callable[[MagicMock], MagicMock],
+            mock_trio_socket_from_stdlib: MagicMock,
+            mock_trio_connect_sock: AsyncMock,
+            mocker: MockerFixture,
+        ) -> None:
+            # Arrange
+            AF_UNIX = AF_UNIX_or_skip()
+            mock_socket_cls = mocker.patch("socket.socket", return_value=mock_unix_stream_socket)
+            mock_unix_stream_socket.connect.side_effect = connect_error
+
+            mock_trio_socket_stream = mock_trio_socket_stream_factory(mock_trio_unix_stream_socket)
+            mock_TrioStreamSocketAdapter: MagicMock = mocker.patch(
+                f"{_TRIO_BACKEND_MODULE}.stream.socket.TrioStreamSocketAdapter",
+                return_value=mocker.sentinel.socket,
+            )
+            mock_trio_SocketStream = mocker.patch(
+                "trio.SocketStream",
+                return_value=mock_trio_socket_stream,
+            )
+            mock_trio_socket_from_stdlib.return_value = mock_trio_unix_stream_socket
+
+            # Act
+            with pytest.raises(OSError) as exc_info:
+                _ = await backend.create_unix_stream_connection(remote_address)
+
+            # Assert
+            mock_socket_cls.assert_called_once_with(AF_UNIX, SOCK_STREAM, 0)
+            assert mock_unix_stream_socket.mock_calls == [
                 mocker.call.setblocking(False),
                 mocker.call.connect(remote_address),
+                mocker.call.close(),
             ]
+            assert exc_info.value.errno == connect_error.errno
 
-        mock_trio_connect_sock.assert_awaited_once_with(mock_unix_stream_socket, remote_address)
-        mock_trio_socket_from_stdlib.assert_called_once_with(mock_unix_stream_socket)
-        mock_trio_SocketStream.assert_called_once_with(mock_trio_unix_stream_socket)
-        mock_TrioStreamSocketAdapter.assert_called_once_with(backend, mock_trio_socket_stream)
-        assert socket is mocker.sentinel.socket
-
-    @pytest.mark.parametrize(
-        "local_address",
-        [
-            "/path/to/local.sock",
-            b"/path/to/local.sock",
-            "\0local_sock",
-            b"\x00local_sock",
-        ],
-        ids=lambda addr: f"local_address=={addr!r}",
-    )
-    @pytest.mark.parametrize(
-        "remote_address",
-        [
-            "/path/to/unix.sock",
-            b"/path/to/unix.sock",
-            "\0unix_sock",
-            b"\x00unix_sock",
-        ],
-        ids=lambda addr: f"remote_address=={addr!r}",
-    )
-    @pytest.mark.parametrize(
-        "bind_error",
-        [
-            OSError(errno.EPERM, os.strerror(errno.EPERM)),
-            OSError("AF_UNIX path too long."),
-        ],
-        ids=lambda exc: f"bind_error=={exc!r}",
-    )
-    async def test____create_unix_stream_connection____bind_error(
-        self,
-        backend: TrioBackend,
-        local_address: str | bytes,
-        remote_address: str | bytes,
-        bind_error: OSError,
-        mock_unix_stream_socket: MagicMock,
-        mock_trio_unix_stream_socket: MagicMock,
-        mock_trio_socket_stream_factory: Callable[[MagicMock], MagicMock],
-        mock_trio_socket_from_stdlib: MagicMock,
-        mock_trio_connect_sock: AsyncMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        AF_UNIX = AF_UNIX_or_skip()
-        mock_socket_cls = mocker.patch("socket.socket", return_value=mock_unix_stream_socket)
-        mock_unix_stream_socket.bind.side_effect = bind_error
-
-        mock_trio_socket_stream = mock_trio_socket_stream_factory(mock_trio_unix_stream_socket)
-        mock_TrioStreamSocketAdapter: MagicMock = mocker.patch(
-            f"{_TRIO_BACKEND_MODULE}.stream.socket.TrioStreamSocketAdapter",
-            return_value=mocker.sentinel.socket,
-        )
-        mock_trio_SocketStream = mocker.patch(
-            "trio.SocketStream",
-            return_value=mock_trio_socket_stream,
-        )
-        mock_trio_socket_from_stdlib.return_value = mock_trio_unix_stream_socket
-
-        # Act
-        with pytest.raises(OSError) as exc_info:
-            _ = await backend.create_unix_stream_connection(remote_address, local_path=local_address)
-
-        # Assert
-        mock_socket_cls.assert_called_once_with(AF_UNIX, SOCK_STREAM, 0)
-        assert mock_unix_stream_socket.mock_calls == [
-            mocker.call.bind(local_address),
-            mocker.call.close(),
-        ]
-        if bind_error.errno:
-            assert exc_info.value.errno == bind_error.errno
-        else:
-            assert exc_info.value.errno == errno.EINVAL
-
-        mock_trio_connect_sock.assert_not_awaited()
-        mock_trio_socket_from_stdlib.assert_not_called()
-        mock_trio_SocketStream.assert_not_called()
-        mock_TrioStreamSocketAdapter.assert_not_called()
-
-    @pytest.mark.parametrize(
-        "remote_address",
-        [
-            "/path/to/unix.sock",
-            b"/path/to/unix.sock",
-            "\0unix_sock",
-            b"\x00unix_sock",
-        ],
-        ids=lambda addr: f"remote_address=={addr!r}",
-    )
-    @pytest.mark.parametrize(
-        "connect_error",
-        [
-            OSError(errno.ECONNREFUSED, os.strerror(errno.ECONNREFUSED)),
-            OSError(errno.EPERM, os.strerror(errno.EPERM)),
-        ],
-        ids=lambda exc: f"connect_error=={exc!r}",
-    )
-    async def test____create_unix_stream_connection____connect_error(
-        self,
-        backend: TrioBackend,
-        remote_address: str | bytes,
-        connect_error: OSError,
-        mock_unix_stream_socket: MagicMock,
-        mock_trio_unix_stream_socket: MagicMock,
-        mock_trio_socket_stream_factory: Callable[[MagicMock], MagicMock],
-        mock_trio_socket_from_stdlib: MagicMock,
-        mock_trio_connect_sock: AsyncMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        AF_UNIX = AF_UNIX_or_skip()
-        mock_socket_cls = mocker.patch("socket.socket", return_value=mock_unix_stream_socket)
-        mock_unix_stream_socket.connect.side_effect = connect_error
-
-        mock_trio_socket_stream = mock_trio_socket_stream_factory(mock_trio_unix_stream_socket)
-        mock_TrioStreamSocketAdapter: MagicMock = mocker.patch(
-            f"{_TRIO_BACKEND_MODULE}.stream.socket.TrioStreamSocketAdapter",
-            return_value=mocker.sentinel.socket,
-        )
-        mock_trio_SocketStream = mocker.patch(
-            "trio.SocketStream",
-            return_value=mock_trio_socket_stream,
-        )
-        mock_trio_socket_from_stdlib.return_value = mock_trio_unix_stream_socket
-
-        # Act
-        with pytest.raises(OSError) as exc_info:
-            _ = await backend.create_unix_stream_connection(remote_address)
-
-        # Assert
-        mock_socket_cls.assert_called_once_with(AF_UNIX, SOCK_STREAM, 0)
-        assert mock_unix_stream_socket.mock_calls == [
-            mocker.call.setblocking(False),
-            mocker.call.connect(remote_address),
-            mocker.call.close(),
-        ]
-        assert exc_info.value.errno == connect_error.errno
-
-        mock_trio_connect_sock.assert_awaited_once_with(mock_unix_stream_socket, remote_address)
-        mock_trio_socket_from_stdlib.assert_not_called()
-        mock_trio_SocketStream.assert_not_called()
-        mock_TrioStreamSocketAdapter.assert_not_called()
+            mock_trio_connect_sock.assert_awaited_once_with(mock_unix_stream_socket, remote_address)
+            mock_trio_socket_from_stdlib.assert_not_called()
+            mock_trio_SocketStream.assert_not_called()
+            mock_TrioStreamSocketAdapter.assert_not_called()
 
     @pytest.mark.parametrize("socket_family_name", ["INET", "UNIX"], ids=lambda p: f"family=={p}")
     async def test____wrap_stream_socket____create_trio_stream(
@@ -638,189 +641,191 @@ class TestTrioBackend:
         ]
         assert listener_sockets == [mocker.sentinel.listener_socket_ipv6, mocker.sentinel.listener_socket_ipv4]
 
-    @pytest.mark.parametrize(
-        "local_address",
-        [
-            "/path/to/local.sock",
-            b"/path/to/local.sock",
-            "\0local_sock",
-            b"\x00local_sock",
-            "",  # <- Arbitrary abstract Unix address given by kernel
-            b"",  # <- Arbitrary abstract Unix address given by kernel
-        ],
-        ids=lambda addr: f"local_address=={addr!r}",
-    )
-    @pytest.mark.parametrize("mode", [None, 0o640], ids=lambda mode: f"mode=={mode!r}")
-    async def test____create_unix_stream_listener____open_listener_socket(
-        self,
-        backend: TrioBackend,
-        local_address: str | bytes,
-        mode: int | None,
-        mock_unix_stream_socket: MagicMock,
-        mock_trio_unix_stream_socket: MagicMock,
-        mock_trio_socket_listener_factory: Callable[[MagicMock], MagicMock],
-        mock_trio_socket_from_stdlib: MagicMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        AF_UNIX = AF_UNIX_or_skip()
-        mock_socket_cls = mocker.patch("socket.socket", return_value=mock_unix_stream_socket)
-        mock_os_chmod = mocker.patch("os.chmod", autospec=True, return_value=None)
+    if sys.platform != "win32":
 
-        mock_trio_socket_listener = mock_trio_socket_listener_factory(mock_trio_unix_stream_socket)
-        mock_trio_socket_from_stdlib.side_effect = [mock_trio_unix_stream_socket]
-        mock_trio_SocketListener: MagicMock = mocker.patch("trio.SocketListener", side_effect=[mock_trio_socket_listener])
-        mock_ListenerSocketAdapter: MagicMock = mocker.patch(
-            f"{_TRIO_BACKEND_MODULE}.stream.listener.TrioListenerSocketAdapter",
-            return_value=mocker.sentinel.listener_socket,
+        @pytest.mark.parametrize(
+            "local_address",
+            [
+                "/path/to/local.sock",
+                b"/path/to/local.sock",
+                "\0local_sock",
+                b"\x00local_sock",
+                "",  # <- Arbitrary abstract Unix address given by kernel
+                b"",  # <- Arbitrary abstract Unix address given by kernel
+            ],
+            ids=lambda addr: f"local_address=={addr!r}",
         )
+        @pytest.mark.parametrize("mode", [None, 0o640], ids=lambda mode: f"mode=={mode!r}")
+        async def test____create_unix_stream_listener____open_listener_socket(
+            self,
+            backend: TrioBackend,
+            local_address: str | bytes,
+            mode: int | None,
+            mock_unix_stream_socket: MagicMock,
+            mock_trio_unix_stream_socket: MagicMock,
+            mock_trio_socket_listener_factory: Callable[[MagicMock], MagicMock],
+            mock_trio_socket_from_stdlib: MagicMock,
+            mocker: MockerFixture,
+        ) -> None:
+            # Arrange
+            AF_UNIX = AF_UNIX_or_skip()
+            mock_socket_cls = mocker.patch("socket.socket", return_value=mock_unix_stream_socket)
+            mock_os_chmod = mocker.patch("os.chmod", autospec=True, return_value=None)
 
-        # Act
-        listener_socket = await backend.create_unix_stream_listener(
-            local_address,
-            backlog=mocker.sentinel.backlog,
-            mode=mode,
+            mock_trio_socket_listener = mock_trio_socket_listener_factory(mock_trio_unix_stream_socket)
+            mock_trio_socket_from_stdlib.side_effect = [mock_trio_unix_stream_socket]
+            mock_trio_SocketListener: MagicMock = mocker.patch("trio.SocketListener", side_effect=[mock_trio_socket_listener])
+            mock_ListenerSocketAdapter: MagicMock = mocker.patch(
+                f"{_TRIO_BACKEND_MODULE}.stream.listener.TrioListenerSocketAdapter",
+                return_value=mocker.sentinel.listener_socket,
+            )
+
+            # Act
+            listener_socket = await backend.create_unix_stream_listener(
+                local_address,
+                backlog=mocker.sentinel.backlog,
+                mode=mode,
+            )
+
+            # Assert
+            mock_socket_cls.assert_called_once_with(AF_UNIX, SOCK_STREAM, 0)
+            assert mock_unix_stream_socket.mock_calls == [
+                mocker.call.bind(local_address),
+                mocker.call.setblocking(False),
+                mocker.call.listen(mocker.sentinel.backlog),
+            ]
+            if mode is None:
+                mock_os_chmod.assert_not_called()
+            else:
+                mock_os_chmod.assert_called_once_with(local_address, mode)
+            mock_trio_socket_from_stdlib.assert_called_once_with(mock_unix_stream_socket)
+            mock_trio_SocketListener.assert_called_once_with(mock_trio_unix_stream_socket)
+            mock_ListenerSocketAdapter.assert_called_once_with(backend, mock_trio_socket_listener)
+            assert listener_socket is mocker.sentinel.listener_socket
+
+        @pytest.mark.parametrize(
+            "local_address",
+            [
+                "/path/to/local.sock",
+                b"/path/to/local.sock",
+                "\0local_sock",
+                b"\x00local_sock",
+                "",  # <- Arbitrary abstract Unix address given by kernel
+                b"",  # <- Arbitrary abstract Unix address given by kernel
+            ],
+            ids=lambda addr: f"local_address=={addr!r}",
         )
+        @pytest.mark.parametrize(
+            "bind_error",
+            [
+                OSError(errno.EPERM, os.strerror(errno.EPERM)),
+                OSError("AF_UNIX path too long."),
+            ],
+            ids=lambda exc: f"bind_error=={exc!r}",
+        )
+        @pytest.mark.parametrize("mode", [None, 0o640], ids=lambda mode: f"mode=={mode!r}")
+        async def test____create_unix_stream_listener____bind_failed(
+            self,
+            backend: TrioBackend,
+            local_address: str | bytes,
+            bind_error: OSError,
+            mode: int | None,
+            mock_unix_stream_socket: MagicMock,
+            mock_trio_unix_stream_socket: MagicMock,
+            mock_trio_socket_listener_factory: Callable[[MagicMock], MagicMock],
+            mock_trio_socket_from_stdlib: MagicMock,
+            mocker: MockerFixture,
+        ) -> None:
+            # Arrange
+            AF_UNIX = AF_UNIX_or_skip()
+            mock_socket_cls = mocker.patch("socket.socket", return_value=mock_unix_stream_socket)
+            mock_os_chmod = mocker.patch("os.chmod", autospec=True, return_value=None)
+            mock_unix_stream_socket.bind.side_effect = bind_error
 
-        # Assert
-        mock_socket_cls.assert_called_once_with(AF_UNIX, SOCK_STREAM, 0)
-        assert mock_unix_stream_socket.mock_calls == [
-            mocker.call.bind(local_address),
-            mocker.call.setblocking(False),
-            mocker.call.listen(mocker.sentinel.backlog),
-        ]
-        if mode is None:
+            mock_trio_socket_listener = mock_trio_socket_listener_factory(mock_trio_unix_stream_socket)
+            mock_trio_socket_from_stdlib.side_effect = [mock_trio_unix_stream_socket]
+            mock_trio_SocketListener: MagicMock = mocker.patch("trio.SocketListener", side_effect=[mock_trio_socket_listener])
+            mock_ListenerSocketAdapter: MagicMock = mocker.patch(
+                f"{_TRIO_BACKEND_MODULE}.stream.listener.TrioListenerSocketAdapter",
+                return_value=mocker.sentinel.listener_socket,
+            )
+
+            # Act
+            with pytest.raises(OSError) as exc_info:
+                _ = await backend.create_unix_stream_listener(
+                    local_address,
+                    backlog=mocker.sentinel.backlog,
+                    mode=mode,
+                )
+
+            # Assert
+            mock_socket_cls.assert_called_once_with(AF_UNIX, SOCK_STREAM, 0)
+            assert mock_unix_stream_socket.mock_calls == [
+                mocker.call.bind(local_address),
+                mocker.call.close(),
+            ]
+            if bind_error.errno:
+                assert exc_info.value.errno == bind_error.errno
+            else:
+                assert exc_info.value.errno == errno.EINVAL
             mock_os_chmod.assert_not_called()
-        else:
-            mock_os_chmod.assert_called_once_with(local_address, mode)
-        mock_trio_socket_from_stdlib.assert_called_once_with(mock_unix_stream_socket)
-        mock_trio_SocketListener.assert_called_once_with(mock_trio_unix_stream_socket)
-        mock_ListenerSocketAdapter.assert_called_once_with(backend, mock_trio_socket_listener)
-        assert listener_socket is mocker.sentinel.listener_socket
 
-    @pytest.mark.parametrize(
-        "local_address",
-        [
-            "/path/to/local.sock",
-            b"/path/to/local.sock",
-            "\0local_sock",
-            b"\x00local_sock",
-            "",  # <- Arbitrary abstract Unix address given by kernel
-            b"",  # <- Arbitrary abstract Unix address given by kernel
-        ],
-        ids=lambda addr: f"local_address=={addr!r}",
-    )
-    @pytest.mark.parametrize(
-        "bind_error",
-        [
-            OSError(errno.EPERM, os.strerror(errno.EPERM)),
-            OSError("AF_UNIX path too long."),
-        ],
-        ids=lambda exc: f"bind_error=={exc!r}",
-    )
-    @pytest.mark.parametrize("mode", [None, 0o640], ids=lambda mode: f"mode=={mode!r}")
-    async def test____create_unix_stream_listener____bind_failed(
-        self,
-        backend: TrioBackend,
-        local_address: str | bytes,
-        bind_error: OSError,
-        mode: int | None,
-        mock_unix_stream_socket: MagicMock,
-        mock_trio_unix_stream_socket: MagicMock,
-        mock_trio_socket_listener_factory: Callable[[MagicMock], MagicMock],
-        mock_trio_socket_from_stdlib: MagicMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        AF_UNIX = AF_UNIX_or_skip()
-        mock_socket_cls = mocker.patch("socket.socket", return_value=mock_unix_stream_socket)
-        mock_os_chmod = mocker.patch("os.chmod", autospec=True, return_value=None)
-        mock_unix_stream_socket.bind.side_effect = bind_error
+            mock_trio_socket_from_stdlib.assert_not_called()
+            mock_trio_SocketListener.assert_not_called()
+            mock_ListenerSocketAdapter.assert_not_called()
 
-        mock_trio_socket_listener = mock_trio_socket_listener_factory(mock_trio_unix_stream_socket)
-        mock_trio_socket_from_stdlib.side_effect = [mock_trio_unix_stream_socket]
-        mock_trio_SocketListener: MagicMock = mocker.patch("trio.SocketListener", side_effect=[mock_trio_socket_listener])
-        mock_ListenerSocketAdapter: MagicMock = mocker.patch(
-            f"{_TRIO_BACKEND_MODULE}.stream.listener.TrioListenerSocketAdapter",
-            return_value=mocker.sentinel.listener_socket,
+        @pytest.mark.parametrize(
+            "local_address",
+            [
+                "/path/to/local.sock",
+                b"/path/to/local.sock",
+            ],
+            ids=lambda addr: f"local_address=={addr!r}",
         )
+        async def test____create_unix_stream_listener____chmod_failed(
+            self,
+            backend: TrioBackend,
+            local_address: str | bytes,
+            mock_unix_stream_socket: MagicMock,
+            mock_trio_unix_stream_socket: MagicMock,
+            mock_trio_socket_listener_factory: Callable[[MagicMock], MagicMock],
+            mock_trio_socket_from_stdlib: MagicMock,
+            mocker: MockerFixture,
+        ) -> None:
+            # Arrange
+            chmod_error = OSError(errno.EPERM, os.strerror(errno.EPERM))
+            mode: int = 0o640
+            AF_UNIX_or_skip()
+            mocker.patch("socket.socket", return_value=mock_unix_stream_socket)
+            mock_os_chmod = mocker.patch("os.chmod", autospec=True, side_effect=chmod_error)
 
-        # Act
-        with pytest.raises(OSError) as exc_info:
-            _ = await backend.create_unix_stream_listener(
-                local_address,
-                backlog=mocker.sentinel.backlog,
-                mode=mode,
+            mock_trio_socket_listener = mock_trio_socket_listener_factory(mock_trio_unix_stream_socket)
+            mock_trio_socket_from_stdlib.side_effect = [mock_trio_unix_stream_socket]
+            mock_trio_SocketListener: MagicMock = mocker.patch("trio.SocketListener", side_effect=[mock_trio_socket_listener])
+            mock_ListenerSocketAdapter: MagicMock = mocker.patch(
+                f"{_TRIO_BACKEND_MODULE}.stream.listener.TrioListenerSocketAdapter",
+                return_value=mocker.sentinel.listener_socket,
             )
 
-        # Assert
-        mock_socket_cls.assert_called_once_with(AF_UNIX, SOCK_STREAM, 0)
-        assert mock_unix_stream_socket.mock_calls == [
-            mocker.call.bind(local_address),
-            mocker.call.close(),
-        ]
-        if bind_error.errno:
-            assert exc_info.value.errno == bind_error.errno
-        else:
-            assert exc_info.value.errno == errno.EINVAL
-        mock_os_chmod.assert_not_called()
+            # Act
+            with pytest.raises(OSError) as exc_info:
+                _ = await backend.create_unix_stream_listener(
+                    local_address,
+                    backlog=mocker.sentinel.backlog,
+                    mode=mode,
+                )
 
-        mock_trio_socket_from_stdlib.assert_not_called()
-        mock_trio_SocketListener.assert_not_called()
-        mock_ListenerSocketAdapter.assert_not_called()
+            # Assert
+            assert exc_info.value is chmod_error
+            assert mock_unix_stream_socket.mock_calls == [
+                mocker.call.bind(local_address),
+                mocker.call.close(),
+            ]
+            mock_os_chmod.assert_called_once()
 
-    @pytest.mark.parametrize(
-        "local_address",
-        [
-            "/path/to/local.sock",
-            b"/path/to/local.sock",
-        ],
-        ids=lambda addr: f"local_address=={addr!r}",
-    )
-    async def test____create_unix_stream_listener____chmod_failed(
-        self,
-        backend: TrioBackend,
-        local_address: str | bytes,
-        mock_unix_stream_socket: MagicMock,
-        mock_trio_unix_stream_socket: MagicMock,
-        mock_trio_socket_listener_factory: Callable[[MagicMock], MagicMock],
-        mock_trio_socket_from_stdlib: MagicMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        chmod_error = OSError(errno.EPERM, os.strerror(errno.EPERM))
-        mode: int = 0o640
-        AF_UNIX_or_skip()
-        mocker.patch("socket.socket", return_value=mock_unix_stream_socket)
-        mock_os_chmod = mocker.patch("os.chmod", autospec=True, side_effect=chmod_error)
-
-        mock_trio_socket_listener = mock_trio_socket_listener_factory(mock_trio_unix_stream_socket)
-        mock_trio_socket_from_stdlib.side_effect = [mock_trio_unix_stream_socket]
-        mock_trio_SocketListener: MagicMock = mocker.patch("trio.SocketListener", side_effect=[mock_trio_socket_listener])
-        mock_ListenerSocketAdapter: MagicMock = mocker.patch(
-            f"{_TRIO_BACKEND_MODULE}.stream.listener.TrioListenerSocketAdapter",
-            return_value=mocker.sentinel.listener_socket,
-        )
-
-        # Act
-        with pytest.raises(OSError) as exc_info:
-            _ = await backend.create_unix_stream_listener(
-                local_address,
-                backlog=mocker.sentinel.backlog,
-                mode=mode,
-            )
-
-        # Assert
-        assert exc_info.value is chmod_error
-        assert mock_unix_stream_socket.mock_calls == [
-            mocker.call.bind(local_address),
-            mocker.call.close(),
-        ]
-        mock_os_chmod.assert_called_once()
-
-        mock_trio_socket_from_stdlib.assert_not_called()
-        mock_trio_SocketListener.assert_not_called()
-        mock_ListenerSocketAdapter.assert_not_called()
+            mock_trio_socket_from_stdlib.assert_not_called()
+            mock_trio_SocketListener.assert_not_called()
+            mock_ListenerSocketAdapter.assert_not_called()
 
     @pytest.mark.parametrize("socket_family", [None, AF_INET, AF_INET6], ids=lambda p: f"family=={p}")
     @pytest.mark.parametrize("local_address", [("local_address", 12345), None], ids=lambda addr: f"local_address=={addr}")
@@ -869,216 +874,218 @@ class TestTrioBackend:
 
         assert socket is mocker.sentinel.socket
 
-    @pytest.mark.parametrize(
-        "local_address",
-        [
-            None,
-            "/path/to/local.sock",
-            b"/path/to/local.sock",
-            "\0local_sock",
-            b"\x00local_sock",
-            "",  # <- Arbitrary abstract Unix address given by kernel
-            b"",  # <- Arbitrary abstract Unix address given by kernel
-        ],
-        ids=lambda addr: f"local_address=={addr!r}",
-    )
-    @pytest.mark.parametrize(
-        "remote_address",
-        [
-            "/path/to/unix.sock",
-            b"/path/to/unix.sock",
-            "\0unix_sock",
-            b"\x00unix_sock",
-        ],
-        ids=lambda addr: f"remote_address=={addr!r}",
-    )
-    async def test____create_unix_datagram_endpoint____create_datagram_socket(
-        self,
-        backend: TrioBackend,
-        local_address: str | bytes | None,
-        remote_address: str | bytes,
-        mock_unix_datagram_socket: MagicMock,
-        mock_trio_unix_datagram_socket: MagicMock,
-        mock_trio_socket_from_stdlib: MagicMock,
-        mock_trio_connect_sock: AsyncMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        AF_UNIX = AF_UNIX_or_skip()
-        mock_socket_cls = mocker.patch("socket.socket", return_value=mock_unix_datagram_socket)
-        mock_TrioDatagramSocketAdapter: MagicMock = mocker.patch(
-            f"{_TRIO_BACKEND_MODULE}.datagram.socket.TrioDatagramSocketAdapter",
-            return_value=mocker.sentinel.socket,
-        )
-        mock_trio_socket_from_stdlib.return_value = mock_trio_unix_datagram_socket
+    if sys.platform != "win32":
 
-        # Act
-        socket = await backend.create_unix_datagram_endpoint(
-            remote_address,
-            local_path=local_address,
+        @pytest.mark.parametrize(
+            "local_address",
+            [
+                None,
+                "/path/to/local.sock",
+                b"/path/to/local.sock",
+                "\0local_sock",
+                b"\x00local_sock",
+                "",  # <- Arbitrary abstract Unix address given by kernel
+                b"",  # <- Arbitrary abstract Unix address given by kernel
+            ],
+            ids=lambda addr: f"local_address=={addr!r}",
         )
+        @pytest.mark.parametrize(
+            "remote_address",
+            [
+                "/path/to/unix.sock",
+                b"/path/to/unix.sock",
+                "\0unix_sock",
+                b"\x00unix_sock",
+            ],
+            ids=lambda addr: f"remote_address=={addr!r}",
+        )
+        async def test____create_unix_datagram_endpoint____create_datagram_socket(
+            self,
+            backend: TrioBackend,
+            local_address: str | bytes | None,
+            remote_address: str | bytes,
+            mock_unix_datagram_socket: MagicMock,
+            mock_trio_unix_datagram_socket: MagicMock,
+            mock_trio_socket_from_stdlib: MagicMock,
+            mock_trio_connect_sock: AsyncMock,
+            mocker: MockerFixture,
+        ) -> None:
+            # Arrange
+            AF_UNIX = AF_UNIX_or_skip()
+            mock_socket_cls = mocker.patch("socket.socket", return_value=mock_unix_datagram_socket)
+            mock_TrioDatagramSocketAdapter: MagicMock = mocker.patch(
+                f"{_TRIO_BACKEND_MODULE}.datagram.socket.TrioDatagramSocketAdapter",
+                return_value=mocker.sentinel.socket,
+            )
+            mock_trio_socket_from_stdlib.return_value = mock_trio_unix_datagram_socket
 
-        # Assert
-        mock_socket_cls.assert_called_once_with(AF_UNIX, SOCK_DGRAM, 0)
-        if local_address is None:
+            # Act
+            socket = await backend.create_unix_datagram_endpoint(
+                remote_address,
+                local_path=local_address,
+            )
+
+            # Assert
+            mock_socket_cls.assert_called_once_with(AF_UNIX, SOCK_DGRAM, 0)
+            if local_address is None:
+                assert mock_unix_datagram_socket.mock_calls == [
+                    mocker.call.setblocking(False),
+                    mocker.call.connect(remote_address),
+                ]
+            else:
+                assert mock_unix_datagram_socket.mock_calls == [
+                    mocker.call.bind(local_address),
+                    mocker.call.setblocking(False),
+                    mocker.call.connect(remote_address),
+                ]
+
+            mock_trio_connect_sock.assert_awaited_once_with(mock_unix_datagram_socket, remote_address)
+            mock_trio_socket_from_stdlib.assert_called_once_with(mock_unix_datagram_socket)
+            mock_TrioDatagramSocketAdapter.assert_called_once_with(backend, mock_trio_unix_datagram_socket)
+
+            assert socket is mocker.sentinel.socket
+
+        @pytest.mark.parametrize(
+            "local_address",
+            [
+                "/path/to/local.sock",
+                b"/path/to/local.sock",
+                "\0local_sock",
+                b"\x00local_sock",
+            ],
+            ids=lambda addr: f"local_address=={addr!r}",
+        )
+        @pytest.mark.parametrize(
+            "remote_address",
+            [
+                "/path/to/unix.sock",
+                b"/path/to/unix.sock",
+                "\0unix_sock",
+                b"\x00unix_sock",
+            ],
+            ids=lambda addr: f"remote_address=={addr!r}",
+        )
+        @pytest.mark.parametrize(
+            "bind_error",
+            [
+                OSError(errno.EPERM, os.strerror(errno.EPERM)),
+                OSError("AF_UNIX path too long."),
+            ],
+            ids=lambda exc: f"bind_error=={exc!r}",
+        )
+        async def test____create_unix_datagram_endpoint____bind_error(
+            self,
+            backend: TrioBackend,
+            local_address: str | bytes,
+            remote_address: str | bytes,
+            bind_error: OSError,
+            mock_unix_datagram_socket: MagicMock,
+            mock_trio_unix_datagram_socket: MagicMock,
+            mock_trio_socket_from_stdlib: MagicMock,
+            mock_trio_connect_sock: AsyncMock,
+            mocker: MockerFixture,
+        ) -> None:
+            # Arrange
+            AF_UNIX = AF_UNIX_or_skip()
+            mock_socket_cls = mocker.patch("socket.socket", return_value=mock_unix_datagram_socket)
+            mock_unix_datagram_socket.bind.side_effect = bind_error
+            mock_TrioDatagramSocketAdapter: MagicMock = mocker.patch(
+                f"{_TRIO_BACKEND_MODULE}.datagram.socket.TrioDatagramSocketAdapter",
+                return_value=mocker.sentinel.socket,
+            )
+            mock_trio_socket_from_stdlib.return_value = mock_trio_unix_datagram_socket
+
+            # Act
+            with pytest.raises(OSError) as exc_info:
+                _ = await backend.create_unix_datagram_endpoint(
+                    remote_address,
+                    local_path=local_address,
+                )
+
+            # Assert
+            mock_socket_cls.assert_called_once_with(AF_UNIX, SOCK_DGRAM, 0)
             assert mock_unix_datagram_socket.mock_calls == [
-                mocker.call.setblocking(False),
-                mocker.call.connect(remote_address),
+                mocker.call.bind(local_address),
+                mocker.call.close(),
             ]
-        else:
+            if bind_error.errno:
+                assert exc_info.value.errno == bind_error.errno
+            else:
+                assert exc_info.value.errno == errno.EINVAL
+
+            mock_trio_connect_sock.assert_not_called()
+            mock_trio_socket_from_stdlib.assert_not_called()
+            mock_TrioDatagramSocketAdapter.assert_not_called()
+
+        @pytest.mark.parametrize(
+            "local_address",
+            [
+                "/path/to/local.sock",
+                b"/path/to/local.sock",
+                "\0local_sock",
+                b"\x00local_sock",
+            ],
+            ids=lambda addr: f"local_address=={addr!r}",
+        )
+        @pytest.mark.parametrize(
+            "remote_address",
+            [
+                "/path/to/unix.sock",
+                b"/path/to/unix.sock",
+                "\0unix_sock",
+                b"\x00unix_sock",
+            ],
+            ids=lambda addr: f"remote_address=={addr!r}",
+        )
+        @pytest.mark.parametrize(
+            "connect_error",
+            [
+                OSError(errno.EPERM, os.strerror(errno.EPERM)),
+            ],
+            ids=lambda exc: f"connect_error=={exc!r}",
+        )
+        async def test____create_unix_datagram_endpoint____connect_error(
+            self,
+            backend: TrioBackend,
+            local_address: str | bytes,
+            remote_address: str | bytes,
+            connect_error: OSError,
+            mock_unix_datagram_socket: MagicMock,
+            mock_trio_unix_datagram_socket: MagicMock,
+            mock_trio_socket_from_stdlib: MagicMock,
+            mock_trio_connect_sock: AsyncMock,
+            mocker: MockerFixture,
+        ) -> None:
+            # Arrange
+            AF_UNIX = AF_UNIX_or_skip()
+            mock_socket_cls = mocker.patch("socket.socket", return_value=mock_unix_datagram_socket)
+            mock_unix_datagram_socket.connect.side_effect = connect_error
+            mock_TrioDatagramSocketAdapter: MagicMock = mocker.patch(
+                f"{_TRIO_BACKEND_MODULE}.datagram.socket.TrioDatagramSocketAdapter",
+                return_value=mocker.sentinel.socket,
+            )
+            mock_trio_socket_from_stdlib.return_value = mock_trio_unix_datagram_socket
+
+            # Act
+            with pytest.raises(OSError) as exc_info:
+                _ = await backend.create_unix_datagram_endpoint(
+                    remote_address,
+                    local_path=local_address,
+                )
+
+            # Assert
+            mock_socket_cls.assert_called_once_with(AF_UNIX, SOCK_DGRAM, 0)
             assert mock_unix_datagram_socket.mock_calls == [
                 mocker.call.bind(local_address),
                 mocker.call.setblocking(False),
                 mocker.call.connect(remote_address),
+                mocker.call.close(),
             ]
+            assert exc_info.value.errno == connect_error.errno
 
-        mock_trio_connect_sock.assert_awaited_once_with(mock_unix_datagram_socket, remote_address)
-        mock_trio_socket_from_stdlib.assert_called_once_with(mock_unix_datagram_socket)
-        mock_TrioDatagramSocketAdapter.assert_called_once_with(backend, mock_trio_unix_datagram_socket)
-
-        assert socket is mocker.sentinel.socket
-
-    @pytest.mark.parametrize(
-        "local_address",
-        [
-            "/path/to/local.sock",
-            b"/path/to/local.sock",
-            "\0local_sock",
-            b"\x00local_sock",
-        ],
-        ids=lambda addr: f"local_address=={addr!r}",
-    )
-    @pytest.mark.parametrize(
-        "remote_address",
-        [
-            "/path/to/unix.sock",
-            b"/path/to/unix.sock",
-            "\0unix_sock",
-            b"\x00unix_sock",
-        ],
-        ids=lambda addr: f"remote_address=={addr!r}",
-    )
-    @pytest.mark.parametrize(
-        "bind_error",
-        [
-            OSError(errno.EPERM, os.strerror(errno.EPERM)),
-            OSError("AF_UNIX path too long."),
-        ],
-        ids=lambda exc: f"bind_error=={exc!r}",
-    )
-    async def test____create_unix_datagram_endpoint____bind_error(
-        self,
-        backend: TrioBackend,
-        local_address: str | bytes,
-        remote_address: str | bytes,
-        bind_error: OSError,
-        mock_unix_datagram_socket: MagicMock,
-        mock_trio_unix_datagram_socket: MagicMock,
-        mock_trio_socket_from_stdlib: MagicMock,
-        mock_trio_connect_sock: AsyncMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        AF_UNIX = AF_UNIX_or_skip()
-        mock_socket_cls = mocker.patch("socket.socket", return_value=mock_unix_datagram_socket)
-        mock_unix_datagram_socket.bind.side_effect = bind_error
-        mock_TrioDatagramSocketAdapter: MagicMock = mocker.patch(
-            f"{_TRIO_BACKEND_MODULE}.datagram.socket.TrioDatagramSocketAdapter",
-            return_value=mocker.sentinel.socket,
-        )
-        mock_trio_socket_from_stdlib.return_value = mock_trio_unix_datagram_socket
-
-        # Act
-        with pytest.raises(OSError) as exc_info:
-            _ = await backend.create_unix_datagram_endpoint(
-                remote_address,
-                local_path=local_address,
-            )
-
-        # Assert
-        mock_socket_cls.assert_called_once_with(AF_UNIX, SOCK_DGRAM, 0)
-        assert mock_unix_datagram_socket.mock_calls == [
-            mocker.call.bind(local_address),
-            mocker.call.close(),
-        ]
-        if bind_error.errno:
-            assert exc_info.value.errno == bind_error.errno
-        else:
-            assert exc_info.value.errno == errno.EINVAL
-
-        mock_trio_connect_sock.assert_not_called()
-        mock_trio_socket_from_stdlib.assert_not_called()
-        mock_TrioDatagramSocketAdapter.assert_not_called()
-
-    @pytest.mark.parametrize(
-        "local_address",
-        [
-            "/path/to/local.sock",
-            b"/path/to/local.sock",
-            "\0local_sock",
-            b"\x00local_sock",
-        ],
-        ids=lambda addr: f"local_address=={addr!r}",
-    )
-    @pytest.mark.parametrize(
-        "remote_address",
-        [
-            "/path/to/unix.sock",
-            b"/path/to/unix.sock",
-            "\0unix_sock",
-            b"\x00unix_sock",
-        ],
-        ids=lambda addr: f"remote_address=={addr!r}",
-    )
-    @pytest.mark.parametrize(
-        "connect_error",
-        [
-            OSError(errno.EPERM, os.strerror(errno.EPERM)),
-        ],
-        ids=lambda exc: f"connect_error=={exc!r}",
-    )
-    async def test____create_unix_datagram_endpoint____connect_error(
-        self,
-        backend: TrioBackend,
-        local_address: str | bytes,
-        remote_address: str | bytes,
-        connect_error: OSError,
-        mock_unix_datagram_socket: MagicMock,
-        mock_trio_unix_datagram_socket: MagicMock,
-        mock_trio_socket_from_stdlib: MagicMock,
-        mock_trio_connect_sock: AsyncMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        AF_UNIX = AF_UNIX_or_skip()
-        mock_socket_cls = mocker.patch("socket.socket", return_value=mock_unix_datagram_socket)
-        mock_unix_datagram_socket.connect.side_effect = connect_error
-        mock_TrioDatagramSocketAdapter: MagicMock = mocker.patch(
-            f"{_TRIO_BACKEND_MODULE}.datagram.socket.TrioDatagramSocketAdapter",
-            return_value=mocker.sentinel.socket,
-        )
-        mock_trio_socket_from_stdlib.return_value = mock_trio_unix_datagram_socket
-
-        # Act
-        with pytest.raises(OSError) as exc_info:
-            _ = await backend.create_unix_datagram_endpoint(
-                remote_address,
-                local_path=local_address,
-            )
-
-        # Assert
-        mock_socket_cls.assert_called_once_with(AF_UNIX, SOCK_DGRAM, 0)
-        assert mock_unix_datagram_socket.mock_calls == [
-            mocker.call.bind(local_address),
-            mocker.call.setblocking(False),
-            mocker.call.connect(remote_address),
-            mocker.call.close(),
-        ]
-        assert exc_info.value.errno == connect_error.errno
-
-        mock_trio_connect_sock.assert_awaited_once()
-        mock_trio_socket_from_stdlib.assert_not_called()
-        mock_TrioDatagramSocketAdapter.assert_not_called()
+            mock_trio_connect_sock.assert_awaited_once()
+            mock_trio_socket_from_stdlib.assert_not_called()
+            mock_TrioDatagramSocketAdapter.assert_not_called()
 
     @pytest.mark.parametrize("socket_family_name", ["INET", "UNIX"], ids=lambda p: f"family=={p}")
     async def test____wrap_connected_datagram_socket____create_datagram_socket(
@@ -1261,171 +1268,173 @@ class TestTrioBackend:
         ]
         assert listener_sockets == [mocker.sentinel.listener_socket_ipv6, mocker.sentinel.listener_socket_ipv4]
 
-    @pytest.mark.parametrize(
-        "local_address",
-        [
-            "/path/to/local.sock",
-            b"/path/to/local.sock",
-            "\0local_sock",
-            b"\x00local_sock",
-            "",  # <- Arbitrary abstract Unix address given by kernel
-            b"",  # <- Arbitrary abstract Unix address given by kernel
-        ],
-        ids=lambda addr: f"local_address=={addr!r}",
-    )
-    @pytest.mark.parametrize("mode", [None, 0o640], ids=lambda mode: f"mode=={mode!r}")
-    async def test____create_unix_datagram_listener____open_listener_socket(
-        self,
-        backend: TrioBackend,
-        local_address: str | bytes,
-        mode: int | None,
-        mock_unix_datagram_socket: MagicMock,
-        mock_trio_unix_datagram_socket: MagicMock,
-        mock_trio_socket_from_stdlib: MagicMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        AF_UNIX = AF_UNIX_or_skip()
-        mock_socket_cls = mocker.patch("socket.socket", return_value=mock_unix_datagram_socket)
-        mock_os_chmod = mocker.patch("os.chmod", autospec=True, return_value=None)
-        mock_trio_socket_from_stdlib.side_effect = [mock_trio_unix_datagram_socket]
-        mock_DatagramListenerSocketAdapter: MagicMock = mocker.patch(
-            f"{_TRIO_BACKEND_MODULE}.datagram.listener.TrioDatagramListenerSocketAdapter",
-            return_value=mocker.sentinel.listener_socket,
-        )
+    if sys.platform != "win32":
 
-        # Act
-        listener_socket = await backend.create_unix_datagram_listener(
-            local_address,
-            mode=mode,
+        @pytest.mark.parametrize(
+            "local_address",
+            [
+                "/path/to/local.sock",
+                b"/path/to/local.sock",
+                "\0local_sock",
+                b"\x00local_sock",
+                "",  # <- Arbitrary abstract Unix address given by kernel
+                b"",  # <- Arbitrary abstract Unix address given by kernel
+            ],
+            ids=lambda addr: f"local_address=={addr!r}",
         )
+        @pytest.mark.parametrize("mode", [None, 0o640], ids=lambda mode: f"mode=={mode!r}")
+        async def test____create_unix_datagram_listener____open_listener_socket(
+            self,
+            backend: TrioBackend,
+            local_address: str | bytes,
+            mode: int | None,
+            mock_unix_datagram_socket: MagicMock,
+            mock_trio_unix_datagram_socket: MagicMock,
+            mock_trio_socket_from_stdlib: MagicMock,
+            mocker: MockerFixture,
+        ) -> None:
+            # Arrange
+            AF_UNIX = AF_UNIX_or_skip()
+            mock_socket_cls = mocker.patch("socket.socket", return_value=mock_unix_datagram_socket)
+            mock_os_chmod = mocker.patch("os.chmod", autospec=True, return_value=None)
+            mock_trio_socket_from_stdlib.side_effect = [mock_trio_unix_datagram_socket]
+            mock_DatagramListenerSocketAdapter: MagicMock = mocker.patch(
+                f"{_TRIO_BACKEND_MODULE}.datagram.listener.TrioDatagramListenerSocketAdapter",
+                return_value=mocker.sentinel.listener_socket,
+            )
 
-        # Assert
-        mock_socket_cls.assert_called_once_with(AF_UNIX, SOCK_DGRAM, 0)
-        assert mock_unix_datagram_socket.mock_calls == [
-            mocker.call.bind(local_address),
-            mocker.call.setblocking(False),
-        ]
-        if mode is None:
+            # Act
+            listener_socket = await backend.create_unix_datagram_listener(
+                local_address,
+                mode=mode,
+            )
+
+            # Assert
+            mock_socket_cls.assert_called_once_with(AF_UNIX, SOCK_DGRAM, 0)
+            assert mock_unix_datagram_socket.mock_calls == [
+                mocker.call.bind(local_address),
+                mocker.call.setblocking(False),
+            ]
+            if mode is None:
+                mock_os_chmod.assert_not_called()
+            else:
+                mock_os_chmod.assert_called_once_with(local_address, mode)
+
+            mock_trio_socket_from_stdlib.assert_not_called()
+            mock_DatagramListenerSocketAdapter.assert_called_once_with(backend, mock_unix_datagram_socket)
+            assert listener_socket is mocker.sentinel.listener_socket
+
+        @pytest.mark.parametrize(
+            "local_address",
+            [
+                "/path/to/local.sock",
+                b"/path/to/local.sock",
+                "\0local_sock",
+                b"\x00local_sock",
+                "",  # <- Arbitrary abstract Unix address given by kernel
+                b"",  # <- Arbitrary abstract Unix address given by kernel
+            ],
+            ids=lambda addr: f"local_address=={addr!r}",
+        )
+        @pytest.mark.parametrize(
+            "bind_error",
+            [
+                OSError(errno.EPERM, os.strerror(errno.EPERM)),
+                OSError("AF_UNIX path too long."),
+            ],
+            ids=lambda exc: f"bind_error=={exc!r}",
+        )
+        @pytest.mark.parametrize("mode", [None, 0o640], ids=lambda mode: f"mode=={mode!r}")
+        async def test____create_unix_datagram_listener____bind_failed(
+            self,
+            backend: TrioBackend,
+            local_address: str | bytes,
+            mode: int | None,
+            bind_error: OSError,
+            mock_unix_datagram_socket: MagicMock,
+            mock_trio_unix_datagram_socket: MagicMock,
+            mock_trio_socket_from_stdlib: MagicMock,
+            mocker: MockerFixture,
+        ) -> None:
+            # Arrange
+            AF_UNIX = AF_UNIX_or_skip()
+            mock_socket_cls = mocker.patch("socket.socket", return_value=mock_unix_datagram_socket)
+            mock_os_chmod = mocker.patch("os.chmod", autospec=True, return_value=None)
+            mock_unix_datagram_socket.bind.side_effect = bind_error
+            mock_trio_socket_from_stdlib.side_effect = [mock_trio_unix_datagram_socket]
+            mock_DatagramListenerSocketAdapter: MagicMock = mocker.patch(
+                f"{_TRIO_BACKEND_MODULE}.datagram.listener.TrioDatagramListenerSocketAdapter",
+                return_value=mocker.sentinel.listener_socket,
+            )
+
+            # Act
+            with pytest.raises(OSError) as exc_info:
+                _ = await backend.create_unix_datagram_listener(
+                    local_address,
+                    mode=mode,
+                )
+
+            # Assert
+            mock_socket_cls.assert_called_once_with(AF_UNIX, SOCK_DGRAM, 0)
+            assert mock_unix_datagram_socket.mock_calls == [
+                mocker.call.bind(local_address),
+                mocker.call.close(),
+            ]
+            if bind_error.errno:
+                assert exc_info.value.errno == bind_error.errno
+            else:
+                assert exc_info.value.errno == errno.EINVAL
             mock_os_chmod.assert_not_called()
-        else:
-            mock_os_chmod.assert_called_once_with(local_address, mode)
 
-        mock_trio_socket_from_stdlib.assert_not_called()
-        mock_DatagramListenerSocketAdapter.assert_called_once_with(backend, mock_unix_datagram_socket)
-        assert listener_socket is mocker.sentinel.listener_socket
+            mock_trio_socket_from_stdlib.assert_not_called()
+            mock_DatagramListenerSocketAdapter.assert_not_called()
 
-    @pytest.mark.parametrize(
-        "local_address",
-        [
-            "/path/to/local.sock",
-            b"/path/to/local.sock",
-            "\0local_sock",
-            b"\x00local_sock",
-            "",  # <- Arbitrary abstract Unix address given by kernel
-            b"",  # <- Arbitrary abstract Unix address given by kernel
-        ],
-        ids=lambda addr: f"local_address=={addr!r}",
-    )
-    @pytest.mark.parametrize(
-        "bind_error",
-        [
-            OSError(errno.EPERM, os.strerror(errno.EPERM)),
-            OSError("AF_UNIX path too long."),
-        ],
-        ids=lambda exc: f"bind_error=={exc!r}",
-    )
-    @pytest.mark.parametrize("mode", [None, 0o640], ids=lambda mode: f"mode=={mode!r}")
-    async def test____create_unix_datagram_listener____bind_failed(
-        self,
-        backend: TrioBackend,
-        local_address: str | bytes,
-        mode: int | None,
-        bind_error: OSError,
-        mock_unix_datagram_socket: MagicMock,
-        mock_trio_unix_datagram_socket: MagicMock,
-        mock_trio_socket_from_stdlib: MagicMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        AF_UNIX = AF_UNIX_or_skip()
-        mock_socket_cls = mocker.patch("socket.socket", return_value=mock_unix_datagram_socket)
-        mock_os_chmod = mocker.patch("os.chmod", autospec=True, return_value=None)
-        mock_unix_datagram_socket.bind.side_effect = bind_error
-        mock_trio_socket_from_stdlib.side_effect = [mock_trio_unix_datagram_socket]
-        mock_DatagramListenerSocketAdapter: MagicMock = mocker.patch(
-            f"{_TRIO_BACKEND_MODULE}.datagram.listener.TrioDatagramListenerSocketAdapter",
-            return_value=mocker.sentinel.listener_socket,
+        @pytest.mark.parametrize(
+            "local_address",
+            [
+                "/path/to/local.sock",
+                b"/path/to/local.sock",
+            ],
+            ids=lambda addr: f"local_address=={addr!r}",
         )
-
-        # Act
-        with pytest.raises(OSError) as exc_info:
-            _ = await backend.create_unix_datagram_listener(
-                local_address,
-                mode=mode,
+        async def test____create_unix_datagram_listener____chmod_failed(
+            self,
+            backend: TrioBackend,
+            local_address: str | bytes,
+            mock_unix_datagram_socket: MagicMock,
+            mock_trio_unix_datagram_socket: MagicMock,
+            mock_trio_socket_from_stdlib: MagicMock,
+            mocker: MockerFixture,
+        ) -> None:
+            # Arrange
+            chmod_error = OSError(errno.EPERM, os.strerror(errno.EPERM))
+            mode: int = 0o640
+            AF_UNIX_or_skip()
+            mocker.patch("socket.socket", return_value=mock_unix_datagram_socket)
+            mock_os_chmod = mocker.patch("os.chmod", autospec=True, side_effect=chmod_error)
+            mock_trio_socket_from_stdlib.side_effect = [mock_trio_unix_datagram_socket]
+            mock_DatagramListenerSocketAdapter: MagicMock = mocker.patch(
+                f"{_TRIO_BACKEND_MODULE}.datagram.listener.TrioDatagramListenerSocketAdapter",
+                return_value=mocker.sentinel.listener_socket,
             )
 
-        # Assert
-        mock_socket_cls.assert_called_once_with(AF_UNIX, SOCK_DGRAM, 0)
-        assert mock_unix_datagram_socket.mock_calls == [
-            mocker.call.bind(local_address),
-            mocker.call.close(),
-        ]
-        if bind_error.errno:
-            assert exc_info.value.errno == bind_error.errno
-        else:
-            assert exc_info.value.errno == errno.EINVAL
-        mock_os_chmod.assert_not_called()
+            # Act
+            with pytest.raises(OSError) as exc_info:
+                _ = await backend.create_unix_datagram_listener(
+                    local_address,
+                    mode=mode,
+                )
 
-        mock_trio_socket_from_stdlib.assert_not_called()
-        mock_DatagramListenerSocketAdapter.assert_not_called()
+            # Assert
+            assert exc_info.value is chmod_error
+            assert mock_unix_datagram_socket.mock_calls == [
+                mocker.call.bind(local_address),
+                mocker.call.close(),
+            ]
+            mock_os_chmod.assert_called_once()
 
-    @pytest.mark.parametrize(
-        "local_address",
-        [
-            "/path/to/local.sock",
-            b"/path/to/local.sock",
-        ],
-        ids=lambda addr: f"local_address=={addr!r}",
-    )
-    async def test____create_unix_datagram_listener____chmod_failed(
-        self,
-        backend: TrioBackend,
-        local_address: str | bytes,
-        mock_unix_datagram_socket: MagicMock,
-        mock_trio_unix_datagram_socket: MagicMock,
-        mock_trio_socket_from_stdlib: MagicMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        chmod_error = OSError(errno.EPERM, os.strerror(errno.EPERM))
-        mode: int = 0o640
-        AF_UNIX_or_skip()
-        mocker.patch("socket.socket", return_value=mock_unix_datagram_socket)
-        mock_os_chmod = mocker.patch("os.chmod", autospec=True, side_effect=chmod_error)
-        mock_trio_socket_from_stdlib.side_effect = [mock_trio_unix_datagram_socket]
-        mock_DatagramListenerSocketAdapter: MagicMock = mocker.patch(
-            f"{_TRIO_BACKEND_MODULE}.datagram.listener.TrioDatagramListenerSocketAdapter",
-            return_value=mocker.sentinel.listener_socket,
-        )
-
-        # Act
-        with pytest.raises(OSError) as exc_info:
-            _ = await backend.create_unix_datagram_listener(
-                local_address,
-                mode=mode,
-            )
-
-        # Assert
-        assert exc_info.value is chmod_error
-        assert mock_unix_datagram_socket.mock_calls == [
-            mocker.call.bind(local_address),
-            mocker.call.close(),
-        ]
-        mock_os_chmod.assert_called_once()
-
-        mock_trio_socket_from_stdlib.assert_not_called()
-        mock_DatagramListenerSocketAdapter.assert_not_called()
+            mock_trio_socket_from_stdlib.assert_not_called()
+            mock_DatagramListenerSocketAdapter.assert_not_called()
 
     async def test____create_lock____use_trio_Lock_class(
         self,

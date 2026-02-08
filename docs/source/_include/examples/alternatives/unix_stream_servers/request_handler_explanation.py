@@ -6,12 +6,16 @@ import contextvars
 import logging
 import traceback
 from collections.abc import AsyncGenerator
+from socket import SO_ACCEPTCONN, SO_PASSCRED, SOL_SOCKET
 from typing import ClassVar
 
 import trio
 
 from easynetwork.exceptions import StreamProtocolParseError
-from easynetwork.lowlevel.socket import UnixSocketAddress
+from easynetwork.lowlevel.request_handler import RecvAncillaryDataParams, RecvParams
+from easynetwork.lowlevel.socket import SCMCredentials, SCMRights, SocketAncillary, UnixSocketAddress
+from easynetwork.protocol import StreamProtocol
+from easynetwork.serializers import JSONSerializer
 from easynetwork.servers.async_unix_stream import AsyncUnixStreamServer
 from easynetwork.servers.handlers import AsyncStreamClient, AsyncStreamRequestHandler, UNIXClientAttribute
 
@@ -218,7 +222,7 @@ class TimeoutContextRequestHandlerWithClientBackend(AsyncStreamRequestHandler[Re
             await client.send_packet(Response())
 
 
-class TimeoutYieldedRequestHandler(AsyncStreamRequestHandler[Request, Response]):
+class TimeoutYieldedDeprecatedWayRequestHandler(AsyncStreamRequestHandler[Request, Response]):
     async def handle(
         self,
         client: AsyncStreamClient[Response],
@@ -230,6 +234,63 @@ class TimeoutYieldedRequestHandler(AsyncStreamRequestHandler[Request, Response])
             await client.send_packet(TimedOut())
         else:
             await client.send_packet(Response())
+
+
+class TimeoutYieldedRequestHandler(AsyncStreamRequestHandler[Request, Response]):
+    async def handle(
+        self,
+        client: AsyncStreamClient[Response],
+    ) -> AsyncGenerator[RecvParams | None, Request]:
+        try:
+            # The client has 30 seconds to send the request to the server.
+            request: Request = yield RecvParams(timeout=30.0)
+        except TimeoutError:
+            await client.send_packet(TimedOut())
+        else:
+            await client.send_packet(Response())
+
+
+class SCMSendRequestHandler(AsyncStreamRequestHandler[Request, Response]):
+    async def handle(
+        self,
+        client: AsyncStreamClient[Response],
+    ) -> AsyncGenerator[None, Request]:
+        request: Request = yield
+
+        ancillary = SocketAncillary()
+        ancillary.add_fds([4])
+        await client.send_packet_with_ancillary(Response(), ancillary)
+
+
+class SCMRecvRequestHandler(AsyncStreamRequestHandler[Request, Response]):
+    async def handle(
+        self,
+        client: AsyncStreamClient[Response],
+    ) -> AsyncGenerator[RecvParams | None, Request]:
+        ancillary = SocketAncillary()
+        request: Request = yield RecvParams(recv_with_ancillary=RecvAncillaryDataParams(ancillary.update_from_raw))
+
+        for message in ancillary.messages():
+            match message:
+                case SCMRights(fds):
+                    for fd in fds:
+                        print(f"Received file descriptor: {fd}")
+                case SCMCredentials(credentials):
+                    for ucred in credentials:
+                        print(f"Received unix credential: {ucred}")
+
+    @staticmethod
+    async def example_custom_ancillary_bufsize() -> None:
+        # [start]
+        from socket import CMSG_LEN
+
+        max_fds = 128
+        server = AsyncUnixStreamServer(
+            "/var/run/app.sock",
+            StreamProtocol(JSONSerializer()),
+            SCMRecvRequestHandler(),
+            ancillary_bufsize=CMSG_LEN(max_fds * 4),
+        )
 
 
 class ClientConnectionHooksRequestHandler(AsyncStreamRequestHandler[Request, Response]):
@@ -368,6 +429,20 @@ class ServiceInitializationHookRequestHandlerWithServerBackend(AsyncStreamReques
         print("Service stopped")
 
 
+class LowLevelSocketOperationsRequestHandler(AsyncStreamRequestHandler[Request, Response]):
+    async def service_init(
+        self,
+        exit_stack: contextlib.AsyncExitStack,
+        server: AsyncUnixStreamServer[Request, Response],
+    ) -> None:
+        for sock in server.get_sockets():
+            assert sock.getsockopt(SOL_SOCKET, SO_ACCEPTCONN) != 0
+
+    async def on_connection(self, client: AsyncStreamClient[Response]) -> None:
+        # Enable SO_PASSCRED in order to use SCMCredentials
+        client.extra(UNIXClientAttribute.socket).setsockopt(SOL_SOCKET, SO_PASSCRED, 1)
+
+
 class ClientContextRequestHandler(AsyncStreamRequestHandler[Request, Response]):
     client_addr_var: ClassVar[contextvars.ContextVar[UnixSocketAddress]]
     client_addr_var = contextvars.ContextVar("client_addr")
@@ -401,4 +476,5 @@ class ClientContextRequestHandler(AsyncStreamRequestHandler[Request, Response]):
 
         self.client_log(f"Received request: {request!r}")
 
+        await client.send_packet(Response())
         await client.send_packet(Response())

@@ -20,16 +20,29 @@ __all__ = [
     "DeferredAsyncEndpointInit",
 ]
 
+import contextlib
 import dataclasses
 import errno as _errno
 from collections.abc import Awaitable, Callable
-from typing import Generic, TypeVar
+from typing import TYPE_CHECKING, Generic, TypeVar
+
+try:
+    import ssl
+except ImportError:  # pragma: no cover
+    _ssl_module = None
+else:
+    _ssl_module = ssl
+    del ssl
+
 
 from ..exceptions import ClientClosedError
-from ..lowlevel import _utils
+from ..lowlevel import _utils, constants
 from ..lowlevel.api_async.backend.abc import AsyncBackend, CancelScope, ILock
 from ..lowlevel.api_async.transports.abc import AsyncBaseTransport
 from ..lowlevel.api_async.transports.utils import aclose_forcefully
+
+if TYPE_CHECKING:
+    from ssl import SSLContext
 
 _T_Endpoint = TypeVar("_T_Endpoint", bound=AsyncBaseTransport)
 
@@ -125,3 +138,66 @@ class DeferredAsyncEndpointInit(Generic[_T_Endpoint]):
     @staticmethod
     def __closed() -> ClientClosedError:
         return ClientClosedError("Client is closing, or is already closed")
+
+
+def validate_max_recv_size(max_recv_size: int | None) -> int:
+    if max_recv_size is None:
+        max_recv_size = constants.DEFAULT_STREAM_BUFSIZE
+    if not isinstance(max_recv_size, int) or max_recv_size <= 0:
+        raise ValueError("'max_recv_size' must be a strictly positive integer")
+    return max_recv_size
+
+
+def validate_ssl_arguments(
+    *,
+    ssl: SSLContext | bool | None,
+    server_hostname: str | None,
+    ssl_handshake_timeout: float | None,
+    ssl_shutdown_timeout: float | None,
+    ssl_standard_compatible: bool | None,
+) -> None:
+    if server_hostname is not None and not ssl:
+        raise ValueError("server_hostname is only meaningful with ssl")
+
+    if ssl_handshake_timeout is not None and not ssl:
+        raise ValueError("ssl_handshake_timeout is only meaningful with ssl")
+
+    if ssl_shutdown_timeout is not None and not ssl:
+        raise ValueError("ssl_shutdown_timeout is only meaningful with ssl")
+
+    if ssl_standard_compatible is not None and not ssl:
+        raise ValueError("ssl_standard_compatible is only meaningful with ssl")
+
+
+def resolve_ssl_context(ssl: SSLContext | bool | None, server_hostname: str | None) -> SSLContext | None:
+    if not ssl:
+        return None
+
+    if _ssl_module is None:
+        raise RuntimeError("stdlib ssl module not available")
+    if isinstance(ssl, bool):
+        ssl = _ssl_module.create_default_context()
+        assert isinstance(ssl, _ssl_module.SSLContext)  # nosec assert_used
+        if server_hostname is not None and not server_hostname:
+            ssl.check_hostname = False
+        with contextlib.suppress(AttributeError):
+            ssl.options &= ~_ssl_module.OP_IGNORE_UNEXPECTED_EOF
+    return ssl
+
+
+def resolve_server_hostname_for_ssl(server_hostname: str | None, host_address: str) -> str | None:
+    if server_hostname is None:
+        # Use host as default for server_hostname.  It is an error
+        # if host is empty or not set, e.g. when an
+        # already-connected socket was passed or when only a port
+        # is given.  To avoid this error, you can pass
+        # server_hostname='' -- this will bypass the hostname
+        # check.  (This also means that if host is a numeric
+        # IP/IPv6 address, we will attempt to verify that exact
+        # address; this will probably fail, but it is possible to
+        # create a certificate for a specific IP address, so we
+        # don't judge it here.)
+        if not host_address:
+            raise ValueError("You must set server_hostname when using ssl without a host")
+        server_hostname = host_address
+    return server_hostname

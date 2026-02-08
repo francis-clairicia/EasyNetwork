@@ -46,13 +46,6 @@ Here is a simple example:
 .. literalinclude:: ../../_include/examples/alternatives/unix_datagram_servers/simple_request_handler.py
    :linenos:
 
-.. warning::
-
-   Sending socket control messages ( with :manpage:`sendmsg(2)` ) is not supported yet.
-
-.. warning::
-
-   Receiving socket control messages ( with :manpage:`recvmsg(2)` ) is not supported yet.
 
 Using ``handle()`` Generator
 ----------------------------
@@ -76,7 +69,7 @@ Minimum Requirements
 Refuse datagrams
 ^^^^^^^^^^^^^^^^
 
-Your UDP socket can receive datagrams from anywhere. You may want to control who can send you information.
+Your UDP socket can receive datagrams from anyone with permission to send them. You may want to control who can send you information.
 
 .. literalinclude:: ../../_include/examples/alternatives/unix_datagram_servers/request_handler_explanation.py
    :pyobject: SkipDatagramRequestHandler.handle
@@ -141,6 +134,16 @@ Cancellation And Timeouts
          :linenos:
          :emphasize-lines: 4,16-18
 
+      .. deprecated:: NEXT_VERSION
+         Yielding a timeout without using :class:`.RecvParams`. Will be removed in 2.0.
+
+         .. literalinclude:: ../../_include/examples/alternatives/unix_datagram_servers/request_handler_explanation.py
+            :pyobject: TimeoutYieldedDeprecatedWayRequestHandler.handle
+            :start-at: try:
+            :dedent:
+            :linenos:
+            :emphasize-lines: 3
+
    .. tab:: Using ``with``
 
       Since all :exc:`BaseException` subclasses are thrown into the generator, you can apply a timeout to the read stream
@@ -181,6 +184,53 @@ Cancellation And Timeouts
          However, it may be removed in a future release.
 
 
+Sending Packets with socket control messages
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+By using :class:`.SocketAncillary`, you can send SCM data. See the Unix manual page :manpage:`sendmsg(2)` for details.
+
+.. literalinclude:: ../../_include/examples/alternatives/unix_datagram_servers/request_handler_explanation.py
+   :pyobject: SCMSendRequestHandler.handle
+   :dedent:
+   :linenos:
+   :emphasize-lines: 7-9
+
+
+Receiving Packets with socket control messages
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+By using :class:`.RecvAncillaryDataParams` and :class:`.SocketAncillary`, you can receive SCM data.
+See the Unix manual page :manpage:`recvmsg(2)` for details.
+
+.. warning::
+
+   You must **enable the feature** in the server configuration to make this work.
+
+   .. literalinclude:: ../../_include/examples/alternatives/unix_datagram_servers/request_handler_explanation.py
+      :pyobject: SCMRecvRequestHandler.receive_ancillary_data
+      :start-after: [start]
+      :dedent:
+      :linenos:
+      :emphasize-lines: 5
+
+.. literalinclude:: ../../_include/examples/alternatives/unix_datagram_servers/request_handler_explanation.py
+   :pyobject: SCMRecvRequestHandler.handle
+   :dedent:
+   :linenos:
+   :emphasize-lines: 5-6,8
+
+.. tip::
+
+   The default buffer size for this operation is approximately 8 KiB. However, you can customize this behavior.
+
+   .. literalinclude:: ../../_include/examples/alternatives/unix_datagram_servers/request_handler_explanation.py
+      :pyobject: SCMRecvRequestHandler.example_custom_ancillary_bufsize
+      :start-after: [start]
+      :dedent:
+      :linenos:
+      :emphasize-lines: 9
+
+
 Client Metadata
 ---------------
 
@@ -191,11 +241,6 @@ The client's metadata are available via :class:`.UNIXClientAttribute`:
    :dedent:
    :linenos:
    :emphasize-lines: 5
-
-.. warning::
-
-   The socket option ``SO_PASSCRED`` on Linux has no effect for now. This will be handled in the future.
-
 
 Service Initialization
 ----------------------
@@ -233,6 +278,18 @@ This allows you to do something like this:
          :dedent:
          :linenos:
          :emphasize-lines: 1,8,15
+
+
+Low-Level Socket Operations
+---------------------------
+
+For low-level operations such as :meth:`~socket.socket.setsockopt`, the server object exposes the sockets through a :class:`.SocketProxy`:
+
+.. literalinclude:: ../../_include/examples/alternatives/unix_datagram_servers/request_handler_explanation.py
+   :pyobject: LowLevelSocketOperationsRequestHandler.service_init
+   :dedent:
+   :linenos:
+   :emphasize-lines: 6-8
 
 
 Per-client variables (``contextvars`` integration)

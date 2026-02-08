@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import errno
 import logging
-from collections.abc import AsyncIterator, Callable, Iterator
+import sys
+from collections.abc import AsyncIterator, Callable, Iterable, Iterator
 from errno import EBADF
 from socket import AI_PASSIVE
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, NoReturn, cast
 
+from easynetwork.exceptions import BusyResourceError
 from easynetwork.lowlevel.api_async.backend._asyncio.backend import AsyncIOBackend
 from easynetwork.lowlevel.api_async.backend._asyncio.datagram.endpoint import (
     DatagramEndpoint,
@@ -20,18 +23,28 @@ from easynetwork.lowlevel.api_async.backend._asyncio.datagram.listener import (
 )
 from easynetwork.lowlevel.api_async.backend._asyncio.datagram.socket import AsyncioTransportDatagramSocketAdapter
 from easynetwork.lowlevel.api_async.backend._asyncio.tasks import TaskGroup as AsyncIOTaskGroup
+from easynetwork.lowlevel.api_async.backend.abc import TaskGroup
+from easynetwork.lowlevel.api_async.transports.utils import aclose_forcefully
+from easynetwork.lowlevel.constants import MAX_DATAGRAM_BUFSIZE
 from easynetwork.lowlevel.socket import SocketAttribute
 
 import pytest
 import pytest_asyncio
 
+from ....tools import PlatformMarkers
+from ..._utils import partial_eq
+from ...base import BaseTestSocketTransport, BaseTestUnixSocketTransport
+from .base import BaseTestAsyncSocket, MockedEventLoopSockMethods
+
+if sys.platform != "win32":
+    from easynetwork.lowlevel.api_async.backend._asyncio.datagram.listener import RawUnixDatagramListenerAdapter
+    from easynetwork.lowlevel.api_async.backend._asyncio.datagram.socket import RawUnixDatagramSocketAdapter
+
 if TYPE_CHECKING:
     from unittest.mock import AsyncMock, MagicMock
 
+    from _typeshed import ReadableBuffer
     from pytest_mock import MockerFixture
-
-from ..._utils import partial_eq
-from ...base import BaseTestSocketTransport
 
 
 class CustomException(Exception):
@@ -887,6 +900,638 @@ class TestAsyncioTransportDatagramSocketAdapter(BaseTestAsyncioDatagramTransport
         assert transport.extra(SocketAttribute.peername) == remote_address
 
 
+if sys.platform != "win32":
+
+    @pytest.mark.asyncio
+    class TestRawUnixDatagramSocketAdapter(BaseTestAsyncioDatagramTransport, BaseTestUnixSocketTransport, BaseTestAsyncSocket):
+        @pytest_asyncio.fixture
+        @staticmethod
+        async def transport(
+            asyncio_backend: AsyncIOBackend,
+            mock_datagram_socket: MagicMock,
+        ) -> AsyncIterator[RawUnixDatagramSocketAdapter]:
+            transport = RawUnixDatagramSocketAdapter(asyncio_backend, mock_datagram_socket)
+            async with transport:
+                yield transport
+
+        async def test____dunder_init____refuse_non_datagram_sockets(
+            self,
+            asyncio_backend: AsyncIOBackend,
+            mock_unix_stream_socket: MagicMock,
+        ) -> None:
+            # Arrange
+
+            # Act & Assert
+            with pytest.raises(ValueError):
+                _ = RawUnixDatagramSocketAdapter(asyncio_backend, mock_unix_stream_socket)
+
+        async def test____dunder_del____ResourceWarning(
+            self,
+            asyncio_backend: AsyncIOBackend,
+            mock_datagram_socket: MagicMock,
+        ) -> None:
+            # Arrange
+            transport = RawUnixDatagramSocketAdapter(asyncio_backend, mock_datagram_socket)  # noqa: F841
+
+            # Act & Assert
+            with pytest.warns(ResourceWarning, match=r"^unclosed transport .+$"):
+                del transport
+
+            mock_datagram_socket.close.assert_called()
+
+        async def test____aclose____close_transport_and_yield(
+            self,
+            transport: RawUnixDatagramSocketAdapter,
+            mock_datagram_socket: MagicMock,
+        ) -> None:
+            # Arrange
+
+            # Act
+            await transport.aclose()
+
+            # Assert
+            mock_datagram_socket.close.assert_called_once_with()
+
+        @pytest.mark.parametrize("transport_closed", [False, True], ids=lambda p: f"transport_closed=={p}")
+        async def test____is_closing____default(
+            self,
+            transport_closed: bool,
+            transport: RawUnixDatagramSocketAdapter,
+        ) -> None:
+            # Arrange
+            if transport_closed:
+                await transport.aclose()
+
+            # Act
+            state = transport.is_closing()
+
+            # Assert
+            assert state is transport_closed
+
+        async def test____recv____use_event_loop_sock_recv(
+            self,
+            transport: RawUnixDatagramSocketAdapter,
+            mock_datagram_socket: MagicMock,
+            mock_event_loop_sock_method: MockedEventLoopSockMethods,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+        ) -> None:
+            # Arrange
+            mock_event_loop_sock_recv = mock_event_loop_sock_method["sock_recv"]
+            mock_event_loop_sock_recv.side_effect = None
+            mock_event_loop_sock_recv.return_value = b"data"
+
+            # Act
+            data: bytes = await transport.recv()
+
+            # Assert
+            mock_event_loop_sock_recv.assert_awaited_once_with(mock_datagram_socket, MAX_DATAGRAM_BUFSIZE)
+            mock_datagram_socket.assert_not_called()
+            mock_event_loop_add_reader.assert_not_called()
+            mock_event_loop_add_writer.assert_not_called()
+            assert data == b"data"
+
+        async def test____recv____event_loop_sock_recv_not_implemented(
+            self,
+            transport: RawUnixDatagramSocketAdapter,
+            mock_datagram_socket: MagicMock,
+            mock_event_loop_sock_method: MockedEventLoopSockMethods,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+        ) -> None:
+            # Arrange
+            mock_event_loop_sock_method["sock_recv"].side_effect = NotImplementedError
+            mock_datagram_socket.recv.return_value = b"data"
+
+            # Act
+            data: bytes = await transport.recv()
+
+            # Assert
+            mock_datagram_socket.recv.assert_called_once_with(MAX_DATAGRAM_BUFSIZE)
+            mock_event_loop_add_reader.assert_not_called()
+            mock_event_loop_add_writer.assert_not_called()
+            assert data == b"data"
+
+        async def test____recv____event_loop_sock_recv_not_implemented____blocking_error(
+            self,
+            transport: RawUnixDatagramSocketAdapter,
+            mock_datagram_socket: MagicMock,
+            mock_event_loop_sock_method: MockedEventLoopSockMethods,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+            mocker: MockerFixture,
+        ) -> None:
+            # Arrange
+            mock_event_loop_sock_method["sock_recv"].side_effect = NotImplementedError
+            mock_datagram_socket.recv.side_effect = [BlockingIOError, BlockingIOError, b"data"]
+
+            # Act
+            data: bytes = await transport.recv()
+
+            # Assert
+            assert mock_datagram_socket.recv.mock_calls == [mocker.call(MAX_DATAGRAM_BUFSIZE) for _ in range(3)]
+            assert mock_event_loop_add_reader.call_count == 2
+            mock_event_loop_add_writer.assert_not_called()
+            assert data == b"data"
+
+        async def test____recv____transport_closed(
+            self,
+            transport: RawUnixDatagramSocketAdapter,
+            mock_datagram_socket: MagicMock,
+            mock_event_loop_sock_method: MockedEventLoopSockMethods,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+        ) -> None:
+            # Arrange
+            mock_event_loop_sock_recv = mock_event_loop_sock_method["sock_recv"]
+            await transport.aclose()
+            mock_datagram_socket.reset_mock()
+
+            # Act & Assert
+            with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EBADF):
+                await transport.recv()
+
+            # Assert
+            mock_event_loop_sock_recv.assert_not_called()
+            mock_datagram_socket.assert_not_called()
+            mock_event_loop_add_reader.assert_not_called()
+            mock_event_loop_add_writer.assert_not_called()
+
+        @PlatformMarkers.supports_socket_recvmsg
+        async def test____recv_with_ancillary____use_socket_recvmsg(
+            self,
+            transport: RawUnixDatagramSocketAdapter,
+            mock_datagram_socket: MagicMock,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+            mocker: MockerFixture,
+        ) -> None:
+            # Arrange
+            mock_datagram_socket.recvmsg.return_value = (b"data", mocker.sentinel.ancdata, 0, "/path/to/sender.sock")
+
+            # Act
+            data, ancdata = await transport.recv_with_ancillary(2048)
+
+            # Assert
+            mock_datagram_socket.recvmsg.assert_called_once_with(MAX_DATAGRAM_BUFSIZE, 2048)
+            mock_event_loop_add_reader.assert_not_called()
+            mock_event_loop_add_writer.assert_not_called()
+            assert data == b"data"
+            assert ancdata is mocker.sentinel.ancdata
+
+        @PlatformMarkers.supports_socket_recvmsg
+        async def test____recv_with_ancillary____use_socket_recvmsg____blocking_error(
+            self,
+            transport: RawUnixDatagramSocketAdapter,
+            mock_datagram_socket: MagicMock,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+            mocker: MockerFixture,
+        ) -> None:
+            # Arrange
+            mock_datagram_socket.recvmsg.side_effect = [
+                BlockingIOError,
+                BlockingIOError,
+                (b"data", mocker.sentinel.ancdata, 0, "/path/to/sender.sock"),
+            ]
+
+            # Act
+            data, ancdata = await transport.recv_with_ancillary(2048)
+
+            # Assert
+            assert mock_datagram_socket.recvmsg.mock_calls == [mocker.call(MAX_DATAGRAM_BUFSIZE, 2048) for _ in range(3)]
+            assert mock_event_loop_add_reader.call_count == 2
+            mock_event_loop_add_writer.assert_not_called()
+            assert data == b"data"
+            assert ancdata is mocker.sentinel.ancdata
+
+        @PlatformMarkers.supports_socket_recvmsg
+        async def test____recv_with_ancillary____transport_closed(
+            self,
+            transport: RawUnixDatagramSocketAdapter,
+            mock_datagram_socket: MagicMock,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+        ) -> None:
+            # Arrange
+            await transport.aclose()
+            mock_datagram_socket.reset_mock()
+
+            # Act & Assert
+            with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EBADF):
+                await transport.recv_with_ancillary(2048)
+
+            # Assert
+            mock_datagram_socket.assert_not_called()
+            mock_event_loop_add_reader.assert_not_called()
+            mock_event_loop_add_writer.assert_not_called()
+
+        @pytest.mark.parametrize("data", [b"packet", b""], ids=repr)
+        async def test____send____use_socket_send(
+            self,
+            data: bytes,
+            transport: RawUnixDatagramSocketAdapter,
+            mock_datagram_socket: MagicMock,
+            mock_event_loop_sock_method: MockedEventLoopSockMethods,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+        ) -> None:
+            # Arrange
+            mock_event_loop_sock_send_all = mock_event_loop_sock_method["sock_sendall"]
+            mock_event_loop_sock_send_all.side_effect = None
+            mock_event_loop_sock_send_all.return_value = None
+            mock_datagram_socket.send.side_effect = lambda data: memoryview(data).nbytes
+
+            # Act
+            await transport.send(data)
+
+            # Assert
+            mock_event_loop_sock_send_all.assert_not_called()
+            mock_datagram_socket.send.assert_called_once_with(data)
+            mock_event_loop_add_reader.assert_not_called()
+            mock_event_loop_add_writer.assert_not_called()
+
+        async def test____send____use_socket_send____blocking_error(
+            self,
+            transport: RawUnixDatagramSocketAdapter,
+            mock_datagram_socket: MagicMock,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+            mocker: MockerFixture,
+        ) -> None:
+            # Arrange
+            data = b"packet"
+            mock_datagram_socket.send.side_effect = [
+                BlockingIOError,
+                BlockingIOError,
+                len(data),
+            ]
+
+            # Act
+            await transport.send(data)
+
+            # Assert
+            assert mock_datagram_socket.send.mock_calls == [mocker.call(data) for _ in range(3)]
+            assert mock_event_loop_add_writer.call_count == 2
+            mock_event_loop_add_reader.assert_not_called()
+
+        async def test____send____transport_closed(
+            self,
+            transport: RawUnixDatagramSocketAdapter,
+            mock_datagram_socket: MagicMock,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+        ) -> None:
+            # Arrange
+            await transport.aclose()
+            mock_datagram_socket.reset_mock()
+
+            # Act & Assert
+            with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EBADF):
+                await transport.send(b"data")
+
+            # Assert
+            mock_datagram_socket.assert_not_called()
+            mock_event_loop_add_reader.assert_not_called()
+            mock_event_loop_add_writer.assert_not_called()
+
+        @PlatformMarkers.supports_socket_sendmsg
+        async def test____send_with_ancillary____use_socket_sendmsg(
+            self,
+            transport: RawUnixDatagramSocketAdapter,
+            mock_datagram_socket: MagicMock,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+            mocker: MockerFixture,
+        ) -> None:
+            # Arrange
+            chunks: list[list[bytes]] = []
+
+            def sendmsg_side_effect(buffers: Iterable[ReadableBuffer], *args: Any) -> int:
+                buffers = list(buffers)
+                chunks.append(list(map(bytes, buffers)))
+                return sum(memoryview(v).nbytes for v in buffers)
+
+            mock_datagram_socket.sendmsg.side_effect = sendmsg_side_effect
+
+            # Act
+            await transport.send_with_ancillary(b"data", mocker.sentinel.ancdata)
+
+            # Assert
+            mock_datagram_socket.sendmsg.assert_called_once_with(mocker.ANY, mocker.sentinel.ancdata)
+            mock_event_loop_add_reader.assert_not_called()
+            mock_event_loop_add_writer.assert_not_called()
+            assert chunks == [[b"data"]]
+
+        @PlatformMarkers.supports_socket_sendmsg
+        @pytest.mark.parametrize("ancillary_data_is_iterator", [False, True], ids=lambda p: f"ancillary_data_is_iterator=={p}")
+        async def test____send_with_ancillary____blocking_error____correctly_handle_iterables(
+            self,
+            ancillary_data_is_iterator: bool,
+            transport: RawUnixDatagramSocketAdapter,
+            mock_datagram_socket: MagicMock,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+            mocker: MockerFixture,
+        ) -> None:
+            # Arrange
+            to_raise: list[type[OSError]] = [BlockingIOError]
+            chunks: list[list[bytes]] = []
+            ancillary_data_sent: list[list[Any]] = []
+
+            def sendmsg_side_effect(buffers: Iterable[ReadableBuffer], ancdata: Iterable[Any]) -> int:
+                buffers = list(buffers)
+                ancdata = list(ancdata)
+                if to_raise:
+                    raise to_raise.pop(0)
+                chunks.append(list(map(bytes, buffers)))
+                ancillary_data_sent.append(ancdata)
+                return sum(memoryview(v).nbytes for v in buffers)
+
+            mock_datagram_socket.sendmsg.side_effect = sendmsg_side_effect
+
+            ancillary_data: Iterable[Any] = [mocker.sentinel.ancdata]
+            if ancillary_data_is_iterator:
+                ancillary_data = iter(ancillary_data)
+
+            # Act
+            await transport.send_with_ancillary(b"data", ancillary_data)
+
+            # Assert
+            assert mock_datagram_socket.sendmsg.call_count == 2
+            assert mock_event_loop_add_reader.call_count == 0
+            assert mock_event_loop_add_writer.call_count == 1
+            assert chunks == [[b"data"]]
+            assert ancillary_data_sent == [[mocker.sentinel.ancdata]]
+
+        @PlatformMarkers.supports_socket_sendmsg
+        async def test____send_all_with_ancillary____transport_closed(
+            self,
+            transport: RawUnixDatagramSocketAdapter,
+            mock_datagram_socket: MagicMock,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+        ) -> None:
+            # Arrange
+            await transport.aclose()
+            mock_datagram_socket.reset_mock()
+
+            # Act & Assert
+            with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EBADF):
+                await transport.send_with_ancillary(b"data", [])
+
+            # Assert
+            mock_datagram_socket.assert_not_called()
+            mock_event_loop_add_reader.assert_not_called()
+            mock_event_loop_add_writer.assert_not_called()
+
+        @pytest.mark.parametrize(
+            "recv_method",
+            [
+                pytest.param("recv"),
+                pytest.param("recv_with_ancillary", marks=[PlatformMarkers.supports_socket_recvmsg]),
+            ],
+        )
+        @pytest.mark.parametrize("force_close", [pytest.param(False, id="aclose"), pytest.param(True, id="aclose_forcefully")])
+        async def test____special_case____recv____close_while_reading(
+            self,
+            recv_method: str,
+            force_close: bool,
+            transport: RawUnixDatagramSocketAdapter,
+            mock_datagram_socket: MagicMock,
+        ) -> None:
+            # Arrange
+            mock_sock_recv_method: MagicMock
+            match recv_method:
+                case "recv":
+                    mock_sock_recv_method = mock_datagram_socket.recv
+
+                    async def recv_coroutine(transport: RawUnixDatagramSocketAdapter) -> None:
+                        await transport.recv()
+
+                case "recv_with_ancillary":
+                    mock_sock_recv_method = mock_datagram_socket.recvmsg
+
+                    async def recv_coroutine(transport: RawUnixDatagramSocketAdapter) -> None:
+                        await transport.recv_with_ancillary(2048)
+
+                case _:
+                    pytest.fail(recv_method)
+
+            with self._set_sock_method_in_blocking_state(mock_sock_recv_method):
+                busy_method_task = await self._busy_socket_task(recv_coroutine(transport), mock_sock_recv_method)
+
+            # Act
+            if force_close:
+                await aclose_forcefully(transport)
+            else:
+                await transport.aclose()
+
+            # Assert
+            with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EBADF):
+                await busy_method_task
+
+        @pytest.mark.parametrize(
+            "busy_recv_method",
+            [
+                pytest.param("recv"),
+                pytest.param("recv_with_ancillary", marks=[PlatformMarkers.supports_socket_recvmsg]),
+            ],
+            ids=lambda p: f"b:{p}",
+        )
+        @pytest.mark.parametrize(
+            "incoming_recv_method",
+            [
+                pytest.param("recv"),
+                pytest.param("recv_with_ancillary", marks=[PlatformMarkers.supports_socket_recvmsg]),
+            ],
+            ids=lambda p: f"i:{p}",
+        )
+        async def test____special_case____recv____busy(
+            self,
+            busy_recv_method: str,
+            incoming_recv_method: str,
+            transport: RawUnixDatagramSocketAdapter,
+            mock_datagram_socket: MagicMock,
+        ) -> None:
+            # Arrange
+            mock_busy_sock_recv_method: MagicMock
+            match busy_recv_method:
+                case "recv":
+                    mock_busy_sock_recv_method = mock_datagram_socket.recv
+
+                    async def recv_coroutine(transport: RawUnixDatagramSocketAdapter) -> None:
+                        await transport.recv()
+
+                case "recv_with_ancillary":
+                    mock_busy_sock_recv_method = mock_datagram_socket.recvmsg
+
+                    async def recv_coroutine(transport: RawUnixDatagramSocketAdapter) -> None:
+                        await transport.recv_with_ancillary(2048)
+
+                case _:
+                    pytest.fail(busy_recv_method)
+
+            with self._set_sock_method_in_blocking_state(mock_busy_sock_recv_method):
+                busy_method_task = await self._busy_socket_task(recv_coroutine(transport), mock_busy_sock_recv_method)
+                # Cancel now for teardown speed-up.
+                busy_method_task.cancel()
+
+            # Act & Assert
+            with pytest.raises(
+                BusyResourceError,
+                match=r"^%s\(\) called while another coroutine is already waiting for incoming data" % incoming_recv_method,
+            ):
+                match incoming_recv_method:
+                    case "recv":
+                        await transport.recv()
+                    case "recv_with_ancillary":
+                        await transport.recv_with_ancillary(2048)
+                    case _:
+                        pytest.fail(incoming_recv_method)
+            mock_datagram_socket.assert_not_called()
+
+        @pytest.mark.parametrize(
+            "send_method",
+            [
+                pytest.param("send"),
+                pytest.param("send_with_ancillary", marks=[PlatformMarkers.supports_socket_sendmsg]),
+            ],
+        )
+        @pytest.mark.parametrize("force_close", [pytest.param(False, id="aclose"), pytest.param(True, id="aclose_forcefully")])
+        async def test____special_case____send____close_while_writing(
+            self,
+            send_method: str,
+            force_close: bool,
+            transport: RawUnixDatagramSocketAdapter,
+            mock_datagram_socket: MagicMock,
+        ) -> None:
+            # Arrange
+            mock_sock_send_method: MagicMock
+            match send_method:
+                case "send":
+                    mock_sock_send_method = mock_datagram_socket.send
+                    mock_sock_send_method.side_effect = lambda data: memoryview(data).nbytes
+
+                    async def send_coroutine(transport: RawUnixDatagramSocketAdapter) -> None:
+                        await transport.send(b"data")
+
+                case "send_with_ancillary":
+                    mock_sock_send_method = mock_datagram_socket.sendmsg
+                    mock_sock_send_method.side_effect = lambda buffers, *args: sum(memoryview(v).nbytes for v in buffers)
+
+                    async def send_coroutine(transport: RawUnixDatagramSocketAdapter) -> None:
+                        await transport.send_with_ancillary(b"data", [])
+
+                case _:
+                    pytest.fail(send_method)
+
+            with self._set_sock_method_in_blocking_state(mock_sock_send_method):
+                busy_method_task = await self._busy_socket_task(send_coroutine(transport), mock_sock_send_method)
+
+            # Act
+            if force_close:
+                with self._set_sock_method_in_blocking_state(mock_sock_send_method):
+                    await aclose_forcefully(transport)
+            else:
+                await transport.aclose()
+
+            # Assert
+            with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EBADF) if force_close else contextlib.nullcontext():
+                await busy_method_task
+
+        @pytest.mark.parametrize(
+            "busy_send_method",
+            [
+                pytest.param("send"),
+                pytest.param("send_with_ancillary", marks=[PlatformMarkers.supports_socket_sendmsg]),
+            ],
+            ids=lambda p: f"b:{p}",
+        )
+        @pytest.mark.parametrize(
+            "incoming_send_method",
+            [
+                pytest.param("send"),
+                pytest.param("send_with_ancillary", marks=[PlatformMarkers.supports_socket_sendmsg]),
+            ],
+            ids=lambda p: f"i:{p}",
+        )
+        async def test____special_case____send____busy(
+            self,
+            busy_send_method: str,
+            incoming_send_method: str,
+            transport: RawUnixDatagramSocketAdapter,
+            mock_datagram_socket: MagicMock,
+        ) -> None:
+            # Arrange
+            mock_busy_sock_send_method: MagicMock
+            match busy_send_method:
+                case "send":
+                    mock_busy_sock_send_method = mock_datagram_socket.send
+                    mock_busy_sock_send_method.side_effect = lambda data: memoryview(data).nbytes
+
+                    async def send_coroutine(transport: RawUnixDatagramSocketAdapter) -> None:
+                        await transport.send(b"data")
+
+                case "send_with_ancillary":
+                    mock_busy_sock_send_method = mock_datagram_socket.sendmsg
+                    mock_busy_sock_send_method.side_effect = lambda buffers, *args: sum(memoryview(v).nbytes for v in buffers)
+
+                    async def send_coroutine(transport: RawUnixDatagramSocketAdapter) -> None:
+                        await transport.send_with_ancillary(b"data", [])
+
+                case _:
+                    pytest.fail(busy_send_method)
+
+            with self._set_sock_method_in_blocking_state(mock_busy_sock_send_method):
+                busy_method_task = await self._busy_socket_task(send_coroutine(transport), mock_busy_sock_send_method)
+                # Cancel now for teardown speed-up.
+                busy_method_task.cancel()
+
+            # Act & Assert
+            with pytest.raises(
+                BusyResourceError,
+                match=r"^%s\(\) called while another coroutine is already sending data" % incoming_send_method,
+            ):
+                match incoming_send_method:
+                    case "send":
+                        mock_datagram_socket.send.side_effect = lambda data: memoryview(data).nbytes
+                        await transport.send(b"data")
+                    case "send_with_ancillary":
+                        mock_datagram_socket.sendmsg.side_effect = lambda buffers, *args: sum(
+                            memoryview(v).nbytes for v in buffers
+                        )
+                        await transport.send_with_ancillary(b"data", [])
+                    case _:
+                        pytest.fail(incoming_send_method)
+            mock_datagram_socket.assert_not_called()
+
+        async def test____extra_attributes____returns_socket_info(
+            self,
+            transport: RawUnixDatagramSocketAdapter,
+            local_address: tuple[str, int] | bytes,
+            remote_address: tuple[str, int] | bytes,
+            mock_datagram_socket: MagicMock,
+        ) -> None:
+            # Arrange
+
+            # Act & Assert
+            assert getattr(transport.extra(SocketAttribute.socket), "_sock") is mock_datagram_socket
+            assert transport.extra(SocketAttribute.family) == mock_datagram_socket.family
+            assert transport.extra(SocketAttribute.sockname) == local_address
+            assert transport.extra(SocketAttribute.peername) == remote_address
+
+        async def test____get_backend____returns_linked_instance(
+            self,
+            transport: RawUnixDatagramSocketAdapter,
+            asyncio_backend: AsyncIOBackend,
+        ) -> None:
+            # Arrange
+
+            # Act & Assert
+            assert transport.backend() is asyncio_backend
+
+
 @pytest.mark.asyncio
 class TestDatagramListenerSocketAdapter(BaseTestAsyncioDatagramTransport):
     @pytest.fixture
@@ -894,7 +1539,7 @@ class TestDatagramListenerSocketAdapter(BaseTestAsyncioDatagramTransport):
     def mock_endpoint() -> Any:
         raise ValueError("Do not use this fixture here")
 
-    @pytest.fixture
+    @pytest.fixture(scope="class")
     @classmethod
     def remote_address(cls) -> None:
         return None
@@ -1074,6 +1719,682 @@ class TestDatagramListenerSocketAdapter(BaseTestAsyncioDatagramTransport):
         assert transport.extra(SocketAttribute.family) == mock_datagram_socket.family
         assert transport.extra(SocketAttribute.sockname) == local_address
         assert transport.extra(SocketAttribute.peername, mocker.sentinel.no_value) is mocker.sentinel.no_value
+
+
+if sys.platform != "win32":
+
+    class TestRawUnixDatagramListenerAdapter(BaseTestAsyncioDatagramTransport, BaseTestUnixSocketTransport, BaseTestAsyncSocket):
+        @pytest_asyncio.fixture
+        @staticmethod
+        async def listener(
+            asyncio_backend: AsyncIOBackend,
+            mock_datagram_socket: MagicMock,
+        ) -> AsyncIterator[RawUnixDatagramListenerAdapter]:
+            listener = RawUnixDatagramListenerAdapter(asyncio_backend, mock_datagram_socket)
+            async with listener:
+                yield listener
+
+        @pytest.fixture(scope="class")
+        @classmethod
+        def remote_address(cls) -> None:
+            return None
+
+        @pytest.fixture
+        @staticmethod
+        def handler(mocker: MockerFixture) -> AsyncMock:
+            handler = mocker.async_stub("handler")
+            handler.return_value = None
+            return handler
+
+        async def test____dunder_init____refuse_non_datagram_sockets(
+            self,
+            asyncio_backend: AsyncIOBackend,
+            mock_unix_stream_socket: MagicMock,
+        ) -> None:
+            # Arrange
+
+            # Act & Assert
+            with pytest.raises(ValueError):
+                _ = RawUnixDatagramListenerAdapter(asyncio_backend, mock_unix_stream_socket)
+
+        async def test____dunder_del____ResourceWarning(
+            self,
+            asyncio_backend: AsyncIOBackend,
+            mock_datagram_socket: MagicMock,
+        ) -> None:
+            # Arrange
+            transport = RawUnixDatagramListenerAdapter(asyncio_backend, mock_datagram_socket)  # noqa: F841
+
+            # Act & Assert
+            with pytest.warns(ResourceWarning, match=r"^unclosed transport .+$"):
+                del transport
+
+            mock_datagram_socket.close.assert_called()
+
+        async def test____aclose____close_transport_and_yield(
+            self,
+            listener: RawUnixDatagramListenerAdapter,
+            mock_datagram_socket: MagicMock,
+        ) -> None:
+            # Arrange
+
+            # Act
+            await listener.aclose()
+
+            # Assert
+            mock_datagram_socket.close.assert_called_once_with()
+
+        @pytest.mark.parametrize("listener_closed", [False, True], ids=lambda p: f"listener_closed=={p}")
+        async def test____is_closing____default(
+            self,
+            listener_closed: bool,
+            listener: RawUnixDatagramListenerAdapter,
+        ) -> None:
+            # Arrange
+            if listener_closed:
+                await listener.aclose()
+
+            # Act
+            state = listener.is_closing()
+
+            # Assert
+            assert state is listener_closed
+
+        @pytest.mark.parametrize("external_group", [True, False], ids=lambda p: f"external_group=={p}")
+        @pytest.mark.parametrize(
+            ["sender_address_1", "sender_address_2", "sender_address_3"],
+            [
+                pytest.param("/path/to/unix.sock", "/path/to/other.sock", "/path/to/third.sock"),
+                pytest.param(b"\x00abstract_address", b"\x00abstract_other_address", b"\x00abstract_third_address"),
+                pytest.param(None, None, None),
+                pytest.param(b"", b"", b""),
+                pytest.param("", "", ""),
+            ],
+        )
+        async def test____serve____default(
+            self,
+            asyncio_backend: AsyncIOBackend,
+            listener: RawUnixDatagramListenerAdapter,
+            external_group: bool,
+            sender_address_1: tuple[str, int] | str | bytes | None,
+            sender_address_2: tuple[str, int] | str | bytes | None,
+            sender_address_3: tuple[str, int] | str | bytes | None,
+            handler: AsyncMock,
+            mock_datagram_socket: MagicMock,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_remove_reader: MagicMock,
+            mocker: MockerFixture,
+            caplog: pytest.LogCaptureFixture,
+        ) -> None:
+            # Arrange
+            caplog.set_level("INFO", listener.__class__.__module__)
+
+            mock_datagram_socket.recvfrom.side_effect = [
+                BlockingIOError,
+                (b"received_datagram", sender_address_1),
+                (b"received_datagram_2", sender_address_2),
+                BlockingIOError,
+                OSError("Unrelated OS Error"),
+                (b"received_datagram_3", sender_address_3),
+                BlockingIOError,
+                asyncio.CancelledError,
+            ]
+
+            # Act
+            task_group: TaskGroup | None
+            async with asyncio_backend.create_task_group() if external_group else contextlib.nullcontext() as task_group:
+                with pytest.raises(asyncio.CancelledError):
+                    await listener.serve(handler, task_group)
+
+            # Assert
+            mock_event_loop_add_reader.assert_called_once()
+            assert handler.await_args_list == [
+                mocker.call(b"received_datagram", sender_address_1),
+                mocker.call(b"received_datagram_2", sender_address_2),
+                mocker.call(b"received_datagram_3", sender_address_3),
+            ]
+            assert len(caplog.records) == 1
+            assert caplog.records[0].getMessage() == "Unrelated error occurred on datagram reception: OSError: Unrelated OS Error"
+            assert caplog.records[0].levelno == logging.WARNING
+            assert caplog.records[0].exc_info is not None and isinstance(caplog.records[0].exc_info[1], OSError)
+            mock_event_loop_remove_reader.assert_called_once_with(mock_datagram_socket)
+
+        async def test____serve____transport_closed(
+            self,
+            listener: RawUnixDatagramListenerAdapter,
+            mock_datagram_socket: MagicMock,
+            handler: AsyncMock,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+        ) -> None:
+            # Arrange
+            await listener.aclose()
+            mock_datagram_socket.reset_mock()
+
+            # Act & Assert
+            with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EBADF):
+                await listener.serve(handler)
+
+            # Assert
+            mock_datagram_socket.assert_not_called()
+            mock_event_loop_add_reader.assert_not_called()
+            mock_event_loop_add_writer.assert_not_called()
+
+        @PlatformMarkers.supports_socket_recvmsg
+        @pytest.mark.parametrize("external_group", [True, False], ids=lambda p: f"external_group=={p}")
+        @pytest.mark.parametrize(
+            ["sender_address_1", "sender_address_2", "sender_address_3"],
+            [
+                pytest.param("/path/to/unix.sock", "/path/to/other.sock", "/path/to/third.sock"),
+                pytest.param(b"\x00abstract_address", b"\x00abstract_other_address", b"\x00abstract_third_address"),
+                pytest.param(None, None, None),
+                pytest.param(b"", b"", b""),
+                pytest.param("", "", ""),
+            ],
+        )
+        async def test____serve_with_ancillary____default(
+            self,
+            asyncio_backend: AsyncIOBackend,
+            listener: RawUnixDatagramListenerAdapter,
+            external_group: bool,
+            sender_address_1: tuple[str, int] | str | bytes | None,
+            sender_address_2: tuple[str, int] | str | bytes | None,
+            sender_address_3: tuple[str, int] | str | bytes | None,
+            handler: AsyncMock,
+            mock_datagram_socket: MagicMock,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_remove_reader: MagicMock,
+            mocker: MockerFixture,
+            caplog: pytest.LogCaptureFixture,
+        ) -> None:
+            # Arrange
+            caplog.set_level("INFO", listener.__class__.__module__)
+
+            mock_datagram_socket.recvmsg.side_effect = [
+                BlockingIOError,
+                (b"received_datagram", mocker.sentinel.ancdata, 0, sender_address_1),
+                (b"received_datagram_2", mocker.sentinel.ancdata_2, 0, sender_address_2),
+                BlockingIOError,
+                OSError("Unrelated OS Error"),
+                (b"received_datagram_3", mocker.sentinel.ancdata_3, 0, sender_address_3),
+                BlockingIOError,
+                asyncio.CancelledError,
+            ]
+
+            # Act
+            task_group: TaskGroup | None
+            async with asyncio_backend.create_task_group() if external_group else contextlib.nullcontext() as task_group:
+                with pytest.raises(asyncio.CancelledError):
+                    await listener.serve_with_ancillary(handler, 1024, task_group)
+
+            # Assert
+            mock_event_loop_add_reader.assert_called_once()
+            assert handler.await_args_list == [
+                mocker.call(b"received_datagram", mocker.sentinel.ancdata, sender_address_1),
+                mocker.call(b"received_datagram_2", mocker.sentinel.ancdata_2, sender_address_2),
+                mocker.call(b"received_datagram_3", mocker.sentinel.ancdata_3, sender_address_3),
+            ]
+            assert len(caplog.records) == 1
+            assert caplog.records[0].levelno == logging.WARNING
+            assert caplog.records[0].getMessage() == "Unrelated error occurred on datagram reception: OSError: Unrelated OS Error"
+            assert caplog.records[0].exc_info is not None and isinstance(caplog.records[0].exc_info[1], OSError)
+            mock_event_loop_remove_reader.assert_called_once_with(mock_datagram_socket)
+
+        async def test____serve_with_ancillary____transport_closed(
+            self,
+            listener: RawUnixDatagramListenerAdapter,
+            mock_datagram_socket: MagicMock,
+            handler: AsyncMock,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+        ) -> None:
+            # Arrange
+            await listener.aclose()
+            mock_datagram_socket.reset_mock()
+
+            # Act & Assert
+            with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EBADF):
+                await listener.serve_with_ancillary(handler, 2048)
+
+            # Assert
+            mock_datagram_socket.assert_not_called()
+            mock_event_loop_add_reader.assert_not_called()
+            mock_event_loop_add_writer.assert_not_called()
+
+        @pytest.mark.parametrize("data", [b"packet", b""], ids=repr)
+        @pytest.mark.parametrize("destination_address", ["/path/to/unix.sock", b"\x00abstract_address"])
+        async def test____send_to____event_loop_sock_send_to(
+            self,
+            data: bytes,
+            destination_address: str | bytes,
+            listener: RawUnixDatagramListenerAdapter,
+            mock_datagram_socket: MagicMock,
+            mock_event_loop_sock_method: MockedEventLoopSockMethods,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+        ) -> None:
+            # Arrange
+            mock_event_loop_sock_send_to = mock_event_loop_sock_method["sock_sendto"]
+            mock_event_loop_sock_send_to.side_effect = None
+            mock_event_loop_sock_send_to.return_value = lambda sock, data, *args: memoryview(data).nbytes
+
+            # Act
+            await listener.send_to(data, destination_address)
+
+            # Assert
+            mock_event_loop_sock_send_to.assert_called_once_with(mock_datagram_socket, data, destination_address)
+            mock_datagram_socket.assert_not_called()
+            mock_event_loop_add_reader.assert_not_called()
+            mock_event_loop_add_writer.assert_not_called()
+
+        @pytest.mark.parametrize("data", [b"packet", b""], ids=repr)
+        @pytest.mark.parametrize("destination_address", ["/path/to/unix.sock", b"\x00abstract_address"])
+        async def test____send_to____event_loop_sock_send_to_not_implemented(
+            self,
+            data: bytes,
+            destination_address: str | bytes,
+            listener: RawUnixDatagramListenerAdapter,
+            mock_datagram_socket: MagicMock,
+            mock_event_loop_sock_method: MockedEventLoopSockMethods,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+        ) -> None:
+            # Arrange
+            mock_event_loop_sock_method["sock_sendto"].side_effect = NotImplementedError
+            mock_datagram_socket.sendto.side_effect = lambda data, *args: memoryview(data).nbytes
+
+            # Act
+            await listener.send_to(data, destination_address)
+
+            # Assert
+            mock_datagram_socket.sendto.assert_called_once_with(data, destination_address)
+            mock_event_loop_add_reader.assert_not_called()
+            mock_event_loop_add_writer.assert_not_called()
+
+        @pytest.mark.parametrize("destination_address", ["/path/to/unix.sock", b"\x00abstract_address"])
+        async def test____send_to____event_loop_sock_send_all_not_implemented____blocking_error(
+            self,
+            destination_address: str | bytes,
+            listener: RawUnixDatagramListenerAdapter,
+            mock_datagram_socket: MagicMock,
+            mock_event_loop_sock_method: MockedEventLoopSockMethods,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+            mocker: MockerFixture,
+        ) -> None:
+            # Arrange
+            data = b"packet"
+            mock_event_loop_sock_method["sock_sendto"].side_effect = NotImplementedError
+            mock_datagram_socket.sendto.side_effect = [
+                BlockingIOError,
+                BlockingIOError,
+                len(data),
+            ]
+
+            # Act
+            await listener.send_to(data, destination_address)
+
+            # Assert
+            assert mock_datagram_socket.sendto.mock_calls == [mocker.call(data, destination_address) for _ in range(3)]
+            assert mock_event_loop_add_writer.call_count == 2
+            mock_event_loop_add_reader.assert_not_called()
+
+        async def test____send_to____transport_closed(
+            self,
+            listener: RawUnixDatagramListenerAdapter,
+            mock_datagram_socket: MagicMock,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+        ) -> None:
+            # Arrange
+            await listener.aclose()
+            mock_datagram_socket.reset_mock()
+
+            # Act & Assert
+            with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EBADF):
+                await listener.send_to(b"data", "/path/to/unix.sock")
+
+            # Assert
+            mock_datagram_socket.assert_not_called()
+            mock_event_loop_add_reader.assert_not_called()
+            mock_event_loop_add_writer.assert_not_called()
+
+        @PlatformMarkers.supports_socket_sendmsg
+        @pytest.mark.parametrize("destination_address", ["/path/to/unix.sock", b"\x00abstract_address"])
+        async def test____send_with_ancillary_to____use_socket_sendmsg(
+            self,
+            destination_address: str | bytes,
+            listener: RawUnixDatagramListenerAdapter,
+            mock_datagram_socket: MagicMock,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+            mocker: MockerFixture,
+        ) -> None:
+            # Arrange
+            chunks: list[list[bytes]] = []
+
+            def sendmsg_side_effect(buffers: Iterable[ReadableBuffer], *args: Any) -> int:
+                buffers = list(buffers)
+                chunks.append(list(map(bytes, buffers)))
+                return sum(memoryview(v).nbytes for v in buffers)
+
+            mock_datagram_socket.sendmsg.side_effect = sendmsg_side_effect
+
+            # Act
+            await listener.send_with_ancillary_to(b"data", mocker.sentinel.ancdata, destination_address)
+
+            # Assert
+            mock_datagram_socket.sendmsg.assert_called_once_with(mocker.ANY, mocker.sentinel.ancdata, 0, destination_address)
+            mock_event_loop_add_reader.assert_not_called()
+            mock_event_loop_add_writer.assert_not_called()
+            assert chunks == [[b"data"]]
+
+        @PlatformMarkers.supports_socket_sendmsg
+        @pytest.mark.parametrize("ancillary_data_is_iterator", [False, True], ids=lambda p: f"ancillary_data_is_iterator=={p}")
+        @pytest.mark.parametrize("destination_address", ["/path/to/unix.sock", b"\x00abstract_address"])
+        async def test____send_with_ancillary____blocking_error____correctly_handle_iterables(
+            self,
+            destination_address: str | bytes,
+            ancillary_data_is_iterator: bool,
+            listener: RawUnixDatagramListenerAdapter,
+            mock_datagram_socket: MagicMock,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+            mocker: MockerFixture,
+        ) -> None:
+            # Arrange
+            to_raise: list[type[OSError]] = [BlockingIOError]
+            chunks: list[list[bytes]] = []
+            ancillary_data_sent: list[list[Any]] = []
+
+            def sendmsg_side_effect(buffers: Iterable[ReadableBuffer], ancdata: Iterable[Any], *args: Any) -> int:
+                buffers = list(buffers)
+                ancdata = list(ancdata)
+                if to_raise:
+                    raise to_raise.pop(0)
+                chunks.append(list(map(bytes, buffers)))
+                ancillary_data_sent.append(ancdata)
+                return sum(memoryview(v).nbytes for v in buffers)
+
+            mock_datagram_socket.sendmsg.side_effect = sendmsg_side_effect
+
+            ancillary_data: Iterable[Any] = [mocker.sentinel.ancdata]
+            if ancillary_data_is_iterator:
+                ancillary_data = iter(ancillary_data)
+
+            # Act
+            await listener.send_with_ancillary_to(b"data", ancillary_data, destination_address)
+
+            # Assert
+            assert mock_datagram_socket.sendmsg.call_count == 2
+            assert mock_event_loop_add_reader.call_count == 0
+            assert mock_event_loop_add_writer.call_count == 1
+            assert chunks == [[b"data"]]
+            assert ancillary_data_sent == [[mocker.sentinel.ancdata]]
+
+        async def test____send_with_ancillary_to____transport_closed(
+            self,
+            listener: RawUnixDatagramListenerAdapter,
+            mock_datagram_socket: MagicMock,
+            mock_event_loop_add_reader: MagicMock,
+            mock_event_loop_add_writer: MagicMock,
+        ) -> None:
+            # Arrange
+            await listener.aclose()
+            mock_datagram_socket.reset_mock()
+
+            # Act & Assert
+            with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EBADF):
+                await listener.send_with_ancillary_to(b"data", [], "/path/to/unix.sock")
+
+            # Assert
+            mock_datagram_socket.assert_not_called()
+            mock_event_loop_add_reader.assert_not_called()
+            mock_event_loop_add_writer.assert_not_called()
+
+        @pytest.mark.parametrize(
+            "serve_method",
+            [
+                pytest.param("serve"),
+                pytest.param("serve_with_ancillary", marks=[PlatformMarkers.supports_socket_recvmsg]),
+            ],
+        )
+        @pytest.mark.parametrize("force_close", [pytest.param(False, id="aclose"), pytest.param(True, id="aclose_forcefully")])
+        async def test____special_case____serve____close_while_reading(
+            self,
+            serve_method: str,
+            force_close: bool,
+            listener: RawUnixDatagramListenerAdapter,
+            mock_datagram_socket: MagicMock,
+            handler: AsyncMock,
+        ) -> None:
+            # Arrange
+            mock_sock_recv_method: MagicMock
+            match serve_method:
+                case "serve":
+                    mock_sock_recv_method = mock_datagram_socket.recvfrom
+
+                    async def serve_coroutine(listener: RawUnixDatagramListenerAdapter) -> NoReturn:
+                        await listener.serve(handler)
+
+                case "serve_with_ancillary":
+                    mock_sock_recv_method = mock_datagram_socket.recvmsg
+
+                    async def serve_coroutine(listener: RawUnixDatagramListenerAdapter) -> NoReturn:
+                        await listener.serve_with_ancillary(handler, 2048)
+
+                case _:
+                    pytest.fail(serve_method)
+
+            with self._set_sock_method_in_blocking_state(mock_sock_recv_method):
+                busy_method_task = await self._busy_socket_task(serve_coroutine(listener), mock_sock_recv_method)
+
+            # Act
+            if force_close:
+                await aclose_forcefully(listener)
+            else:
+                await listener.aclose()
+
+            # Assert
+            with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EBADF):
+                await busy_method_task
+
+        @pytest.mark.parametrize(
+            "busy_serve_method",
+            [
+                pytest.param("serve"),
+                pytest.param("serve_with_ancillary", marks=[PlatformMarkers.supports_socket_recvmsg]),
+            ],
+            ids=lambda p: f"b:{p}",
+        )
+        @pytest.mark.parametrize(
+            "incoming_serve_method",
+            [
+                pytest.param("serve"),
+                pytest.param("serve_with_ancillary", marks=[PlatformMarkers.supports_socket_recvmsg]),
+            ],
+            ids=lambda p: f"i:{p}",
+        )
+        async def test____special_case____serve____busy(
+            self,
+            busy_serve_method: str,
+            incoming_serve_method: str,
+            listener: RawUnixDatagramListenerAdapter,
+            mock_datagram_socket: MagicMock,
+            handler: AsyncMock,
+        ) -> None:
+            # Arrange
+            mock_busy_sock_recv_method: MagicMock
+            match busy_serve_method:
+                case "serve":
+                    mock_busy_sock_recv_method = mock_datagram_socket.recvfrom
+
+                    async def serve_coroutine(listener: RawUnixDatagramListenerAdapter) -> NoReturn:
+                        await listener.serve(handler)
+
+                case "serve_with_ancillary":
+                    mock_busy_sock_recv_method = mock_datagram_socket.recvmsg
+
+                    async def serve_coroutine(listener: RawUnixDatagramListenerAdapter) -> NoReturn:
+                        await listener.serve_with_ancillary(handler, 2048)
+
+                case _:
+                    pytest.fail(busy_serve_method)
+
+            with self._set_sock_method_in_blocking_state(mock_busy_sock_recv_method):
+                busy_method_task = await self._busy_socket_task(serve_coroutine(listener), mock_busy_sock_recv_method)
+                # Cancel now for teardown speed-up.
+                busy_method_task.cancel()
+
+            # Act & Assert
+            with pytest.raises(
+                BusyResourceError,
+                match=r"^%s\(\) called while another coroutine is already waiting for incoming data" % incoming_serve_method,
+            ):
+                match incoming_serve_method:
+                    case "serve":
+                        await listener.serve(handler)
+                    case "serve_with_ancillary":
+                        await listener.serve_with_ancillary(handler, 2048)
+                    case _:
+                        pytest.fail(incoming_serve_method)
+            mock_datagram_socket.assert_not_called()
+
+        @pytest.mark.parametrize(
+            "send_method",
+            [
+                pytest.param("send_to"),
+                pytest.param("send_with_ancillary_to", marks=[PlatformMarkers.supports_socket_sendmsg]),
+            ],
+        )
+        @pytest.mark.parametrize("force_close", [pytest.param(False, id="aclose"), pytest.param(True, id="aclose_forcefully")])
+        async def test____special_case____send_to____close_while_writing(
+            self,
+            send_method: str,
+            force_close: bool,
+            listener: RawUnixDatagramListenerAdapter,
+            mock_datagram_socket: MagicMock,
+        ) -> None:
+            # Arrange
+            address = "/path/to/unix.sock"
+            mock_sock_send_method: MagicMock
+            match send_method:
+                case "send_to":
+                    mock_sock_send_method = mock_datagram_socket.sendto
+                    mock_sock_send_method.side_effect = lambda data, *args: memoryview(data).nbytes
+
+                    async def send_coroutine(listener: RawUnixDatagramListenerAdapter) -> None:
+                        await listener.send_to(b"data", address)
+
+                case "send_with_ancillary_to":
+                    mock_sock_send_method = mock_datagram_socket.sendmsg
+                    mock_sock_send_method.side_effect = lambda buffers, *args: sum(memoryview(v).nbytes for v in buffers)
+
+                    async def send_coroutine(listener: RawUnixDatagramListenerAdapter) -> None:
+                        await listener.send_with_ancillary_to(b"data", [], address)
+
+                case _:
+                    pytest.fail(send_method)
+
+            with self._set_sock_method_in_blocking_state(mock_sock_send_method):
+                busy_method_task = await self._busy_socket_task(send_coroutine(listener), mock_sock_send_method)
+
+            # Act
+            if force_close:
+                with self._set_sock_method_in_blocking_state(mock_sock_send_method):
+                    await aclose_forcefully(listener)
+            else:
+                await listener.aclose()
+
+            # Assert
+            with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EBADF) if force_close else contextlib.nullcontext():
+                await busy_method_task
+
+        @pytest.mark.parametrize(
+            "busy_send_method",
+            [
+                pytest.param("send_to"),
+                pytest.param("send_with_ancillary_to", marks=[PlatformMarkers.supports_socket_sendmsg]),
+            ],
+            ids=lambda p: f"b:{p}",
+        )
+        @pytest.mark.parametrize(
+            "incoming_send_method",
+            [
+                pytest.param("send_to"),
+                pytest.param("send_with_ancillary_to", marks=[PlatformMarkers.supports_socket_sendmsg]),
+            ],
+            ids=lambda p: f"i:{p}",
+        )
+        async def test____special_case____send____busy(
+            self,
+            busy_send_method: str,
+            incoming_send_method: str,
+            listener: RawUnixDatagramListenerAdapter,
+            mock_datagram_socket: MagicMock,
+        ) -> None:
+            # Arrange
+            address_1 = "/path/to/unix.sock"
+            address_2 = "/path/to/other.sock"
+            mock_busy_sock_send_method: MagicMock
+            match busy_send_method:
+                case "send_to":
+                    mock_busy_sock_send_method = mock_datagram_socket.sendto
+                    mock_busy_sock_send_method.side_effect = lambda data, *args: memoryview(data).nbytes
+
+                    async def send_coroutine(listener: RawUnixDatagramListenerAdapter) -> None:
+                        await listener.send_to(b"data", address_1)
+
+                case "send_with_ancillary_to":
+                    mock_busy_sock_send_method = mock_datagram_socket.sendmsg
+                    mock_busy_sock_send_method.side_effect = lambda buffers, *args: sum(memoryview(v).nbytes for v in buffers)
+
+                    async def send_coroutine(listener: RawUnixDatagramListenerAdapter) -> None:
+                        await listener.send_with_ancillary_to(b"data", [], address_1)
+
+                case _:
+                    pytest.fail(busy_send_method)
+
+            with self._set_sock_method_in_blocking_state(mock_busy_sock_send_method):
+                busy_method_task = await self._busy_socket_task(send_coroutine(listener), mock_busy_sock_send_method)
+                # Cancel now for teardown speed-up.
+                busy_method_task.cancel()
+
+            # Act & Assert
+            match incoming_send_method:
+                case "send_to":
+                    mock_datagram_socket.sendto.side_effect = lambda data, *args: memoryview(data).nbytes
+                    await listener.send_to(b"data", address_2)
+                case "send_with_ancillary_to":
+                    mock_datagram_socket.sendmsg.side_effect = lambda buffers, *args: sum(memoryview(v).nbytes for v in buffers)
+                    await listener.send_with_ancillary_to(b"data", [], address_2)
+                case _:
+                    pytest.fail(incoming_send_method)
+
+        async def test____extra_attributes____returns_socket_info(
+            self,
+            listener: RawUnixDatagramSocketAdapter,
+            local_address: tuple[str, int] | bytes,
+            mock_datagram_socket: MagicMock,
+            mocker: MockerFixture,
+        ) -> None:
+            # Arrange
+
+            # Act & Assert
+            assert getattr(listener.extra(SocketAttribute.socket), "_sock") is mock_datagram_socket
+            assert listener.extra(SocketAttribute.family) == mock_datagram_socket.family
+            assert listener.extra(SocketAttribute.sockname) == local_address
+            assert listener.extra(SocketAttribute.peername, mocker.sentinel.no_value) is mocker.sentinel.no_value
+
+        async def test____get_backend____returns_linked_instance(
+            self,
+            listener: RawUnixDatagramSocketAdapter,
+            asyncio_backend: AsyncIOBackend,
+        ) -> None:
+            # Arrange
+
+            # Act & Assert
+            assert listener.backend() is asyncio_backend
 
 
 class TestDatagramListenerProtocol:

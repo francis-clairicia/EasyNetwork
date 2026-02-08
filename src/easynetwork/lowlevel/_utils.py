@@ -254,7 +254,7 @@ def iter_bytes(b: bytes | bytearray | memoryview) -> Iterator[bytes]:
     return map(int.to_bytes, b)
 
 
-def adjust_leftover_buffer(buffers: deque[memoryview], nbytes: int) -> None:
+def adjust_leftover_buffer(buffers: deque[memoryview], nbytes: int) -> deque[memoryview]:
     while nbytes > 0:
         b = buffers.popleft()
         if b.itemsize != 1:
@@ -265,6 +265,7 @@ def adjust_leftover_buffer(buffers: deque[memoryview], nbytes: int) -> None:
         else:
             buffers.appendleft(b[nbytes:])
             break
+    return buffers
 
 
 def is_socket_connected(sock: ISocket) -> bool:

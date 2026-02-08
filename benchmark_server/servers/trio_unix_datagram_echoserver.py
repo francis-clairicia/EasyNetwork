@@ -43,7 +43,7 @@ async def echo_server(path: str) -> NoReturn:
                 if addr:
                     nursery.start_soon(_echo_client, lock, sock, datagram, addr)
                 else:
-                    LOGGER.warning("A datagram received from an unbound UNIX datagram socket was dropped.")
+                    LOGGER.warning("A datagram received from an unbound UNIX datagram socket has been dropped.")
 
 
 async def _echo_client(lock: trio.Lock, server: trio.socket.SocketType, datagram: bytes, addr: Any) -> None:

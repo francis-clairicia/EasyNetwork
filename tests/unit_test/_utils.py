@@ -215,6 +215,29 @@ def make_recv_into_side_effect(to_write: bytes | list[bytes]) -> Callable[[bytea
     return recv_into_side_effect
 
 
+def make_recv_with_ancillary_into_side_effect(
+    to_write: tuple[bytes, Any] | list[tuple[bytes, Any]],
+) -> Callable[[bytearray | memoryview, int, float], tuple[int, Any]]:
+    match to_write:
+        case list():
+            write_in_buffer = __make_write_in_buffer_side_effect([b[0] for b in to_write])
+            ancdata_iter = iter([b[1] for b in to_write])
+
+            def recv_into_side_effect(buffer: bytearray | memoryview, ancbufsize: int, timeout: float) -> tuple[int, Any]:
+                return write_in_buffer(buffer), next(ancdata_iter)
+
+        case (bytes_to_write, ancdata):
+            write_in_buffer = __make_write_in_buffer_side_effect(bytes_to_write)
+
+            def recv_into_side_effect(buffer: bytearray | memoryview, ancbufsize: int, timeout: float) -> tuple[int, Any]:
+                return write_in_buffer(buffer), ancdata
+
+        case _:
+            pytest.fail("Invalid setup")
+
+    return recv_into_side_effect
+
+
 def make_recv_noblock_into_side_effect(to_write: bytes | list[bytes]) -> Callable[[bytearray | memoryview], int]:
     write_in_buffer = __make_write_in_buffer_side_effect(to_write)
 
@@ -229,6 +252,29 @@ def make_async_recv_into_side_effect(to_write: bytes | list[bytes]) -> Callable[
 
     async def recv_into_side_effect(buffer: bytearray | memoryview) -> int:
         return write_in_buffer(buffer)
+
+    return recv_into_side_effect
+
+
+def make_async_recv_with_ancillary_into_side_effect(
+    to_write: tuple[bytes, Any] | list[tuple[bytes, Any]],
+) -> Callable[[bytearray | memoryview, int], Awaitable[tuple[int, Any]]]:
+    match to_write:
+        case list():
+            write_in_buffer = __make_write_in_buffer_side_effect([b[0] for b in to_write])
+            ancdata_iter = iter([b[1] for b in to_write])
+
+            async def recv_into_side_effect(buffer: bytearray | memoryview, ancbufsize: int) -> tuple[int, Any]:
+                return write_in_buffer(buffer), next(ancdata_iter)
+
+        case (bytes_to_write, ancdata):
+            write_in_buffer = __make_write_in_buffer_side_effect(bytes_to_write)
+
+            async def recv_into_side_effect(buffer: bytearray | memoryview, ancbufsize: int) -> tuple[int, Any]:
+                return write_in_buffer(buffer), ancdata
+
+        case _:
+            pytest.fail("Invalid setup")
 
     return recv_into_side_effect
 

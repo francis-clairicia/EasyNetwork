@@ -71,6 +71,8 @@ else:
             runner_options: Mapping[str, Any] | None = None,
             mode: int | None = None,
             unnamed_addresses_behavior: _UnnamedAddressesBehavior | None = None,
+            receive_ancillary_data: bool = False,
+            ancillary_bufsize: int | None = None,
             logger: logging.Logger | None = None,
         ) -> None:
             """
@@ -89,6 +91,8 @@ else:
                     request_handler=request_handler,
                     mode=mode,
                     unnamed_addresses_behavior=unnamed_addresses_behavior,
+                    receive_ancillary_data=receive_ancillary_data,
+                    ancillary_bufsize=ancillary_bufsize,
                     logger=logger,
                 ),
                 runner_options=runner_options,

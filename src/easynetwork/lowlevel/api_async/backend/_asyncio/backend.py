@@ -174,7 +174,7 @@ class AsyncIOBackend(AbstractAsyncBackend):
             *,
             local_path: str | bytes | None = None,
         ) -> AsyncStreamTransport:
-            from .stream.socket import AsyncioTransportStreamSocketAdapter, StreamReaderBufferedProtocol
+            from .stream.socket import RawUnixStreamSocketAdapter
 
             loop = self.__asyncio.get_running_loop()
 
@@ -188,29 +188,23 @@ class AsyncIOBackend(AbstractAsyncBackend):
                 socket.close()
                 raise
 
-            transport, protocol = await loop.create_unix_connection(
-                _utils.make_callback(StreamReaderBufferedProtocol, loop=loop),
-                sock=socket,
-            )
-            return AsyncioTransportStreamSocketAdapter(self, transport, protocol)
+            return RawUnixStreamSocketAdapter(self, socket)
 
     async def wrap_stream_socket(self, socket: _socket.socket) -> AsyncStreamTransport:
+        if sys.platform != "win32" and _unix_utils.is_unix_socket_family(socket.family):
+            from .stream.socket import RawUnixStreamSocketAdapter
+
+            socket.setblocking(False)
+            return RawUnixStreamSocketAdapter(self, socket)
+
         from .stream.socket import AsyncioTransportStreamSocketAdapter, StreamReaderBufferedProtocol
 
         socket.setblocking(False)
         loop = self.__asyncio.get_running_loop()
-        if _unix_utils.is_unix_socket_family(socket.family):
-            # Technically, loop.create_connection() would work for Unix sockets but it is currently supported
-            # for backward compatibility. It is better to directly use the provided way instead.
-            transport, protocol = await loop.create_unix_connection(
-                _utils.make_callback(StreamReaderBufferedProtocol, loop=loop),
-                sock=socket,
-            )
-        else:
-            transport, protocol = await loop.create_connection(
-                _utils.make_callback(StreamReaderBufferedProtocol, loop=loop),
-                sock=socket,
-            )
+        transport, protocol = await loop.create_connection(
+            _utils.make_callback(StreamReaderBufferedProtocol, loop=loop),
+            sock=socket,
+        )
         return AsyncioTransportStreamSocketAdapter(self, transport, protocol)
 
     async def create_tcp_listeners(
@@ -256,7 +250,7 @@ class AsyncIOBackend(AbstractAsyncBackend):
             *,
             mode: int | None = None,
         ) -> AsyncListener[AsyncStreamTransport]:
-            from .stream.listener import AcceptedSocketFactory, ListenerSocketAdapter
+            from .stream.listener import AcceptedUnixSocketFactory, ListenerSocketAdapter
 
             loop = self.__asyncio.get_running_loop()
 
@@ -271,7 +265,7 @@ class AsyncIOBackend(AbstractAsyncBackend):
                 socket.close()
                 raise
 
-            listener = ListenerSocketAdapter(self, socket, AcceptedSocketFactory(), backlog=backlog)
+            listener = ListenerSocketAdapter(self, socket, AcceptedUnixSocketFactory(), backlog=backlog)
             return listener
 
     async def create_udp_endpoint(
@@ -299,8 +293,7 @@ class AsyncIOBackend(AbstractAsyncBackend):
             *,
             local_path: str | bytes | None = None,
         ) -> AsyncDatagramTransport:
-            from .datagram.endpoint import create_datagram_endpoint
-            from .datagram.socket import AsyncioTransportDatagramSocketAdapter
+            from .datagram.socket import RawUnixDatagramSocketAdapter
 
             loop = self.__asyncio.get_running_loop()
 
@@ -314,10 +307,15 @@ class AsyncIOBackend(AbstractAsyncBackend):
                 socket.close()
                 raise
 
-            endpoint = await create_datagram_endpoint(sock=socket)
-            return AsyncioTransportDatagramSocketAdapter(self, endpoint)
+            return RawUnixDatagramSocketAdapter(self, socket)
 
     async def wrap_connected_datagram_socket(self, socket: _socket.socket) -> AsyncDatagramTransport:
+        if sys.platform != "win32" and _unix_utils.is_unix_socket_family(socket.family):
+            from .datagram.socket import RawUnixDatagramSocketAdapter
+
+            socket.setblocking(False)
+            return RawUnixDatagramSocketAdapter(self, socket)
+
         from .datagram.endpoint import create_datagram_endpoint
         from .datagram.socket import AsyncioTransportDatagramSocketAdapter
 
@@ -365,7 +363,7 @@ class AsyncIOBackend(AbstractAsyncBackend):
             *,
             mode: int | None = None,
         ) -> AsyncDatagramListener[str | bytes]:
-            from .datagram.listener import DatagramListenerProtocol, DatagramListenerSocketAdapter
+            from .datagram.listener import RawUnixDatagramListenerAdapter
 
             loop = self.__asyncio.get_running_loop()
 
@@ -379,11 +377,7 @@ class AsyncIOBackend(AbstractAsyncBackend):
                 socket.close()
                 raise
 
-            transport, protocol = await loop.create_datagram_endpoint(
-                _utils.make_callback(DatagramListenerProtocol, loop=loop),
-                sock=socket,
-            )
-            listener = DatagramListenerSocketAdapter(self, transport, protocol)
+            listener = RawUnixDatagramListenerAdapter(self, socket)
             return listener
 
     def create_lock(self) -> ILock:

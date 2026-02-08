@@ -45,7 +45,7 @@ else:
     from ..lowlevel import _lock, _unix_utils, _utils, constants
     from ..lowlevel.api_sync.endpoints.datagram import DatagramEndpoint
     from ..lowlevel.api_sync.transports import socket as _transport_socket
-    from ..lowlevel.socket import SocketProxy, UnixSocketAddress, UNIXSocketAttribute
+    from ..lowlevel.socket import SocketAncillary, SocketProxy, UnixSocketAddress, UNIXSocketAttribute
     from ..protocol import DatagramProtocol
     from .abc import AbstractNetworkClient
 
@@ -196,11 +196,20 @@ else:
             with self.__send_lock.get():
                 self.__endpoint.close()
 
-        def send_packet(self, packet: _T_SentPacket, *, timeout: float | None = None) -> None:
+        def send_packet(
+            self,
+            packet: _T_SentPacket,
+            *,
+            ancillary_data: SocketAncillary | None = None,
+            timeout: float | None = None,
+        ) -> None:
             """
             Sends `packet` to the remote endpoint. Thread-safe.
 
             If `timeout` is not :data:`None`, the entire send operation will take at most `timeout` seconds.
+
+            .. versionchanged:: NEXT_VERSION
+                Added `ancillary_data` parameter.
 
             Warning:
                 A timeout on a send operation is unusual.
@@ -214,6 +223,7 @@ else:
 
             Parameters:
                 packet: the Python object to send.
+                ancillary_data: the socket ancillary data to send along with the packet.
                 timeout: the allowed time (in seconds) for blocking operations.
 
             Raises:
@@ -226,14 +236,26 @@ else:
                 if endpoint.is_closed():
                     raise self.__closed()
                 with self.__convert_socket_error(endpoint=endpoint):
-                    endpoint.send_packet(packet, timeout=timeout)
+                    if ancillary_data is None:
+                        endpoint.send_packet(packet, timeout=timeout)
+                    else:
+                        endpoint.send_packet_with_ancillary(packet, ancillary_data.as_raw(), timeout=timeout)
                     _utils.check_real_socket_state(endpoint.extra(UNIXSocketAttribute.socket))
 
-        def recv_packet(self, *, timeout: float | None = None) -> _T_ReceivedPacket:
+        def recv_packet(
+            self,
+            *,
+            ancillary_data: SocketAncillary | None = None,
+            ancillary_bufsize: int | None = None,
+            timeout: float | None = None,
+        ) -> _T_ReceivedPacket:
             """
             Waits for a new packet from the remote endpoint. Thread-safe.
 
             If `timeout` is not :data:`None`, the entire receive operation will take at most `timeout` seconds.
+
+            .. versionchanged:: NEXT_VERSION
+                Added `ancillary_data` and `ancillary_bufsize` parameters.
 
             Important:
                 The lock acquisition time is included in the `timeout`.
@@ -241,6 +263,8 @@ else:
                 This means that you may get a :exc:`TimeoutError` because it took too long to get the lock.
 
             Parameters:
+                ancillary_data: where to write received ancillary data.
+                ancillary_bufsize: read buffer size for ancillary data.
                 timeout: the allowed time (in seconds) for blocking operations.
 
             Raises:
@@ -257,6 +281,16 @@ else:
                 if endpoint.is_closed():
                     raise self.__closed()
                 with self.__convert_socket_error(endpoint=endpoint):
+                    if ancillary_data is not None:
+                        if ancillary_bufsize is None:
+                            ancillary_bufsize = constants.DEFAULT_UNIX_SOCKETS_ANCILLARY_DATA_BUFSIZE
+                        return endpoint.recv_packet_with_ancillary(
+                            ancillary_bufsize,
+                            ancillary_data.update_from_raw,
+                            timeout=timeout,
+                        )
+                    elif ancillary_bufsize is not None:
+                        raise ValueError("ancillary_bufsize is only meaningful with ancillary_data")
                     return endpoint.recv_packet(timeout=timeout)
                 raise AssertionError("Expected code to be unreachable.")
 
@@ -333,8 +367,7 @@ else:
         *,
         local_path: str | bytes | None = None,
     ) -> _socket.socket:
-        family: int = getattr(_socket, "AF_UNIX")
-        socket = _socket.socket(family, _socket.SOCK_DGRAM, 0)
+        socket = _socket.socket(_socket.AF_UNIX, _socket.SOCK_DGRAM, 0)
         try:
             if local_path is not None:
                 try:
