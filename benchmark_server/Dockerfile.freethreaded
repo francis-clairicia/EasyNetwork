@@ -1,6 +1,7 @@
-ARG PYTHON_IMAGE=ghcr.io/abebus/free-threaded-python-docker-image:main
+FROM quay.io/pypa/manylinux_2_34_x86_64
 
-FROM $PYTHON_IMAGE
+ARG PYTHON_VERSION=cp314
+ENV PATH="/opt/python/${PYTHON_VERSION}-${PYTHON_VERSION}t/bin:$PATH"
 
 # This means 'do not warn about it' :)
 ENV PIP_ROOT_USER_ACTION=ignore

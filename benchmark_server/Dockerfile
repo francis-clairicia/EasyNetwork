@@ -1,6 +1,6 @@
-ARG PYTHON_IMAGE=python:3.14
+ARG PYTHON_VERSION=3.14
 
-FROM $PYTHON_IMAGE
+FROM python:$PYTHON_VERSION
 
 # This means 'do not warn about it' :)
 ENV PIP_ROOT_USER_ACTION=ignore
