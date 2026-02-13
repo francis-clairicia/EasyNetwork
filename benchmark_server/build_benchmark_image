@@ -22,12 +22,13 @@ ROOT_DIR = Path(__file__).parent
 
 SUPPORTED_PYTHON_VERSIONS = {
     # Free-threaded builds
-    "3.13t": "ghcr.io/abebus/free-threaded-python-docker-image:main",
+    "3.14t": "cp314",
+    "3.13t": "cp313",
     # Normal builds
-    "3.11": "python:3.11.14",
-    "3.12": "python:3.12.12",
-    "3.13": "python:3.13.11",
-    "3.14": "python:3.14.2",
+    "3.11": "3.11.14",
+    "3.12": "3.12.12",
+    "3.13": "3.13.11",
+    "3.14": "3.14.2",
 }
 
 
@@ -107,7 +108,10 @@ def main() -> None:
     args = parser.parse_args()
 
     python_version: str = args.python_version
-    print(f"Selected Python version: {python_version} (Docker image tag: {SUPPORTED_PYTHON_VERSIONS[python_version]})")
+    if python_version.endswith("t"):
+        print(f"Selected Python version: {python_version} (Docker image tag: quay.io/pypa/manylinux_2_34_x86_64")
+    else:
+        print(f"Selected Python version: {python_version} (Docker image tag: python:{SUPPORTED_PYTHON_VERSIONS[python_version]})")
 
     client = docker.from_env()
     _build_docker_image(client, _build_sdist_for_docker_image(), args.tag, python_version)
