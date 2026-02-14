@@ -488,7 +488,9 @@ class Listener(BaseTransport, Generic[_T_co]):
         Returns:
             the time (in seconds) to wait before calling :meth:`accept` if there were a capacity error.
         """
-        return 0.0
+        from ...constants import ACCEPT_CAPACITY_ERROR_SLEEP_TIME
+
+        return ACCEPT_CAPACITY_ERROR_SLEEP_TIME
 
 
 class DatagramListener(BaseTransport, Generic[_T_Address]):
@@ -501,21 +503,11 @@ class DatagramListener(BaseTransport, Generic[_T_Address]):
     __slots__ = ()
 
     @abstractmethod
-    def recv_from(
-        self,
-        handler: Callable[[bytes, _T_Address], _T_Return],
-        executor: concurrent.futures.Executor,
-        timeout: float,
-    ) -> concurrent.futures.Future[_T_Return]:
+    def recv_from(self, timeout: float) -> tuple[bytes, _T_Address]:
         """
-        Receive incoming datagrams as they come in and start tasks to handle them.
-
-        Important:
-            The implementation must ensure that datagrams are processed in the order in which they are received.
+        Read and return the next available packet.
 
         Parameters:
-            handler: a callable that will be used to handle received datagram.
-            executor: will be used to start task for handling accepted datagram.
             timeout: the allowed time (in seconds) for blocking operations. Can be set to :data:`math.inf`.
 
         Raises:
@@ -523,7 +515,7 @@ class DatagramListener(BaseTransport, Generic[_T_Address]):
             TimeoutError: Operation timed out.
 
         Returns:
-            a :class:`~concurrent.futures.Future` for the spawned task.
+            a tuple with some :class:`bytes` and the sender's address.
         """
         raise NotImplementedError
 

@@ -584,4 +584,5 @@ class AtomicUIntCounter:
 
     @property
     def value(self) -> int:
-        return self.__value
+        with self.__lock:
+            return self.__value

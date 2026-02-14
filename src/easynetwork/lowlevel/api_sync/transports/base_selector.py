@@ -569,20 +569,12 @@ class SelectorDatagramListener(SelectorBaseTransport, transports.DatagramListene
     __slots__ = ()
 
     @abstractmethod
-    def recv_noblock_from(
-        self,
-        handler: Callable[[bytes, _T_Address], _T_Return],
-        executor: concurrent.futures.Executor,
-    ) -> concurrent.futures.Future[_T_Return]:
+    def recv_noblock_from(self) -> tuple[bytes, _T_Address]:
         """
-        Receive incoming datagrams as they come in and start tasks to handle them.
+        Read and return the next available packet.
 
         Important:
             The implementation must ensure that datagrams are processed in the order in which they are received.
-
-        Parameters:
-            handler: a callable that will be used to handle received datagram.
-            executor: will be used to start task for handling accepted datagram.
 
         Raises:
             WouldBlockOnRead: the operation would block when reading the pipe.
@@ -590,22 +582,17 @@ class SelectorDatagramListener(SelectorBaseTransport, transports.DatagramListene
             OutOfResourcesError: Resource limits exceeded.
 
         Returns:
-            a :class:`~concurrent.futures.Future` for the spawned task.
+            a tuple with some :class:`bytes` and the sender's address.
         """
         raise NotImplementedError
 
-    def recv_from(
-        self,
-        handler: Callable[[bytes, _T_Address], _T_Return],
-        executor: concurrent.futures.Executor,
-        timeout: float,
-    ) -> concurrent.futures.Future[_T_Return]:
+    def recv_from(self, timeout: float) -> tuple[bytes, _T_Address]:
         """
-        Receive incoming datagrams as they come in and start tasks to handle them.
+        Read and return the next available packet.
 
         The default implementation will retry to call :meth:`recv_noblock_from` until it succeeds under the given `timeout`.
         """
-        return self._retry(lambda: self.recv_noblock_from(handler, executor), timeout)[0]
+        return self._retry(lambda: self.recv_noblock_from(), timeout)[0]
 
     @abstractmethod
     def send_noblock_to(self, data: bytes | bytearray | memoryview, address: _T_Address) -> None:

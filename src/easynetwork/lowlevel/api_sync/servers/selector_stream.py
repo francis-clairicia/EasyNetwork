@@ -163,7 +163,7 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
     """
 
     __slots__ = (
-        "__listener",
+        "__thread_safe_listener",
         "__protocol",
         "__max_recv_size",
         "__selector_factory",
@@ -205,7 +205,7 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
 
         self.__wakeup_socketpair = _wakeup_socketpair.WakeupSocketPair()
         self.__active_tasks = _utils.AtomicUIntCounter(value=1)
-        self.__listener = _ThreadSafeListener(
+        self.__thread_safe_listener = _ThreadSafeListener(
             listener,
             self.__wakeup_socketpair,
             _utils.weak_method_proxy(self.__detach_server, default=None),
@@ -223,7 +223,7 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
         with contextlib.suppress(Exception):
             self.__wakeup_socketpair.close()
         try:
-            listener = self.__listener
+            listener = self.__thread_safe_listener
         except AttributeError:
             return
         if not listener.is_closed():
@@ -237,14 +237,14 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
         Returns:
             :data:`True` if the server is closed.
         """
-        return self.__listener.is_closed()
+        return self.__thread_safe_listener.is_closed()
 
     def close(self) -> None:
         """
         Closes the server.
         """
         with self.__close_lock:
-            self.__listener.close()
+            self.__thread_safe_listener.close()
 
     def shutdown(self, timeout: float | None = None) -> None:
         """
@@ -283,7 +283,7 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
             try:
                 selector = stack.enter_context(self.__selector_factory())
                 with self.__close_lock:
-                    if self.__listener.is_closed():
+                    if self.__thread_safe_listener.is_closed():
                         raise _utils.error_from_errno(_errno.EBADF, "{strerror} (Server is closed)")
                     selector.register(self.__wakeup_socketpair, selectors.EVENT_READ)
                     self.__wakeup_socketpair.drain()
@@ -402,14 +402,13 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
                 request_handler_context=request_handler_context,
                 transport_close_exit_stack=transport_close_exit_stack,
             )
-            task_exit_stack = task_exit_stack.pop_all()
-            self.__serve_requests__schedule_next_client_handle(
+            self.__serve_requests__handle_client_request(
                 None,
                 client_data=client_data,
-                receive_timeout=timeout,
                 selector_token=selector_token,
                 executor=executor,
                 task_exit_stack=task_exit_stack,
+                receive_timeout=timeout,
             )
 
     def __serve_requests__handle_client_request(
@@ -486,7 +485,7 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
                     receive_timeout=receive_timeout,
                     selector_token=selector_token,
                     executor=executor,
-                    task_exit_stack=task_exit_stack,
+                    task_exit_stack=task_exit_stack.pop_all(),
                 )
         finally:
             reader_future = None  # Break reference cycle with future on error.
@@ -502,7 +501,6 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
         task_exit_stack: contextlib.ExitStack,
         receive_timeout: float | None,
     ) -> None:
-        task_exit_stack = task_exit_stack.pop_all()
         try:
             handler_future = executor.submit(
                 self.__serve_requests__handle_client_request,
@@ -615,10 +613,11 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
                 return
             else:
                 try:
+                    from ..transports.base_selector import _wait_for_fd
+
                     request: _T_Request | None
                     _validate_timeout_delay = _utils.validate_optional_timeout_delay
                     _EVENT_READ = selectors.EVENT_READ
-                    _wait_for_fd = _selector_transports._wait_for_fd
                     while not client.is_closing():
                         try:
                             timeout = _validate_timeout_delay(timeout, positive_check=True)
@@ -709,7 +708,7 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
     ) -> None:
         selector = selector_token.selector
         selector_state_lock = selector_token.state_lock
-        listener = self.__listener
+        listener = self.__thread_safe_listener
         shutdown_requested = self.__shutdown_request.is_set
 
         while not shutdown_requested():
@@ -735,15 +734,14 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
             del selector_wait_timeout
 
             # Notify threads for ready file descriptors
-            self.__handle_events(selector, selector_state_lock, ready)
-            self.__handle_pending_transports(selector, selector_state_lock)
+            with selector_state_lock:
+                self.__handle_events(selector, ready)
 
             ready.clear()
 
     def __handle_events(
         self,
         selector: selectors.BaseSelector,
-        state_lock: threading.RLock,
         events: list[tuple[selectors.SelectorKey, int]],
     ) -> None:
         wakeup_socketpair = self.__wakeup_socketpair
@@ -754,29 +752,24 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
                 continue
 
             selector_key_data: _SelectorKeyData = key.data
-            with state_lock:
-                try:
-                    selector.unregister(key.fileobj)
-                except KeyError:
-                    pass
-                finally:
-                    _set_future_result_unless_cancelled(selector_key_data.future, now - selector_key_data.start_time)
+            try:
+                selector.unregister(key.fileobj)
+            except KeyError:
+                pass
+            finally:
+                _set_future_result_unless_cancelled(selector_key_data.future, now - selector_key_data.start_time)
 
-    def __handle_pending_transports(self, selector: selectors.BaseSelector, state_lock: threading.RLock) -> None:
         # Either:
         # - Cancel pending futures if transport has been closed asynchronously
         # - Set timeout error if deadline has been reached
-        with state_lock:
-            now = _get_current_time()
-
-            for key in list(selector.get_map().values()):
-                match key.data:
-                    case _SelectorKeyData(transport=transport, future=task_future) if transport.is_closing():
-                        selector.unregister(key.fileobj)
-                        _cancel_future_and_notify(task_future)
-                    case _SelectorKeyData(deadline=deadline, future=task_future) if deadline < now:
-                        selector.unregister(key.fileobj)
-                        _set_future_exception_unless_cancelled(task_future, _utils.error_from_errno(_errno.ETIMEDOUT))
+        for key in list(selector.get_map().values()):
+            if isinstance(key.data, _SelectorKeyData):
+                if key.data.transport.is_closing():
+                    selector.unregister(key.fileobj)
+                    _cancel_future_and_notify(key.data.future)
+                elif key.data.deadline < now:
+                    selector.unregister(key.fileobj)
+                    _set_future_exception_unless_cancelled(key.data.future, _utils.error_from_errno(_errno.ETIMEDOUT))
 
     def __attach_server(self) -> None:
         self.__active_tasks.increment()
@@ -812,7 +805,7 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
     @property
     @_utils.inherit_doc(_transports.BaseTransport)
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
-        return self.__listener.extra_attributes
+        return self.__thread_safe_listener.extra_attributes
 
 
 @dataclasses.dataclass(kw_only=True, eq=False, slots=True)
