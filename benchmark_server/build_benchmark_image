@@ -27,7 +27,7 @@ SUPPORTED_PYTHON_VERSIONS = {
     # Normal builds
     "3.12": "3.12.13",
     "3.13": "3.13.14",
-    "3.14": "3.14.3",
+    "3.14": "3.14.6",
 }
 
 
@@ -63,7 +63,7 @@ def _build_docker_image(client: docker.DockerClient, sdist_path: Path, tag: str,
         f"--tag={tag}",
     ]
     buildargs = {
-        "PYTHON_IMAGE": SUPPORTED_PYTHON_VERSIONS[python_version],
+        "PYTHON_VERSION": SUPPORTED_PYTHON_VERSIONS[python_version],
         "EASYNETWORK_SDIST": os.fspath(sdist_path),
     }
     docker_build_command_line += chain.from_iterable(["--build-arg", f"{key}={value}"] for key, value in buildargs.items())
