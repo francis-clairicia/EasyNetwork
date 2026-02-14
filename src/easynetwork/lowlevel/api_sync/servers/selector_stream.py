@@ -36,17 +36,14 @@ import types
 import warnings
 import weakref
 from collections.abc import Callable, Generator, Mapping
-from typing import Any, Generic, Literal, NamedTuple, Self, TypeAlias, TypeVar, assert_never
+from typing import Any, Literal, NamedTuple, Self, assert_never
 
-from ...._typevars import _T_Request, _T_Response
 from ....protocol import AnyStreamProtocolType
 from ... import _stream, _utils, _wakeup_socketpair
 from ..transports import abc as _transports, base_selector as _selector_transports
 
-_T_Return = TypeVar("_T_Return")
 
-
-class ConnectedStreamClient(_transports.BaseTransport, Generic[_T_Response]):
+class ConnectedStreamClient[Response](_transports.BaseTransport):
     """
     Write-end of the connected client.
 
@@ -68,7 +65,7 @@ class ConnectedStreamClient(_transports.BaseTransport, Generic[_T_Response]):
         *,
         _transport: _transports.StreamWriteTransport,
         _transport_close_lock: threading.Lock,
-        _producer: _stream.StreamDataProducer[_T_Response],
+        _producer: _stream.StreamDataProducer[Response],
         _reader_condvar: threading.Condition,
         _reader_done: _utils.Flag,
         _wakeup_socketpair: _wakeup_socketpair.WakeupSocketPair,
@@ -76,7 +73,7 @@ class ConnectedStreamClient(_transports.BaseTransport, Generic[_T_Response]):
         super().__init__()
 
         self.__transport: _transports.StreamWriteTransport = _transport
-        self.__producer: _stream.StreamDataProducer[_T_Response] = _producer
+        self.__producer: _stream.StreamDataProducer[Response] = _producer
         self.__close_lock = _transport_close_lock
         self.__closing_event = threading.Event()
         self.__reader_condvar = _reader_condvar
@@ -127,7 +124,7 @@ class ConnectedStreamClient(_transports.BaseTransport, Generic[_T_Response]):
             else:
                 self.__transport.close()
 
-    def send_packet(self, packet: _T_Response, *, timeout: float | None = None) -> None:
+    def send_packet(self, packet: Response, *, timeout: float | None = None) -> None:
         """
         Sends `packet` to the remote endpoint.  Thread-safe.
 
@@ -155,7 +152,7 @@ class ConnectedStreamClient(_transports.BaseTransport, Generic[_T_Response]):
         return self.__transport.extra_attributes
 
 
-class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Response]):
+class SelectorStreamServer[Request, Response](_transports.BaseTransport):
     """
     Stream listener interface.
 
@@ -163,7 +160,7 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
     """
 
     __slots__ = (
-        "__listener",
+        "__thread_safe_listener",
         "__protocol",
         "__max_recv_size",
         "__selector_factory",
@@ -178,7 +175,7 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
     def __init__(
         self,
         listener: _selector_transports.SelectorListener[_selector_transports.SelectorStreamTransport],
-        protocol: AnyStreamProtocolType[_T_Response, _T_Request],
+        protocol: AnyStreamProtocolType[Response, Request],
         max_recv_size: int,
         *,
         selector_factory: Callable[[], selectors.BaseSelector] | None = None,
@@ -205,12 +202,12 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
 
         self.__wakeup_socketpair = _wakeup_socketpair.WakeupSocketPair()
         self.__active_tasks = _utils.AtomicUIntCounter(value=1)
-        self.__listener = _ThreadSafeListener(
+        self.__thread_safe_listener = _ThreadSafeListener(
             listener,
             self.__wakeup_socketpair,
             _utils.weak_method_proxy(self.__detach_server, default=None),
         )
-        self.__protocol: AnyStreamProtocolType[_T_Response, _T_Request] = protocol
+        self.__protocol: AnyStreamProtocolType[Response, Request] = protocol
         self.__max_recv_size: int = max_recv_size
         self.__selector_factory: Callable[[], selectors.BaseSelector] = selector_factory
         self.__serve_guard = _utils.ThreadSafeResourceGuard("another task is currently accepting new connections")
@@ -223,7 +220,7 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
         with contextlib.suppress(Exception):
             self.__wakeup_socketpair.close()
         try:
-            listener = self.__listener
+            listener = self.__thread_safe_listener
         except AttributeError:
             return
         if not listener.is_closed():
@@ -237,14 +234,14 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
         Returns:
             :data:`True` if the server is closed.
         """
-        return self.__listener.is_closed()
+        return self.__thread_safe_listener.is_closed()
 
     def close(self) -> None:
         """
         Closes the server.
         """
         with self.__close_lock:
-            self.__listener.close()
+            self.__thread_safe_listener.close()
 
     def shutdown(self, timeout: float | None = None) -> None:
         """
@@ -263,7 +260,7 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
 
     def serve(
         self,
-        client_connected_cb: Callable[[ConnectedStreamClient[_T_Response]], Generator[float | None, _T_Request]],
+        client_connected_cb: Callable[[ConnectedStreamClient[Response]], Generator[float | None, Request]],
         executor: concurrent.futures.Executor,
         *,
         worker_strategy: Literal["clients", "requests"] = "requests",
@@ -283,7 +280,7 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
             try:
                 selector = stack.enter_context(self.__selector_factory())
                 with self.__close_lock:
-                    if self.__listener.is_closed():
+                    if self.__thread_safe_listener.is_closed():
                         raise _utils.error_from_errno(_errno.EBADF, "{strerror} (Server is closed)")
                     selector.register(self.__wakeup_socketpair, selectors.EVENT_READ)
                     self.__wakeup_socketpair.drain()
@@ -324,7 +321,7 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
         self,
         *,
         selector: selectors.BaseSelector,
-        client_connected_cb: Callable[[ConnectedStreamClient[_T_Response]], Generator[float | None, _T_Request]],
+        client_connected_cb: Callable[[ConnectedStreamClient[Response]], Generator[float | None, Request]],
         executor: concurrent.futures.Executor,
         disconnect_error_filter: Callable[[Exception], bool] | None,
         server_is_shutting_down: Callable[[], bool],
@@ -348,7 +345,7 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
         *,
         default_context: contextvars.Context,
         selector_token: _SelectorToken,
-        client_connected_cb: Callable[[ConnectedStreamClient[_T_Response]], Generator[float | None, _T_Request]],
+        client_connected_cb: Callable[[ConnectedStreamClient[Response]], Generator[float | None, Request]],
         executor: concurrent.futures.Executor,
         disconnect_error_filter: Callable[[Exception], bool] | None,
         server_is_shutting_down: Callable[[], bool],
@@ -402,14 +399,13 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
                 request_handler_context=request_handler_context,
                 transport_close_exit_stack=transport_close_exit_stack,
             )
-            task_exit_stack = task_exit_stack.pop_all()
-            self.__serve_requests__schedule_next_client_handle(
+            self.__serve_requests__handle_client_request(
                 None,
                 client_data=client_data,
-                receive_timeout=timeout,
                 selector_token=selector_token,
                 executor=executor,
                 task_exit_stack=task_exit_stack,
+                receive_timeout=timeout,
             )
 
     def __serve_requests__handle_client_request(
@@ -417,7 +413,7 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
         reader_future: concurrent.futures.Future[float] | None,
         /,
         *,
-        client_data: _ClientData[_T_Request, _T_Response],
+        client_data: _ClientData[Request, Response],
         selector_token: _SelectorToken,
         executor: concurrent.futures.Executor,
         task_exit_stack: contextlib.ExitStack,
@@ -426,7 +422,7 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
         try:
             with task_exit_stack.pop_all() as task_exit_stack:
                 client = client_data.client
-                request: _T_Request | None
+                request: Request | None
                 try:
                     if client.is_closing():
                         return
@@ -486,7 +482,7 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
                     receive_timeout=receive_timeout,
                     selector_token=selector_token,
                     executor=executor,
-                    task_exit_stack=task_exit_stack,
+                    task_exit_stack=task_exit_stack.pop_all(),
                 )
         finally:
             reader_future = None  # Break reference cycle with future on error.
@@ -496,13 +492,12 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
         reader_future: concurrent.futures.Future[float] | None,
         /,
         *,
-        client_data: _ClientData[_T_Request, _T_Response],
+        client_data: _ClientData[Request, Response],
         selector_token: _SelectorToken,
         executor: concurrent.futures.Executor,
         task_exit_stack: contextlib.ExitStack,
         receive_timeout: float | None,
     ) -> None:
-        task_exit_stack = task_exit_stack.pop_all()
         try:
             handler_future = executor.submit(
                 self.__serve_requests__handle_client_request,
@@ -542,7 +537,7 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
         self,
         *,
         selector: selectors.BaseSelector,
-        client_connected_cb: Callable[[ConnectedStreamClient[_T_Response]], Generator[float | None, _T_Request]],
+        client_connected_cb: Callable[[ConnectedStreamClient[Response]], Generator[float | None, Request]],
         executor: concurrent.futures.Executor,
         disconnect_error_filter: Callable[[Exception], bool] | None,
         server_is_shutting_down: Callable[[], bool],
@@ -569,7 +564,7 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
     def __serve_clients__client_task(
         self,
         transport: _selector_transports.SelectorStreamTransport,
-        client_connected_cb: Callable[[ConnectedStreamClient[_T_Response]], Generator[float | None, _T_Request]],
+        client_connected_cb: Callable[[ConnectedStreamClient[Response]], Generator[float | None, Request]],
         disconnect_error_filter: Callable[[Exception], bool] | None,
         server_is_shutting_down: Callable[[], bool],
     ) -> None:
@@ -615,10 +610,11 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
                 return
             else:
                 try:
-                    request: _T_Request | None
+                    from ..transports.base_selector import _wait_for_fd
+
+                    request: Request | None
                     _validate_timeout_delay = _utils.validate_optional_timeout_delay
                     _EVENT_READ = selectors.EVENT_READ
-                    _wait_for_fd = _selector_transports._wait_for_fd
                     while not client.is_closing():
                         try:
                             timeout = _validate_timeout_delay(timeout, positive_check=True)
@@ -669,10 +665,10 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
         transport: _selector_transports.SelectorStreamTransport,
         disconnect_error_filter: Callable[[Exception], bool] | None,
         server_is_shutting_down: Callable[[], bool],
-    ) -> _AnyRequestReceiver[_T_Request]:
+    ) -> _AnyRequestReceiver[Request]:
         from ....protocol import BufferedStreamProtocol, StreamProtocol
 
-        consumer: _stream.StreamDataConsumer[_T_Request] | _stream.BufferedStreamDataConsumer[_T_Request]
+        consumer: _stream.StreamDataConsumer[Request] | _stream.BufferedStreamDataConsumer[Request]
         match self.__protocol:
             case BufferedStreamProtocol():
                 consumer = _stream.BufferedStreamDataConsumer(self.__protocol, self.__max_recv_size)
@@ -709,7 +705,7 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
     ) -> None:
         selector = selector_token.selector
         selector_state_lock = selector_token.state_lock
-        listener = self.__listener
+        listener = self.__thread_safe_listener
         shutdown_requested = self.__shutdown_request.is_set
 
         while not shutdown_requested():
@@ -735,15 +731,14 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
             del selector_wait_timeout
 
             # Notify threads for ready file descriptors
-            self.__handle_events(selector, selector_state_lock, ready)
-            self.__handle_pending_transports(selector, selector_state_lock)
+            with selector_state_lock:
+                self.__handle_events(selector, ready)
 
             ready.clear()
 
     def __handle_events(
         self,
         selector: selectors.BaseSelector,
-        state_lock: threading.RLock,
         events: list[tuple[selectors.SelectorKey, int]],
     ) -> None:
         wakeup_socketpair = self.__wakeup_socketpair
@@ -754,29 +749,24 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
                 continue
 
             selector_key_data: _SelectorKeyData = key.data
-            with state_lock:
-                try:
-                    selector.unregister(key.fileobj)
-                except KeyError:
-                    pass
-                finally:
-                    _set_future_result_unless_cancelled(selector_key_data.future, now - selector_key_data.start_time)
+            try:
+                selector.unregister(key.fileobj)
+            except KeyError:
+                pass
+            finally:
+                _set_future_result_unless_cancelled(selector_key_data.future, now - selector_key_data.start_time)
 
-    def __handle_pending_transports(self, selector: selectors.BaseSelector, state_lock: threading.RLock) -> None:
         # Either:
         # - Cancel pending futures if transport has been closed asynchronously
         # - Set timeout error if deadline has been reached
-        with state_lock:
-            now = _get_current_time()
-
-            for key in list(selector.get_map().values()):
-                match key.data:
-                    case _SelectorKeyData(transport=transport, future=task_future) if transport.is_closing():
-                        selector.unregister(key.fileobj)
-                        _cancel_future_and_notify(task_future)
-                    case _SelectorKeyData(deadline=deadline, future=task_future) if deadline < now:
-                        selector.unregister(key.fileobj)
-                        _set_future_exception_unless_cancelled(task_future, _utils.error_from_errno(_errno.ETIMEDOUT))
+        for key in list(selector.get_map().values()):
+            if isinstance(key.data, _SelectorKeyData):
+                if key.data.transport.is_closing():
+                    selector.unregister(key.fileobj)
+                    _cancel_future_and_notify(key.data.future)
+                elif key.data.deadline < now:
+                    selector.unregister(key.fileobj)
+                    _set_future_exception_unless_cancelled(key.data.future, _utils.error_from_errno(_errno.ETIMEDOUT))
 
     def __attach_server(self) -> None:
         self.__active_tasks.increment()
@@ -812,14 +802,14 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
     @property
     @_utils.inherit_doc(_transports.BaseTransport)
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
-        return self.__listener.extra_attributes
+        return self.__thread_safe_listener.extra_attributes
 
 
 @dataclasses.dataclass(kw_only=True, eq=False, slots=True)
-class _ClientData(Generic[_T_Request, _T_Response]):
-    client: ConnectedStreamClient[_T_Response]
-    request_receiver: _AnyRequestReceiver[_T_Request]
-    request_handler_generator: Generator[float | None, _T_Request]
+class _ClientData[Request, Response]:
+    client: ConnectedStreamClient[Response]
+    request_receiver: _AnyRequestReceiver[Request]
+    request_handler_generator: Generator[float | None, Request]
     request_handler_context: contextvars.Context
     transport_close_exit_stack: contextlib.ExitStack
 
@@ -878,12 +868,12 @@ class _ThreadSafeListener(_transports.BaseTransport):
     def ready_at_deadline(self) -> float:
         return self.__ready_at_deadline if self.__ready_for_reading.is_set() else math.inf
 
-    def try_accepting_new_connection(
+    def try_accepting_new_connection[R](
         self,
         selector_token: _SelectorToken,
-        handler: Callable[[_selector_transports.SelectorStreamTransport], _T_Return],
+        handler: Callable[[_selector_transports.SelectorStreamTransport], R],
         executor: concurrent.futures.Executor,
-    ) -> concurrent.futures.Future[_T_Return] | None:
+    ) -> concurrent.futures.Future[R] | None:
         if not self.__ready_for_reading.is_set() or _get_current_time() < self.__ready_at_deadline:
             return None
 
@@ -919,11 +909,11 @@ class _ThreadSafeListener(_transports.BaseTransport):
                 accept_future.add_done_callback(self.__on_client_future_running_or_cancelled)
                 return accept_future
 
-    def __in_executor(
+    def __in_executor[R](
         self,
-        handler: Callable[[_selector_transports.SelectorStreamTransport], _T_Return],
+        handler: Callable[[_selector_transports.SelectorStreamTransport], R],
         transport: _selector_transports.SelectorStreamTransport,
-    ) -> _T_Return:
+    ) -> R:
         self.__on_client_future_running_or_cancelled(None)
         return handler(transport)
 
@@ -1064,7 +1054,7 @@ class _SelectorKeyData(NamedTuple):
 
 
 @dataclasses.dataclass(kw_only=True, eq=False, slots=True)
-class _BaseRequestReceiver(Generic[_T_Request]):
+class _BaseRequestReceiver[Request]:
     transport: _selector_transports.SelectorStreamTransport
     server_is_shutting_down: Callable[[], bool]
     transport_close_lock: threading.Lock = dataclasses.field(init=False, default_factory=threading.Lock)
@@ -1082,15 +1072,15 @@ class _BaseRequestReceiver(Generic[_T_Request]):
 
 
 @dataclasses.dataclass(kw_only=True, eq=False, slots=True)
-class _RequestReceiver(_BaseRequestReceiver[_T_Request]):
-    consumer: _stream.StreamDataConsumer[_T_Request]
+class _RequestReceiver[Request](_BaseRequestReceiver[Request]):
+    consumer: _stream.StreamDataConsumer[Request]
     max_recv_size: int
     disconnect_error_filter: Callable[[Exception], bool] | None
 
     def __post_init__(self) -> None:
         assert self.max_recv_size > 0, f"{self.max_recv_size=}"  # nosec assert_used
 
-    def next(self, *, first_try: bool) -> _T_Request:
+    def next(self, *, first_try: bool) -> Request:
         consumer = self.consumer
         if first_try:
             try:
@@ -1125,11 +1115,11 @@ class _RequestReceiver(_BaseRequestReceiver[_T_Request]):
 
 
 @dataclasses.dataclass(kw_only=True, eq=False, slots=True)
-class _BufferedRequestReceiver(_BaseRequestReceiver[_T_Request]):
-    consumer: _stream.BufferedStreamDataConsumer[_T_Request]
+class _BufferedRequestReceiver[Request](_BaseRequestReceiver[Request]):
+    consumer: _stream.BufferedStreamDataConsumer[Request]
     disconnect_error_filter: Callable[[Exception], bool] | None
 
-    def next(self, *, first_try: bool) -> _T_Request:
+    def next(self, *, first_try: bool) -> Request:
         consumer = self.consumer
         if first_try:
             try:
@@ -1163,7 +1153,7 @@ class _BufferedRequestReceiver(_BaseRequestReceiver[_T_Request]):
         raise StopIteration
 
 
-_AnyRequestReceiver: TypeAlias = _RequestReceiver[_T_Request] | _BufferedRequestReceiver[_T_Request]
+type _AnyRequestReceiver[Request] = _RequestReceiver[Request] | _BufferedRequestReceiver[Request]
 
 
 def _get_current_time() -> float:
@@ -1185,7 +1175,7 @@ def _cancel_future_and_notify(f: concurrent.futures.Future[Any]) -> None:
         f.set_running_or_notify_cancel()
 
 
-def _set_future_result_unless_cancelled(f: concurrent.futures.Future[_T_Return], result: _T_Return) -> None:
+def _set_future_result_unless_cancelled[R](f: concurrent.futures.Future[R], result: R) -> None:
     if f.set_running_or_notify_cancel():  # pragma: no branch
         f.set_result(result)
 
