@@ -264,12 +264,10 @@ class SelectorDatagramServer(_transports.BaseTransport, Generic[_T_Request, _T_R
         datagram_received_cb: Callable[[DatagramClientContext[_T_Response, _T_Address]], Generator[float | None, _T_Request]],
         executor: concurrent.futures.Executor,
     ) -> None:
-        default_context = contextvars.copy_context()
-
         with (
             _SelectorToken(selector=selector) as selector_token,
             _ClientHandlerToken(
-                server=self, datagram_received_cb=datagram_received_cb, default_context=default_context
+                server=self, datagram_received_cb=datagram_received_cb, default_context=contextvars.copy_context()
             ) as client_handler_token,
         ):
 
@@ -347,12 +345,38 @@ class SelectorDatagramServer(_transports.BaseTransport, Generic[_T_Request, _T_R
                 task_exit_stack.push(self.__unhandled_exception_log)
                 task_exit_stack.callback(client_data.mark_done)
 
+                request_handler_context = client_handler_token.default_context.copy()
+                request_handler_generator = request_handler_context.run(client_handler_token.datagram_received_cb, client_ctx)
+                task_exit_stack.callback(request_handler_context.run, request_handler_generator.close)
+
+                if client_data.datagram_queue.empty():
+                    raise client_data.inconsistent_state_error()  # pragma: no cover
+
+                timeout: float | None
+                try:
+                    try:
+                        timeout = request_handler_context.run(next, request_handler_generator)
+                    except BaseException:
+                        # Drop received datagram
+                        client_data.datagram_queue.get_nowait()
+                        raise
+                except StopIteration:
+                    return
+
+                waiter_future: concurrent.futures.Future[None] | None = None
+                try:
+                    _utils.validate_optional_timeout_delay(timeout, positive_check=True)
+                except BaseException as exc:
+                    waiter_future = concurrent.futures.Future()
+                    waiter_future.set_exception(exc)
+
+                # Ignore sent timeout here, we already have the datagram.
                 return self.__serve_requests__handle_client_request(
-                    None,
+                    waiter_future,
                     client_ctx=client_ctx,
                     client_data=client_data,
-                    request_handler_context=client_handler_token.default_context.copy(),
-                    request_handler_generator=None,
+                    request_handler_context=request_handler_context,
+                    request_handler_generator=request_handler_generator,
                     client_handler_token=client_handler_token,
                     task_exit_stack=task_exit_stack,
                     executor=executor,
@@ -360,6 +384,7 @@ class SelectorDatagramServer(_transports.BaseTransport, Generic[_T_Request, _T_R
                 )
 
         finally:
+            waiter_future = None  # Break reference cycle with request future on error.
             self.__detach_server()
 
     def __serve_requests__on_client_task_done(
@@ -398,7 +423,7 @@ class SelectorDatagramServer(_transports.BaseTransport, Generic[_T_Request, _T_R
         client_ctx: DatagramClientContext[_T_Response, _T_Address],
         client_data: _ClientData,
         request_handler_context: contextvars.Context,
-        request_handler_generator: Generator[float | None, _T_Request] | None,
+        request_handler_generator: Generator[float | None, _T_Request],
         client_handler_token: _ClientHandlerToken[_T_Request, _T_Response, _T_Address],
         task_exit_stack: contextlib.ExitStack,
         executor: concurrent.futures.Executor,
@@ -407,21 +432,7 @@ class SelectorDatagramServer(_transports.BaseTransport, Generic[_T_Request, _T_R
         self.__attach_server()
         try:
             with task_exit_stack.pop_all() as task_exit_stack:
-                timeout: float | None = None
-
-                if request_handler_generator is None:
-                    request_handler_generator = request_handler_context.run(client_handler_token.datagram_received_cb, client_ctx)
-                    task_exit_stack.callback(request_handler_context.run, request_handler_generator.close)
-                    try:
-                        timeout = request_handler_context.run(next, request_handler_generator)
-                    except BaseException as exc:
-                        # Drop received datagram
-                        if not client_data.datagram_queue.empty():  # pragma: no branch
-                            client_data.datagram_queue.get_nowait()
-                        if isinstance(exc, StopIteration):
-                            return
-                        raise
-
+                timeout: float | None
                 request: _T_Request | None
                 try:
                     try:
@@ -430,16 +441,13 @@ class SelectorDatagramServer(_transports.BaseTransport, Generic[_T_Request, _T_R
                             if waiter_future.cancelled():
                                 should_restart_handle.clear()
                                 return
-                            # Raises error to throw if needed.
+                            # Raises error to throw in generator if needed.
                             waiter_future.result(timeout=0)
 
                         try:
                             datagram: bytes = client_data.datagram_queue.get_nowait()
                         except _QueueEmpty as exc:  # pragma: no cover
                             raise client_data.inconsistent_state_error() from exc
-                        if timeout is not None:
-                            _utils.validate_timeout_delay(timeout, positive_check=True)
-                        # Ignore sent timeout here, we already have the datagram.
                         try:
                             request = self.__protocol.build_packet_from_datagram(datagram)
                         except DatagramProtocolParseError:
@@ -894,12 +902,8 @@ class _ClientHandlerToken(Generic[_T_Request, _T_Response, _T_Address]):
         return client_ctx
 
     def get_min_deadline(self) -> float:
-        min_deadline: float = math.inf
         with self.__waiters_lock:
-            for key in self.__waiters.values():
-                if (deadline := key.deadline) < min_deadline:
-                    min_deadline = deadline
-        return min_deadline
+            return min((key.deadline for key in self.__waiters.values()), default=math.inf)
 
     def pop_waiter(self, address: _T_Address) -> _ClientHandlerKeyData | None:
         with self.__waiters_lock:
@@ -919,20 +923,18 @@ class _ClientHandlerToken(Generic[_T_Request, _T_Response, _T_Address]):
                 _cancel_future_and_notify(future)
                 return future
 
-            start_time = _get_current_time()
-            if deadline <= start_time:
+            if deadline <= _get_current_time():
                 future.set_exception(_utils.error_from_errno(_errno.ETIMEDOUT))
                 return future
 
-            try:
-                if address in self.__waiters:
-                    raise AssertionError(f"{address} already registered")
-                self.__waiters[address] = _ClientHandlerKeyData(future=future, deadline=deadline)
-                future.add_done_callback(functools.partial(self.__unregister_on_future_cancel, address=address))
+            deadline_before_register = self.get_min_deadline()
+            assert address not in self.__waiters, f"{address} already registered"  # nosec assert_used
+            self.__waiters[address] = _ClientHandlerKeyData(future=future, deadline=deadline)
+            future.add_done_callback(functools.partial(self.__unregister_on_future_cancel, address=address))
+
+            if deadline < deadline_before_register:
                 wakeup_socketpair.wakeup_thread_and_signal_safe()
-            except BaseException:
-                future.cancel()
-                raise
+
             return future
 
     def handle_pending_waiters(self) -> None:
