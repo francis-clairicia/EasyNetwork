@@ -30,6 +30,7 @@ from .socket import set_tcp_nodelay
 # Originally come from Trio
 # https://github.com/python-trio/trio/blob/v0.29.0/src/trio/_core/_wakeup_socketpair.py
 class WakeupSocketPair:
+    __slots__ = ("_receive", "_send")
 
     def __init__(self) -> None:
         self._receive: socket.socket
