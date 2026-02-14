@@ -597,9 +597,6 @@ class SocketStreamListener(base_selector.SelectorListener[SocketStreamTransport]
             case _:
                 return False
 
-    def accept_capacity_error_sleep_time(self) -> float:
-        return constants.ACCEPT_CAPACITY_ERROR_SLEEP_TIME
-
     def __in_executor(self, client_sock: socket.socket, handler: Callable[[SocketStreamTransport], _T_Return]) -> _T_Return:
         try:
             transport = SocketStreamTransport(client_sock, retry_interval=1.0, selector_factory=self._selector_factory)
@@ -735,9 +732,6 @@ class SSLStreamListener(base_selector.SelectorListener[SSLStreamTransport]):
                 return True
             case _:
                 return False
-
-    def accept_capacity_error_sleep_time(self) -> float:
-        return constants.ACCEPT_CAPACITY_ERROR_SLEEP_TIME
 
     def __in_executor(
         self,
@@ -885,17 +879,11 @@ class SocketDatagramListener(base_selector.SelectorDatagramListener["_RetAddress
         self.__socket.close()
 
     @_utils.inherit_doc(base_selector.SelectorDatagramListener)
-    def recv_noblock_from(
-        self,
-        handler: Callable[[bytes, _RetAddress], _T_Return],
-        executor: concurrent.futures.Executor,
-    ) -> concurrent.futures.Future[_T_Return]:
+    def recv_noblock_from(self) -> tuple[bytes, _RetAddress]:
         try:
-            datagram, client_address = self.__socket.recvfrom(constants.MAX_DATAGRAM_BUFSIZE)
+            return self.__socket.recvfrom(constants.MAX_DATAGRAM_BUFSIZE)
         except (BlockingIOError, InterruptedError):
             raise base_selector.WouldBlockOnRead(self.__socket.fileno()) from None
-        else:
-            return executor.submit(handler, datagram, client_address)
 
     @_utils.inherit_doc(base_selector.SelectorDatagramListener)
     def send_noblock_to(self, data: bytes | bytearray | memoryview, address: _Address) -> None:

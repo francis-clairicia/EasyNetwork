@@ -83,7 +83,7 @@ class SelectorDatagramServer(_transports.BaseTransport, Generic[_T_Request, _T_R
     """
 
     __slots__ = (
-        "__listener",
+        "__thread_safe_listener",
         "__protocol",
         "__selector_factory",
         "__serve_guard",
@@ -119,7 +119,7 @@ class SelectorDatagramServer(_transports.BaseTransport, Generic[_T_Request, _T_R
 
         self.__wakeup_socketpair = _wakeup_socketpair.WakeupSocketPair()
         self.__active_tasks = _utils.AtomicUIntCounter(value=1)
-        self.__listener = _ThreadSafeListener(
+        self.__thread_safe_listener = _ThreadSafeListener(
             listener,
             self.__wakeup_socketpair,
             _utils.weak_method_proxy(self.__detach_server, default=None),
@@ -136,7 +136,7 @@ class SelectorDatagramServer(_transports.BaseTransport, Generic[_T_Request, _T_R
         with contextlib.suppress(Exception):
             self.__wakeup_socketpair.close()
         try:
-            listener = self.__listener
+            listener = self.__thread_safe_listener
         except AttributeError:
             return
         if not listener.is_closed():
@@ -150,14 +150,14 @@ class SelectorDatagramServer(_transports.BaseTransport, Generic[_T_Request, _T_R
         Returns:
             :data:`True` if the server is closed.
         """
-        return self.__listener.is_closed()
+        return self.__thread_safe_listener.is_closed()
 
     def close(self) -> None:
         """
         Closes the server.
         """
         with self.__close_lock:
-            self.__listener.close()
+            self.__thread_safe_listener.close()
 
     def shutdown(self, timeout: float | None = None) -> None:
         """
@@ -206,14 +206,12 @@ class SelectorDatagramServer(_transports.BaseTransport, Generic[_T_Request, _T_R
         if timeout is None:
             timeout = math.inf
 
-        return self.__listener.send_to(datagram, address, timeout)
+        return self.__thread_safe_listener.send_to(datagram, address, timeout)
 
     def serve(
         self,
         datagram_received_cb: Callable[[DatagramClientContext[_T_Response, _T_Address]], Generator[float | None, _T_Request]],
         executor: concurrent.futures.Executor,
-        *,
-        datagram_receiver_thread_name: str = "",
     ) -> None:
         """
         Receive incoming datagrams as they come in and start tasks to handle them.
@@ -239,17 +237,15 @@ class SelectorDatagramServer(_transports.BaseTransport, Generic[_T_Request, _T_R
             try:
                 selector = stack.enter_context(self.__selector_factory())
                 with self.__close_lock:
-                    if self.__listener.is_closed():
+                    if self.__thread_safe_listener.is_closed():
                         raise _utils.error_from_errno(_errno.EBADF, "{strerror} (Server is closed)")
                     selector.register(self.__wakeup_socketpair, selectors.EVENT_READ)
                     self.__wakeup_socketpair.drain()
 
-                datagram_receiver_thread_name = datagram_receiver_thread_name.strip() or "datagram_receiver"
                 self.__serve_requests(
                     selector=selector,
                     datagram_received_cb=datagram_received_cb,
                     executor=executor,
-                    datagram_receiver_thread_name=datagram_receiver_thread_name,
                 )
             finally:
                 self.__is_shut_down.set()
@@ -267,7 +263,6 @@ class SelectorDatagramServer(_transports.BaseTransport, Generic[_T_Request, _T_R
         selector: selectors.BaseSelector,
         datagram_received_cb: Callable[[DatagramClientContext[_T_Response, _T_Address]], Generator[float | None, _T_Request]],
         executor: concurrent.futures.Executor,
-        datagram_receiver_thread_name: str,
     ) -> None:
         default_context = contextvars.copy_context()
 
@@ -293,19 +288,11 @@ class SelectorDatagramServer(_transports.BaseTransport, Generic[_T_Request, _T_R
                     elif (waiter_key := client_handler_token.pop_waiter(address)) is not None:
                         _set_future_result_unless_cancelled(waiter_key.future, None)
 
-            datagram_receiver_executor = concurrent.futures.ThreadPoolExecutor(
-                max_workers=1,
-                thread_name_prefix=datagram_receiver_thread_name,
+            self.__serve_forever_impl(
+                selector_token=selector_token,
+                client_handler_token=client_handler_token,
+                handler=handler,
             )
-            try:
-                self.__serve_forever_impl(
-                    selector_token=selector_token,
-                    client_handler_token=client_handler_token,
-                    handler=handler,
-                    executor=datagram_receiver_executor,
-                )
-            finally:
-                datagram_receiver_executor.shutdown(cancel_futures=True)
 
     def __serve_requests__start_new_client_task(
         self,
@@ -433,6 +420,7 @@ class SelectorDatagramServer(_transports.BaseTransport, Generic[_T_Request, _T_R
                             client_data.datagram_queue.get_nowait()
                         if isinstance(exc, StopIteration):
                             return
+                        raise
 
                 request: _T_Request | None
                 try:
@@ -493,12 +481,11 @@ class SelectorDatagramServer(_transports.BaseTransport, Generic[_T_Request, _T_R
                         request_handler_context=request_handler_context,
                         request_handler_generator=request_handler_generator,
                         client_handler_token=client_handler_token,
-                        task_exit_stack=task_exit_stack,
+                        task_exit_stack=task_exit_stack.pop_all(),
                         executor=executor,
                         should_restart_handle=should_restart_handle,
                     )
 
-                task_exit_stack = task_exit_stack.pop_all()
                 waiter_future.add_done_callback(
                     functools.partial(
                         self.__serve_requests__schedule_client_handler,
@@ -507,7 +494,7 @@ class SelectorDatagramServer(_transports.BaseTransport, Generic[_T_Request, _T_R
                         request_handler_context=request_handler_context,
                         request_handler_generator=request_handler_generator,
                         client_handler_token=client_handler_token,
-                        task_exit_stack=task_exit_stack,
+                        task_exit_stack=task_exit_stack.pop_all(),
                         executor=executor,
                         should_restart_handle=should_restart_handle,
                     )
@@ -530,7 +517,6 @@ class SelectorDatagramServer(_transports.BaseTransport, Generic[_T_Request, _T_R
         executor: concurrent.futures.Executor,
         should_restart_handle: _utils.Flag,
     ) -> None:
-        task_exit_stack = task_exit_stack.pop_all()
         try:
             handler_future = executor.submit(
                 self.__serve_requests__handle_client_request,
@@ -581,16 +567,13 @@ class SelectorDatagramServer(_transports.BaseTransport, Generic[_T_Request, _T_R
         selector_token: _SelectorToken,
         client_handler_token: _ClientHandlerToken[_T_Request, _T_Response, _T_Address],
         handler: Callable[[bytes, _T_Address], None],
-        executor: concurrent.futures.Executor,
     ) -> None:
         selector = selector_token.selector
-        listener = self.__listener
+        listener = self.__thread_safe_listener
         shutdown_requested = self.__shutdown_request.is_set
 
         while not shutdown_requested():
-            if (datagram_received_future := listener.try_to_receive_datagram(selector_token, handler, executor)) is not None:
-                datagram_received_future.add_done_callback(self.__shutdown_on_handler_exception)
-                del datagram_received_future
+            listener.receive_datagrams(selector_token, handler)
 
             selector_wait_timeout: float
             if listener.is_ready_for_reading():
@@ -611,7 +594,6 @@ class SelectorDatagramServer(_transports.BaseTransport, Generic[_T_Request, _T_R
 
             # Notify threads for ready file descriptors
             self.__handle_events(selector, ready)
-            self.__handle_pending_transports(selector)
             client_handler_token.handle_pending_waiters()
 
             ready.clear()
@@ -635,7 +617,6 @@ class SelectorDatagramServer(_transports.BaseTransport, Generic[_T_Request, _T_R
             finally:
                 _set_future_result_unless_cancelled(selector_key_data.future, None)
 
-    def __handle_pending_transports(self, selector: selectors.BaseSelector) -> None:
         # Cancel pending futures if transport has been closed asynchronously
         for key in list(selector.get_map().values()):
             match key.data:
@@ -677,7 +658,7 @@ class SelectorDatagramServer(_transports.BaseTransport, Generic[_T_Request, _T_R
     @property
     @_utils.inherit_doc(_transports.BaseTransport)
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
-        return self.__listener.extra_attributes
+        return self.__thread_safe_listener.extra_attributes
 
 
 class _ThreadSafeListener(_transports.BaseTransport, Generic[_T_Address]):
@@ -738,36 +719,35 @@ class _ThreadSafeListener(_transports.BaseTransport, Generic[_T_Address]):
     def is_ready_for_reading(self) -> bool:
         return self.__ready_for_reading.is_set()
 
-    def try_to_receive_datagram(
-        self,
-        selector_token: _SelectorToken,
-        handler: Callable[[bytes, _T_Address], _T_Return],
-        executor: concurrent.futures.Executor,
-    ) -> concurrent.futures.Future[_T_Return] | None:
+    def receive_datagrams(self, selector_token: _SelectorToken, handler: Callable[[bytes, _T_Address], None]) -> None:
         if not self.__ready_for_reading.is_set():
-            return None
+            return
 
         with self.__close_lock:
             self.__ready_for_reading.clear()
-            try:
-                if self.__listener.is_closed():
-                    # server.close() called in another thread.
-                    # keep flag to False forever.
-                    return None
-                datagram_handler_future = self.__listener.recv_noblock_from(handler, executor)
-            except (_selector_transports.WouldBlockOnRead, _selector_transports.WouldBlockOnWrite) as exc:
-                listener_wait_future = selector_token.register(
-                    transport=self,
-                    fileno=exc.fileno,
-                    events=_selector_event_from_exc(exc),
-                    reader_condvar=self.__reader_condvar,
-                    reader_done=self.__reader_done,
-                )
-                listener_wait_future.add_done_callback(self.__on_listener_wait_future_done)
-                return None
-            else:
-                self.__ready_for_reading.set()
-                return datagram_handler_future
+            if self.__listener.is_closed():
+                # server.close() called in another thread.
+                # keep flag to False forever.
+                return
+            # It will most likely never hit 100 loops and stop on a WouldBlock* error.
+            # The goal is to remove a maximum of pending datagrams from the inner listener without using a "while True" because
+            # the server must also handle running threads and pending request handlers.
+            for _ in range(100):
+                try:
+                    datagram, client_address = self.__listener.recv_noblock_from()
+                except (_selector_transports.WouldBlockOnRead, _selector_transports.WouldBlockOnWrite) as exc:
+                    listener_wait_future = selector_token.register(
+                        transport=self,
+                        fileno=exc.fileno,
+                        events=_selector_event_from_exc(exc),
+                        reader_condvar=self.__reader_condvar,
+                        reader_done=self.__reader_done,
+                    )
+                    listener_wait_future.add_done_callback(self.__on_listener_wait_future_done)
+                    return
+                else:
+                    handler(datagram, client_address)
+            self.__ready_for_reading.set()
 
     def __on_listener_wait_future_done(self, future: concurrent.futures.Future[Any]) -> None:
         if future.done() and not future.cancelled():
@@ -948,9 +928,7 @@ class _ClientHandlerToken(Generic[_T_Request, _T_Response, _T_Address]):
                 if address in self.__waiters:
                     raise AssertionError(f"{address} already registered")
                 self.__waiters[address] = _ClientHandlerKeyData(future=future, deadline=deadline)
-                future.add_done_callback(
-                    functools.partial(self.__unregister_on_future_cancel, address=address, wakeup_socketpair=wakeup_socketpair)
-                )
+                future.add_done_callback(functools.partial(self.__unregister_on_future_cancel, address=address))
                 wakeup_socketpair.wakeup_thread_and_signal_safe()
             except BaseException:
                 future.cancel()
@@ -973,17 +951,9 @@ class _ClientHandlerToken(Generic[_T_Request, _T_Response, _T_Address]):
         /,
         *,
         address: _T_Address,
-        wakeup_socketpair: _wakeup_socketpair.WakeupSocketPair,
     ) -> None:
         if future.cancelled():
-            with self.__waiters_lock:
-                try:
-                    del self.__waiters[address]
-                except KeyError:
-                    pass
-                else:
-                    with contextlib.suppress(OSError):
-                        wakeup_socketpair.wakeup_thread_and_signal_safe()
+            self.pop_waiter(address)
 
 
 class _ClientHandlerKeyData(NamedTuple):
