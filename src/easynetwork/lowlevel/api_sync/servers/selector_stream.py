@@ -1010,13 +1010,11 @@ class _SelectorToken:
             return future
 
     def get_min_deadline(self) -> float:
-        min_deadline: float = math.inf
         with self.state_lock:
-            for key in self.selector.get_map().values():
-                match key.data:
-                    case _SelectorKeyData(deadline=deadline) if deadline < min_deadline:
-                        min_deadline = deadline
-        return min_deadline
+            return min(
+                (key.data.deadline for key in self.selector.get_map().values() if isinstance(key.data, _SelectorKeyData)),
+                default=math.inf,
+            )
 
     @staticmethod
     def __wakeup_waiter_on_future_done(

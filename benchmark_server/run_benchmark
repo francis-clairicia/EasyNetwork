@@ -1469,16 +1469,18 @@ def _run_cmd_and_get_output(client: docker.DockerClient, image_tag: str, cmd: _C
 
 def _get_python_version_used_in_docker_image(client: docker.DockerClient, image_tag: str) -> str:
     python_version = _run_cmd_and_get_output(client, image_tag, (*_python_cmd, "-V"))
-    gil_enabled = _run_cmd_and_get_output(
-        client,
-        image_tag,
-        (
-            *_python_cmd,
-            "-c",
-            'import sys; _is_gil_enabled = getattr(sys, "_is_gil_enabled", lambda: True); print(_is_gil_enabled())',
-        ),
+    gil_enabled: bool = json.loads(
+        _run_cmd_and_get_output(
+            client,
+            image_tag,
+            (
+                *_python_cmd,
+                "-c",
+                'import json, sys; json.dump(getattr(sys, "_is_gil_enabled", lambda: True)(), sys.stdout)',
+            ),
+        )
     )
-    return f"{python_version} (GIL enabled: {gil_enabled})"
+    return f"{python_version} (GIL {'enabled' if gil_enabled else 'disabled'})"
 
 
 def _get_container_logs(container: Container) -> str:
