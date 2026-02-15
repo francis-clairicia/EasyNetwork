@@ -56,6 +56,7 @@ class ConnectedStreamClient(_transports.BaseTransport, Generic[_T_Response]):
     __slots__ = (
         "__transport",
         "__producer",
+        "__send_lock",
         "__close_lock",
         "__closing_event",
         "__reader_condvar",
@@ -77,6 +78,7 @@ class ConnectedStreamClient(_transports.BaseTransport, Generic[_T_Response]):
 
         self.__transport: _transports.StreamWriteTransport = _transport
         self.__producer: _stream.StreamDataProducer[_T_Response] = _producer
+        self.__send_lock = threading.Lock()
         self.__close_lock = _transport_close_lock
         self.__closing_event = threading.Event()
         self.__reader_condvar = _reader_condvar
@@ -122,10 +124,11 @@ class ConnectedStreamClient(_transports.BaseTransport, Generic[_T_Response]):
                 while not reader_is_done():
                     self.__wakeup_socketpair.wakeup_thread_and_signal_safe()
                     self.__reader_condvar.wait_for(reader_is_done, timeout=1.0)
-            if abort:
-                self.__transport.abort()
-            else:
-                self.__transport.close()
+            with self.__send_lock:
+                if abort:
+                    self.__transport.abort()
+                else:
+                    self.__transport.close()
 
     def send_packet(self, packet: _T_Response, *, timeout: float | None = None) -> None:
         """
@@ -144,7 +147,7 @@ class ConnectedStreamClient(_transports.BaseTransport, Generic[_T_Response]):
         Raises:
             TimeoutError: the send operation does not end up after `timeout` seconds.
         """
-        with self.__close_lock:
+        with self.__send_lock:
             if timeout is None:
                 timeout = math.inf
             self.__transport.send_all_from_iterable(self.__producer.generate(packet), timeout)
@@ -579,7 +582,9 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
             task_exit_stack.callback(self.__detach_server)
 
             task_exit_stack.push(self.__unhandled_exception_log)
-            wakeup_socketpair_fd = self.__wakeup_socketpair.fileno()
+
+            selector: selectors.BaseSelector = task_exit_stack.enter_context(transport._selector_factory())
+            selector.register(self.__wakeup_socketpair, selectors.EVENT_READ)
 
             # By default, abort the connection at the end of the task.
             transport_close_exit_stack = task_exit_stack.enter_context(contextlib.ExitStack())
@@ -613,11 +618,8 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
                 return
             else:
                 try:
-                    from ..transports.base_selector import _wait_for_fd
-
                     request: _T_Request | None
                     _validate_timeout_delay = _utils.validate_optional_timeout_delay
-                    _EVENT_READ = selectors.EVENT_READ
                     while not client.is_closing():
                         try:
                             timeout = _validate_timeout_delay(timeout, positive_check=True)
@@ -636,13 +638,18 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
                                 with request_receiver:
                                     if client.is_closing():
                                         return
-                                    available, timeout = _wait_for_fd(
-                                        transport,
-                                        {fileno: event, wakeup_socketpair_fd: _EVENT_READ},
-                                        timeout,
-                                    )
-                                    if not available:
-                                        raise _utils.error_from_errno(_errno.ETIMEDOUT)
+                                    selector.register(fileno, event)
+                                    try:
+                                        if timeout == math.inf:
+                                            selector.select()
+                                        else:
+                                            deadline: float = _get_current_time() + timeout
+                                            available = bool(selector.select(timeout))
+                                            timeout = max(deadline - _get_current_time(), 0.0)
+                                            if not available and not timeout:
+                                                raise _utils.error_from_errno(_errno.ETIMEDOUT)
+                                    finally:
+                                        selector.unregister(fileno)
                         except StopIteration:
                             raise
                         except BaseException as exc:
@@ -903,6 +910,7 @@ class _ThreadSafeListener(_transports.BaseTransport):
                 return None
             except Exception as exc:
                 if self.__listener.is_accept_capacity_error(exc):
+                    self.__ready_for_reading.set()
                     sleep_time = self.__listener.accept_capacity_error_sleep_time()
                     self.__ready_at_deadline = _get_current_time() + sleep_time
                     return None
