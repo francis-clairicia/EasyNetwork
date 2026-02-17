@@ -283,8 +283,8 @@ class SelectorDatagramServer(_transports.BaseTransport, Generic[_T_Request, _T_R
                             client_handler_token=client_handler_token,
                             executor=executor,
                         )
-                    elif (waiter_key := client_handler_token.pop_waiter(address)) is not None:
-                        _set_future_result_unless_cancelled(waiter_key.future, None)
+                    else:
+                        client_data.notify_client_task()
 
             self.__serve_forever_impl(
                 selector_token=selector_token,
@@ -806,13 +806,6 @@ class _SelectorToken:
                 _cancel_future_and_notify(future)
                 return future
             reader_done.clear()
-            future.add_done_callback(
-                functools.partial(
-                    self.__wakeup_waiter_on_future_done,
-                    reader_condvar=reader_condvar,
-                    reader_done=reader_done,
-                )
-            )
 
         try:
             key = self.selector.register(
@@ -824,6 +817,14 @@ class _SelectorToken:
         except BaseException:
             future.cancel()
             raise
+        finally:
+            future.add_done_callback(
+                functools.partial(
+                    self.__wakeup_waiter_on_future_done,
+                    reader_condvar=reader_condvar,
+                    reader_done=reader_done,
+                )
+            )
         return future
 
     @staticmethod
@@ -862,39 +863,41 @@ class _ClientHandlerToken(Generic[_T_Request, _T_Response, _T_Address]):
     server: SelectorDatagramServer[Any, _T_Response, _T_Address]
     datagram_received_cb: Callable[[DatagramClientContext[_T_Response, _T_Address]], Generator[float | None, _T_Request]]
     default_context: contextvars.Context
+    tid: int = dataclasses.field(default_factory=threading.get_ident)
 
-    __waiters: dict[_T_Address, _ClientHandlerKeyData] = dataclasses.field(init=False, default_factory=dict)
-    __waiters_lock: threading.RLock = dataclasses.field(init=False, default_factory=threading.RLock)
-    __client_data_cache: weakref.WeakValueDictionary[_T_Address, _ClientData] = dataclasses.field(
-        init=False, default_factory=weakref.WeakValueDictionary
-    )
+    __client_data_cache: dict[_T_Address, _ClientData] = dataclasses.field(init=False, default_factory=dict)
+    __current_deadline: _utils.AtomicFloat = dataclasses.field(init=False, default_factory=_utils.AtomicFloat)
+    __deadline_computation_lock: threading.Lock = dataclasses.field(init=False, default_factory=threading.Lock)
     __client_ctx_cache: weakref.WeakValueDictionary[_T_Address, DatagramClientContext[_T_Response, _T_Address]] = (
         dataclasses.field(init=False, default_factory=weakref.WeakValueDictionary)
     )
     __closed: _utils.Flag = dataclasses.field(init=False, default_factory=_utils.Flag)
 
     def __enter__(self) -> Self:
+        self.__current_deadline.value = math.inf
         return self
 
     def __exit__(self, *args: Any) -> None:
-        with self.__waiters_lock:
-            self.__closed.set()
+        assert threading.get_ident() == self.tid, "call from other thread."  # nosec assert_used
+        self.__closed.set()
 
-            waiters = self.__waiters.copy()
-            self.__waiters.clear()
+        clients = self.__client_data_cache.copy()
+        self.__client_data_cache.clear()
 
-            # Cancel pending futures
-            for key in waiters.values():
-                _cancel_future_and_notify(key.future)
+        # Cancel pending futures
+        for client in clients.values():
+            client.cancel_pending_task()
 
     def get_client_data(self, address: _T_Address) -> _ClientData:
-        try:
-            client_data = self.__client_data_cache[address]
-        except KeyError:
-            self.__client_data_cache[address] = client_data = _ClientData()
+        with self.__deadline_computation_lock:
+            try:
+                client_data = self.__client_data_cache[address]
+            except KeyError:
+                self.__client_data_cache[address] = client_data = _ClientData()
         return client_data
 
     def get_client_ref(self, address: _T_Address) -> DatagramClientContext[_T_Response, _T_Address]:
+        assert threading.get_ident() == self.tid, "call from other thread."  # nosec assert_used
         try:
             client_ctx = self.__client_ctx_cache[address]
         except KeyError:
@@ -902,12 +905,7 @@ class _ClientHandlerToken(Generic[_T_Request, _T_Response, _T_Address]):
         return client_ctx
 
     def get_min_deadline(self) -> float:
-        with self.__waiters_lock:
-            return min((key.deadline for key in self.__waiters.values()), default=math.inf)
-
-    def pop_waiter(self, address: _T_Address) -> _ClientHandlerKeyData | None:
-        with self.__waiters_lock:
-            return self.__waiters.pop(address, None)
+        return self.__current_deadline.value
 
     def register_waiter(
         self,
@@ -917,45 +915,38 @@ class _ClientHandlerToken(Generic[_T_Request, _T_Response, _T_Address]):
         wakeup_socketpair: _wakeup_socketpair.WakeupSocketPair,
         _future_factory: Callable[[], concurrent.futures.Future[Any]] = concurrent.futures.Future,
     ) -> concurrent.futures.Future[None]:
-        with self.__waiters_lock:
-            future: concurrent.futures.Future[None] = _future_factory()
-            if self.__closed.is_set():
-                _cancel_future_and_notify(future)
-                return future
-
-            if deadline <= _get_current_time():
-                future.set_exception(_utils.error_from_errno(_errno.ETIMEDOUT))
-                return future
-
-            deadline_before_register = self.get_min_deadline()
-            assert address not in self.__waiters, f"{address} already registered"  # nosec assert_used
-            self.__waiters[address] = _ClientHandlerKeyData(future=future, deadline=deadline)
-            future.add_done_callback(functools.partial(self.__unregister_on_future_cancel, address=address))
-
-            if deadline < deadline_before_register:
-                wakeup_socketpair.wakeup_thread_and_signal_safe()
-
+        future: concurrent.futures.Future[None] = _future_factory()
+        if self.__closed.is_set():
+            _cancel_future_and_notify(future)
             return future
+
+        if deadline <= _get_current_time():
+            future.set_exception(_utils.error_from_errno(_errno.ETIMEDOUT))
+            return future
+
+        self.__client_data_cache[address].wait_for_new_packet(future, deadline)
+
+        if deadline < self.__current_deadline.value:
+            wakeup_socketpair.wakeup_thread_and_signal_safe()
+
+        return future
 
     def handle_pending_waiters(self) -> None:
         # Set timeout error if deadline has been reached
-        with self.__waiters_lock:
+        with self.__deadline_computation_lock:
             now = _get_current_time()
+            new_deadline: float = math.inf
+            for address in list(self.__client_data_cache):
+                client = self.__client_data_cache[address]
+                with client.state_lock:
+                    if client.state is None:
+                        del self.__client_data_cache[address]
+                        continue
+                    client_deadline = client.check_pending_task_timeout(now)
+                    if client_deadline < new_deadline:
+                        new_deadline = client_deadline
 
-            for address, key in list(self.__waiters.items()):
-                if key.deadline < now:
-                    del self.__waiters[address]
-                    _set_future_exception_unless_cancelled(key.future, _utils.error_from_errno(_errno.ETIMEDOUT))
-
-    def __unregister_on_future_cancel(
-        self,
-        future: concurrent.futures.Future[Any],
-        /,
-        *,
-        address: _T_Address,
-    ) -> None:
-        if future.cancelled():
-            self.pop_waiter(address)
+            self.__current_deadline.value = new_deadline
 
 
 class _ClientHandlerKeyData(NamedTuple):
@@ -974,6 +965,7 @@ class _ClientData:
         "__state_lock",
         "__state",
         "__datagram_queue",
+        "__waiter_data",
         "__weakref__",
     )
 
@@ -981,6 +973,7 @@ class _ClientData:
         self.__state_lock: threading.RLock = threading.RLock()
         self.__state: _ClientState | None = None
         self.__datagram_queue: _Queue[bytes] = _Queue()
+        self.__waiter_data: _ClientHandlerKeyData | None = None
 
     @property
     def datagram_queue(self) -> _Queue[bytes]:
@@ -995,7 +988,10 @@ class _ClientData:
         return self.__state
 
     def register_new_client_task(self, client_task_future: concurrent.futures.Future[None]) -> None:
-        client_task_future.add_done_callback(self.__on_client_handler_future_cancellation)
+        with self.__state_lock:
+            if self.__state is not _ClientState.TASK_PENDING:
+                raise self.inconsistent_state_error()
+            client_task_future.add_done_callback(self.__on_client_handler_future_cancellation)
 
     def __on_client_handler_future_cancellation(self, client_task_future: concurrent.futures.Future[None], /) -> None:
         if client_task_future.cancelled():
@@ -1024,6 +1020,34 @@ class _ClientData:
             if self.__state is not _ClientState.TASK_PENDING:
                 raise self.inconsistent_state_error()
             self.__state = _ClientState.TASK_RUNNING
+
+    def wait_for_new_packet(self, client_task_future: concurrent.futures.Future[None], deadline: float) -> None:
+        with self.__state_lock:
+            if self.__waiter_data is not None or self.__state is not _ClientState.TASK_RUNNING:
+                raise self.inconsistent_state_error()
+            self.__waiter_data = _ClientHandlerKeyData(client_task_future, deadline)
+
+    def check_pending_task_timeout(self, now: float) -> float:
+        with self.__state_lock:
+            waiter = self.__waiter_data
+            if waiter is not None and waiter.deadline < now:
+                self.__waiter_data = None
+                _set_future_exception_unless_cancelled(waiter.future, _utils.error_from_errno(_errno.ETIMEDOUT))
+            return math.inf if (waiter := self.__waiter_data) is None else waiter.deadline
+
+    def notify_client_task(self) -> None:
+        with self.__state_lock:
+            waiter = self.__waiter_data
+            self.__waiter_data = None
+            if waiter is not None:
+                _set_future_result_unless_cancelled(waiter.future, None)
+
+    def cancel_pending_task(self) -> None:
+        with self.__state_lock:
+            waiter = self.__waiter_data
+            self.__waiter_data = None
+            if waiter is not None:
+                _cancel_future_and_notify(waiter.future)
 
     @staticmethod
     def inconsistent_state_error() -> RuntimeError:

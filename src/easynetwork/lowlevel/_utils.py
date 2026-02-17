@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 __all__ = [
+    "AtomicFloat",
     "AtomicUIntCounter",
     "ElapsedTime",
     "Flag",
@@ -586,3 +587,21 @@ class AtomicUIntCounter:
     def value(self) -> int:
         with self.__lock:
             return self.__value
+
+
+class AtomicFloat:
+    __slots__ = ("__value", "__lock")
+
+    def __init__(self, *, value: float = 0.0) -> None:
+        self.__value: float = float(value)
+        self.__lock = threading.Lock()
+
+    @property
+    def value(self) -> float:
+        with self.__lock:
+            return self.__value
+
+    @value.setter
+    def value(self, value: float) -> None:
+        with self.__lock:
+            self.__value = float(value)
