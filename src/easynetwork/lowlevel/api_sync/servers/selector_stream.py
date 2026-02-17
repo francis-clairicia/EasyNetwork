@@ -993,13 +993,6 @@ class _SelectorToken:
                     future.set_exception(_utils.error_from_errno(_errno.ETIMEDOUT))
                     return future
                 reader_done.clear()
-                future.add_done_callback(
-                    functools.partial(
-                        self.__wakeup_waiter_on_future_done,
-                        reader_condvar=reader_condvar,
-                        reader_done=reader_done,
-                    )
-                )
 
             try:
                 key = self.selector.register(
@@ -1015,6 +1008,14 @@ class _SelectorToken:
             except BaseException:
                 future.cancel()
                 raise
+            finally:
+                future.add_done_callback(
+                    functools.partial(
+                        self.__wakeup_waiter_on_future_done,
+                        reader_condvar=reader_condvar,
+                        reader_done=reader_done,
+                    )
+                )
             return future
 
     def get_min_deadline(self) -> float:
