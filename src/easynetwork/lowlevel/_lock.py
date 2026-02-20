@@ -20,10 +20,11 @@ from __future__ import annotations
 
 __all__ = ["ForkSafeLock"]
 
+import dataclasses
 import os
 import threading
 from collections.abc import Callable
-from typing import Generic, TypeVar, cast, overload
+from typing import Any, Generic, TypeVar, cast, overload
 
 _T_Lock = TypeVar("_T_Lock", bound="threading.RLock | threading.Lock")
 
@@ -49,3 +50,49 @@ class ForkSafeLock(Generic[_T_Lock]):
             self.__unsafe_lock = self.__lock_factory()
             self.__pid = os.getpid()
         return self.__unsafe_lock
+
+
+class RWLock:
+    __slots__ = ("__read_lock", "__readers_nb", "__write_lock")
+
+    @dataclasses.dataclass(frozen=True, kw_only=True, eq=False, slots=True)
+    class Lock:
+        acquire: Callable[[], None]
+        release: Callable[[], None]
+
+        def __enter__(self) -> None:
+            self.acquire()
+
+        def __exit__(self, *exc_args: Any) -> None:
+            self.release()
+
+    def __init__(self) -> None:
+        self.__read_lock = threading.Lock()
+        self.__readers_nb = 0
+        self.__write_lock = threading.Lock()
+
+    def acquire_read(self) -> None:
+        with self.__read_lock:
+            self.__readers_nb += 1
+            if self.__readers_nb == 1:
+                self.__write_lock.acquire()
+
+    def release_read(self) -> None:
+        with self.__read_lock:
+            if self.__readers_nb < 1:
+                raise RuntimeError("release unlocked lock")
+            self.__readers_nb -= 1
+            if self.__readers_nb == 0:
+                self.__write_lock.release()
+
+    def read_lock(self) -> RWLock.Lock:
+        return self.Lock(acquire=self.acquire_read, release=self.release_read)
+
+    def acquire_write(self) -> None:
+        self.__write_lock.acquire()
+
+    def release_write(self) -> None:
+        self.__write_lock.release()
+
+    def write_lock(self) -> RWLock.Lock:
+        return self.Lock(acquire=self.acquire_write, release=self.release_write)
