@@ -41,7 +41,7 @@ from typing import Any, NamedTuple, Self, assert_never
 
 from ....exceptions import DatagramProtocolParseError
 from ....protocol import DatagramProtocol
-from ... import _utils, _wakeup_socketpair
+from ... import _lock, _utils, _wakeup_socketpair
 from ..transports import abc as _transports, base_selector as _selector_transports
 
 
@@ -856,6 +856,7 @@ class _ClientHandlerToken[Request, Response, Address: Hashable]:
     __client_ctx_cache: weakref.WeakValueDictionary[Address, DatagramClientContext[Response, Address]] = (
         dataclasses.field(init=False, default_factory=weakref.WeakValueDictionary)
     )
+    __state_lock: _lock.RWLock = dataclasses.field(init=False, default_factory=_lock.RWLock)
     __closed: _utils.Flag = dataclasses.field(init=False, default_factory=_utils.Flag)
 
     def __enter__(self) -> Self:
@@ -863,15 +864,15 @@ class _ClientHandlerToken[Request, Response, Address: Hashable]:
         return self
 
     def __exit__(self, *args: Any) -> None:
-        assert threading.get_ident() == self.tid, "call from other thread."  # nosec assert_used
-        self.__closed.set()
+        with self.__deadline_computation_lock, self.__state_lock.write_lock():
+            self.__closed.set()
 
-        clients = self.__client_data_cache.copy()
-        self.__client_data_cache.clear()
+            clients = self.__client_data_cache.copy()
+            self.__client_data_cache.clear()
 
-        # Cancel pending futures
-        for client in clients.values():
-            client.cancel_pending_task()
+            # Cancel pending futures
+            for client in clients.values():
+                client.cancel_pending_task()
 
     def get_client_data(self, address: Address) -> _ClientData:
         with self.__deadline_computation_lock:
@@ -901,15 +902,12 @@ class _ClientHandlerToken[Request, Response, Address: Hashable]:
         _future_factory: Callable[[], concurrent.futures.Future[Any]] = concurrent.futures.Future,
     ) -> concurrent.futures.Future[None]:
         future: concurrent.futures.Future[None] = _future_factory()
-        if self.__closed.is_set():
-            _cancel_future_and_notify(future)
-            return future
+        with self.__state_lock.read_lock():
+            if self.__closed.is_set():
+                _cancel_future_and_notify(future)
+                return future
 
-        if deadline <= _get_current_time():
-            future.set_exception(_utils.error_from_errno(_errno.ETIMEDOUT))
-            return future
-
-        self.__client_data_cache[address].wait_for_new_packet(future, deadline)
+            self.__client_data_cache[address].wait_for_new_packet(future, deadline)
 
         if deadline < self.__current_deadline.value:
             wakeup_socketpair.wakeup_thread_and_signal_safe()
