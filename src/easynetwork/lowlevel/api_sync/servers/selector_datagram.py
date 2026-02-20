@@ -252,7 +252,10 @@ class SelectorDatagramServer[Request, Response, Address: Hashable](_transports.B
         with (
             _SelectorToken(selector=selector) as selector_token,
             _ClientHandlerToken(
-                server=self, datagram_received_cb=datagram_received_cb, default_context=contextvars.copy_context()
+                server=self,
+                datagram_received_cb=datagram_received_cb,
+                default_context=contextvars.copy_context(),
+                wakeup_socketpair=self.__wakeup_socketpair,
             ) as client_handler_token,
         ):
 
@@ -461,7 +464,6 @@ class SelectorDatagramServer[Request, Response, Address: Hashable](_transports.B
                             waiter_future = client_handler_token.register_waiter(
                                 address=client_ctx.address,
                                 deadline=_get_current_time() + timeout,
-                                wakeup_socketpair=self.__wakeup_socketpair,
                             )
                         else:
                             waiter_future = None
@@ -791,18 +793,6 @@ class _SelectorToken:
                 _cancel_future_and_notify(future)
                 return future
             reader_done.clear()
-
-        try:
-            key = self.selector.register(
-                fileno,
-                events,
-                data=_SelectorKeyData(transport=transport, future=future),
-            )
-            future.add_done_callback(functools.partial(self.__unregister_on_future_cancel, key=key))
-        except BaseException:
-            future.cancel()
-            raise
-        finally:
             future.add_done_callback(
                 functools.partial(
                     self.__wakeup_waiter_on_future_done,
@@ -810,6 +800,16 @@ class _SelectorToken:
                     reader_done=reader_done,
                 )
             )
+
+        try:
+            self.selector.register(
+                fileno,
+                events,
+                data=_SelectorKeyData(transport=transport, future=future),
+            )
+        except BaseException:
+            _cancel_future_and_notify(future)
+            raise
         return future
 
     @staticmethod
@@ -824,19 +824,6 @@ class _SelectorToken:
             reader_done.set()
             reader_condvar.notify_all()
 
-    def __unregister_on_future_cancel(
-        self,
-        future: concurrent.futures.Future[Any],
-        /,
-        *,
-        key: selectors.SelectorKey,
-    ) -> None:
-        if future.cancelled():
-            try:
-                self.selector.unregister(key.fileobj)
-            except KeyError:
-                pass
-
 
 class _SelectorKeyData(NamedTuple):
     transport: _ThreadSafeListener[Any]
@@ -848,13 +835,14 @@ class _ClientHandlerToken[Request, Response, Address: Hashable]:
     server: SelectorDatagramServer[Any, Response, Address]
     datagram_received_cb: Callable[[DatagramClientContext[Response, Address]], Generator[float | None, Request]]
     default_context: contextvars.Context
+    wakeup_socketpair: _wakeup_socketpair.WakeupSocketPair
     tid: int = dataclasses.field(default_factory=threading.get_ident)
 
     __client_data_cache: dict[Address, _ClientData] = dataclasses.field(init=False, default_factory=dict)
     __current_deadline: _utils.AtomicFloat = dataclasses.field(init=False, default_factory=_utils.AtomicFloat)
     __deadline_computation_lock: threading.Lock = dataclasses.field(init=False, default_factory=threading.Lock)
-    __client_ctx_cache: weakref.WeakValueDictionary[Address, DatagramClientContext[Response, Address]] = (
-        dataclasses.field(init=False, default_factory=weakref.WeakValueDictionary)
+    __client_ctx_cache: weakref.WeakValueDictionary[Address, DatagramClientContext[Response, Address]] = dataclasses.field(
+        init=False, default_factory=weakref.WeakValueDictionary
     )
     __state_lock: _lock.RWLock = dataclasses.field(init=False, default_factory=_lock.RWLock)
     __closed: _utils.Flag = dataclasses.field(init=False, default_factory=_utils.Flag)
@@ -898,7 +886,6 @@ class _ClientHandlerToken[Request, Response, Address: Hashable]:
         *,
         address: Address,
         deadline: float,
-        wakeup_socketpair: _wakeup_socketpair.WakeupSocketPair,
         _future_factory: Callable[[], concurrent.futures.Future[Any]] = concurrent.futures.Future,
     ) -> concurrent.futures.Future[None]:
         future: concurrent.futures.Future[None] = _future_factory()
@@ -910,7 +897,11 @@ class _ClientHandlerToken[Request, Response, Address: Hashable]:
             self.__client_data_cache[address].wait_for_new_packet(future, deadline)
 
         if deadline < self.__current_deadline.value:
-            wakeup_socketpair.wakeup_thread_and_signal_safe()
+            try:
+                self.wakeup_socketpair.wakeup_thread_and_signal_safe()
+            except BaseException:
+                _cancel_future_and_notify(future)
+                raise
 
         return future
 

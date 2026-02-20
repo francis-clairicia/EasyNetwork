@@ -36,10 +36,11 @@ import types
 import warnings
 import weakref
 from collections.abc import Callable, Generator, Mapping
+from queue import Empty as _QueueEmpty, SimpleQueue as _Queue
 from typing import Any, Literal, NamedTuple, Self, assert_never
 
 from ....protocol import AnyStreamProtocolType
-from ... import _stream, _utils, _wakeup_socketpair
+from ... import _lock, _stream, _utils, _wakeup_socketpair
 from ..transports import abc as _transports, base_selector as _selector_transports
 
 
@@ -329,17 +330,25 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
         disconnect_error_filter: Callable[[Exception], bool] | None,
         server_is_shutting_down: Callable[[], bool],
     ) -> None:
-        with _SelectorToken(selector=selector) as selector_token:
+        with (
+            _SelectorToken(selector=selector) as selector_token,
+            _ClientHandlerToken(wakeup_socketpair=self.__wakeup_socketpair) as client_handler_token,
+        ):
             handler = functools.partial(
                 self.__serve_requests__start_new_client,
                 default_context=contextvars.copy_context(),
-                selector_token=selector_token,
+                client_handler_token=client_handler_token,
                 client_connected_cb=client_connected_cb,
                 executor=executor,
                 disconnect_error_filter=disconnect_error_filter,
                 server_is_shutting_down=server_is_shutting_down,
             )
-            self.__serve_forever_impl(selector_token=selector_token, handler=handler, executor=executor)
+            self.__serve_forever_impl(
+                selector_token=selector_token,
+                client_handler_token=client_handler_token,
+                handler=handler,
+                executor=executor,
+            )
 
     def __serve_requests__start_new_client(
         self,
@@ -347,7 +356,7 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
         /,
         *,
         default_context: contextvars.Context,
-        selector_token: _SelectorToken,
+        client_handler_token: _ClientHandlerToken,
         client_connected_cb: Callable[[ConnectedStreamClient[Response]], Generator[float | None, Request]],
         executor: concurrent.futures.Executor,
         disconnect_error_filter: Callable[[Exception], bool] | None,
@@ -405,7 +414,7 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
             self.__serve_requests__handle_client_request(
                 None,
                 client_data=client_data,
-                selector_token=selector_token,
+                client_handler_token=client_handler_token,
                 executor=executor,
                 task_exit_stack=task_exit_stack,
                 receive_timeout=timeout,
@@ -417,7 +426,7 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
         /,
         *,
         client_data: _ClientData[Request, Response],
-        selector_token: _SelectorToken,
+        client_handler_token: _ClientHandlerToken,
         executor: concurrent.futures.Executor,
         task_exit_stack: contextlib.ExitStack,
         receive_timeout: float | None,
@@ -445,12 +454,11 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
                     try:
                         request = client_data.request_receiver.next(first_try=(reader_future is None))
                     except (_selector_transports.WouldBlockOnRead, _selector_transports.WouldBlockOnWrite) as exc:
-                        reader_future = selector_token.register(
+                        reader_future = client_handler_token.register(
                             transport=client,
                             fileno=exc.fileno,
                             events=_selector_event_from_exc(exc),
                             deadline=_get_current_time() + receive_timeout,
-                            wakeup_socketpair=self.__wakeup_socketpair,
                             reader_condvar=client_data.request_receiver.reader_condvar,
                             reader_done=client_data.request_receiver.reader_done,
                         )
@@ -458,7 +466,7 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
                             functools.partial(
                                 self.__serve_requests__schedule_next_client_handle,
                                 client_data=client_data,
-                                selector_token=selector_token,
+                                client_handler_token=client_handler_token,
                                 executor=executor,
                                 task_exit_stack=task_exit_stack.pop_all(),
                                 receive_timeout=receive_timeout,
@@ -483,7 +491,7 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
                     None,
                     client_data=client_data,
                     receive_timeout=receive_timeout,
-                    selector_token=selector_token,
+                    client_handler_token=client_handler_token,
                     executor=executor,
                     task_exit_stack=task_exit_stack.pop_all(),
                 )
@@ -496,7 +504,7 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
         /,
         *,
         client_data: _ClientData[Request, Response],
-        selector_token: _SelectorToken,
+        client_handler_token: _ClientHandlerToken,
         executor: concurrent.futures.Executor,
         task_exit_stack: contextlib.ExitStack,
         receive_timeout: float | None,
@@ -507,7 +515,7 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
                 reader_future,
                 client_data=client_data,
                 receive_timeout=receive_timeout,
-                selector_token=selector_token,
+                client_handler_token=client_handler_token,
                 executor=executor,
                 task_exit_stack=task_exit_stack,
             )
@@ -545,7 +553,10 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
         disconnect_error_filter: Callable[[Exception], bool] | None,
         server_is_shutting_down: Callable[[], bool],
     ) -> None:
-        with _SelectorToken(selector=selector) as selector_token:
+        with (
+            _SelectorToken(selector=selector) as selector_token,
+            _ClientHandlerToken(wakeup_socketpair=self.__wakeup_socketpair) as client_handler_token,
+        ):
 
             default_context = contextvars.copy_context()
 
@@ -562,7 +573,12 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
                 finally:
                     del context
 
-            self.__serve_forever_impl(selector_token=selector_token, handler=client_task, executor=executor)
+            self.__serve_forever_impl(
+                selector_token=selector_token,
+                client_handler_token=client_handler_token,
+                handler=client_task,
+                executor=executor,
+            )
 
     def __serve_clients__client_task(
         self,
@@ -707,19 +723,20 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
         self,
         *,
         selector_token: _SelectorToken,
+        client_handler_token: _ClientHandlerToken,
         handler: Callable[[_selector_transports.SelectorStreamTransport], None],
         executor: concurrent.futures.Executor,
     ) -> None:
         selector = selector_token.selector
-        selector_state_lock = selector_token.state_lock
         listener = self.__thread_safe_listener
         shutdown_requested = self.__shutdown_request.is_set
 
         while not shutdown_requested():
-            if (accept_future := listener.try_accepting_new_connection(selector_token, handler, executor)) is not None:
+            if (accept_future := listener.try_accepting_new_connection(client_handler_token, handler, executor)) is not None:
                 accept_future.add_done_callback(self.__shutdown_on_handler_exception)
                 del accept_future
 
+            selector_token.add_pending_register(client_handler_token.pending_register)
             selector_wait_deadline = min(listener.ready_at_deadline(), selector_token.get_min_deadline())
 
             selector_wait_timeout: float = selector_wait_deadline - _get_current_time()
@@ -738,8 +755,8 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
             del selector_wait_timeout
 
             # Notify threads for ready file descriptors
-            with selector_state_lock:
-                self.__handle_events(selector, ready)
+            self.__handle_events(selector, ready)
+            selector_token.handle_pending_clients()
 
             ready.clear()
 
@@ -762,18 +779,6 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
                 pass
             finally:
                 _set_future_result_unless_cancelled(selector_key_data.future, now - selector_key_data.start_time)
-
-        # Either:
-        # - Cancel pending futures if transport has been closed asynchronously
-        # - Set timeout error if deadline has been reached
-        for key in list(selector.get_map().values()):
-            if isinstance(key.data, _SelectorKeyData):
-                if key.data.transport.is_closing():
-                    selector.unregister(key.fileobj)
-                    _cancel_future_and_notify(key.data.future)
-                elif key.data.deadline < now:
-                    selector.unregister(key.fileobj)
-                    _set_future_exception_unless_cancelled(key.data.future, _utils.error_from_errno(_errno.ETIMEDOUT))
 
     def __attach_server(self) -> None:
         self.__active_tasks.increment()
@@ -877,7 +882,7 @@ class _ThreadSafeListener(_transports.BaseTransport):
 
     def try_accepting_new_connection[R](
         self,
-        selector_token: _SelectorToken,
+        client_handler_token: _ClientHandlerToken,
         handler: Callable[[_selector_transports.SelectorStreamTransport], R],
         executor: concurrent.futures.Executor,
     ) -> concurrent.futures.Future[R] | None:
@@ -894,12 +899,11 @@ class _ThreadSafeListener(_transports.BaseTransport):
                 handler = functools.partial(self.__in_executor, handler)
                 accept_future = self.__listener.accept_noblock(handler, executor)
             except (_selector_transports.WouldBlockOnRead, _selector_transports.WouldBlockOnWrite) as exc:
-                listener_wait_future = selector_token.register(
+                listener_wait_future = client_handler_token.register(
                     transport=self,
                     fileno=exc.fileno,
                     events=_selector_event_from_exc(exc),
                     deadline=math.inf,
-                    wakeup_socketpair=self.__wakeup_socketpair,
                     reader_condvar=self.__reader_condvar,
                     reader_done=self.__reader_done,
                 )
@@ -942,26 +946,75 @@ class _ThreadSafeListener(_transports.BaseTransport):
 @dataclasses.dataclass(kw_only=True, frozen=True, eq=False, slots=True)
 class _SelectorToken:
     selector: selectors.BaseSelector
-    state_lock: threading.RLock = dataclasses.field(default_factory=threading.RLock)
+    __current_deadline: _utils.AtomicFloat = dataclasses.field(init=False, default_factory=_utils.AtomicFloat)
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *args: Any) -> None:
+        # Cancel pending futures
+        for key in list(self.selector.get_map().values()):
+            match key.data:
+                case _SelectorKeyData(future=client_task_future):
+                    self.selector.unregister(key.fileobj)
+                    _cancel_future_and_notify(client_task_future)
+                case _:
+                    continue
+
+    def get_min_deadline(self) -> float:
+        return self.__current_deadline.value
+
+    def add_pending_register(self, pending_register: _Queue[_PendingSelectRegister]) -> None:
+        while True:
+            try:
+                waiter = pending_register.get_nowait()
+            except _QueueEmpty:
+                break
+
+            try:
+                self.selector.register(waiter.fileno, waiter.events, waiter.data)
+            except BaseException:
+                _cancel_future_and_notify(waiter.data.future)
+                raise
+            if (deadline := waiter.data.deadline) < self.__current_deadline.value:
+                self.__current_deadline.value = deadline
+
+    def handle_pending_clients(self) -> None:
+        # Either:
+        # - Cancel pending futures if transport has been closed asynchronously
+        # - Set timeout error if deadline has been reached
+        now = _get_current_time()
+        new_deadline = math.inf
+        for key in list(self.selector.get_map().values()):
+            if isinstance(key.data, _SelectorKeyData):
+                if key.data.transport.is_closing():
+                    self.selector.unregister(key.fileobj)
+                    _cancel_future_and_notify(key.data.future)
+                elif (client_deadline := key.data.deadline) < now:
+                    self.selector.unregister(key.fileobj)
+                    _set_future_exception_unless_cancelled(key.data.future, _utils.error_from_errno(_errno.ETIMEDOUT))
+                elif client_deadline < new_deadline:
+                    new_deadline = client_deadline
+        self.__current_deadline.value = new_deadline
+
+
+@dataclasses.dataclass(kw_only=True, frozen=True, eq=False, slots=True)
+class _ClientHandlerToken:
+    wakeup_socketpair: _wakeup_socketpair.WakeupSocketPair
+    pending_register: _Queue[_PendingSelectRegister] = dataclasses.field(default_factory=_Queue)
     tid: int = dataclasses.field(default_factory=threading.get_ident)
+    __state_lock: _lock.RWLock = dataclasses.field(init=False, default_factory=_lock.RWLock)
     __closed: _utils.Flag = dataclasses.field(init=False, default_factory=_utils.Flag)
 
     def __enter__(self) -> Self:
         return self
 
     def __exit__(self, *args: Any) -> None:
-        with self.state_lock:
+        with self.__state_lock.write_lock():
             self.__closed.set()
-            selector_keys = list(self.selector.get_map().values())
-
             # Cancel pending futures
-            for key in selector_keys:
-                match key.data:
-                    case _SelectorKeyData(future=client_task_future):
-                        self.selector.unregister(key.fileobj)
-                        _cancel_future_and_notify(client_task_future)
-                    case _:
-                        continue
+            while not self.pending_register.empty():
+                _cancel_future_and_notify(self.pending_register.get_nowait().data.future)
 
     def register(
         self,
@@ -970,7 +1023,6 @@ class _SelectorToken:
         fileno: int,
         events: selectors._EventMask,
         deadline: float,
-        wakeup_socketpair: _wakeup_socketpair.WakeupSocketPair,
         reader_condvar: threading.Condition,
         reader_done: _utils.Flag,
         _get_thread_id: Callable[[], int] = threading.get_ident,
@@ -978,7 +1030,7 @@ class _SelectorToken:
     ) -> concurrent.futures.Future[float]:
         assert reader_done.is_set()  # nosec assert_used
 
-        with self.state_lock:
+        with self.__state_lock.read_lock():
             future: concurrent.futures.Future[float] = _future_factory()
 
             with reader_condvar:
@@ -990,22 +1042,6 @@ class _SelectorToken:
                     future.set_exception(_utils.error_from_errno(_errno.ETIMEDOUT))
                     return future
                 reader_done.clear()
-
-            try:
-                key = self.selector.register(
-                    fileno,
-                    events,
-                    data=_SelectorKeyData(transport=transport, future=future, deadline=deadline, start_time=start_time),
-                )
-                future.add_done_callback(
-                    functools.partial(self.__unregister_on_future_cancel, key=key, wakeup_socketpair=wakeup_socketpair)
-                )
-                if _get_thread_id() != self.tid:
-                    wakeup_socketpair.wakeup_thread_and_signal_safe()
-            except BaseException:
-                future.cancel()
-                raise
-            finally:
                 future.add_done_callback(
                     functools.partial(
                         self.__wakeup_waiter_on_future_done,
@@ -1013,14 +1049,21 @@ class _SelectorToken:
                         reader_done=reader_done,
                     )
                 )
-            return future
 
-    def get_min_deadline(self) -> float:
-        with self.state_lock:
-            return min(
-                (key.data.deadline for key in self.selector.get_map().values() if isinstance(key.data, _SelectorKeyData)),
-                default=math.inf,
-            )
+            try:
+                self.pending_register.put(
+                    _PendingSelectRegister(
+                        fileno,
+                        events,
+                        data=_SelectorKeyData(transport=transport, future=future, deadline=deadline, start_time=start_time),
+                    )
+                )
+                if _get_thread_id() != self.tid:
+                    self.wakeup_socketpair.wakeup_thread_and_signal_safe()
+            except BaseException:
+                _cancel_future_and_notify(future)
+                raise
+            return future
 
     @staticmethod
     def __wakeup_waiter_on_future_done(
@@ -1034,30 +1077,18 @@ class _SelectorToken:
             reader_done.set()
             reader_condvar.notify_all()
 
-    def __unregister_on_future_cancel(
-        self,
-        future: concurrent.futures.Future[Any],
-        /,
-        *,
-        key: selectors.SelectorKey,
-        wakeup_socketpair: _wakeup_socketpair.WakeupSocketPair,
-    ) -> None:
-        if future.cancelled():
-            with self.state_lock:
-                try:
-                    self.selector.unregister(key.fileobj)
-                except KeyError:
-                    pass
-                else:
-                    with contextlib.suppress(OSError):
-                        wakeup_socketpair.wakeup_thread_and_signal_safe()
-
 
 class _SelectorKeyData(NamedTuple):
     transport: ConnectedStreamClient[Any] | _ThreadSafeListener
     future: concurrent.futures.Future[float]
     deadline: float
     start_time: float
+
+
+class _PendingSelectRegister(NamedTuple):
+    fileno: int
+    events: selectors._EventMask
+    data: _SelectorKeyData
 
 
 @dataclasses.dataclass(kw_only=True, eq=False, slots=True)
