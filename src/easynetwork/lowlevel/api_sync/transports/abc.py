@@ -30,7 +30,7 @@ __all__ = [
 
 import concurrent.futures
 from abc import ABCMeta, abstractmethod
-from collections.abc import Callable, Buffer, Iterable
+from collections.abc import Buffer, Callable, Iterable
 from types import TracebackType
 from typing import Any, Self
 
