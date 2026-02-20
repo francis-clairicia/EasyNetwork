@@ -23,7 +23,6 @@ __all__ = [
 import contextlib
 import socket
 
-from .constants import DEFAULT_STREAM_BUFSIZE
 from .socket import set_tcp_nodelay
 
 
@@ -65,7 +64,7 @@ class WakeupSocketPair:
     def drain(self) -> None:
         try:
             while True:
-                self._receive.recv(DEFAULT_STREAM_BUFSIZE)
+                self._receive.recv(128)
         except BlockingIOError:
             pass
 
