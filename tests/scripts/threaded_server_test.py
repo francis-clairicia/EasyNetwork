@@ -12,6 +12,7 @@ from easynetwork.lowlevel.api_sync.servers.selector_datagram import DatagramClie
 from easynetwork.lowlevel.api_sync.servers.selector_stream import ConnectedStreamClient, SelectorStreamServer
 from easynetwork.lowlevel.api_sync.transports.socket import SocketDatagramListener, SocketStreamListener
 from easynetwork.lowlevel.constants import DEFAULT_STREAM_BUFSIZE
+from easynetwork.lowlevel.request_handler import RecvParams
 from easynetwork.lowlevel.socket import INETSocketAttribute
 from easynetwork.protocol import DatagramProtocol, StreamProtocol
 from easynetwork.serializers.line import StringLineSerializer
@@ -21,7 +22,10 @@ PORT = 9000
 logger = logging.getLogger("app")
 
 
-def stream_handle(client: ConnectedStreamClient[str], server: SelectorStreamServer[str, str]) -> Generator[float | None, str]:
+def stream_handle(
+    client: ConnectedStreamClient[str],
+    server: SelectorStreamServer[str, str],
+) -> Generator[RecvParams | None, str]:
     if not (client_address := client.extra(INETSocketAttribute.peername, None)):
         return
     logger.info(f"{client_address} connected")
@@ -36,7 +40,7 @@ def stream_handle(client: ConnectedStreamClient[str], server: SelectorStreamServ
                     request = (yield None) + " after wait"
                 case _ if request.startswith("timeout:"):
                     try:
-                        request = yield float(request.partition(":")[2])
+                        request = yield RecvParams(timeout=float(request.partition(":")[2]))
                     except TimeoutError:
                         logger.error(f"{client!r}: timed out")
                         return
@@ -53,7 +57,7 @@ def stream_handle(client: ConnectedStreamClient[str], server: SelectorStreamServ
         logger.info(f"{client_address} disconnected")
 
 
-def dgram_handle(client: DatagramClientContext[str, str | bytes]) -> Generator[float | None, str]:
+def dgram_handle(client: DatagramClientContext[str, str | bytes]) -> Generator[RecvParams | None, str]:
     request: str = yield None
     logger.debug(f"Received {request!r} from {client.address!r}")
     match request:
@@ -63,7 +67,7 @@ def dgram_handle(client: DatagramClientContext[str, str | bytes]) -> Generator[f
             request = (yield None) + " after wait"
         case _ if request.startswith("timeout:"):
             try:
-                request = yield float(request.partition(":")[2])
+                request = yield RecvParams(timeout=float(request.partition(":")[2]))
             except TimeoutError:
                 logger.error(f"{client!r}: timed out")
                 return

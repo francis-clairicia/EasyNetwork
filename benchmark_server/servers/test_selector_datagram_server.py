@@ -14,6 +14,7 @@ from collections.abc import Generator
 
 from easynetwork.lowlevel.api_sync.servers.selector_datagram import DatagramClientContext, SelectorDatagramServer
 from easynetwork.lowlevel.api_sync.transports.socket import SocketDatagramListener
+from easynetwork.lowlevel.request_handler import RecvParams
 from easynetwork.protocol import DatagramProtocol
 from easynetwork.serializers.abc import AbstractPacketSerializer
 
@@ -43,9 +44,9 @@ class NoSerializer(AbstractPacketSerializer[bytes, bytes]):
 def request_handler_context_reuse(
     client: DatagramClientContext[bytes, str | bytes],
     client_ttl: float,
-) -> Generator[float, bytes]:
+) -> Generator[RecvParams, bytes]:
     while True:
-        request: bytes = yield client_ttl
+        request: bytes = yield RecvParams(timeout=client_ttl)
         client.server.send_packet_to(request, client.address)
 
 
