@@ -885,12 +885,44 @@ class SocketDatagramListener(base_selector.SelectorDatagramListener["_RetAddress
         except (BlockingIOError, InterruptedError):
             raise base_selector.WouldBlockOnRead(self.__socket.fileno()) from None
 
+    if sys.platform != "win32" and hasattr(socket.socket, "recvmsg"):
+
+        @_utils.inherit_doc(base_selector.SelectorDatagramListener)
+        def recv_noblock_with_ancillary_from(
+            self,
+            ancillary_bufsize: int,
+        ) -> tuple[bytes, list[tuple[int, int, bytes]] | None, _RetAddress]:
+            if not _unix_utils.is_unix_socket_family(self.__socket.family):
+                return super().recv_noblock_with_ancillary_from(ancillary_bufsize)
+            try:
+                msg, ancdata, _, address = self.__socket.recvmsg(constants.MAX_DATAGRAM_BUFSIZE, ancillary_bufsize)
+            except (BlockingIOError, InterruptedError):
+                raise base_selector.WouldBlockOnRead(self.__socket.fileno()) from None
+            else:
+                return msg, ancdata, address
+
     @_utils.inherit_doc(base_selector.SelectorDatagramListener)
     def send_noblock_to(self, data: bytes | bytearray | memoryview, address: _Address) -> None:
         try:
             self.__socket.sendto(data, address)
         except (BlockingIOError, InterruptedError):
             raise base_selector.WouldBlockOnWrite(self.__socket.fileno()) from None
+
+    if sys.platform != "win32" and hasattr(socket.socket, "sendmsg"):
+
+        @_utils.inherit_doc(base_selector.SelectorDatagramListener)
+        def send_noblock_with_ancillary_to(
+            self,
+            data: bytes | bytearray | memoryview,
+            ancillary_data: Iterable[tuple[int, int, ReadableBuffer]],
+            address: _RetAddress,
+        ) -> None:
+            if not _unix_utils.is_unix_socket_family(self.__socket.family):
+                return super().send_noblock_with_ancillary_to(data, ancillary_data, address)
+            try:
+                self.__socket.sendmsg([data], ancillary_data, 0, address)
+            except (BlockingIOError, InterruptedError):
+                raise base_selector.WouldBlockOnWrite(self.__socket.fileno()) from None
 
     @property
     @_utils.inherit_doc(base_selector.SelectorDatagramListener)

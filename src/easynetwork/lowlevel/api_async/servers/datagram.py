@@ -361,6 +361,14 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
                 client_address=client_address,
             )
             return
+        except BaseException:
+            self.__handle_ancillary_data(
+                ancillary_data=ancillary_data,
+                recv_with_ancillary=None,
+                server_ancillary_data_params=server_ancillary_data_params,
+                client_address=client_address,
+            )
+            raise
         else:
             request: _T_Request | None
             try:

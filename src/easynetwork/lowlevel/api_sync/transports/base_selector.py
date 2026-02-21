@@ -560,7 +560,6 @@ class SelectorListener(SelectorBaseTransport, transports.Listener[_T_co]):
         Raises:
             WouldBlockOnRead: the operation would block when reading the pipe.
             WouldBlockOnWrite: the operation would block when writing on the pipe.
-            OutOfResourcesError: Resource limits exceeded.
 
         Returns:
             a :class:`~concurrent.futures.Future` for the spawned task.
@@ -602,7 +601,6 @@ class SelectorDatagramListener(SelectorBaseTransport, transports.DatagramListene
         Raises:
             WouldBlockOnRead: the operation would block when reading the pipe.
             WouldBlockOnWrite: the operation would block when writing on the pipe.
-            OutOfResourcesError: Resource limits exceeded.
 
         Returns:
             a tuple with some :class:`bytes` and the sender's address.
@@ -616,6 +614,39 @@ class SelectorDatagramListener(SelectorBaseTransport, transports.DatagramListene
         The default implementation will retry to call :meth:`recv_noblock_from` until it succeeds under the given `timeout`.
         """
         return self._retry(lambda: self.recv_noblock_from(), timeout)[0]
+
+    def recv_noblock_with_ancillary_from(self, ancillary_bufsize: int) -> tuple[bytes, Any | None, _T_Address]:
+        """
+        Read and return the next available packet.
+
+        Important:
+            The implementation must ensure that datagrams are processed in the order in which they are received.
+
+        Parameters:
+            ancillary_bufsize: the maximum buffer size for ancillary data.
+
+        Raises:
+            ValueError: Negative `ancillary_bufsize`.
+            WouldBlockOnRead: the operation would block when reading the pipe.
+            WouldBlockOnWrite: the operation would block when writing on the pipe.
+            UnsupportedOperation: This transport does not have ancillary data support.
+
+        Returns:
+            a tuple with some :class:`bytes`, the ancillary data and the sender's address.
+            The ancillary data can be :data:`None` if there is none.
+        """
+        from ....exceptions import UnsupportedOperation
+
+        raise UnsupportedOperation("This transport does not have ancillary data support.")
+
+    def recv_with_ancillary_from(self, ancillary_bufsize: int, timeout: float) -> tuple[bytes, Any | None, _T_Address]:
+        """
+        Read and return the next available packet.
+
+        The default implementation will retry to call :meth:`recv_noblock_with_ancillary_from` until it succeeds under
+        the given `timeout`.
+        """
+        return self._retry(lambda: self.recv_noblock_with_ancillary_from(ancillary_bufsize), timeout)[0]
 
     @abstractmethod
     def send_noblock_to(self, data: bytes | bytearray | memoryview, address: _T_Address) -> None:
@@ -639,3 +670,42 @@ class SelectorDatagramListener(SelectorBaseTransport, transports.DatagramListene
         The default implementation will retry to call :meth:`send_noblock_to` until it succeeds under the given `timeout`.
         """
         return self._retry(lambda: self.send_noblock_to(data, address), timeout)[0]
+
+    def send_noblock_with_ancillary_to(
+        self,
+        data: bytes | bytearray | memoryview,
+        ancillary_data: Any,
+        address: _T_Address,
+    ) -> None:  # pragma: no cover
+        """
+        Send the `data` bytes to the remote peer `address` with ancillary data.
+
+        Parameters:
+            data: the bytes to send.
+            ancillary_data: The ancillary data to send along with the message.
+            address: the remote peer.
+
+        Raises:
+            WouldBlockOnRead: the operation would block when reading the pipe.
+            WouldBlockOnWrite: the operation would block when writing on the pipe.
+            OSError: Data too big to be sent at once.
+            UnsupportedOperation: This transport does not have ancillary data support.
+        """
+        from ....exceptions import UnsupportedOperation
+
+        raise UnsupportedOperation("This transport does not have ancillary data support.")
+
+    def send_with_ancillary_to(
+        self,
+        data: bytes | bytearray | memoryview,
+        ancillary_data: Any,
+        address: _T_Address,
+        timeout: float,
+    ) -> None:
+        """
+        Send the `data` bytes to the remote peer `address` with ancillary data.
+
+        The default implementation will retry to call :meth:`send_noblock_with_ancillary_to` until it succeeds under
+        the given `timeout`.
+        """
+        return self._retry(lambda: self.send_noblock_with_ancillary_to(data, ancillary_data, address), timeout)[0]
