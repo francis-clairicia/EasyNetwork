@@ -347,6 +347,14 @@ class AsyncDatagramServer[Request, Response, Address: Hashable](_transports.Asyn
                 client_address=client_address,
             )
             return
+        except BaseException:
+            self.__handle_ancillary_data(
+                ancillary_data=ancillary_data,
+                recv_with_ancillary=None,
+                server_ancillary_data_params=server_ancillary_data_params,
+                client_address=client_address,
+            )
+            raise
         else:
             request: Request | None
             try:
