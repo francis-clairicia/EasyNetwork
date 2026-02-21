@@ -40,8 +40,10 @@ from queue import Empty as _QueueEmpty, SimpleQueue as _Queue
 from typing import Any, Generic, Literal, NamedTuple, Self, TypeAlias, TypeVar, assert_never
 
 from ...._typevars import _T_Request, _T_Response
+from ....exceptions import UnsupportedOperation
 from ....protocol import AnyStreamProtocolType
 from ... import _lock, _stream, _utils, _wakeup_socketpair
+from ...request_handler import RecvAncillaryDataParams, RecvParams
 from ..transports import abc as _transports, base_selector as _selector_transports
 
 _T_Return = TypeVar("_T_Return")
@@ -267,11 +269,12 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
 
     def serve(
         self,
-        client_connected_cb: Callable[[ConnectedStreamClient[_T_Response]], Generator[float | None, _T_Request]],
+        client_connected_cb: Callable[[ConnectedStreamClient[_T_Response]], Generator[RecvParams | None, _T_Request]],
         executor: concurrent.futures.Executor,
         *,
         worker_strategy: Literal["clients", "requests"] = "requests",
         disconnect_error_filter: Callable[[Exception], bool] | None = None,
+        ancillary_bufsize: int | None = None,
     ) -> None:
         """
         Accept incoming connections as they come in and start tasks to handle them.
@@ -281,6 +284,8 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
             executor: will be used to start tasks for handling each accepted connection.
             worker_strategy: Decides how to manage the executor.
             disconnect_error_filter: a callable that returns :data:`True` if the exception is the result of a pipe disconnect.
+            ancillary_bufsize: the maximum buffer size for ancillary data.
+                               If :data:`None`, using :class:`.RecvAncillaryDataParams` will raise :exc:`.UnsupportedOperation`.
         """
         with self.__serve_guard, contextlib.ExitStack() as stack:
             self.__is_shut_down.clear()
@@ -302,6 +307,7 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
                             client_connected_cb=client_connected_cb,
                             executor=executor,
                             disconnect_error_filter=disconnect_error_filter,
+                            ancillary_bufsize=ancillary_bufsize,
                             server_is_shutting_down=server_is_shutting_down.is_set,
                         )
                     case "requests":
@@ -310,6 +316,7 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
                             client_connected_cb=client_connected_cb,
                             executor=executor,
                             disconnect_error_filter=disconnect_error_filter,
+                            ancillary_bufsize=ancillary_bufsize,
                             server_is_shutting_down=server_is_shutting_down.is_set,
                         )
                     case _:
@@ -328,9 +335,10 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
         self,
         *,
         selector: selectors.BaseSelector,
-        client_connected_cb: Callable[[ConnectedStreamClient[_T_Response]], Generator[float | None, _T_Request]],
+        client_connected_cb: Callable[[ConnectedStreamClient[_T_Response]], Generator[RecvParams | None, _T_Request]],
         executor: concurrent.futures.Executor,
         disconnect_error_filter: Callable[[Exception], bool] | None,
+        ancillary_bufsize: int | None,
         server_is_shutting_down: Callable[[], bool],
     ) -> None:
         with (
@@ -344,6 +352,7 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
                 client_connected_cb=client_connected_cb,
                 executor=executor,
                 disconnect_error_filter=disconnect_error_filter,
+                ancillary_bufsize=ancillary_bufsize,
                 server_is_shutting_down=server_is_shutting_down,
             )
             self.__serve_forever_impl(
@@ -360,9 +369,10 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
         *,
         default_context: contextvars.Context,
         client_handler_token: _ClientHandlerToken,
-        client_connected_cb: Callable[[ConnectedStreamClient[_T_Response]], Generator[float | None, _T_Request]],
+        client_connected_cb: Callable[[ConnectedStreamClient[_T_Response]], Generator[RecvParams | None, _T_Request]],
         executor: concurrent.futures.Executor,
         disconnect_error_filter: Callable[[Exception], bool] | None,
+        ancillary_bufsize: int | None,
         server_is_shutting_down: Callable[[], bool],
     ) -> None:
         request_handler_context = default_context.copy()
@@ -379,7 +389,12 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
             transport_close_exit_stack.callback(transport.abort)
 
             producer = _stream.StreamDataProducer(self.__protocol)
-            request_receiver = self.__new_request_receiver(transport, disconnect_error_filter, server_is_shutting_down)
+            request_receiver = self.__new_request_receiver(
+                transport,
+                ancillary_bufsize,
+                disconnect_error_filter,
+                server_is_shutting_down,
+            )
 
             # NOTE: It is safe to clear the consumer before the transport here.
             #       There is no task reading the transport at this point.
@@ -401,9 +416,8 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
 
             task_exit_stack.callback(request_handler_context.run, request_handler_generator.close)
 
-            timeout: float | None
             try:
-                timeout = request_handler_context.run(next, request_handler_generator)
+                recv_params = _rcv(request_handler_context.run(next, request_handler_generator))
             except StopIteration:
                 return
 
@@ -420,7 +434,7 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
                 client_handler_token=client_handler_token,
                 executor=executor,
                 task_exit_stack=task_exit_stack,
-                receive_timeout=timeout,
+                recv_params=recv_params,
             )
 
     def __serve_requests__handle_client_request(
@@ -432,7 +446,7 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
         client_handler_token: _ClientHandlerToken,
         executor: concurrent.futures.Executor,
         task_exit_stack: contextlib.ExitStack,
-        receive_timeout: float | None,
+        recv_params: RecvParams,
     ) -> None:
         try:
             with task_exit_stack.pop_all() as task_exit_stack:
@@ -441,47 +455,59 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
                 try:
                     if client.is_closing():
                         return
-                    if reader_future is None:
-                        receive_timeout = _utils.validate_optional_timeout_delay(receive_timeout, positive_check=True)
-                    else:
-                        try:
-                            elapsed_time = reader_future.result(timeout=0)
-                        except concurrent.futures.CancelledError:
-                            return
-                        # receive_timeout is already a valid timeout
-                        receive_timeout = math.inf if receive_timeout is None else receive_timeout
-                        receive_timeout = max(receive_timeout - elapsed_time, 0.0)
 
                     request_handler_context = client_data.request_handler_context
                     request_handler_generator = client_data.request_handler_generator
                     try:
-                        request = client_data.request_receiver.next(first_try=(reader_future is None))
-                    except (_selector_transports.WouldBlockOnRead, _selector_transports.WouldBlockOnWrite) as exc:
-                        reader_future = client_handler_token.register(
-                            transport=client,
-                            fileno=exc.fileno,
-                            events=_selector_event_from_exc(exc),
-                            deadline=_get_current_time() + receive_timeout,
-                            reader_condvar=client_data.request_receiver.reader_condvar,
-                            reader_done=client_data.request_receiver.reader_done,
-                        )
-                        reader_future.add_done_callback(
-                            functools.partial(
-                                self.__serve_requests__schedule_next_client_handle,
-                                client_data=client_data,
-                                client_handler_token=client_handler_token,
-                                executor=executor,
-                                task_exit_stack=task_exit_stack.pop_all(),
-                                receive_timeout=receive_timeout,
+                        timeout: float
+                        if reader_future is None:
+                            timeout = _utils.validate_optional_timeout_delay(recv_params.timeout, positive_check=True)
+                        else:
+                            try:
+                                elapsed_time = reader_future.result(timeout=0)
+                            except concurrent.futures.CancelledError:
+                                return
+                            # recv_params is already a valid timeout
+                            timeout = math.inf if recv_params.timeout is None else recv_params.timeout
+                            timeout = max(timeout - elapsed_time, 0.0)
+
+                        try:
+                            if recv_params.recv_with_ancillary is None:
+                                request = client_data.request_receiver.next(first_try=(reader_future is None))
+                            else:
+                                request = client_data.request_receiver.next_with_ancillary(
+                                    recv_params.recv_with_ancillary,
+                                    first_try=(reader_future is None),
+                                )
+                        except (_selector_transports.WouldBlockOnRead, _selector_transports.WouldBlockOnWrite) as exc:
+                            recv_params = dataclasses.replace(recv_params, timeout=timeout)
+                            reader_future = client_handler_token.register(
+                                transport=client,
+                                fileno=exc.fileno,
+                                events=_selector_event_from_exc(exc),
+                                deadline=_get_current_time() + timeout,
+                                reader_condvar=client_data.request_receiver.reader_condvar,
+                                reader_done=client_data.request_receiver.reader_done,
                             )
-                        )
-                        return
+                            reader_future.add_done_callback(
+                                functools.partial(
+                                    self.__serve_requests__schedule_next_client_handle,
+                                    client_data=client_data,
+                                    client_handler_token=client_handler_token,
+                                    executor=executor,
+                                    task_exit_stack=task_exit_stack.pop_all(),
+                                    recv_params=recv_params,
+                                )
+                            )
+                            return
                     except StopIteration:
                         raise
                     except BaseException as exc:
-                        receive_timeout = request_handler_context.run(request_handler_generator.throw, exc)
+                        del recv_params
+                        recv_params = _rcv(request_handler_context.run(request_handler_generator.throw, exc))
                     else:
-                        receive_timeout = request_handler_context.run(request_handler_generator.send, request)
+                        del recv_params
+                        recv_params = _rcv(request_handler_context.run(request_handler_generator.send, request))
                 except StopIteration:
                     # Request handler stopped normally, attempt a graceful close.
                     client_data.transport_close_exit_stack.pop_all()
@@ -493,7 +519,7 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
                 self.__serve_requests__schedule_next_client_handle(
                     None,
                     client_data=client_data,
-                    receive_timeout=receive_timeout,
+                    recv_params=recv_params,
                     client_handler_token=client_handler_token,
                     executor=executor,
                     task_exit_stack=task_exit_stack.pop_all(),
@@ -510,14 +536,14 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
         client_handler_token: _ClientHandlerToken,
         executor: concurrent.futures.Executor,
         task_exit_stack: contextlib.ExitStack,
-        receive_timeout: float | None,
+        recv_params: RecvParams,
     ) -> None:
         try:
             handler_future = executor.submit(
                 self.__serve_requests__handle_client_request,
                 reader_future,
                 client_data=client_data,
-                receive_timeout=receive_timeout,
+                recv_params=recv_params,
                 client_handler_token=client_handler_token,
                 executor=executor,
                 task_exit_stack=task_exit_stack,
@@ -551,9 +577,10 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
         self,
         *,
         selector: selectors.BaseSelector,
-        client_connected_cb: Callable[[ConnectedStreamClient[_T_Response]], Generator[float | None, _T_Request]],
+        client_connected_cb: Callable[[ConnectedStreamClient[_T_Response]], Generator[RecvParams | None, _T_Request]],
         executor: concurrent.futures.Executor,
         disconnect_error_filter: Callable[[Exception], bool] | None,
+        ancillary_bufsize: int | None,
         server_is_shutting_down: Callable[[], bool],
     ) -> None:
         with (
@@ -571,6 +598,7 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
                         transport,
                         client_connected_cb,
                         disconnect_error_filter,
+                        ancillary_bufsize,
                         server_is_shutting_down,
                     )
                 finally:
@@ -586,8 +614,9 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
     def __serve_clients__client_task(
         self,
         transport: _selector_transports.SelectorStreamTransport,
-        client_connected_cb: Callable[[ConnectedStreamClient[_T_Response]], Generator[float | None, _T_Request]],
+        client_connected_cb: Callable[[ConnectedStreamClient[_T_Response]], Generator[RecvParams | None, _T_Request]],
         disconnect_error_filter: Callable[[Exception], bool] | None,
+        ancillary_bufsize: int | None,
         server_is_shutting_down: Callable[[], bool],
     ) -> None:
         if not isinstance(transport, _selector_transports.SelectorStreamTransport):
@@ -607,7 +636,12 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
             transport_close_exit_stack.callback(transport.abort)
 
             producer = _stream.StreamDataProducer(self.__protocol)
-            request_receiver = self.__new_request_receiver(transport, disconnect_error_filter, server_is_shutting_down)
+            request_receiver = self.__new_request_receiver(
+                transport,
+                ancillary_bufsize,
+                disconnect_error_filter,
+                server_is_shutting_down,
+            )
 
             # NOTE: It is safe to clear the consumer before the transport here.
             #       There is no task reading the transport at this point.
@@ -627,9 +661,10 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
             transport_close_exit_stack.pop_all()
             transport_close_exit_stack.callback(client.abort)
 
-            timeout: float | None
+            timeout: float
+            recv_params: RecvParams
             try:
-                timeout = next(request_handler_generator)
+                recv_params = _rcv(next(request_handler_generator))
             except StopIteration:
                 return
             else:
@@ -638,11 +673,17 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
                     _validate_timeout_delay = _utils.validate_optional_timeout_delay
                     while not client.is_closing():
                         try:
-                            timeout = _validate_timeout_delay(timeout, positive_check=True)
+                            timeout = _validate_timeout_delay(recv_params.timeout, positive_check=True)
                             first_recv_try: bool = True
                             while True:
                                 try:
-                                    request = request_receiver.next(first_try=first_recv_try)
+                                    if recv_params.recv_with_ancillary is None:
+                                        request = request_receiver.next(first_try=first_recv_try)
+                                    else:
+                                        request = request_receiver.next_with_ancillary(
+                                            recv_params.recv_with_ancillary,
+                                            first_try=first_recv_try,
+                                        )
                                 except (_selector_transports.WouldBlockOnRead, _selector_transports.WouldBlockOnWrite) as exc:
                                     fileno = exc.fileno
                                     event = _selector_event_from_exc(exc)
@@ -669,9 +710,11 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
                         except StopIteration:
                             raise
                         except BaseException as exc:
-                            timeout = request_handler_generator.throw(exc)
+                            del recv_params
+                            recv_params = _rcv(request_handler_generator.throw(exc))
                         else:
-                            timeout = request_handler_generator.send(request)
+                            del recv_params
+                            recv_params = _rcv(request_handler_generator.send(request))
                         finally:
                             request = None
                 except StopIteration:
@@ -689,6 +732,7 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
     def __new_request_receiver(
         self,
         transport: _selector_transports.SelectorStreamTransport,
+        ancillary_bufsize: int | None,
         disconnect_error_filter: Callable[[Exception], bool] | None,
         server_is_shutting_down: Callable[[], bool],
     ) -> _AnyRequestReceiver[_T_Request]:
@@ -700,6 +744,7 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
                 consumer = _stream.BufferedStreamDataConsumer(self.__protocol, self.__max_recv_size)
                 return _BufferedRequestReceiver(
                     transport=transport,
+                    ancillary_bufsize=ancillary_bufsize,
                     consumer=consumer,
                     disconnect_error_filter=disconnect_error_filter,
                     server_is_shutting_down=server_is_shutting_down,
@@ -708,6 +753,7 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
                 consumer = _stream.StreamDataConsumer(self.__protocol)
                 return _RequestReceiver(
                     transport=transport,
+                    ancillary_bufsize=ancillary_bufsize,
                     consumer=consumer,
                     max_recv_size=self.__max_recv_size,
                     disconnect_error_filter=disconnect_error_filter,
@@ -824,7 +870,7 @@ class SelectorStreamServer(_transports.BaseTransport, Generic[_T_Request, _T_Res
 class _ClientData(Generic[_T_Request, _T_Response]):
     client: ConnectedStreamClient[_T_Response]
     request_receiver: _AnyRequestReceiver[_T_Request]
-    request_handler_generator: Generator[float | None, _T_Request]
+    request_handler_generator: Generator[RecvParams | None, _T_Request]
     request_handler_context: contextvars.Context
     transport_close_exit_stack: contextlib.ExitStack
 
@@ -1097,6 +1143,7 @@ class _PendingSelectRegister(NamedTuple):
 @dataclasses.dataclass(kw_only=True, eq=False, slots=True)
 class _BaseRequestReceiver(Generic[_T_Request]):
     transport: _selector_transports.SelectorStreamTransport
+    ancillary_bufsize: int | None
     server_is_shutting_down: Callable[[], bool]
     transport_close_lock: threading.Lock = dataclasses.field(init=False, default_factory=threading.Lock)
     reader_condvar: threading.Condition = dataclasses.field(init=False, default_factory=threading.Condition)
@@ -1130,7 +1177,7 @@ class _RequestReceiver(_BaseRequestReceiver[_T_Request]):
                 pass
 
         transport = self.transport
-        while not self.server_is_shutting_down():
+        while True:
             with self.transport_close_lock:
                 if transport.is_closed():
                     break
@@ -1150,9 +1197,51 @@ class _RequestReceiver(_BaseRequestReceiver[_T_Request]):
                 pass
             finally:
                 del chunk
+            if self.server_is_shutting_down():
+                break
 
         # Loop break
         raise StopIteration
+
+    def next_with_ancillary(self, ancillary_data_params: RecvAncillaryDataParams, *, first_try: bool) -> _T_Request:
+        ancillary_bufsize = self.ancillary_bufsize
+        if ancillary_bufsize is None:
+            raise UnsupportedOperation("The server is not configured to handle ancillary data (ancillary_bufsize=None).")
+
+        consumer = self.consumer
+        if first_try:
+            try:
+                return consumer.next(None)
+            except StopIteration:
+                pass
+
+        transport = self.transport
+        data: bytes
+        with self.transport_close_lock:
+            if transport.is_closed():
+                raise StopIteration
+            try:
+                data, ancdata = transport.recv_noblock_with_ancillary(self.max_recv_size, ancillary_bufsize)
+            except Exception as exc:
+                if self.disconnect_error_filter is not None and self.disconnect_error_filter(exc):
+                    raise StopIteration from None
+                raise
+
+        if not data:
+            del ancdata
+            raise StopAsyncIteration
+
+        try:
+            try:
+                ancillary_data_params.data_received(ancdata)
+            except Exception as exc:
+                raise RuntimeError("RecvAncillaryDataParams.data_received() crashed") from exc
+            try:
+                return consumer.next(data)
+            except StopIteration:
+                raise EOFError("Received partial packet data") from None
+        finally:
+            del ancdata, data
 
 
 @dataclasses.dataclass(kw_only=True, eq=False, slots=True)
@@ -1170,7 +1259,7 @@ class _BufferedRequestReceiver(_BaseRequestReceiver[_T_Request]):
 
         transport = self.transport
         nbytes: int
-        while not self.server_is_shutting_down():
+        while True:
             with self.transport_close_lock:
                 if transport.is_closed():
                     break
@@ -1189,9 +1278,53 @@ class _BufferedRequestReceiver(_BaseRequestReceiver[_T_Request]):
                 return consumer.next(nbytes)
             except StopIteration:
                 pass
+            if self.server_is_shutting_down():
+                break
 
         # Loop break
         raise StopIteration
+
+    def next_with_ancillary(self, ancillary_data_params: RecvAncillaryDataParams, *, first_try: bool) -> _T_Request:
+        ancillary_bufsize = self.ancillary_bufsize
+        if ancillary_bufsize is None:
+            raise UnsupportedOperation("The server is not configured to handle ancillary data (ancillary_bufsize=None).")
+
+        consumer = self.consumer
+        if first_try:
+            try:
+                return consumer.next(None)
+            except StopIteration:
+                pass
+
+        transport = self.transport
+        nbytes: int
+        with self.transport_close_lock:
+            if transport.is_closed():
+                raise StopIteration
+            with consumer.get_write_buffer() as buffer:
+                try:
+                    nbytes, ancdata = transport.recv_noblock_with_ancillary_into(buffer, ancillary_bufsize)
+                except (_selector_transports.WouldBlockOnRead, _selector_transports.WouldBlockOnWrite):
+                    raise
+                except Exception as exc:
+                    if self.disconnect_error_filter is not None and self.disconnect_error_filter(exc):
+                        raise StopIteration from None
+                    raise
+
+        if not nbytes:
+            del ancdata
+            raise StopAsyncIteration
+
+        try:
+            ancillary_data_params.data_received(ancdata)
+        except Exception as exc:
+            raise RuntimeError("RecvAncillaryDataParams.data_received() crashed") from exc
+        finally:
+            del ancdata
+        try:
+            return consumer.next(nbytes)
+        except StopIteration:
+            raise EOFError("Received partial packet data") from None
 
 
 _AnyRequestReceiver: TypeAlias = _RequestReceiver[_T_Request] | _BufferedRequestReceiver[_T_Request]
@@ -1224,3 +1357,13 @@ def _set_future_result_unless_cancelled(f: concurrent.futures.Future[_T_Return],
 def _set_future_exception_unless_cancelled(f: concurrent.futures.Future[Any], exc: BaseException) -> None:
     if f.set_running_or_notify_cancel():  # pragma: no branch
         f.set_exception(exc)
+
+
+def _rcv(param: RecvParams | None, /) -> RecvParams:
+    match param:
+        case None:
+            return RecvParams()
+        case RecvParams():
+            return param
+        case _:
+            raise TypeError("Expected a RecvParams object or None")

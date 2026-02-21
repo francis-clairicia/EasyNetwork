@@ -507,6 +507,9 @@ class DatagramListener(BaseTransport, Generic[_T_Address]):
         """
         Read and return the next available packet.
 
+        Important:
+            The implementation must ensure that datagrams are processed in the order in which they are received.
+
         Parameters:
             timeout: the allowed time (in seconds) for blocking operations. Can be set to :data:`math.inf`.
 
@@ -518,6 +521,31 @@ class DatagramListener(BaseTransport, Generic[_T_Address]):
             a tuple with some :class:`bytes` and the sender's address.
         """
         raise NotImplementedError
+
+    def recv_with_ancillary_from(self, ancillary_bufsize: int, timeout: float) -> tuple[bytes, Any | None, _T_Address]:
+        """
+        Read and return the next available packet.
+
+        Important:
+            The implementation must ensure that datagrams are processed in the order in which they are received.
+
+        Parameters:
+            ancillary_bufsize: the maximum buffer size for ancillary data.
+            timeout: the allowed time (in seconds) for blocking operations. Can be set to :data:`math.inf`.
+
+        Raises:
+            ValueError: Negative `ancillary_bufsize`.
+            ValueError: Negative `timeout`.
+            TimeoutError: Operation timed out.
+            UnsupportedOperation: This transport does not have ancillary data support.
+
+        Returns:
+            a tuple with some :class:`bytes`, the ancillary data and the sender's address.
+            The ancillary data can be :data:`None` if there is none.
+        """
+        from ....exceptions import UnsupportedOperation
+
+        raise UnsupportedOperation("This transport does not have ancillary data support.")
 
     @abstractmethod
     def send_to(self, data: bytes | bytearray | memoryview, address: _T_Address, timeout: float) -> None:
@@ -532,5 +560,32 @@ class DatagramListener(BaseTransport, Generic[_T_Address]):
         Raises:
             ValueError: Negative `timeout`.
             TimeoutError: Operation timed out.
+            OSError: Data too big to be sent at once.
         """
         raise NotImplementedError
+
+    def send_with_ancillary_to(
+        self,
+        data: bytes | bytearray | memoryview,
+        ancillary_data: Any,
+        address: _T_Address,
+        timeout: float,
+    ) -> None:  # pragma: no cover
+        """
+        Send the `data` bytes to the remote peer `address` with ancillary data.
+
+        Parameters:
+            data: the bytes to send.
+            ancillary_data: The ancillary data to send along with the message.
+            address: the remote peer.
+            timeout: the allowed time (in seconds) for blocking operations. Can be set to :data:`math.inf`.
+
+        Raises:
+            ValueError: Negative `timeout`.
+            TimeoutError: Operation timed out.
+            OSError: Data too big to be sent at once.
+            UnsupportedOperation: This transport does not have ancillary data support.
+        """
+        from ....exceptions import UnsupportedOperation
+
+        raise UnsupportedOperation("This transport does not have ancillary data support.")
