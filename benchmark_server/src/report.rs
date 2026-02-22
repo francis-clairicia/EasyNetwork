@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, LinkedList},
     fmt,
+    num::NonZero,
     time::{Duration, SystemTime},
 };
 
@@ -31,12 +32,12 @@ impl RequestReport {
 pub struct TestReport {
     times_per_request: LinkedList<RequestReport>,
     duration: Duration,
-    messages_per_request: usize,
-    message_size: usize,
+    messages_per_request: NonZero<usize>,
+    message_size: NonZero<usize>,
 }
 
 impl TestReport {
-    pub fn new(duration: Duration, messages_per_request: usize, message_size: usize) -> Self {
+    pub fn new(duration: Duration, messages_per_request: NonZero<usize>, message_size: NonZero<usize>) -> Self {
         Self {
             times_per_request: Default::default(),
             duration,
@@ -52,7 +53,7 @@ impl TestReport {
 
     #[inline]
     pub fn number_of_messages(&self) -> usize {
-        self.times_per_request.len() * self.messages_per_request
+        self.times_per_request.len() * self.messages_per_request.get()
     }
 
     #[inline]
@@ -76,7 +77,7 @@ impl TestReport {
         }
 
         let mut per_worker_data: HashMap<WorkerID, HashMap<Duration, Vec<f64>>> = Default::default();
-        const RESOLUTION: u64 = 5;
+        const RESOLUTION: u64 = 2;
 
         for request_report in &self.times_per_request {
             per_worker_data
@@ -126,7 +127,7 @@ impl TestReport {
 #[derive(Debug, Serialize)]
 pub struct Report {
     #[serde(skip)]
-    pub message_size: usize,
+    pub message_size: NonZero<usize>,
     #[serde(skip)]
     pub duration: u64,
 
@@ -158,7 +159,7 @@ pub struct ReportGraphData {
 
 impl Report {
     pub fn with_transfer(mut self) -> Self {
-        self.transfer = Some((self.messages as f64 * self.message_size as f64 / (1024.0 * 1024.0)) / self.duration as f64);
+        self.transfer = Some((self.messages as f64 * self.message_size.get() as f64 / (1024.0 * 1024.0)) / self.duration as f64);
         self
     }
 }
@@ -231,7 +232,7 @@ impl fmt::Display for Report {
             f,
             "{messages} (of {message_size:.2} KiB size) in {duration} seconds",
             messages = self.messages,
-            message_size = (self.message_size as f64) / 1024.0,
+            message_size = (self.message_size.get() as f64) / 1024.0,
             duration = self.duration,
         )?;
         writeln!(f, "Latency")?;
