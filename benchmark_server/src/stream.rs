@@ -106,10 +106,14 @@ impl DerefMut for StreamClient {
     }
 }
 
+#[cold]
+#[inline(never)]
 fn map_native_tls_error(e: native_tls::Error) -> io::Error {
     io::Error::other(e.to_string())
 }
 
+#[cold]
+#[inline(never)]
 fn map_native_tls_handshake_error<S>(e: native_tls::HandshakeError<S>) -> io::Error {
     match e {
         native_tls::HandshakeError::WouldBlock(_) => io::Error::new(io::ErrorKind::WouldBlock, "Handshake would block"),
