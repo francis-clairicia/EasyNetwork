@@ -1,0 +1,335 @@
+#!/usr/bin/env python3
+# mypy: disable-error-code=no-any-unimported
+
+from __future__ import annotations
+
+import argparse
+import contextlib
+import datetime
+import json
+import sys
+from pathlib import Path
+from typing import Literal, NotRequired, TypedDict
+
+import plotly.graph_objects as go
+from plotly.offline import get_plotlyjs
+
+
+class _BenchmarkReport(TypedDict):
+    date: str
+    python_version: str
+    duration: int
+    concurrency_level: int
+    payload_size_levels: list[int]
+    benchmarks: list[_BenchmarkData]
+
+
+class _BenchmarkData(TypedDict):
+    name: str
+    variation: list[_BenchmarkVariationData]
+
+
+class _BenchmarkVariationData(TypedDict):
+    messages: int
+    rps: int
+    latency_min: float
+    latency_max: float
+    latency_mean: float
+    latency_stdev: float
+    latency_q1: float
+    latency_median: float
+    latency_q3: float
+    latency_nb_low_outliers: int
+    latency_nb_high_outliers: int
+    latency_percent_low_outliers: float
+    latency_percent_high_outliers: float
+    transfer: NotRequired[float]
+    graph_data: NotRequired[dict[str, list[_BenchmarkVariationReportingGraphData]]]
+
+
+class _BenchmarkVariationReportingGraphData(TypedDict):
+    timestamp: float
+    lowerfence_value: float
+    upperfence_value: float
+
+
+def _compute_latency_iqr(data: _BenchmarkVariationData) -> float:
+    return data["latency_q3"] - data["latency_q1"]
+
+
+def _compute_latency_lowerfence(data: _BenchmarkVariationData) -> float:
+    return max(data["latency_q1"] - 1.5 * _compute_latency_iqr(data), data["latency_min"])
+
+
+def _compute_latency_upperfence(data: _BenchmarkVariationData) -> float:
+    return min(data["latency_q3"] + 1.5 * _compute_latency_iqr(data), data["latency_max"])
+
+
+def _get_output_file(output_file: Path | None, input_file: str) -> Path:
+    if output_file is None or output_file.is_dir():
+        if input_file == "-":
+            raise RuntimeError("--output-file argument is mandatory because the input is the stdin.")
+        output_file_path = Path(input_file).with_suffix(".html")
+        if output_file is None:
+            output_file = output_file_path
+        else:
+            output_file = output_file / output_file_path.name
+    return output_file
+
+
+def _load_benchmark_report(input_file: str) -> _BenchmarkReport:
+    with contextlib.nullcontext(sys.stdin) if input_file == "-" else open(input_file) as fp:
+        return json.load(fp)
+
+
+def _print_benchmark_title(title: str) -> None:
+    print(title)
+    print("=" * len(title))
+
+
+def _print_benchmark_variation_title(title: str) -> None:
+    print(title)
+    print("-" * len(title))
+
+
+def _print_report(
+    *,
+    benchmark_title: str,
+    duration: int,
+    concurrency_level: int,
+    payload_size_levels: list[int],
+    benchmarks_data_list: list[_BenchmarkData],
+) -> None:
+    _print_benchmark_title(benchmark_title)
+    print()
+
+    for b in benchmarks_data_list:
+        print(b["name"])
+        print("=" * len(b["name"]))
+        print()
+
+        for msgsize, data in zip(payload_size_levels, b["variation"]):
+            _print_benchmark_variation_title(
+                f"BENCHMARK: {round(msgsize / 1024, 1)}KiB messages, concurrency {concurrency_level}, duration {duration}s"
+            )
+            print()
+            print(f"{data['messages']} in {duration} seconds")
+            print("Latency:")
+            print(f"- min {data['latency_min']}ms")
+            print(f"- max {data['latency_max']}ms")
+            print(f"- mean {data['latency_mean']}ms")
+            print(f"- std {data['latency_stdev']}ms ({100 * data['latency_stdev'] / data['latency_mean']:.2f}%)")
+            latency_distribution = [
+                (25, data["latency_q1"]),
+                (50, data["latency_median"]),
+                (75, data["latency_q3"]),
+            ]
+            print(f"- distribution: {'; '.join(f'{percent}% under {time}ms' for percent, time in latency_distribution)}")
+            print(f"- number of low outliers: {data['latency_nb_low_outliers']} ({data['latency_percent_low_outliers']}%)")
+            print(f"- number of high outliers: {data['latency_nb_high_outliers']} ({data['latency_percent_high_outliers']}%)")
+            print(f"{data['rps']} requests/sec")
+            if "transfer" in data:
+                print(f"Transfer: {data['transfer']} MiB/sec")
+            print()
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+
+    parser.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        help="Do not print loaded data.",
+    )
+    parser.add_argument(
+        "-o",
+        "--output-file",
+        dest="output_file",
+        type=Path,
+        default=argparse.SUPPRESS,
+        metavar="FILE or DIR",
+        help="path to save benchmark results in HTML format. A file path is mandatory if the input is the stdin.",
+    )
+    parser.add_argument(
+        "input_file",
+        help='JSON report file generated by "run_benchmark" script or "-" to read the JSON data from the stdin',
+    )
+    args = parser.parse_args()
+
+    quiet: bool = args.quiet
+
+    output_file = _get_output_file(getattr(args, "output_file", None), args.input_file)
+    report = _load_benchmark_report(args.input_file)
+
+    report_date = datetime.datetime.fromisoformat(report["date"])
+    duration = report["duration"]
+    payload_size_levels = report["payload_size_levels"]
+    concurrency = report["concurrency_level"]
+    used_python_version = report["python_version"]
+    benchmarks_data_list = report["benchmarks"]
+
+    benchmark_title = f"Server Performance Benchmark Report on {used_python_version} ({report_date.strftime('%c')})"
+
+    if not quiet:
+        print()
+        _print_report(
+            benchmark_title=benchmark_title,
+            duration=duration,
+            concurrency_level=concurrency,
+            payload_size_levels=payload_size_levels,
+            benchmarks_data_list=benchmarks_data_list,
+        )
+
+        print("Writing HTML report...")
+
+    def _build_rps_bars_figure() -> go.Figure:
+        fig = go.Figure(
+            data=[
+                go.Bar(
+                    name=f"{round(msgsize / 1024, 1)}KiB",
+                    x=[b["name"].replace("-", "<br>") for b in benchmarks_data_list],
+                    y=[b["variation"][index]["rps"] for b in benchmarks_data_list],
+                )
+                for index, msgsize in enumerate(payload_size_levels)
+            ]
+        )
+        fig.update_layout(
+            barmode="group",
+            yaxis_title="Requests / sec",
+            legend_title="Payload size",
+        )
+        return fig
+
+    def _build_latency_boxes_figure() -> go.Figure:
+        fig = go.Figure(
+            data=[
+                go.Box(
+                    name=f"{round(msgsize / 1024, 1)}KiB",
+                    x=[b["name"].replace("-", "<br>") for b in benchmarks_data_list],
+                    y=[
+                        [b["variation"][index]["latency_min"], b["variation"][index]["latency_max"]] for b in benchmarks_data_list
+                    ],
+                    mean=[b["variation"][index]["latency_mean"] for b in benchmarks_data_list],
+                    sd=[b["variation"][index]["latency_stdev"] for b in benchmarks_data_list],
+                    q1=[b["variation"][index]["latency_q1"] for b in benchmarks_data_list],
+                    median=[b["variation"][index]["latency_median"] for b in benchmarks_data_list],
+                    q3=[b["variation"][index]["latency_q3"] for b in benchmarks_data_list],
+                    lowerfence=[_compute_latency_lowerfence(b["variation"][index]) for b in benchmarks_data_list],
+                    upperfence=[_compute_latency_upperfence(b["variation"][index]) for b in benchmarks_data_list],
+                    boxpoints="outliers",
+                )
+                for index, msgsize in enumerate(payload_size_levels)
+            ]
+        )
+        fig.update_layout(
+            boxmode="group",
+            yaxis_title="Latency (msec)",
+            legend_title="Payload size",
+        )
+        return fig
+
+    def _build_tendency_graph_figures() -> list[go.Figure]:
+        from plotly.subplots import make_subplots
+
+        all_graphs: list[go.Figure] = []
+
+        def _datetime_from_timestamp(timestamp: float, *, _cache: dict[float, datetime.datetime] = {}) -> datetime.datetime:
+            try:
+                return _cache[timestamp]
+            except KeyError:
+                _cache[timestamp] = result = datetime.datetime.fromtimestamp(timestamp)
+                return result
+
+        _all_graph_names: dict[str, Literal["lowerfence_value", "upperfence_value"]] = {
+            "Upperfence": "upperfence_value",
+            "Lowerfence": "lowerfence_value",
+        }
+
+        for b in benchmarks_data_list:
+            for variation_idx, msgsize in enumerate(payload_size_levels):
+                graph_data = b["variation"][variation_idx].get("graph_data", {})
+                if not graph_data:
+                    continue
+                data = {
+                    (row, 1): (
+                        [
+                            go.Scatter(
+                                name=f"Worker {worker_id} - {graph_name}",
+                                mode="lines",
+                                x=[_datetime_from_timestamp(raw_data["timestamp"]) for raw_data in raw_requests_data],
+                                y=[raw_data[_all_graph_names[graph_name]] for raw_data in raw_requests_data],
+                            )
+                            for worker_id, raw_requests_data in graph_data.items()
+                        ]
+                    )
+                    for row, graph_name in enumerate(_all_graph_names, start=1)
+                }
+                fig = make_subplots(
+                    rows=len(_all_graph_names),
+                    cols=1,
+                    shared_xaxes="all",
+                    shared_yaxes="all",
+                    vertical_spacing=0.02,
+                )
+                for (row, col), traces in data.items():
+                    fig.add_traces(traces, rows=row, cols=col)
+                    fig.update_yaxes(
+                        title_text="Latency (msec)",
+                        row=row,
+                        col=col,
+                    )
+
+                fig.update_layout(
+                    legend_title="Worker",
+                    annotations=[
+                        dict(
+                            xref="paper",
+                            yref="paper",
+                            x=0.0,
+                            y=1.02,
+                            xanchor="left",
+                            yanchor="bottom",
+                            text=f"Benchmark name: {b['name']} ({round(msgsize / 1024, 1)}KiB)",
+                            showarrow=False,
+                        )
+                    ],
+                )
+
+                all_graphs.append(fig)
+                del fig
+
+        return all_graphs
+
+    figures = [
+        _build_rps_bars_figure(),
+        _build_latency_boxes_figure(),
+        *_build_tendency_graph_figures(),
+    ]
+
+    with open(output_file, "w") as f:
+        print("<!DOCTYPE html>", file=f)
+        print("<html>", file=f)
+        print("<head>", file=f)
+        print('<meta charset="utf-8" />', file=f)
+        print(f"<title>{benchmark_title}</title>", file=f)
+        print('<script type="text/javascript">', file=f)
+        print(get_plotlyjs(), file=f)
+        print("</script>", file=f)
+        print("</head>", file=f)
+        print("<body>", file=f)
+
+        for fig in figures:
+            fig.update_layout(title=f"{benchmark_title}. Duration: {duration}s; Concurrency level: {concurrency}")
+            fig.write_html(f, full_html=False, include_plotlyjs=False, default_width="95vw", default_height="95vh")
+
+        print("</body>", file=f)
+        print("</html>", file=f)
+
+    if not quiet:
+        print("=> ", end="")
+    print(f"HTML report written in {output_file}")
+
+
+if __name__ == "__main__":
+    main()
