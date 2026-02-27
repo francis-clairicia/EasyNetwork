@@ -135,7 +135,9 @@ class ConnectedStreamClient(_transports.BaseTransport, Generic[_T_Response]):
 
     def send_packet(self, packet: _T_Response, *, timeout: float | None = None) -> None:
         """
-        Sends `packet` to the remote endpoint.  Thread-safe.
+        Sends `packet` to the remote endpoint. Thread-safe.
+
+        If `timeout` is not :data:`None`, the entire send operation will take at most `timeout` seconds.
 
         Warning:
             A timeout on a send operation is unusual unless you have a SSL/TLS context.
@@ -154,6 +156,33 @@ class ConnectedStreamClient(_transports.BaseTransport, Generic[_T_Response]):
             if timeout is None:
                 timeout = math.inf
             self.__transport.send_all_from_iterable(self.__producer.generate(packet), timeout)
+
+    def send_packet_with_ancillary(self, packet: _T_Response, ancillary_data: Any, *, timeout: float | None = None) -> None:
+        """
+        Sends `packet` to the remote endpoint with ancillary data.
+
+        If `timeout` is not :data:`None`, the entire send operation will take at most `timeout` seconds.
+
+        Warning:
+            A timeout on a send operation is unusual unless you have a SSL/TLS context.
+
+            In the case of a timeout, it is impossible to know if all the packet data has been sent.
+            This would leave the connection in an inconsistent state.
+
+        Parameters:
+            packet: the Python object to send.
+            ancillary_data: The ancillary data to send along with the message.
+            timeout: the allowed time (in seconds) for blocking operations.
+
+        Raises:
+            TimeoutError: the send operation does not end up after `timeout` seconds.
+            OSError: Data too big to be sent at once.
+            UnsupportedOperation: This transport does not have ancillary data support.
+        """
+        with self.__send_lock:
+            if timeout is None:
+                timeout = math.inf
+            self.__transport.send_all_with_ancillary(self.__producer.generate(packet), ancillary_data, timeout)
 
     @property
     @_utils.inherit_doc(_transports.BaseTransport)
