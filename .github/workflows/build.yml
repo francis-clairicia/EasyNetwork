@@ -86,7 +86,7 @@ jobs:
       - name: Build packages
         run: tox run -e build
       - name: Upload packages as artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: easynetwork-dist
           path: dist
