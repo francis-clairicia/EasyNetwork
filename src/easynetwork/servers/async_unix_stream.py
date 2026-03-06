@@ -48,7 +48,7 @@ else:
     from ..lowlevel._final import runtime_final_class
     from ..lowlevel.api_async.backend.abc import AsyncBackend, TaskGroup
     from ..lowlevel.api_async.backend.utils import BuiltinAsyncBackendLiteral
-    from ..lowlevel.api_async.servers import stream as _stream_server
+    from ..lowlevel.api_async.servers import stream as _async_stream_server
     from ..lowlevel.api_async.transports.abc import AsyncListener, AsyncStreamTransport
     from ..lowlevel.api_async.transports.utils import aclose_forcefully
     from ..lowlevel.socket import SocketProxy, UnixCredentials, UnixSocketAddress, UNIXSocketAttribute
@@ -58,7 +58,7 @@ else:
     from .misc import build_lowlevel_stream_server_handler
 
     class AsyncUnixStreamServer(
-        _base.BaseAsyncNetworkServerImpl[_stream_server.AsyncStreamServer[_T_Request, _T_Response], UnixSocketAddress],
+        _base.BaseAsyncNetworkServerImpl[_async_stream_server.AsyncStreamServer[_T_Request, _T_Response], UnixSocketAddress],
         Generic[_T_Request, _T_Response],
     ):
         """
@@ -186,14 +186,14 @@ else:
                 except OSError as exc:
                     logger.error("Unable to clean up listening Unix socket %r: %s", os.fspath(path), exc)
 
-        async def __activate_listeners(self) -> list[_stream_server.AsyncStreamServer[_T_Request, _T_Response]]:
+        async def __activate_listeners(self) -> list[_async_stream_server.AsyncStreamServer[_T_Request, _T_Response]]:
             listener = await self.__listener_factory()
 
             local_name = UnixSocketAddress.from_raw(listener.extra(UNIXSocketAttribute.sockname))
             if (path := local_name.as_pathname()) is not None:
                 self.__unix_socket_to_delete[path] = os.stat(path).st_ino
 
-            server = _stream_server.AsyncStreamServer(
+            server = _async_stream_server.AsyncStreamServer(
                 listener,
                 self.__protocol,
                 max_recv_size=self.__max_recv_size,
@@ -208,7 +208,7 @@ else:
 
         async def __lowlevel_serve(
             self,
-            server: _stream_server.AsyncStreamServer[_T_Request, _T_Response],
+            server: _async_stream_server.AsyncStreamServer[_T_Request, _T_Response],
             task_group: TaskGroup,
         ) -> NoReturn:
             def disconnect_error_filter(exc: Exception) -> bool:  # pragma: no cover
@@ -231,7 +231,7 @@ else:
         @contextlib.asynccontextmanager
         async def __client_initializer(
             self,
-            lowlevel_client: _stream_server.ConnectedStreamClient[_T_Response],
+            lowlevel_client: _async_stream_server.ConnectedStreamClient[_T_Response],
         ) -> AsyncIterator[AsyncStreamClient[_T_Response] | None]:
             async with contextlib.AsyncExitStack() as client_exit_stack:
                 client_exit_stack.enter_context(self._bind_server())
@@ -312,9 +312,9 @@ else:
         def __init__(
             self,
             initial_peer_name: UnixSocketAddress,
-            client: _stream_server.ConnectedStreamClient[_T_Response],
+            client: _async_stream_server.ConnectedStreamClient[_T_Response],
         ) -> None:
-            self.__client: _stream_server.ConnectedStreamClient[_T_Response] = client
+            self.__client: _async_stream_server.ConnectedStreamClient[_T_Response] = client
             self.__closing: bool = False
             self.__send_lock = client.backend().create_fair_lock()
             self.__proxy: SocketProxy = SocketProxy(client.extra(UNIXSocketAttribute.socket))
