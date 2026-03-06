@@ -106,7 +106,7 @@ class ConnectedStreamClient[Response](_transports.BaseTransport):
 
     def abort(self) -> None:
         """
-        Abruptly closes the transport. Thread-safe.
+        Abruptly closes the endpoint. Thread-safe.
         """
         self.__close_impl(abort=True)
 
@@ -154,9 +154,9 @@ class ConnectedStreamClient[Response](_transports.BaseTransport):
                 timeout = math.inf
             self.__transport.send_all_from_iterable(self.__producer.generate(packet), timeout)
 
-    def send_packet_with_ancillary(self, packet: _T_Response, ancillary_data: Any, *, timeout: float | None = None) -> None:
+    def send_packet_with_ancillary(self, packet: Response, ancillary_data: Any, *, timeout: float | None = None) -> None:
         """
-        Sends `packet` to the remote endpoint with ancillary data.
+        Sends `packet` to the remote endpoint with ancillary data. Thread-safe.
 
         If `timeout` is not :data:`None`, the entire send operation will take at most `timeout` seconds.
 

@@ -30,7 +30,7 @@ from ..lowlevel import _utils
 from ..lowlevel._final import runtime_final_class
 from ..lowlevel.api_async.backend.abc import AsyncBackend, TaskGroup
 from ..lowlevel.api_async.backend.utils import BuiltinAsyncBackendLiteral
-from ..lowlevel.api_async.servers import datagram as _datagram_server
+from ..lowlevel.api_async.servers import datagram as _async_datagram_server
 from ..lowlevel.api_async.transports.abc import AsyncDatagramListener
 from ..lowlevel.socket import INETSocketAttribute, SocketAddress, SocketProxy, new_socket_address
 from ..protocol import DatagramProtocol
@@ -41,7 +41,7 @@ from .misc import build_lowlevel_datagram_server_handler
 
 class AsyncUDPNetworkServer[Request, Response](
     _base.BaseAsyncNetworkServerImpl[
-        _datagram_server.AsyncDatagramServer[Request, Response, tuple[Any, ...]],
+        _async_datagram_server.AsyncDatagramServer[Request, Response, tuple[Any, ...]],
         SocketAddress,
     ],
 ):
@@ -111,9 +111,11 @@ class AsyncUDPNetworkServer[Request, Response](
         self.__request_handler: AsyncDatagramRequestHandler[Request, Response] = request_handler
         self.__service_available = _utils.Flag()
 
-    async def __activate_listeners(self) -> list[_datagram_server.AsyncDatagramServer[Request, Response, tuple[Any, ...]]]:
+    async def __activate_listeners(
+        self,
+    ) -> list[_async_datagram_server.AsyncDatagramServer[Request, Response, tuple[Any, ...]]]:
         return [
-            _datagram_server.AsyncDatagramServer(
+            _async_datagram_server.AsyncDatagramServer(
                 listener,
                 self.__protocol,
             )
@@ -131,7 +133,7 @@ class AsyncUDPNetworkServer[Request, Response](
 
     async def __lowlevel_serve(
         self,
-        server: _datagram_server.AsyncDatagramServer[Request, Response, tuple[Any, ...]],
+        server: _async_datagram_server.AsyncDatagramServer[Request, Response, tuple[Any, ...]],
         task_group: TaskGroup,
     ) -> NoReturn:
         handler = build_lowlevel_datagram_server_handler(
@@ -143,7 +145,7 @@ class AsyncUDPNetworkServer[Request, Response](
 
     def __client_initializer(
         self,
-        lowlevel_client: _datagram_server.DatagramClientContext[Response, tuple[Any, ...]],
+        lowlevel_client: _async_datagram_server.DatagramClientContext[Response, tuple[Any, ...]],
         client_cache: _ClientCacheDictType[Response],
     ) -> _ClientContext[Response]:
         return _ClientContext(
@@ -187,11 +189,11 @@ class _ClientAPI[Response](AsyncDatagramClient[Response]):
 
     def __init__(
         self,
-        context: _datagram_server.DatagramClientContext[Response, tuple[Any, ...]],
+        context: _async_datagram_server.DatagramClientContext[Response, tuple[Any, ...]],
         service_available: _utils.Flag,
     ) -> None:
         super().__init__()
-        self.__context: _datagram_server.DatagramClientContext[Response, tuple[Any, ...]] = context
+        self.__context: _async_datagram_server.DatagramClientContext[Response, tuple[Any, ...]] = context
         self.__h: int | None = None
         self.__service_available: _utils.Flag = service_available
 
@@ -216,7 +218,7 @@ class _ClientAPI[Response](AsyncDatagramClient[Response]):
     @staticmethod
     def __is_closing(
         service_available: _utils.Flag,
-        server: _datagram_server.AsyncDatagramServer[Any, Response, tuple[Any, ...]],
+        server: _async_datagram_server.AsyncDatagramServer[Any, Response, tuple[Any, ...]],
     ) -> bool:
         return (not service_available.is_set()) or server.is_closing()
 
@@ -254,7 +256,7 @@ class _ClientAPI[Response](AsyncDatagramClient[Response]):
 
 
 type _ClientCacheDictType[Response] = weakref.WeakValueDictionary[
-    _datagram_server.DatagramClientContext[Response, tuple[Any, ...]],
+    _async_datagram_server.DatagramClientContext[Response, tuple[Any, ...]],
     _ClientAPI[Response],
 ]
 
@@ -272,12 +274,12 @@ class _ClientContext[Response]:
     def __init__(
         self,
         *,
-        lowlevel_client: _datagram_server.DatagramClientContext[Response, tuple[Any, ...]],
+        lowlevel_client: _async_datagram_server.DatagramClientContext[Response, tuple[Any, ...]],
         client_cache: _ClientCacheDictType[Response],
         service_available: _utils.Flag,
         logger: logging.Logger,
     ) -> None:
-        self.__lowlevel_client: _datagram_server.DatagramClientContext[Response, tuple[Any, ...]] = lowlevel_client
+        self.__lowlevel_client: _async_datagram_server.DatagramClientContext[Response, tuple[Any, ...]] = lowlevel_client
         self.__client_cache: _ClientCacheDictType[Response] = client_cache
         self.__service_available: _utils.Flag = service_available
         self.__logger: logging.Logger = logger
