@@ -50,7 +50,7 @@ else:
     from ..lowlevel._final import runtime_final_class
     from ..lowlevel.api_async.backend.abc import AsyncBackend, TaskGroup
     from ..lowlevel.api_async.backend.utils import BuiltinAsyncBackendLiteral
-    from ..lowlevel.api_async.servers import datagram as _datagram_server
+    from ..lowlevel.api_async.servers import datagram as _async_datagram_server
     from ..lowlevel.api_async.transports.abc import AsyncDatagramListener
     from ..lowlevel.socket import SocketAncillary, SocketProxy, UnixSocketAddress, UNIXSocketAttribute
     from ..protocol import DatagramProtocol
@@ -62,7 +62,7 @@ else:
 
     class AsyncUnixDatagramServer[Request, Response](
         _base.BaseAsyncNetworkServerImpl[
-            _datagram_server.AsyncDatagramServer[Request, Response, UnixSocketAddress],
+            _async_datagram_server.AsyncDatagramServer[Request, Response, UnixSocketAddress],
             UnixSocketAddress,
         ],
     ):
@@ -198,14 +198,14 @@ else:
 
         async def __activate_listeners(
             self,
-        ) -> list[_datagram_server.AsyncDatagramServer[Request, Response, UnixSocketAddress]]:
+        ) -> list[_async_datagram_server.AsyncDatagramServer[Request, Response, UnixSocketAddress]]:
             listener = await self.__listener_factory()
 
             local_name = UnixSocketAddress.from_raw(listener.extra(UNIXSocketAttribute.sockname))
             if (path := local_name.as_pathname()) is not None:
                 self.__unix_socket_to_delete[path] = os.stat(path).st_ino
 
-            server = _datagram_server.AsyncDatagramServer(_UnixDatagramListener(listener), self.__protocol)
+            server = _async_datagram_server.AsyncDatagramServer(_UnixDatagramListener(listener), self.__protocol)
             return [server]
 
         async def __initialize_service(self, server_exit_stack: contextlib.AsyncExitStack) -> None:
@@ -219,7 +219,7 @@ else:
 
         async def __lowlevel_serve(
             self,
-            server: _datagram_server.AsyncDatagramServer[Request, Response, UnixSocketAddress],
+            server: _async_datagram_server.AsyncDatagramServer[Request, Response, UnixSocketAddress],
             task_group: TaskGroup,
         ) -> NoReturn:
             handler = build_lowlevel_datagram_server_handler(
@@ -244,7 +244,7 @@ else:
 
         def __client_initializer(
             self,
-            lowlevel_client: _datagram_server.DatagramClientContext[Response, UnixSocketAddress],
+            lowlevel_client: _async_datagram_server.DatagramClientContext[Response, UnixSocketAddress],
             client_cache: _ClientCacheDictType[Response],
         ) -> _ClientContext[Response]:
             return _ClientContext(
@@ -358,11 +358,11 @@ else:
 
         def __init__(
             self,
-            context: _datagram_server.DatagramClientContext[Response, UnixSocketAddress],
+            context: _async_datagram_server.DatagramClientContext[Response, UnixSocketAddress],
             service_available: _utils.Flag,
         ) -> None:
             super().__init__()
-            self.__context: _datagram_server.DatagramClientContext[Response, UnixSocketAddress] = context
+            self.__context: _async_datagram_server.DatagramClientContext[Response, UnixSocketAddress] = context
             self.__h: int | None = None
             self.__service_available: _utils.Flag = service_available
 
@@ -387,7 +387,7 @@ else:
         @staticmethod
         def __is_closing(
             service_available: _utils.Flag,
-            server: _datagram_server.AsyncDatagramServer[Any, Response, UnixSocketAddress],
+            server: _async_datagram_server.AsyncDatagramServer[Any, Response, UnixSocketAddress],
         ) -> bool:
             return (not service_available.is_set()) or server.is_closing()
 
@@ -429,7 +429,7 @@ else:
             }
 
     type _ClientCacheDictType[Response] = weakref.WeakValueDictionary[
-        _datagram_server.DatagramClientContext[Response, UnixSocketAddress],
+        _async_datagram_server.DatagramClientContext[Response, UnixSocketAddress],
         _ClientAPI[Response],
     ]
 
@@ -446,13 +446,13 @@ else:
 
         def __init__(
             self,
-            lowlevel_client: _datagram_server.DatagramClientContext[Response, UnixSocketAddress],
+            lowlevel_client: _async_datagram_server.DatagramClientContext[Response, UnixSocketAddress],
             client_cache: _ClientCacheDictType[Response],
             service_available: _utils.Flag,
             unnamed_addresses_behavior: _UnnamedAddressesBehavior,
             logger: logging.Logger,
         ) -> None:
-            self.__lowlevel_client: _datagram_server.DatagramClientContext[Response, UnixSocketAddress] = lowlevel_client
+            self.__lowlevel_client: _async_datagram_server.DatagramClientContext[Response, UnixSocketAddress] = lowlevel_client
             self.__client_cache: _ClientCacheDictType[Response] = client_cache
             self.__service_available: _utils.Flag = service_available
             self.__logger: logging.Logger = logger
