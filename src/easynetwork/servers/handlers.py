@@ -22,6 +22,11 @@ __all__ = [
     "AsyncDatagramRequestHandler",
     "AsyncStreamClient",
     "AsyncStreamRequestHandler",
+    "BlockingBaseClientInterface",
+    "BlockingDatagramClient",
+    "BlockingDatagramRequestHandler",
+    "BlockingStreamClient",
+    "BlockingStreamRequestHandler",
     "INETClientAttribute",
 ]
 
@@ -29,7 +34,7 @@ import contextlib
 import socket as _socket
 import sys
 from abc import ABCMeta, abstractmethod
-from collections.abc import AsyncGenerator, Coroutine
+from collections.abc import AsyncGenerator, Coroutine, Generator
 from typing import TYPE_CHECKING, Any
 
 from ..lowlevel import socket as socket_tools, typed_attr
@@ -302,7 +307,8 @@ class AsyncStreamRequestHandler[Request, Response](metaclass=ABCMeta):
             client: An interface to communicate with the remote endpoint.
 
         Yields:
-            If it is an :term:`asynchronous generator`, :data:`None` or a number interpreted as the timeout delay.
+            If it is an :term:`asynchronous generator`, :data:`None` or a number interpreted as the timeout delay or
+            a :class:`.RecvParams` object.
         """
 
         async def _pass() -> None:
@@ -400,5 +406,310 @@ class AsyncDatagramRequestHandler[Request, Response](metaclass=ABCMeta):
 
         Yields:
             :data:`None` or a number interpreted as the timeout delay or a :class:`.RecvParams` object.
+        """
+        raise NotImplementedError
+
+
+class BlockingBaseClientInterface[Response](typed_attr.TypedAttributeProvider, metaclass=ABCMeta):
+    """
+    The base class for a client interface, used by request handlers.
+
+    .. versionadded:: NEXT_VERSION
+    """
+
+    __slots__ = ("__weakref__",)
+
+    @abstractmethod
+    def send_packet(self, packet: Response, /, *, timeout: float | None = None) -> None:
+        """
+        Sends `packet` to the remote endpoint. Thread-safe.
+
+        If `timeout` is not :data:`None`, the entire send operation will take at most `timeout` seconds.
+
+        Warning:
+            A timeout on a send operation is unusual unless you have a SSL/TLS context.
+
+            In the case of a timeout, it is impossible to know if all the packet data has been sent.
+            This would leave the connection in an inconsistent state.
+
+        Parameters:
+            packet: the Python object to send.
+            timeout: the allowed time (in seconds) for blocking operations.
+
+        Raises:
+            TimeoutError: the send operation does not end up after `timeout` seconds.
+            ClientClosedError: the client object is closed.
+            ConnectionError: connection unexpectedly closed during operation.
+                             You should not attempt any further operation and close the client object.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
+        """
+        raise NotImplementedError
+
+    def send_packet_with_ancillary(self, packet: Response, ancillary_data: Any, /, *, timeout: float | None = None) -> None:
+        """
+        Sends `packet` to the remote endpoint with ancillary data. Thread-safe.
+
+        If `timeout` is not :data:`None`, the entire send operation will take at most `timeout` seconds.
+
+        Warning:
+            A timeout on a send operation is unusual unless you have a SSL/TLS context.
+
+            In the case of a timeout, it is impossible to know if all the packet data has been sent.
+            This would leave the connection in an inconsistent state.
+
+        Parameters:
+            packet: the Python object to send.
+            ancillary_data: The ancillary data to send along with the message.
+            timeout: the allowed time (in seconds) for blocking operations.
+
+        Raises:
+            TimeoutError: the send operation does not end up after `timeout` seconds.
+            ClientClosedError: the client object is closed.
+            ConnectionError: connection unexpectedly closed during operation.
+                             You should not attempt any further operation and close the client object.
+            OSError: Data too big to be sent at once.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
+            UnsupportedOperation: This client does not have ancillary data support.
+        """
+        from ..exceptions import UnsupportedOperation
+
+        raise UnsupportedOperation("This client does not have ancillary data support.")
+
+    @abstractmethod
+    def is_closing(self) -> bool:
+        """
+        Checks if the client is closed or in the process of being closed.
+
+        If :data:`True`, all future operations on the client object will raise a :exc:`.ClientClosedError`.
+
+        Returns:
+            the client state.
+        """
+        raise NotImplementedError
+
+
+class BlockingStreamClient[Response](BlockingBaseClientInterface[Response]):
+    """
+    A client interface for stream oriented connection, used by stream request handlers.
+
+    .. versionadded:: NEXT_VERSION
+    """
+
+    __slots__ = ()
+
+    def abort(self) -> None:
+        """
+        Abruptly closes the client. Thread safe.
+
+        Once that happens, all future operations on the client object will raise a :exc:`.ClientClosedError`.
+        The queued data is cleared without being sent.
+
+        Can be safely called multiple times.
+        """
+        self.close()
+
+    @abstractmethod
+    def close(self) -> None:
+        """
+        Close the client. Thread safe.
+
+        Once that happens, all future operations on the client object will raise a :exc:`.ClientClosedError`.
+        The remote end will receive no more data (after queued data is flushed).
+
+        Can be safely called multiple times.
+        """
+        raise NotImplementedError
+
+
+class BlockingDatagramClient[Response](BlockingBaseClientInterface[Response]):
+    """
+    A client interface for datagram oriented connection, used by datagram request handlers.
+
+    Unlike :class:`BlockingStreamClient`, the client object can be recreated on each ``handle()`` call,
+    but implements ``__hash__()`` and ``__eq__()`` for uniqueness checking, so it can be used in a :class:`set` for example.
+
+    .. versionadded:: NEXT_VERSION
+    """
+
+    __slots__ = ()
+
+    @abstractmethod
+    def __hash__(self) -> int:
+        raise NotImplementedError
+
+    @abstractmethod
+    def __eq__(self, other: object, /) -> bool:
+        raise NotImplementedError
+
+
+class BlockingStreamRequestHandler[Request, Response](metaclass=ABCMeta):
+    """
+    The base class for a stream request handler, used by TCP network servers.
+
+    .. versionadded:: NEXT_VERSION
+    """
+
+    __slots__ = ("__weakref__",)
+
+    def service_init(self, exit_stack: contextlib.ExitStack, server: Any, /) -> None:
+        """
+        Called at server startup. The default implementation does nothing.
+
+        Parameters:
+            exit_stack: An :class:`~contextlib.ExitStack` that can be used to add actions on server's tear down.
+            server: A :func:`weakref.proxy` to the server instance.
+        """
+        pass
+
+    @abstractmethod
+    def handle(self, client: BlockingStreamClient[Response], /) -> Generator[RecvParams | None, Request]:
+        """
+        This function must do all the work required to service a request.
+
+        It is a :term:`generator` function::
+
+            def handle(self, client):
+                request = yield
+
+                # Do some stuff
+                ...
+
+                client.send_packet(response)
+
+        :meth:`handle` can :keyword:`yield` whenever a request from the `client` is needed.
+
+        The generator is started immediately after :meth:`on_connection`.
+        When the generator returns, a new generator is created and started immediately after.
+
+        The generator **does not** represent the client life time, ``client.close()`` must be called explicitly.
+
+        Note:
+            There is one exception: if the generator returns before the first :keyword:`yield` statement,
+            the connection is forcibly closed.
+
+        Parameters:
+            client: An interface to communicate with the remote endpoint.
+
+        Yields:
+            :data:`None` or a :class:`.RecvParams` object.
+        """
+        raise NotImplementedError
+
+    def on_connection(self, client: BlockingStreamClient[Response], /) -> Generator[RecvParams | None, Request] | None:
+        """
+        Called once the client is connected to perform any initialization actions required.
+        The default implementation does nothing.
+
+        It can be either a simple function::
+
+            def on_connection(self, client):
+                # Do some stuff
+                ...
+
+        or a :term:`generator` function::
+
+            def on_connection(self, client):
+                # Do some stuff
+                ...
+
+                initial_info = yield
+
+                # Finish initialization
+                ...
+
+        In the latter case, as for :meth:`handle`, :meth:`on_connection` can :keyword:`yield` whenever a request from
+        the `client` is needed.
+
+        Parameters:
+            client: An interface to communicate with the remote endpoint.
+
+        Yields:
+            If it is a :term:`generator`, :data:`None` or a :class:`.RecvParams` object.
+        """
+        pass
+
+    def on_disconnection(self, client: BlockingStreamClient[Response], /) -> None:
+        """
+        Called once the client is disconnected to perform any clean-up actions required. The default implementation does nothing.
+
+        This function will not be called in the following conditions:
+
+        * If :meth:`on_connection` raises an exception.
+
+        * If :meth:`on_connection` is a :term:`generator` function and the connection is closed.
+
+        Important:
+            :meth:`BlockingStreamClient.is_closing` should return :data:`True` when this function is called.
+            However, if :meth:`handle` raises an exception, the client task is shut down and the connection is forcibly closed
+            *after* :meth:`on_disconnection` is called.
+
+            This behavior allows you to notify the client that something unusual has occurred.
+
+        Parameters:
+            client: An interface to communicate with the remote endpoint.
+        """
+        pass
+
+
+class BlockingDatagramRequestHandler[Request, Response](metaclass=ABCMeta):
+    """
+    The base class for a datagram request handler, used by UDP network servers.
+
+    .. versionadded:: NEXT_VERSION
+    """
+
+    __slots__ = ("__weakref__",)
+
+    def service_init(self, exit_stack: contextlib.ExitStack, server: Any, /) -> None:
+        """
+        Called at server startup. The default implementation does nothing.
+
+        Parameters:
+            exit_stack: An :class:`~contextlib.ExitStack` that can be used to add actions on server's tear down.
+            server: A :func:`weakref.proxy` to the server instance.
+        """
+        pass
+
+    @abstractmethod
+    def handle(self, client: BlockingDatagramClient[Response], /) -> Generator[RecvParams | None, Request]:
+        """
+        This function must do all the work required to service a request.
+
+        It is a :term:`generator` function::
+
+            def handle(self, client):
+                request = yield
+
+                # Do some stuff
+                ...
+
+                client.send_packet(response)
+
+        :meth:`handle` can :keyword:`yield` whenever a request from the `client` is needed.
+
+        Warning:
+            UDP does not guarantee ordered delivery. Packets are typically "sent" in order, but they may be received out of order.
+            In large networks, it is reasonably common for some packets to arrive out of sequence (or not at all).
+
+        Since there is no connection management, the generator is started when the datagram is received.
+        When the generator returns, a new generator is created and started when a new datagram is received.
+
+        Important:
+            There will always be only one active generator per client.
+            All the pending datagrams received while the generator is running are queued.
+
+            This behavior is designed to act like a stream request handler.
+
+        Note:
+            If the generator returns before the first :keyword:`yield` statement, the received datagram is discarded.
+
+            This is useful when a client that you do not expect to see sends something; the datagrams are parsed only when
+            the generator hits a :keyword:`yield` statement.
+
+        Parameters:
+            client: An interface to communicate with the remote endpoint.
+
+        Yields:
+            :data:`None` or a :class:`.RecvParams` object.
         """
         raise NotImplementedError
