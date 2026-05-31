@@ -69,7 +69,6 @@ runs:
         prepare: |
           set -e
           pkg_add -v -r curl git ${{ env.OPENBSD_PORTS_FOR_PYTHON }}
-          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
         run: |
           set -e
           ${{ inputs.run }}
