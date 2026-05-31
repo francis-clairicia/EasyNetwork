@@ -19,9 +19,26 @@ from easynetwork.serializers.abc import (
 import pytest
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
     from unittest.mock import MagicMock
 
     from pytest_mock import MockerFixture
+
+    from ..pytest_plugins.asyncio_event_loop import LoopFactory
+
+
+# Ignore selected loops: Always use standard library
+def pytest_asyncio_loop_factories(config: pytest.Config) -> dict[str, LoopFactory]:
+    from ..pytest_plugins.asyncio_event_loop import EventLoop, _get_event_loop_factories_from_config
+
+    all_loop_factories: Mapping[str, LoopFactory] = _get_event_loop_factories_from_config(config)
+
+    try:
+        asyncio_loop_factory = all_loop_factories[EventLoop.ASYNCIO]
+    except KeyError:
+        raise pytest.UsageError(f"Unit tests run only with {EventLoop.ASYNCIO} event-loop")
+
+    return {EventLoop.ASYNCIO: asyncio_loop_factory}
 
 
 @pytest.fixture

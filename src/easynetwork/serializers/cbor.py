@@ -162,14 +162,12 @@ class CBORSerializer(FileBasedPacketSerializer[Any, Any]):
 
 
 def _is_cbor_module_using_c_extension_implementation() -> bool:
-    import cbor2
-
     try:
-        import _cbor2  # type: ignore[import-not-found]
+        import _cbor2  # type: ignore[import-not-found]  # noqa: F401
     except ModuleNotFoundError:
         return False
     else:
-        return cbor2.CBORDecoder is _cbor2.CBORDecoder
+        return True
 
 
 def _cbor_decoder_have_read_size_parameter() -> bool:
