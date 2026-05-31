@@ -186,6 +186,32 @@ class TestCBORSerializer(BaseSerializerConfigInstanceCheck):
         mock_decoder.decode.assert_called_once_with()
         assert packet is mocker.sentinel.packet
 
+    def test____load_from_file____with_config____read_size_parameter_unavailable(
+        self,
+        decoder_config: CBORDecoderConfig | None,
+        mock_decoder_cls: MagicMock,
+        mock_decoder: MagicMock,
+        mock_file: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mocker.patch("easynetwork.serializers.cbor._cbor_decoder_have_read_size_parameter", return_value=False)
+        serializer: CBORSerializer = CBORSerializer(decoder_config=decoder_config)
+        mock_decoder.decode.return_value = mocker.sentinel.packet
+
+        # Act
+        packet = serializer.load_from_file(mock_file)
+
+        # Assert
+        mock_decoder_cls.assert_called_once_with(
+            mock_file,
+            object_hook=mocker.sentinel.object_hook if decoder_config is not None else None,
+            tag_hook=mocker.sentinel.tag_hook if decoder_config is not None else None,
+            str_errors=mocker.sentinel.str_errors if decoder_config is not None else "strict",
+        )
+        mock_decoder.decode.assert_called_once_with()
+        assert packet is mocker.sentinel.packet
+
 
 class TestCBORSerializerDependencies:
     def test____dunder_init____cbor2_missing(
