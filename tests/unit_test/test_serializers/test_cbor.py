@@ -181,6 +181,7 @@ class TestCBORSerializer(BaseSerializerConfigInstanceCheck):
             object_hook=mocker.sentinel.object_hook if decoder_config is not None else None,
             tag_hook=mocker.sentinel.tag_hook if decoder_config is not None else None,
             str_errors=mocker.sentinel.str_errors if decoder_config is not None else "strict",
+            read_size=1,
         )
         mock_decoder.decode.assert_called_once_with()
         assert packet is mocker.sentinel.packet
