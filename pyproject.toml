@@ -89,7 +89,7 @@ format = [
     "black>=22.6.0",
 ]
 mypy = [
-    "mypy~=1.18",
+    "mypy~=2.0",
 ]
 types-msgpack = [
     "msgpack-types>=0.5.0",
@@ -106,7 +106,7 @@ test = [
     "pytest-xdist~=3.3",
     "pytest-mock~=3.10",
     "pytest-cov~=7.0",
-    "pytest-asyncio~=1.1",
+    "pytest-asyncio~=1.4",
     "trove-classifiers>=2023.11.9",
     "pytest-retry~=1.7",
 ]
@@ -228,7 +228,7 @@ no_implicit_reexport = true
 strict_equality = true
 strict_bytes = true
 local_partial_types = true
-allow_redefinition_new = true
+allow_redefinition = true
 enable_error_code = ["truthy-bool", "ignore-without-code", "unused-awaitable", "exhaustive-match"]
 
 [[tool.mypy.overrides]]

@@ -2,10 +2,16 @@ from __future__ import annotations
 
 import asyncio
 import enum
+import functools
 import importlib
-from typing import Any, assert_never
+import sys
+from collections.abc import Callable, Mapping
+from types import MappingProxyType
+from typing import Any, TypeAlias, assert_never
 
 import pytest
+
+LoopFactory: TypeAlias = Callable[[], asyncio.AbstractEventLoop]
 
 
 class EventLoop(enum.StrEnum):
@@ -14,86 +20,86 @@ class EventLoop(enum.StrEnum):
     UVLOOP = "uvloop"
 
 
-ASYNCIO_EVENT_LOOP_OPTION = "asyncio_event_loop"
+ASYNCIO_EVENT_LOOPS_OPTION = "asyncio_event_loops"
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
     group = parser.getgroup("asyncio")
     group.addoption(
         "--asyncio-event-loop",
-        dest=ASYNCIO_EVENT_LOOP_OPTION,
+        dest=ASYNCIO_EVENT_LOOPS_OPTION,
+        action="append",
         type=EventLoop,
-        default=EventLoop.ASYNCIO,
+        default=[],
         choices=list(map(str, EventLoop)),
+        help="Choose which runners to use (default: all available)",
     )
 
 
-def _get_windows_selector_policy() -> type[asyncio.AbstractEventLoopPolicy] | None:
-    return getattr(asyncio, "WindowsSelectorEventLoopPolicy", None)
+def _get_proactor_event_loop() -> type[asyncio.AbstractEventLoop] | None:
+    return getattr(asyncio, "ProactorEventLoop", None)
 
 
-def _get_windows_proactor_policy() -> type[asyncio.AbstractEventLoopPolicy] | None:
-    return getattr(asyncio, "WindowsProactorEventLoopPolicy", None)
-
-
-def _get_uvloop_policy() -> type[asyncio.AbstractEventLoopPolicy] | None:
+def _get_uvloop_event_loop_factory() -> Callable[[], asyncio.AbstractEventLoop] | None:
     try:
         uvloop: Any = importlib.import_module("uvloop")
     except ModuleNotFoundError:
         return None
-    return getattr(uvloop, "EventLoopPolicy", None)
+    return getattr(uvloop, "new_event_loop", None)
 
 
-def _set_event_loop_policy_according_to_configuration(config: pytest.Config) -> None:
-    event_loop: EventLoop = config.getoption(ASYNCIO_EVENT_LOOP_OPTION)
+def _get_event_loop_factory(event_loop: EventLoop) -> LoopFactory | None:
+    loop_factory: LoopFactory | None
     match event_loop:
         case EventLoop.ASYNCIO:
-            WindowsSelectorEventLoopPolicy = _get_windows_selector_policy()
-            if WindowsSelectorEventLoopPolicy is not None:
-                asyncio.set_event_loop_policy(WindowsSelectorEventLoopPolicy())
+            loop_factory = asyncio.SelectorEventLoop
         case EventLoop.ASYNCIO_PROACTOR:
-            WindowsProactorEventLoopPolicy = _get_windows_proactor_policy()
-            if WindowsProactorEventLoopPolicy is None:
-                raise pytest.UsageError(f"{event_loop} event loop is not available in this platform")
-            asyncio.set_event_loop_policy(WindowsProactorEventLoopPolicy())
+            loop_factory = _get_proactor_event_loop()
         case EventLoop.UVLOOP:
-            UVLoopPolicy = _get_uvloop_policy()
-            if UVLoopPolicy is None:
-                raise pytest.UsageError(f"{event_loop} event loop is not available in this platform")
-
-            # Fix policy display
-            UVLoopPolicy.__qualname__ = UVLoopPolicy.__qualname__.rpartition(".")[2]
-            asyncio.set_event_loop_policy(UVLoopPolicy())
+            loop_factory = _get_uvloop_event_loop_factory()
         case _:
             assert_never(event_loop)
+    return loop_factory
 
 
-def pytest_configure(config: pytest.Config) -> None:
-    _set_event_loop_policy_according_to_configuration(config)
-    config.addinivalue_line("markers", "skipif_uvloop: Skip asyncio test if uvloop is used")
+@functools.cache
+def _cached_event_loop_factories() -> MappingProxyType[str, LoopFactory]:
+    return MappingProxyType(
+        {
+            event_loop: loop_factory
+            for event_loop in EventLoop
+            if (loop_factory := _get_event_loop_factory(event_loop)) is not None
+        }
+    )
+
+
+def _get_event_loop_factories_from_config(config: pytest.Config) -> Mapping[str, LoopFactory]:
+    needed_event_loops: list[EventLoop] = config.getoption(ASYNCIO_EVENT_LOOPS_OPTION, [])
+    all_event_loops = _cached_event_loop_factories()
+    if needed_event_loops:
+        unknown_event_loops = set(needed_event_loops).difference(all_event_loops.keys())
+        if unknown_event_loops:
+            raise pytest.UsageError(f"Event loop not available in this platform: {', '.join(sorted(unknown_event_loops))}")
+        return {event_loop: all_event_loops[event_loop] for event_loop in needed_event_loops}
+    return all_event_loops
+
+
+def pytest_asyncio_loop_factories(config: pytest.Config) -> Mapping[str, LoopFactory]:
+    return _get_event_loop_factories_from_config(config)
 
 
 @pytest.hookimpl(trylast=True)
-def pytest_report_header(config: pytest.Config) -> str:
-    policy = asyncio.get_event_loop_policy().__class__
-    return f"asyncio event-loop: {config.getoption(ASYNCIO_EVENT_LOOP_OPTION)} ({policy.__module__}.{policy.__qualname__})"
+def pytest_report_header(config: pytest.Config) -> list[str]:
+    event_loops = _get_event_loop_factories_from_config(config)
+    return [
+        f"asyncio event-loop: {event_loop} ({loop_factory.__module__}.{loop_factory.__qualname__})"
+        for event_loop, loop_factory in event_loops.items()
+    ]
 
 
-def _skip_test_if_uvloop_is_used(config: pytest.Config, item: pytest.Item) -> None:
-    if item.get_closest_marker("skipif_uvloop") is not None:
-        item.add_marker(
-            pytest.mark.skipif(
-                config.getoption(ASYNCIO_EVENT_LOOP_OPTION) == EventLoop.UVLOOP,
-                reason="Skipped because uvloop runner is used",
-            )
-        )
+def pytest_configure() -> None:
+    import inspect
 
-
-def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
-    for item in items:
-        _skip_test_if_uvloop_is_used(config, item)
-
-
-@pytest.fixture(scope="session")
-def event_loop_name(pytestconfig: pytest.Config) -> EventLoop:
-    return pytestconfig.getoption(ASYNCIO_EVENT_LOOP_OPTION)
+    if sys.version_info >= (3, 14):
+        # asyncio.iscoroutinefunction is deprecated since Python 3.12 but uvloop uses it and creates 2000+ warnings with Python 3.14.
+        asyncio.iscoroutinefunction = inspect.iscoroutinefunction  # type: ignore[assignment]
