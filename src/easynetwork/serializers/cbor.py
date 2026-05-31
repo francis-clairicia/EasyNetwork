@@ -30,7 +30,7 @@ __all__ = [
     "CBORSerializer",
 ]
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import asdict as dataclass_asdict, dataclass
 from functools import partial
 from typing import IO, TYPE_CHECKING, Any, final
@@ -41,6 +41,8 @@ from .base_stream import FileBasedPacketSerializer
 
 if TYPE_CHECKING:
     import datetime
+
+    from cbor2 import EncoderHook, ObjectHook, SemanticDecoderCallback, ShareableDecoderInitializer, TagHook
 
 
 @dataclass(kw_only=True)
@@ -54,10 +56,11 @@ class CBOREncoderConfig:
     datetime_as_timestamp: bool = False
     timezone: datetime.tzinfo | None = None
     value_sharing: bool = False
-    default: Callable[..., Any] | None = None
+    default: EncoderHook | None = None
     canonical: bool = False
     date_as_datetime: bool = False
     string_referencing: bool = False
+    indefinite_containers: bool = False
 
 
 @dataclass(kw_only=True)
@@ -68,9 +71,14 @@ class CBORDecoderConfig:
     See :class:`cbor2.CBORDecoder` for details.
     """
 
-    object_hook: Callable[..., Any] | None = None
-    tag_hook: Callable[..., Any] | None = None
+    object_hook: ObjectHook | None = None
+    tag_hook: TagHook | None = None
+    semantic_decoders: Mapping[int, SemanticDecoderCallback | ShareableDecoderInitializer] | None = None
     str_errors: str = "strict"
+    max_depth: int = 400
+    allow_indefinite: bool = True
+    allow_duplicate_keys: bool = True
+    immutable: bool = False
 
 
 class CBORSerializer(FileBasedPacketSerializer[Any, Any]):
@@ -80,7 +88,7 @@ class CBORSerializer(FileBasedPacketSerializer[Any, Any]):
     Needs ``cbor`` extra dependencies.
     """
 
-    __slots__ = ("__encoder_cls", "__decoder_cls")
+    __slots__ = ("__encoder_cls", "__decoder_cls", "__decode_immutable")
 
     def __init__(
         self,
@@ -116,15 +124,15 @@ class CBORSerializer(FileBasedPacketSerializer[Any, Any]):
         elif not isinstance(decoder_config, CBORDecoderConfig):
             raise TypeError(f"Invalid decoder config: expected {CBORDecoderConfig.__name__}, got {type(decoder_config).__name__}")
 
-        decoder_extra_kwargs: dict[str, Any] = {}
-
+        decoder_args = dataclass_asdict(decoder_config)
         # Disable buffering.
         # c.f. https://github.com/agronholm/cbor2/pull/268
-        if _cbor_decoder_have_read_size_parameter():
-            decoder_extra_kwargs["read_size"] = 1
+        decoder_extra_kwargs: dict[str, Any] = {"read_size": 1}
+
+        self.__decode_immutable: bool = decoder_args.pop("immutable")
 
         self.__encoder_cls = partial(cbor2.CBOREncoder, **dataclass_asdict(encoder_config))
-        self.__decoder_cls = partial(cbor2.CBORDecoder, **dataclass_asdict(decoder_config), **decoder_extra_kwargs)
+        self.__decoder_cls = partial(cbor2.CBORDecoder, **decoder_args, **decoder_extra_kwargs)
 
     @final
     def dump_to_file(self, packet: Any, file: IO[bytes]) -> None:
@@ -158,26 +166,9 @@ class CBORSerializer(FileBasedPacketSerializer[Any, Any]):
         Returns:
             the deserialized Python object.
         """
-        return self.__decoder_cls(file).decode()
+        import cbor2
 
-
-def _is_cbor_module_using_c_extension_implementation() -> bool:
-    try:
-        import _cbor2  # type: ignore[import-not-found]  # noqa: F401
-    except ModuleNotFoundError:
-        return False
-    else:
-        return True
-
-
-def _cbor_decoder_have_read_size_parameter() -> bool:
-    # As of v5.8.X, read_size parameter has not been added to pure-python implementation.
-
-    if _is_cbor_module_using_c_extension_implementation():
-        return True
-
-    import inspect
-
-    import cbor2
-
-    return "read_size" in inspect.signature(cbor2.CBORDecoder).parameters
+        try:
+            return self.__decoder_cls(file).decode(immutable=self.__decode_immutable)
+        except cbor2.CBORDecodeEOF:
+            raise EOFError from None

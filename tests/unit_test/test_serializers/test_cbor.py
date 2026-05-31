@@ -75,6 +75,7 @@ class TestCBORSerializer(BaseSerializerConfigInstanceCheck):
             canonical=mocker.sentinel.canonical,
             date_as_datetime=mocker.sentinel.date_as_datetime,
             string_referencing=mocker.sentinel.string_referencing,
+            indefinite_containers=mocker.sentinel.indefinite_containers,
         )
 
     @pytest.fixture(params=[True, False], ids=lambda boolean: f"default_decoder_config=={boolean}")
@@ -87,6 +88,11 @@ class TestCBORSerializer(BaseSerializerConfigInstanceCheck):
             object_hook=mocker.sentinel.object_hook,
             tag_hook=mocker.sentinel.tag_hook,
             str_errors=mocker.sentinel.str_errors,
+            semantic_decoders=mocker.sentinel.semantic_decoders,
+            max_depth=mocker.sentinel.max_depth,
+            allow_indefinite=mocker.sentinel.allow_indefinite,
+            allow_duplicate_keys=mocker.sentinel.allow_duplicate_keys,
+            immutable=mocker.sentinel.immutable,
         )
 
     @pytest.mark.parametrize(
@@ -157,6 +163,7 @@ class TestCBORSerializer(BaseSerializerConfigInstanceCheck):
             canonical=mocker.sentinel.canonical if encoder_config is not None else False,
             date_as_datetime=mocker.sentinel.date_as_datetime if encoder_config is not None else False,
             string_referencing=mocker.sentinel.string_referencing if encoder_config is not None else False,
+            indefinite_containers=mocker.sentinel.indefinite_containers if encoder_config is not None else False,
         )
         mock_encoder.encode.assert_called_once_with(mocker.sentinel.packet)
 
@@ -181,35 +188,13 @@ class TestCBORSerializer(BaseSerializerConfigInstanceCheck):
             object_hook=mocker.sentinel.object_hook if decoder_config is not None else None,
             tag_hook=mocker.sentinel.tag_hook if decoder_config is not None else None,
             str_errors=mocker.sentinel.str_errors if decoder_config is not None else "strict",
+            semantic_decoders=mocker.sentinel.semantic_decoders if decoder_config is not None else None,
+            max_depth=mocker.sentinel.max_depth if decoder_config is not None else 400,
+            allow_indefinite=mocker.sentinel.allow_indefinite if decoder_config is not None else True,
+            allow_duplicate_keys=mocker.sentinel.allow_duplicate_keys if decoder_config is not None else True,
             read_size=1,
         )
-        mock_decoder.decode.assert_called_once_with()
-        assert packet is mocker.sentinel.packet
-
-    def test____load_from_file____with_config____read_size_parameter_unavailable(
-        self,
-        decoder_config: CBORDecoderConfig | None,
-        mock_decoder_cls: MagicMock,
-        mock_decoder: MagicMock,
-        mock_file: MagicMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        mocker.patch("easynetwork.serializers.cbor._cbor_decoder_have_read_size_parameter", return_value=False)
-        serializer: CBORSerializer = CBORSerializer(decoder_config=decoder_config)
-        mock_decoder.decode.return_value = mocker.sentinel.packet
-
-        # Act
-        packet = serializer.load_from_file(mock_file)
-
-        # Assert
-        mock_decoder_cls.assert_called_once_with(
-            mock_file,
-            object_hook=mocker.sentinel.object_hook if decoder_config is not None else None,
-            tag_hook=mocker.sentinel.tag_hook if decoder_config is not None else None,
-            str_errors=mocker.sentinel.str_errors if decoder_config is not None else "strict",
-        )
-        mock_decoder.decode.assert_called_once_with()
+        mock_decoder.decode.assert_called_once_with(immutable=mocker.sentinel.immutable if decoder_config else False)
         assert packet is mocker.sentinel.packet
 
 

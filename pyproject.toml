@@ -56,7 +56,7 @@ Documentation = "https://easynetwork.readthedocs.io/"
 
 [project.optional-dependencies]
 cbor = [
-    "cbor2>=5.8,<6",
+    "cbor2>=6.1,<7",
 ]
 msgpack = [
     "msgpack>=1.1.0,<2",
