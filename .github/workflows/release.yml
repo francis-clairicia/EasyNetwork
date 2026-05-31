@@ -20,7 +20,7 @@ jobs:
     name: Distribute packages
     steps:
       - name: Retrieve packages
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: easynetwork-dist
           path: dist
