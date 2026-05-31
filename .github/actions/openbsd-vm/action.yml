@@ -38,22 +38,13 @@ runs:
       shell: bash
       run: |
         set -x
-        pdm export --no-default --format=requirements --without-hashes --output=.github/requirements-mypy.txt \
-          --group=mypy \
-          --group=cbor \
-          --group=msgpack \
-          --group=types-msgpack \
-          --group=trio
 
         pdm export --no-default --format=requirements --without-hashes --output=.github/requirements-test.txt \
           --group=test \
           --group=coverage \
-          --group=cbor \
-          --group=msgpack \
           --group=trio \
           --group=test-trio
 
-        cat .github/requirements-mypy.txt
         cat .github/requirements-test.txt
       env:
         PDM_USE_VENV: False

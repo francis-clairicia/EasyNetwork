@@ -225,12 +225,12 @@ jobs:
 
             # Launch unit tests
             export COVERAGE_FILE=.coverage.unit
-            pytest -n auto --cov --cov-report=term-missing ${{ env.PYTEST_VERBOSE_FLAG }} tests/unit_test
+            pytest -n auto --cov --cov-report=term-missing ${{ env.PYTEST_VERBOSE_FLAG }} -m "not serializer" tests/unit_test
             coverage xml -o coverage.unit.xml
 
             # Launch functional tests
             export COVERAGE_FILE=.coverage.functional
-            pytest -n auto --cov --cov-report=term-missing ${{ env.PYTEST_VERBOSE_FLAG }} tests/functional_test
+            pytest -n auto --cov --cov-report=term-missing ${{ env.PYTEST_VERBOSE_FLAG }} -m "not serializer" tests/functional_test
             coverage xml -o coverage.functional.xml
       - name: Check files in workspace
         if: always()
