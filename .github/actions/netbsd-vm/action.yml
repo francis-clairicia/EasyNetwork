@@ -35,7 +35,7 @@ runs:
           set -e
           export PKG_PATH="https://cdn.NetBSD.org/pub/pkgsrc/packages/NetBSD/$(uname -p)/$(uname -r|cut -f '1 2' -d.)/All/"
           /usr/sbin/pkg_add -v pkgin
-          pkgin -y install curl git ${{ env.NETBSD_PORTS_FOR_PYTHON }}
+          pkgin -y install git ${{ env.NETBSD_PORTS_FOR_PYTHON }}
         run: |
           set -e
           export PYTHON="${{ env.NETBSD_PYTHON_BIN }}"

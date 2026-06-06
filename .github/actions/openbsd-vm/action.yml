@@ -33,7 +33,7 @@ runs:
         sync: ${{ inputs.sync }}
         prepare: |
           set -e
-          pkg_add -v -r curl git ${{ env.OPENBSD_PORTS_FOR_PYTHON }}
+          pkg_add -v -r git ${{ env.OPENBSD_PORTS_FOR_PYTHON }}
         run: |
           set -e
           export PYTHON="${{ env.OPENBSD_PYTHON_BIN }}"

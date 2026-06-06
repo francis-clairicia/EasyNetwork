@@ -33,8 +33,7 @@ runs:
         sync: ${{ inputs.sync }}
         prepare: |
           set -e
-          pkg install -y curl git ${{ env.FREEBSD_PORTS_FOR_PYTHON }}
-          ${{ env.FREEBSD_PYTHON_BIN }} -m ensurepip --upgrade
+          pkg install -y git ${{ env.FREEBSD_PORTS_FOR_PYTHON }}
         run: |
           set -e
           export PYTHON="${{ env.FREEBSD_PYTHON_BIN }}"
