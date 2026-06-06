@@ -46,6 +46,7 @@ extensions = [
     "sphinx_toolbox.more_autodoc.autoprotocol",
     "sphinx_toolbox.more_autodoc.typevars",
     "sphinx_toolbox.more_autodoc.no_docstring",
+    "sphinxcontrib.towncrier.ext",
     # Custom
     "sphinx_easynetwork",
 ]
@@ -145,6 +146,12 @@ sphinx_tabs_disable_tab_closing = True
 
 github_username = "francis-clairicia"
 github_repository = "EasyNetwork"
+
+# -- sphinxcontrib.towncrier.ext configuration -------------------------------------
+# https://github.com/sphinx-contrib/sphinxcontrib-towncrier/blob/master/README.rst
+
+towncrier_draft_include_empty = release != version
+towncrier_draft_working_directory = os.fspath(pathlib.Path(__file__).parent.parent.parent.absolute())
 
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
