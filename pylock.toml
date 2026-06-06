@@ -3234,7 +3234,7 @@ marker = "\"dev\" in dependency_groups or \"micro-benchmark\" in dependency_grou
 dependencies = []
 
 [tool.pdm]
-hashes = {sha256 = "c7b1374d323a2a369d9ff26e193b6823f42025fd4c65ae5220bce8b4d1cb80e7"}
+hashes = {sha256 = "e9ddecdb05046b959f5807dd0e238adef95f7d665f2f972095ea21ceece58381"}
 strategy = ["inherit_metadata", "static_urls"]
 
 [[tool.pdm.targets]]

@@ -81,7 +81,7 @@ uvloop = [
     "uvloop<1,>=0.21.0; os_name=='posix'",
 ]
 tox = [
-    "tox<5,>=4.0.8",
+    "tox<5,>=4.55",
 ]
 format = [
     "isort>=7.0",
