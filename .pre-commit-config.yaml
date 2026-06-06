@@ -50,7 +50,19 @@ repos:
     hooks:
       - id: pdm-lock-check
       - id: pdm-export
+        name: pdm-export tox
+        files: ^pylock\.toml$
+        args: [
+          '--no-default',
+          '--dev',
+          '--group=tox',
+          '--format=requirements',
+          '--without-hashes',
+          '--output=.github/actions/requirements-tox.txt'
+        ]
+      - id: pdm-export
         name: pdm-export benchmark-servers-deps
+        files: ^pylock\.toml$
         args: [
           '--no-default',
           '--dev',

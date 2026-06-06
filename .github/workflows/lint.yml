@@ -18,10 +18,9 @@ on:
       - 'tests/**.pyi?'
       - 'tox.ini'
       - 'pyproject.toml'
-      - 'pdm.lock'
+      - 'pylock.toml'
       - '.github/actions/setup-tox/**'
-      - '.github/actions/freebsd-vm/**'
-      - '.github/actions/pdm.conf'
+      - '.github/actions/cache.conf'
       - '.github/workflows/lint.yml'
   push:
     branches:
@@ -36,10 +35,9 @@ on:
       - 'tests/**.pyi?'
       - 'tox.ini'
       - 'pyproject.toml'
-      - 'pdm.lock'
+      - 'pylock.toml'
       - '.github/actions/setup-tox/**'
-      - '.github/actions/freebsd-vm/**'
-      - '.github/actions/pdm.conf'
+      - '.github/actions/cache.conf'
       - '.github/workflows/lint.yml'
 
 concurrency:

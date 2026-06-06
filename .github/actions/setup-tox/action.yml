@@ -9,10 +9,10 @@ inputs:
 runs:
   using: 'composite'
   steps:
-    - name: Load PDM configuration from pdm.conf
+    - name: Load configuration from cache.conf
       uses: cardinalby/export-env-action@v2
       with:
-        envFile: .github/actions/pdm.conf
+        envFile: .github/actions/cache.conf
     - name: Create cache key from workflow
       run: |
         echo "Runner=${{ runner.os }}-${{ runner.arch }}; Workflow=${{ github.workflow }}/${{ github.job }}" > $WORKFLOW_CACHE_KEY_FILE
@@ -27,29 +27,20 @@ runs:
     - name: Show cache key
       run: cat ${{ env.WORKFLOW_CACHE_KEY_FILE }}
       shell: bash
-    - name: Install PDM
-      uses: pdm-project/setup-pdm@v4.4
-      id: pdm
+    - name: Install Python
+      uses: actions/setup-python@v6
+      id: python
       with:
-        version: ${{ env.PDM_VERSION }}
         python-version: ${{ inputs.python-version }}
-        cache: true
-        cache-restore-exact-match: true
+        check-latest: true
+        pip-install: -r .github/actions/requirements-tox.txt
+        cache: 'pip'
         cache-dependency-path: |
-          ./pdm.lock
+          ./pylock.toml
           ${{ env.WORKFLOW_CACHE_KEY_FILE }}
-    - name: Configure PDM before proceed
-      # Tell PDM to cache wheel installation as well
+    - name: Check dependencies
       run: |
-        pdm config install.cache true
-      shell: bash
-    - name: Install dependencies
-      run: |
-        pdm install --verbose --frozen-lockfile --global --project=. --no-self --no-default --dev --group=tox
         tox --version
-        ls -lA
-      env:
-        PDM_USE_VENV: False
       shell: bash
     - name: Disable tox parallel spinner by default
       run: echo "TOX_PARALLEL_NO_SPINNER=1" >> $GITHUB_ENV
@@ -60,5 +51,5 @@ runs:
         key: tox-${{ runner.os }}-${{ runner.arch }}-python-${{ env.PYTHON_VERSION }}-${{ env.KEY_HASH }}
         path: .tox
       env:
-        PYTHON_VERSION: ${{ steps.pdm.outputs.python-version }}
-        KEY_HASH: ${{ hashFiles('./pdm.lock', './tox.ini', env.WORKFLOW_CACHE_KEY_FILE ) }}
+        PYTHON_VERSION: ${{ steps.python.outputs.python-version }}
+        KEY_HASH: ${{ hashFiles('./pylock.toml', './tox.ini', env.WORKFLOW_CACHE_KEY_FILE ) }}
