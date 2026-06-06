@@ -20,34 +20,10 @@ inputs:
 runs:
   using: 'composite'
   steps:
-    - name: Load PDM configuration from pdm.conf
-      uses: cardinalby/export-env-action@v2
-      with:
-        envFile: .github/actions/pdm.conf
     - name: Load Python configuration
       uses: cardinalby/export-env-action@v2
       with:
         envFile: ${{ github.action_path }}/python/${{ inputs.python-version }}.conf
-    - name: Install PDM
-      uses: pdm-project/setup-pdm@v4.2
-      id: pdm
-      with:
-        version: ${{ env.PDM_VERSION }}
-        python-version: '3.11'
-    - name: Create requirements.txt files in .github
-      shell: bash
-      run: |
-        set -x
-
-        pdm export --no-default --format=requirements --without-hashes --output=.github/requirements-test.txt \
-          --group=test \
-          --group=coverage \
-          --group=trio \
-          --group=test-trio
-
-        cat .github/requirements-test.txt
-      env:
-        PDM_USE_VENV: False
     - name: Run on VM
       uses: vmactions/openbsd-vm@v1
       with:
@@ -55,11 +31,12 @@ runs:
         usesh: true
         envs: ${{ inputs.envs }}
         sync: ${{ inputs.sync }}
-        # FIXME: Cannot install tox on OpenBSD: PDM crashes when installing packages
-        # c.f. https://github.com/pdm-project/dep-logic/issues/7
         prepare: |
           set -e
           pkg_add -v -r curl git ${{ env.OPENBSD_PORTS_FOR_PYTHON }}
         run: |
           set -e
+          export PYTHON="${{ env.OPENBSD_PYTHON_BIN }}"
+          $PYTHON -m pip install -r .github/actions/requirements-tox.txt
+          tox --version
           ${{ inputs.run }}

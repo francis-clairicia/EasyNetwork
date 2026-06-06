@@ -20,10 +20,6 @@ inputs:
 runs:
   using: 'composite'
   steps:
-    - name: Load PDM configuration from pdm.conf
-      uses: cardinalby/export-env-action@v2
-      with:
-        envFile: .github/actions/pdm.conf
     - name: Load Python configuration
       uses: cardinalby/export-env-action@v2
       with:
@@ -38,11 +34,9 @@ runs:
         prepare: |
           set -e
           pkg install -y curl git ${{ env.FREEBSD_PORTS_FOR_PYTHON }}
-          curl -sSL https://pdm-project.org/install-pdm.py | ${{ env.FREEBSD_PYTHON_BIN }} - --version=${{ env.PDM_VERSION }} --path=/usr/local
-          pdm config check_update false
-          pdm config install.cache true
         run: |
           set -e
-          pdm install --verbose --frozen-lockfile --global --project=. --no-self --no-default --dev --group=tox
+          export PYTHON="${{ env.FREEBSD_PYTHON_BIN }}"
+          $PYTHON -m pip install -r .github/actions/requirements-tox.txt
           tox --version
           ${{ inputs.run }}

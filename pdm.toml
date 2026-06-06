@@ -4,3 +4,6 @@ use_python_version = false
 
 [venv]
 backend = "venv"
+
+[lock]
+format = "pylock"

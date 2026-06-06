@@ -82,7 +82,6 @@ uvloop = [
 ]
 tox = [
     "tox<5,>=4.0.8",
-    "tox-pdm~=0.7.2",
 ]
 format = [
     "isort>=7.0",
@@ -143,6 +142,12 @@ benchmark-servers-deps = [
 
 [tool.pdm]
 distribution = true
+
+[tool.pdm.scripts]
+post_lock = "pre-commit run pdm-export --all-files"
+
+[tool.pdm.resolution]
+allow-prerelases = false
 
 ############################ hatchling configuration ############################
 

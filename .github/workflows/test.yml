@@ -22,11 +22,13 @@ on:
       - '!**.pyi'
       - 'tox.ini'
       - 'pyproject.toml'
-      - 'pdm.lock'
+      - 'pylock.toml'
       - '.github/codecov.yml'
       - '.github/actions/setup-tox/**'
       - '.github/actions/freebsd-vm/**'
-      - '.github/actions/pdm.conf'
+      - '.github/actions/openbsd-vm/**'
+      - '.github/actions/netbsd-vm/**'
+      - '.github/actions/cache.conf'
       - '.github/workflows/test.yml'
   push:
     branches:
@@ -39,11 +41,13 @@ on:
       - '!**.pyi'
       - 'tox.ini'
       - 'pyproject.toml'
-      - 'pdm.lock'
+      - 'pylock.toml'
       - '.github/codecov.yml'
       - '.github/actions/setup-tox/**'
       - '.github/actions/freebsd-vm/**'
-      - '.github/actions/pdm.conf'
+      - '.github/actions/openbsd-vm/**'
+      - '.github/actions/netbsd-vm/**'
+      - '.github/actions/cache.conf'
       - '.github/workflows/test.yml'
 
 concurrency:
@@ -128,8 +132,8 @@ jobs:
             tox_py: py312
     env:
       # Since v7.6.11, coverage ships a pure python wheel (which is used on BSD) but the pure python Tracker always crashes.
-      # This indicates PDM not to use the .whl but the .tar.gz distribution in order to recompile the package in-place.
-      PDM_NO_BINARY: coverage
+      # This indicates pip not to use the .whl but the .tar.gz distribution in order to recompile the package in-place.
+      PIP_NO_BINARY: coverage
 
     name: test (freebsd-14.3, ${{ matrix.python_version }})
     steps:
@@ -144,9 +148,8 @@ jobs:
           release: '14.3'
           python-version: ${{ matrix.python_version }}
           envs: >-
-            PDM_NO_BINARY
+            PIP_NO_BINARY
           run: |
-            pdm lock -G coverage --refresh
             export TOX_WORK_DIR=/tmp/.tox
             tox run -f ${{ matrix.tox_py }} -- ${{ env.PYTEST_VERBOSE_FLAG }}
             tox run -f coverage
@@ -193,8 +196,8 @@ jobs:
             tox_py: py312
     env:
       # Since v7.6.11, coverage ships a pure python wheel (which is used on BSD) but the pure python Tracker always crashes.
-      # This indicates PDM not to use the .whl but the .tar.gz distribution in order to recompile the package in-place.
-      PDM_NO_BINARY: coverage
+      # This indicates pip not to use the .whl but the .tar.gz distribution in order to recompile the package in-place.
+      PIP_NO_BINARY: coverage
 
     name: test (openbsd-${{ matrix.os_version }}, ${{ matrix.python_version }})
     steps:
@@ -208,30 +211,12 @@ jobs:
         with:
           release: ${{ matrix.os_version }}
           python-version: ${{ matrix.python_version }}
-          # FIXME: Cannot run tox (which uses tox-pdm) on OpenBSD: PDM crashes when installing packages
-          # c.f. https://github.com/pdm-project/dep-logic/issues/7
+          envs: >-
+            PIP_NO_BINARY
           run: |
-            export PYTHON=python${{ matrix.python_version }}
-            export PYTHONUNBUFFERED=1
-            export PYTHONHASHSEED=100
-            export PYTEST_ADDOPTS="-p "no:cacheprovider""
-
-            $PYTHON -m venv /tmp/.venv
-            . /tmp/.venv/bin/activate
-            pip install -r .github/requirements-test.txt -e . --no-binary="${{ env.PDM_NO_BINARY }}"
-
-            # Launch common checks
-            pytest -m "not unit and not functional" --no-cov ${{ env.PYTEST_VERBOSE_FLAG }}
-
-            # Launch unit tests
-            export COVERAGE_FILE=.coverage.unit
-            pytest -n auto --cov --cov-report=term-missing ${{ env.PYTEST_VERBOSE_FLAG }} -m "not serializer" tests/unit_test
-            coverage xml -o coverage.unit.xml
-
-            # Launch functional tests
-            export COVERAGE_FILE=.coverage.functional
-            pytest -n auto --cov --cov-report=term-missing ${{ env.PYTEST_VERBOSE_FLAG }} -m "not serializer" tests/functional_test
-            coverage xml -o coverage.functional.xml
+            export TOX_WORK_DIR=/tmp/.tox
+            tox run -f ${{ matrix.tox_py }} -- ${{ env.PYTEST_VERBOSE_FLAG }}
+            tox run -f coverage
       - name: Check files in workspace
         if: always()
         run: ls -lA
@@ -273,8 +258,8 @@ jobs:
             tox_py: py312
     env:
       # Since v7.6.11, coverage ships a pure python wheel (which is used on BSD) but the pure python Tracker always crashes.
-      # This indicates PDM not to use the .whl but the .tar.gz distribution in order to recompile the package in-place.
-      PDM_NO_BINARY: coverage
+      # This indicates pip not to use the .whl but the .tar.gz distribution in order to recompile the package in-place.
+      PIP_NO_BINARY: coverage
 
     name: test (netbsd-10.1, ${{ matrix.python_version }})
     steps:
@@ -289,9 +274,8 @@ jobs:
           release: '10.1'
           python-version: ${{ matrix.python_version }}
           envs: >-
-            PDM_NO_BINARY
+            PIP_NO_BINARY
           run: |
-            pdm lock -G coverage --refresh
             export TOX_WORK_DIR=/tmp/.tox
             tox run -f ${{ matrix.tox_py }} -- ${{ env.PYTEST_VERBOSE_FLAG }}
             tox run -f coverage
