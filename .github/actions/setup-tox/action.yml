@@ -33,15 +33,14 @@ runs:
       with:
         python-version: ${{ inputs.python-version }}
         check-latest: true
+        pip-install: -r .github/actions/requirements-tox.txt
         cache: 'pip'
         cache-dependency-path: |
           ./pylock.toml
           ${{ env.WORKFLOW_CACHE_KEY_FILE }}
-    - name: Install dependencies
+    - name: Check dependencies
       run: |
-        python -m pip install -r .github/actions/requirements-tox.txt
         tox --version
-        ls -lA
       shell: bash
     - name: Disable tox parallel spinner by default
       run: echo "TOX_PARALLEL_NO_SPINNER=1" >> $GITHUB_ENV
