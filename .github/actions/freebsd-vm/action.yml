@@ -34,9 +34,13 @@ runs:
         prepare: |
           set -e
           pkg install -y curl git ${{ env.FREEBSD_PORTS_FOR_PYTHON }}
+          ${{ env.FREEBSD_PYTHON_BIN }} -m ensurepip --upgrade
         run: |
           set -e
           export PYTHON="${{ env.FREEBSD_PYTHON_BIN }}"
+          $PYTHON -m venv /tmp/.venv
+          . /tmp/.venv/bin/activate
+
           $PYTHON -m pip install -r .github/actions/requirements-tox.txt
           tox --version
           ${{ inputs.run }}

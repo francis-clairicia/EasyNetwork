@@ -39,6 +39,9 @@ runs:
         run: |
           set -e
           export PYTHON="${{ env.NETBSD_PYTHON_BIN }}"
+          $PYTHON -m venv /tmp/.venv
+          . /tmp/.venv/bin/activate
+
           $PYTHON -m pip install -r .github/actions/requirements-tox.txt
           tox --version
           ${{ inputs.run }}
