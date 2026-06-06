@@ -62,14 +62,6 @@ exclude_patterns = [
     "_build",  # <- Created by readthedocs.io
 ]
 
-rst_prolog = """
-.. ifconfig:: html_context.get('current_version') == 'latest'
-
-   .. warning::
-
-      This is the documentation for the latest unstable version.
-"""
-
 
 # -- sphinx.ext.autodoc configuration ----------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/extensions/autodoc.html
