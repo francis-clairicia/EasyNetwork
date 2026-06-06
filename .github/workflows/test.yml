@@ -122,16 +122,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - python_version: '3.11'
-            tox_py: py311
-          - python_version: '3.12'
+          - os_version: '14.3'
+            python_version: '3.12'
             tox_py: py312
+          - os_version: '15.0'
+            python_version: '3.13'
+            tox_py: py313
     env:
       # Since v7.6.11, coverage ships a pure python wheel (which is used on BSD) but the pure python Tracker always crashes.
       # This indicates PDM not to use the .whl but the .tar.gz distribution in order to recompile the package in-place.
       PDM_NO_BINARY: coverage
 
-    name: test (freebsd-14.3, ${{ matrix.python_version }})
+    name: test (freebsd-${{ matrix.os_version }}, ${{ matrix.python_version }})
     steps:
       - uses: actions/checkout@v6
         with:
@@ -141,7 +143,7 @@ jobs:
         timeout-minutes: 25
         uses: ./.github/actions/freebsd-vm
         with:
-          release: '14.3'
+          release: ${{ matrix.os_version }}
           python-version: ${{ matrix.python_version }}
           envs: >-
             PDM_NO_BINARY
@@ -185,12 +187,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os_version: '7.6'
-            python_version: '3.11'
-            tox_py: py311
-          - os_version: '7.7'
+          - os_version: '7.8'
             python_version: '3.12'
             tox_py: py312
+          - os_version: '7.9'
+            python_version: '3.13'
+            tox_py: py313
     env:
       # Since v7.6.11, coverage ships a pure python wheel (which is used on BSD) but the pure python Tracker always crashes.
       # This indicates PDM not to use the .whl but the .tar.gz distribution in order to recompile the package in-place.
@@ -267,10 +269,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - python_version: '3.11'
-            tox_py: py311
           - python_version: '3.12'
             tox_py: py312
+          - python_version: '3.13'
+            tox_py: py313
     env:
       # Since v7.6.11, coverage ships a pure python wheel (which is used on BSD) but the pure python Tracker always crashes.
       # This indicates PDM not to use the .whl but the .tar.gz distribution in order to recompile the package in-place.
