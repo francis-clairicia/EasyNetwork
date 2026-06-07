@@ -39,6 +39,9 @@
         "*/site-packages/*"
     ],
     "flake8.importStrategy": "fromEnvironment",
+    "flake8.args": [
+        "--config=.flake8"
+    ],
     "python.analysis.diagnosticSeverityOverrides": {
         "reportMissingImports": "error",
         "reportAssertAlwaysTrue": "information",
