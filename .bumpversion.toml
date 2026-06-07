@@ -7,6 +7,9 @@ serialize = [
 ]
 message = "Bump version: {current_version} -> {new_version}"
 tag_name = "{new_version}"
+pre_commit_hooks = [
+    "./tools/update-changelog.sh",
+]
 
 [tool.bumpversion.parts.release]
 first_value = "rc"
