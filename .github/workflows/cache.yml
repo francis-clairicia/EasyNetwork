@@ -19,18 +19,13 @@ jobs:
     steps:
       - name: Cleanup
         run: |
-          gh extension install actions/gh-actions-cache
-
           REPO=${{ github.repository }}
           BRANCH=${{ env.PULL_REQUEST_NUMBER && format('refs/pull/{0}/merge', env.PULL_REQUEST_NUMBER) || github.ref }}
 
           ## Setting this to not fail the workflow while deleting cache keys.
           set +e
           echo "Deleting caches..."
-          while [[ $(gh actions-cache list -R $REPO -B $BRANCH | grep -v 'no Actions caches') ]]
-          do
-              gh actions-cache list -R $REPO -B $BRANCH --limit=100 | cut -f 1 | xargs -I{} gh actions-cache delete {} -R $REPO -B $BRANCH --confirm
-          done
+          gh cache delete -R "$REPO" --all --ref "$BRANCH" --succeed-on-no-caches
           echo "Done"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
