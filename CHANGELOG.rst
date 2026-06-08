@@ -11,7 +11,7 @@ See also the `Release Notes <https://github.com/francis-clairicia/EasyNetwork/re
 
 .. towncrier release notes start
 
-1.0.0 - 2024-09-07
+1.0.0 (2024-09-07)
 ==================
 
 - Initial release
