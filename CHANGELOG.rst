@@ -13,8 +13,8 @@ To see unreleased changes, please see the `CHANGELOG on the main branch document
 
 .. towncrier release notes start
 
-1.1.1 (2025-01-25)
-==================
+`1.1.1 <https://github.com/francis-clairicia/EasyNetwork/compare/1.1.0...1.1.1>`_ (2025-01-25)
+==============================================================================================
 
 Changed
 -------
@@ -23,8 +23,8 @@ Changed
 - Using a ``JSONSerializer`` with ``use_lines=False`` option, optimized ``incremental_deserialize()`` by 75%. (`#391 <https://github.com/francis-clairicia/EasyNetwork/pull/391>`_)
 
 
-1.1.0 (2025-01-19)
-==================
+`1.1.0 <https://github.com/francis-clairicia/EasyNetwork/compare/1.0.0...1.1.0>`_ (2025-01-19)
+==============================================================================================
 
 Packaging
 ---------
@@ -177,7 +177,7 @@ Documentation
 - Updated Copyright years. (`#388 <https://github.com/francis-clairicia/EasyNetwork/pull/388>`_)
 
 
-1.0.0 (2024-09-07)
-==================
+`1.0.0 <https://github.com/francis-clairicia/EasyNetwork/releases/tag/1.0.0>`_ (2024-09-07)
+===========================================================================================
 
 - Initial stable release.
