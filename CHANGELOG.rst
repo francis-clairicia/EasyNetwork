@@ -13,6 +13,16 @@ To see unreleased changes, please see the `CHANGELOG on the main branch document
 
 .. towncrier release notes start
 
+1.1.1 (2025-01-25)
+==================
+
+Changed
+-------
+
+- ``StringLineSerializer.serialize()`` and ``StringLineSerializer.incremental_serialize()`` delegates ``str`` check to ``bytes`` constructor. (`#391 <https://github.com/francis-clairicia/EasyNetwork/pull/391>`_)
+- Using a ``JSONSerializer`` with ``use_lines=False`` option, optimized ``incremental_deserialize()`` by 75%. (`#391 <https://github.com/francis-clairicia/EasyNetwork/pull/391>`_)
+
+
 1.1.0 (2025-01-19)
 ==================
 
