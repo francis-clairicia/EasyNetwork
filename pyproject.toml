@@ -321,7 +321,19 @@ filename = "CHANGELOG.rst"
 package_dir = "src"
 title_format = "{version} ({project_date})"
 issue_pattern = '\d+'
-issue_format = "`#{issue} <https://github.com/francis-clairicia/EasyNetwork/issues/{issue}>`_"
+issue_format = "`#{issue} <https://github.com/francis-clairicia/EasyNetwork/pull/{issue}>`_"
+
+    [[tool.towncrier.type]]
+    directory = "packaging"
+    name = "Packaging"
+    showcontent = true
+    check = false
+
+    [[tool.towncrier.type]]
+    directory = "deps"
+    name = "Dependency changes"
+    showcontent = true
+    check = false
 
     [[tool.towncrier.type]]
     directory = "added"
@@ -329,13 +341,13 @@ issue_format = "`#{issue} <https://github.com/francis-clairicia/EasyNetwork/issu
     showcontent = true
 
     [[tool.towncrier.type]]
-    directory = "fixed"
-    name = "Fixed"
+    directory = "changed"
+    name = "Changed"
     showcontent = true
 
     [[tool.towncrier.type]]
-    directory = "changed"
-    name = "Changed"
+    directory = "fixed"
+    name = "Fixed"
     showcontent = true
 
     [[tool.towncrier.type]]
@@ -356,11 +368,5 @@ issue_format = "`#{issue} <https://github.com/francis-clairicia/EasyNetwork/issu
     [[tool.towncrier.type]]
     directory = "doc"
     name = "Documentation"
-    showcontent = true
-    check = false
-
-    [[tool.towncrier.type]]
-    directory = "deps"
-    name = "Dependency Changes"
     showcontent = true
     check = false

@@ -150,7 +150,7 @@ github_repository = "EasyNetwork"
 # -- sphinxcontrib.towncrier.ext configuration -------------------------------------
 # https://github.com/sphinx-contrib/sphinxcontrib-towncrier/blob/master/README.rst
 
-towncrier_draft_include_empty = release != version
+towncrier_draft_include_empty = "dev" in release
 towncrier_draft_working_directory = os.fspath(pathlib.Path(__file__).parent.parent.parent.absolute())
 
 # -- Options for HTML output -------------------------------------------------
