@@ -1,6 +1,6 @@
-=========
+*********
 Changelog
-=========
+*********
 
 All notable changes to this project will be documented in this file.
 
@@ -12,6 +12,29 @@ See also the `Release Notes <https://github.com/francis-clairicia/EasyNetwork/re
 To see unreleased changes, please see the `CHANGELOG on the main branch documentation <https://easynetwork.readthedocs.io/en/latest/changelog.html>`_.
 
 .. towncrier release notes start
+
+`1.1.3 <https://github.com/francis-clairicia/EasyNetwork/compare/1.1.2...1.1.3>`_ (2025-05-24)
+==============================================================================================
+
+Changed
+-------
+
+- Improved buffer management when using ``BufferedStreamProtocol``. (`#402 <https://github.com/francis-clairicia/EasyNetwork/pull/402>`_)
+- Low-level API: ``AsyncStreamServer.serve()`` and ``AsyncDatagramServer.serve()`` now check the timeout value sent by request handlers. (`#405 <https://github.com/francis-clairicia/EasyNetwork/pull/405>`_)
+
+
+Fixed
+-----
+
+- Low-level API: Fixed ``AsyncStreamServer.serve()`` aborting client connection on regular request handler stop. (`#403 <https://github.com/francis-clairicia/EasyNetwork/pull/403>`_)
+- Low-level API: Fixed ``AsyncDatagramServer.serve()`` crash on shut down when there are queued datagrams. (`#407 <https://github.com/francis-clairicia/EasyNetwork/pull/407>`_)
+
+
+Documentation
+-------------
+
+- Fixed missing warning for client's ``aclose()`` methods. (`#404 <https://github.com/francis-clairicia/EasyNetwork/pull/404>`_)
+
 
 `1.1.2 <https://github.com/francis-clairicia/EasyNetwork/compare/1.1.1...1.1.2>`_ (2025-03-16)
 ==============================================================================================
@@ -38,7 +61,7 @@ Fixed
 - Low-level API: ``asyncio``: Fixed ``TaskGroup.start()`` and ``TaskGroup.start_soon()`` leaving a coroutine object unclosed on ``RuntimeError``. (`#398 <https://github.com/francis-clairicia/EasyNetwork/pull/398>`_)
 - ``AsyncTCPNetworkServer``: On server shut down, the socket listeners are stopped before client tasks.
   This fixes a race condition where the socket was ready to accept a new client but the task group has been closed. (`#398 <https://github.com/francis-clairicia/EasyNetwork/pull/398>`_)
-- Fixed ``AsyncStreamServer.serve()`` and ``AsyncDatagramServer.serve()`` shutting down when an exception is thrown. (`#399 <https://github.com/francis-clairicia/EasyNetwork/pull/399>`_)
+- Low-level API: Fixed ``AsyncStreamServer.serve()`` and ``AsyncDatagramServer.serve()`` shutting down when an exception is thrown. (`#399 <https://github.com/francis-clairicia/EasyNetwork/pull/399>`_)
 
 
 `1.1.1 <https://github.com/francis-clairicia/EasyNetwork/compare/1.1.0...1.1.1>`_ (2025-01-25)
