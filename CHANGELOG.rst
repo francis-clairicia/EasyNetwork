@@ -13,6 +13,34 @@ To see unreleased changes, please see the `CHANGELOG on the main branch document
 
 .. towncrier release notes start
 
+`1.1.2 <https://github.com/francis-clairicia/EasyNetwork/compare/1.1.1...1.1.2>`_ (2025-03-16)
+==============================================================================================
+
+Changed
+-------
+
+- Miscellaneous internal changes. (`#392 <https://github.com/francis-clairicia/EasyNetwork/pull/392>`_)
+- Improved handling of asynchronous generators. (`#393 <https://github.com/francis-clairicia/EasyNetwork/pull/393>`_)
+- Low-level API: ``asyncio`` and ``trio``: The ``TaskGroup`` no longer wrap single exception raised within context in an ``ExceptionGroup``. (`#398 <https://github.com/francis-clairicia/EasyNetwork/pull/398>`_)
+- Low-level API: ``asyncio``: Optimized ``AsyncListener.serve()`` coroutine by using ``asyncio.AbstractEventLoop.add_reader()`` if available.
+  The task is more efficient with event loops based on file descriptor polling. (`#398 <https://github.com/francis-clairicia/EasyNetwork/pull/398>`_)
+
+
+Fixed
+-----
+
+- Low-level API: ``asyncio``: The ``AsyncListener.serve()`` coroutine no longer emits log connection errors
+  for direct subclasses of the ``BaseException`` class. (`#392 <https://github.com/francis-clairicia/EasyNetwork/pull/392>`_)
+- Low-level API: ``asyncio``: Fixed backend's ``CancelScope`` not catching re-raised exceptions. (`#395 <https://github.com/francis-clairicia/EasyNetwork/pull/395>`_)
+- Low-level API: ``asyncio``: Fixed backend's ``CancelScope`` swallowing exceptions by mistake. (`#397 <https://github.com/francis-clairicia/EasyNetwork/pull/397>`_)
+- ``AsyncUDPNetworkServer``: On server shut down, the datagram socket reading task is stopped before client tasks.
+  This fixes a race condition where the socket was ready for reading a new datagram but the task group has been closed. (`#398 <https://github.com/francis-clairicia/EasyNetwork/pull/398>`_)
+- Low-level API: ``asyncio``: Fixed ``TaskGroup.start()`` and ``TaskGroup.start_soon()`` leaving a coroutine object unclosed on ``RuntimeError``. (`#398 <https://github.com/francis-clairicia/EasyNetwork/pull/398>`_)
+- ``AsyncTCPNetworkServer``: On server shut down, the socket listeners are stopped before client tasks.
+  This fixes a race condition where the socket was ready to accept a new client but the task group has been closed. (`#398 <https://github.com/francis-clairicia/EasyNetwork/pull/398>`_)
+- Fixed ``AsyncStreamServer.serve()`` and ``AsyncDatagramServer.serve()`` shutting down when an exception is thrown. (`#399 <https://github.com/francis-clairicia/EasyNetwork/pull/399>`_)
+
+
 `1.1.1 <https://github.com/francis-clairicia/EasyNetwork/compare/1.1.0...1.1.1>`_ (2025-01-25)
 ==============================================================================================
 
