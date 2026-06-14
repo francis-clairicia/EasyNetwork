@@ -13,6 +13,15 @@ To see unreleased changes, please see the `CHANGELOG on the main branch document
 
 .. towncrier release notes start
 
+`1.1.4 <https://github.com/francis-clairicia/EasyNetwork/compare/1.1.3...1.1.4>`_ (2025-07-29)
+==============================================================================================
+
+Fixed
+-----
+
+- Fixed data loss when ``StreamProtocol.build_packet_from_chunks()`` raises an exception before the first ``yield`` statement. (`#413 <https://github.com/francis-clairicia/EasyNetwork/pull/413>`_)
+
+
 `1.1.3 <https://github.com/francis-clairicia/EasyNetwork/compare/1.1.2...1.1.3>`_ (2025-05-24)
 ==============================================================================================
 
