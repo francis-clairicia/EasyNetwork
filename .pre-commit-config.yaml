@@ -103,3 +103,11 @@ repos:
       - id: check-json
       - id: check-toml
       - id: check-yaml
+  - repo: local
+    hooks:
+      - id: changelog-filename-format
+        name: check changelog filenames
+        language: fail
+        files: ^changelog\.d/
+        exclude: ^changelog\.d/(?:\.git\w+|\d+\.(?:packaging|deps|added|fixed|deprecated|removed|security|doc)(?:\.\d+)?\.rst)$
+        entry: Invalid changelog filename
