@@ -54,5 +54,5 @@ ignore_missing_version = true
 
 [[tool.bumpversion.files]]
 filename = "docs/source/changelog.rst"
-search = '{current_version}...HEAD'
-replace = '{new_version}...HEAD'
+search = '/compare/{current_version}...HEAD'
+replace = '/compare/{new_version}...HEAD'
