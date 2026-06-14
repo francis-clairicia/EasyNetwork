@@ -1,0 +1,34 @@
+# This action requires that any PR targeting the main branch should add a
+# changelog fragment file in the changelog.d/ directory. If a changelog entry
+# is not required, add the "pr-skip-changelog" label to disable this action.
+
+name: Changelog
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - converted_to_draft
+      - ready_for_review
+      - reopened
+      - labeled
+      - unlabeled
+    branches:
+      - main
+
+jobs:
+  changelog:
+    if: |
+      github.event.pull_request.draft != true && !contains(github.event.pull_request.labels.*.name, 'pr-skip-changelog')
+       && github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+
+    name: Check changelog
+    steps:
+      - name: Setup tox
+        uses: ./.github/actions/setup-tox
+        with:
+          python-version: '3.11'
+      - name: Check for changelog fragment
+        run: tox run -e towncrier_check -- --compare-with origin/${{ github.base_ref }}
