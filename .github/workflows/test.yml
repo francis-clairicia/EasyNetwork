@@ -87,6 +87,7 @@ jobs:
         uses: ./.github/actions/setup-tox
         with:
           python-version: ${{ matrix.python_version }}
+          check-latest: true
       - name: Launch tests
         timeout-minutes: 20
         run: tox run -f ${{ matrix.tox_py }} -- ${{ env.PYTEST_VERBOSE_FLAG }}

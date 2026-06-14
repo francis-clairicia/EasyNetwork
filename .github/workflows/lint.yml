@@ -63,5 +63,6 @@ jobs:
         uses: ./.github/actions/setup-tox
         with:
           python-version: '3.11'
+          check-latest: true
       - name: Launch checks
         run: tox run -f mypy
