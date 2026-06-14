@@ -26,6 +26,9 @@ jobs:
 
     name: Check changelog
     steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - name: Setup tox
         uses: ./.github/actions/setup-tox
         with:
