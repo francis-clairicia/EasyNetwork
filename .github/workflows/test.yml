@@ -97,7 +97,7 @@ jobs:
         run: tox run -f coverage
       - name: Upload (unit tests) coverage to codecov
         if: hashFiles('coverage.unit.xml') != ''  # Rudimentary `file.exists()`
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           disable_search: true
@@ -107,7 +107,7 @@ jobs:
             test-unit
       - name: Upload (functional tests) coverage to codecov
         if: hashFiles('coverage.functional.xml') != ''  # Rudimentary `file.exists()`
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           disable_search: true
@@ -161,7 +161,7 @@ jobs:
         run: ls -lA
       - name: Upload (unit tests) coverage to codecov
         if: hashFiles('coverage.unit.xml') != ''  # Rudimentary `file.exists()`
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           disable_search: true
@@ -171,7 +171,7 @@ jobs:
             test-unit
       - name: Upload (functional tests) coverage to codecov
         if: hashFiles('coverage.functional.xml') != ''  # Rudimentary `file.exists()`
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           disable_search: true
@@ -225,7 +225,7 @@ jobs:
         run: ls -lA
       - name: Upload (unit tests) coverage to codecov
         if: hashFiles('coverage.unit.xml') != ''  # Rudimentary `file.exists()`
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           disable_search: true
@@ -235,7 +235,7 @@ jobs:
             test-unit
       - name: Upload (functional tests) coverage to codecov
         if: hashFiles('coverage.functional.xml') != ''  # Rudimentary `file.exists()`
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           disable_search: true
@@ -287,7 +287,7 @@ jobs:
         run: ls -lA
       - name: Upload (unit tests) coverage to codecov
         if: hashFiles('coverage.unit.xml') != ''  # Rudimentary `file.exists()`
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           disable_search: true
@@ -297,7 +297,7 @@ jobs:
             test-unit
       - name: Upload (functional tests) coverage to codecov
         if: hashFiles('coverage.functional.xml') != ''  # Rudimentary `file.exists()`
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           disable_search: true
