@@ -5,6 +5,11 @@ inputs:
     description: "Version range or exact version of Python or PyPy to use, using SemVer's version range syntax."
     required: false
     default: '3.x'
+  check-latest:
+    description: "Set this option if you want the action to check for the latest available version that satisfies the version spec."
+    required: false
+    default: false
+    type: boolean
 
 runs:
   using: 'composite'
@@ -32,7 +37,7 @@ runs:
       id: python
       with:
         python-version: ${{ inputs.python-version }}
-        check-latest: true
+        check-latest: ${{ inputs.check-latest }}
         pip-install: -r .github/actions/requirements-tox.txt
         cache: 'pip'
         cache-dependency-path: |
