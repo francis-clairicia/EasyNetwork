@@ -208,7 +208,6 @@ known_easynetwork = ["easynetwork"]
 known_trio = ["trio", "outcome"]
 add_imports = ["from __future__ import annotations"]
 extend_skip = [
-    "docs/source/conf.py",
     "src/easynetwork/version.py",
 ]
 
