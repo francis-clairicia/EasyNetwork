@@ -1,0 +1,1 @@
+Dropped support of ``cbor2`` v5.x and added support of v6.X.

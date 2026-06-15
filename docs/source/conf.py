@@ -1,4 +1,3 @@
-# type: ignore
 # Configuration file for the Sphinx documentation builder.
 #
 # For the full list of built-in configuration values, see the documentation:
@@ -9,7 +8,12 @@ from __future__ import annotations
 import os
 import pathlib
 import sys
+from typing import TYPE_CHECKING
+
 from easynetwork import __version__
+
+if TYPE_CHECKING:
+    from sphinx.application import Sphinx
 
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
@@ -46,6 +50,7 @@ extensions = [
     "sphinx_toolbox.more_autodoc.autoprotocol",
     "sphinx_toolbox.more_autodoc.typevars",
     "sphinx_toolbox.more_autodoc.no_docstring",
+    "sphinxcontrib.towncrier.ext",
     # Custom
     "sphinx_easynetwork",
 ]
@@ -54,7 +59,6 @@ highlight_language = "python3"
 
 manpages_url = "https://manpages.debian.org/{path}"
 
-templates_path = []
 exclude_patterns = [
     "_include",
     "_extensions",
@@ -146,6 +150,12 @@ sphinx_tabs_disable_tab_closing = True
 github_username = "francis-clairicia"
 github_repository = "EasyNetwork"
 
+# -- sphinxcontrib.towncrier.ext configuration -------------------------------------
+# https://github.com/sphinx-contrib/sphinxcontrib-towncrier/blob/master/README.rst
+
+towncrier_draft_include_empty = ".dev" in release
+towncrier_draft_working_directory = os.fspath(pathlib.Path(__file__).parent.parent.parent.absolute())
+
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
@@ -169,8 +179,5 @@ html_theme_options = {
 # -----------------------------------------------------------------------------
 
 
-def setup(app) -> None:
-    import warnings
-    from sphinx.deprecation import RemovedInNextVersionWarning
-
-    warnings.filterwarnings("ignore", category=RemovedInNextVersionWarning, module="sphinx_tabs.tabs")
+def setup(app: Sphinx) -> None:
+    pass

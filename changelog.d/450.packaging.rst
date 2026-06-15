@@ -1,0 +1,1 @@
+Use :pep:`751` ``pylock.toml`` to pin dependencies.

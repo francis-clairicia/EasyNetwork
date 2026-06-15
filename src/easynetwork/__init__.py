@@ -31,4 +31,4 @@ __license__ = "Apache 2.0"
 __maintainer__ = "FrankySnow9"
 __status__ = "Production"
 
-from .version import __version__
+from .version import __version__ as __version__

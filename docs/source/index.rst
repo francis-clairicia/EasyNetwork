@@ -15,6 +15,7 @@ Welcome to EasyNetwork's documentation!
    alternatives/index
    api/index
    glossary
+   changelog
 
 .. only:: html
 

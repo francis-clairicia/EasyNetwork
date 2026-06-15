@@ -77,6 +77,9 @@ build = [
 pre-commit = [
     "pre-commit>=4.0,<5",
 ]
+towncrier = [
+    "towncrier~=25.8",
+]
 uvloop = [
     "uvloop<1,>=0.21.0; os_name=='posix'",
 ]
@@ -124,6 +127,7 @@ doc = [
     "sphinx-tabs>=3.4.1,<4",
     "sphinx-toolbox~=4.0",
     "enum-tools[sphinx]>=0.12.0,<1",
+    "sphinxcontrib-towncrier<1,>=0.5.0a0",
 ]
 micro-benchmark = [
     "pytest~=8.3",
@@ -204,7 +208,6 @@ known_easynetwork = ["easynetwork"]
 known_trio = ["trio", "outcome"]
 add_imports = ["from __future__ import annotations"]
 extend_skip = [
-    "docs/source/conf.py",
     "src/easynetwork/version.py",
 ]
 
@@ -310,3 +313,59 @@ partial_branches = [
 
 [tool.coverage.html]
 show_contexts = "${COVERAGE_SHOWCONTEXTS-false}"
+
+[tool.towncrier]
+directory = "changelog.d"
+filename = "CHANGELOG.rst"
+package_dir = "src"
+title_format = "{version} ({project_date})"
+issue_pattern = '\d+'
+issue_format = "`#{issue} <https://github.com/francis-clairicia/EasyNetwork/pull/{issue}>`_"
+
+    [[tool.towncrier.type]]
+    directory = "packaging"
+    name = "Packaging"
+    showcontent = true
+    check = false
+
+    [[tool.towncrier.type]]
+    directory = "deps"
+    name = "Dependency changes"
+    showcontent = true
+    check = false
+
+    [[tool.towncrier.type]]
+    directory = "added"
+    name = "Added"
+    showcontent = true
+
+    [[tool.towncrier.type]]
+    directory = "changed"
+    name = "Changed"
+    showcontent = true
+
+    [[tool.towncrier.type]]
+    directory = "fixed"
+    name = "Fixed"
+    showcontent = true
+
+    [[tool.towncrier.type]]
+    directory = "deprecated"
+    name = "Deprecated"
+    showcontent = true
+
+    [[tool.towncrier.type]]
+    directory = "removed"
+    name = "Removed"
+    showcontent = true
+
+    [[tool.towncrier.type]]
+    directory = "security"
+    name = "Security"
+    showcontent = true
+
+    [[tool.towncrier.type]]
+    directory = "doc"
+    name = "Documentation"
+    showcontent = true
+    check = false
