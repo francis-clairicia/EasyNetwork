@@ -203,6 +203,8 @@ class BufferedStreamDataConsumer(Generic[_T_ReceivedPacket]):
 
     def __new_write_buffer(self) -> memoryview:
         if self.__buffer is None:
+            if self.__consumer is not None:
+                raise AssertionError("Buffer flushed while there is an active consumer.")
             whole_buffer = self.__protocol.create_buffer(self.__sizehint)
             self.__validate_created_buffer(whole_buffer)
             self.__buffer = _BufferRef(whole_buffer)

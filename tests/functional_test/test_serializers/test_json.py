@@ -120,13 +120,10 @@ class TestJSONSerializer(BaseTestIncrementalSerializer, BaseTestSerializerExtraD
 
     @pytest.fixture(scope="class")
     @classmethod
-    def invalid_partial_data_extra_data(cls, invalid_partial_data: bytes, use_lines: bool) -> tuple[bytes, bytes]:
+    def invalid_partial_data_extra_data(cls, invalid_partial_data: bytes) -> tuple[bytes, bytes]:
         if len(invalid_partial_data) > cls.BUFFER_LIMIT:
             if invalid_partial_data.endswith(b"\n"):
-                if use_lines:
-                    return (b"remaining_data", b"remaining_data")
-                else:
-                    return (b"remaining_data", b"\nremaining_data")
+                return (b"remaining_data", b"remaining_data")
             return (b"remaining_data", b"")
         if invalid_partial_data.startswith(b"\0"):
             return (b"", b"")

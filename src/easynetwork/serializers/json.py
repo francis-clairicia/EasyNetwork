@@ -25,6 +25,7 @@ __all__ = [
 
 import re
 from collections.abc import Callable, Generator
+from contextlib import closing
 from dataclasses import asdict as dataclass_asdict, dataclass
 from typing import TYPE_CHECKING, Any, final
 
@@ -329,8 +330,8 @@ class _JSONParser:
         ord('"'): ord('"'),
     }
 
-    _NON_PRINTABLE: re.Pattern[bytes] = re.compile(rb"[^\x20-\x7E]", re.MULTILINE | re.DOTALL)
-    _WHITESPACES: re.Pattern[bytes] = re.compile(rb"[ \t\n\r]*", re.MULTILINE | re.DOTALL)
+    _NON_PRINTABLE: re.Pattern[bytes] = re.compile(rb"[^\x20-\x7E]", re.MULTILINE)
+    _WHITESPACES: re.Pattern[bytes] = re.compile(rb"[ \t\n\r]*", re.MULTILINE)
     _JSON_FRAMES: dict[int, re.Pattern[bytes]] = {
         ord("{"): re.compile(rb'(?:\\.|[\{\}"])', re.MULTILINE | re.DOTALL),
         ord("["): re.compile(rb'(?:\\.|[\[\]"])', re.MULTILINE | re.DOTALL),
@@ -342,35 +343,57 @@ class _JSONParser:
         cls,
         *,
         limit: int,
-        _w: Callable[[bytes | bytearray, int], re.Match[bytes]] = _WHITESPACES.match,  # type: ignore[assignment]
-        _np: Callable[[bytes | bytearray, int], re.Match[bytes] | None] = _NON_PRINTABLE.search,
     ) -> Generator[None, bytes, tuple[ReadableBuffer, ReadableBuffer]]:
         if limit <= 0:
             raise ValueError("limit must be a positive integer")
 
-        append_to_buffer = cls.__append_to_buffer
+        buffer = bytearray()
+        start_idx = next(consumer := cls.__raw_parse_impl(buffer=buffer, limit=limit))
+        with closing(consumer):
+            while True:
+                del buffer[start_idx:]
+                to_write: bytes = yield
+                nbytes = len(to_write)
+                buffer.extend(to_write)
+                del to_write
+                try:
+                    start_idx = consumer.send(nbytes)
+                except StopIteration as exc:
+                    return exc.value
 
-        partial_document: bytes | bytearray
+    @classmethod
+    def __raw_parse_impl(
+        cls,
+        *,
+        buffer: bytearray,
+        limit: int,
+        _w: Callable[[bytes | bytearray, int, int], re.Match[bytes]] = _WHITESPACES.match,  # type: ignore[assignment]
+        _np: Callable[[bytes | bytearray, int, int], re.Match[bytes] | None] = _NON_PRINTABLE.search,
+    ) -> Generator[int, int, tuple[ReadableBuffer, ReadableBuffer]]:
+        read_data = cls.__read_data
+
         start_idx: int
+        buffer_end_idx: int
+        while (buffer_end_idx := (yield 0)) == (start_idx := _w(buffer, 0, buffer_end_idx).end()):
+            continue
+        if start_idx > 0:
+            buffer[: buffer_end_idx - start_idx] = memoryview(buffer)[start_idx:buffer_end_idx]
+            buffer_end_idx -= start_idx
+            start_idx = 0
 
-        partial_document = bytes((yield))
-        while (start_idx := _w(partial_document, 0).end()) == len(partial_document):
-            del partial_document
-            partial_document = bytes((yield))
+        if (open_enclosure := buffer[start_idx]) not in cls._ENCLOSURE_BYTES:
+            search_start_idx = start_idx
+            while not (nprint_search := _np(buffer, search_start_idx, buffer_end_idx)):
+                search_start_idx = buffer_end_idx
+                buffer_end_idx = yield from read_data(buffer, start_idx=search_start_idx, limit=limit)
 
-        end_idx: int = start_idx
-        if (open_enclosure := partial_document[start_idx]) not in cls._ENCLOSURE_BYTES:
-            while not (nprint_search := _np(partial_document, end_idx)):
-                partial_document, end_idx = yield from append_to_buffer(partial_document, limit)
-
-            end_idx = nprint_search.start()
             complete_document, partial_document_view = cls.__split_final_buffer(
-                partial_document,
-                start_idx=start_idx,
-                end_idx=end_idx,
+                buffer,
+                document_start_idx=start_idx,
+                document_end_idx=nprint_search.start(),
+                buffer_end_idx=buffer_end_idx,
                 limit=limit,
             )
-            del partial_document
             if not complete_document:
                 # If this condition is verified, decoder.decode() will most likely raise JSONDecodeError
                 return partial_document_view, b""
@@ -382,9 +405,9 @@ class _JSONParser:
         token_finder = cls._JSON_FRAMES[open_enclosure].finditer
         enclosure_count: int = 1
         between_quotes: bool = open_enclosure == QUOTE_BYTE
-        end_idx += 1
+        search_start_idx = start_idx + 1
         while True:
-            for enclosure_match in token_finder(partial_document, end_idx):
+            for enclosure_match in token_finder(buffer, search_start_idx, buffer_end_idx):
                 byte = enclosure_match[0][0]
                 if byte == QUOTE_BYTE:
                     between_quotes = not between_quotes
@@ -398,42 +421,50 @@ class _JSONParser:
                     enclosure_count += 1
 
                 if not enclosure_count:  # 1st found is closed
-                    end_idx = enclosure_match.end()
-                    return cls.__split_final_buffer(partial_document, start_idx=start_idx, end_idx=end_idx, limit=limit)
+                    return cls.__split_final_buffer(
+                        buffer,
+                        document_start_idx=start_idx,
+                        document_end_idx=enclosure_match.end(),
+                        buffer_end_idx=buffer_end_idx,
+                        limit=limit,
+                    )
 
-            partial_document, end_idx = yield from append_to_buffer(partial_document, limit)
-            while partial_document[end_idx - 1] == ESCAPE_BYTE:
-                end_idx -= 1
+            search_start_idx = buffer_end_idx
+            buffer_end_idx = yield from read_data(buffer, start_idx=search_start_idx, limit=limit)
+            while buffer[search_start_idx - 1] == ESCAPE_BYTE:
+                search_start_idx -= 1
 
     @staticmethod
     def __split_final_buffer(
-        partial_document: bytes | bytearray,
+        buffer: bytearray,
         *,
-        start_idx: int,
-        end_idx: int,
+        document_start_idx: int,
+        document_end_idx: int,
+        buffer_end_idx: int,
         limit: int,
-        _w: Callable[[bytes | bytearray, int], re.Match[bytes]] = _WHITESPACES.match,  # type: ignore[assignment]
+        _w: Callable[[bytes | bytearray, int, int], re.Match[bytes]] = _WHITESPACES.match,  # type: ignore[assignment]
     ) -> tuple[memoryview, memoryview]:
-        if end_idx > limit:
+        remainder_start_idx = _w(buffer, document_end_idx, buffer_end_idx).end()
+        if document_end_idx > limit:
             raise LimitOverrunError(
                 "JSON object's end frame is found, but chunk is longer than limit",
-                partial_document,
-                end_idx,
+                buffer,
+                remainder_start_idx,
             )
-        end_idx = _w(partial_document, end_idx).end()
-        partial_document_view = memoryview(partial_document)
-        return partial_document_view[start_idx:end_idx], partial_document_view[end_idx:]
+        partial_document_view = memoryview(buffer)
+        return (
+            partial_document_view[document_start_idx:document_end_idx],
+            partial_document_view[remainder_start_idx:buffer_end_idx],
+        )
 
     @staticmethod
-    def __append_to_buffer(partial_document: bytes | bytearray, limit: int) -> Generator[None, bytes, tuple[bytearray, int]]:
-        end_idx = len(partial_document)
-        if end_idx > limit:
+    def __read_data(buffer: bytearray, *, start_idx: int, limit: int) -> Generator[int, int, int]:
+        if start_idx >= limit:
             raise LimitOverrunError(
                 "JSON object's end frame is not found, and chunk exceed the limit",
-                partial_document,
-                end_idx,
+                buffer,
+                start_idx,
             )
-        if not isinstance(partial_document, bytearray):
-            partial_document = bytearray(partial_document)
-        partial_document.extend((yield))
-        return partial_document, end_idx
+        while (nread := (yield start_idx)) < 1:
+            continue
+        return start_idx + nread

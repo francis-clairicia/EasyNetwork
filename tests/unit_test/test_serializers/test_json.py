@@ -429,8 +429,8 @@ class TestJSONParser:
         complete, remainder = send_return(consumer, b":42}remainder")
 
         # Assert
-        assert complete == b'{"data":42}'
-        assert remainder == b"remainder"
+        assert bytes(complete) == b'{"data":42}'
+        assert bytes(remainder) == b"remainder"
 
     def test____raw_parse____object_frame____skip_inner_brackets(self) -> None:
         # Arrange
@@ -441,8 +441,8 @@ class TestJSONParser:
         complete, remainder = send_return(consumer, b'{"data": {"something": 42}}remainder')
 
         # Assert
-        assert complete == b'{"data": {"something": 42}}'
-        assert remainder == b"remainder"
+        assert bytes(complete) == b'{"data": {"something": 42}}'
+        assert bytes(remainder) == b"remainder"
 
     def test____raw_parse____object_frame____skip_bracket_in_strings(self) -> None:
         # Arrange
@@ -453,8 +453,8 @@ class TestJSONParser:
         complete, remainder = send_return(consumer, b'{"data}": "something}"}remainder')
 
         # Assert
-        assert complete == b'{"data}": "something}"}'
-        assert remainder == b"remainder"
+        assert bytes(complete) == b'{"data}": "something}"}'
+        assert bytes(remainder) == b"remainder"
 
     def test____raw_parse____object_frame____whitespaces(self) -> None:
         # Arrange
@@ -467,8 +467,8 @@ class TestJSONParser:
         complete, remainder = send_return(consumer, b"}\n")
 
         # Assert
-        assert complete == b'{"data": 42,\n"list": [true, false, null]\n}\n'
-        assert remainder == b""
+        assert bytes(complete) == b'{"data": 42,\n"list": [true, false, null]\n}'
+        assert bytes(remainder) == b""
 
     def test____raw_parse____object_frame____leading_whitespace_skip(self) -> None:
         # Arrange
@@ -481,8 +481,8 @@ class TestJSONParser:
         complete, remainder = send_return(consumer, b":42}remainder")
 
         # Assert
-        assert complete == b'{"data":42}'
-        assert remainder == b"remainder"
+        assert bytes(complete) == b'{"data":42}'
+        assert bytes(remainder) == b"remainder"
 
     def test____raw_parse____object_frame____escaped_quote(self) -> None:
         # Arrange
@@ -493,8 +493,8 @@ class TestJSONParser:
         complete, remainder = send_return(consumer, b'{"data\\"":42}remainder')
 
         # Assert
-        assert complete == b'{"data\\"":42}'
-        assert remainder == b"remainder"
+        assert bytes(complete) == b'{"data\\"":42}'
+        assert bytes(remainder) == b"remainder"
 
     def test____raw_parse____object_frame____escaped_quote____partial(self) -> None:
         # Arrange
@@ -507,8 +507,8 @@ class TestJSONParser:
         complete, remainder = send_return(consumer, b'":42}remainder')
 
         # Assert
-        assert complete == b'{"data\\"":42}'
-        assert remainder == b"remainder"
+        assert bytes(complete) == b'{"data\\"":42}'
+        assert bytes(remainder) == b"remainder"
 
     def test____raw_parse____list_frame(self) -> None:
         # Arrange
@@ -521,8 +521,8 @@ class TestJSONParser:
         complete, remainder = send_return(consumer, b"]remainder")
 
         # Assert
-        assert complete == b'[{"data":42}]'
-        assert remainder == b"remainder"
+        assert bytes(complete) == b'[{"data":42}]'
+        assert bytes(remainder) == b"remainder"
 
     def test____raw_parse____list_frame____skip_inner_brackets(self) -> None:
         # Arrange
@@ -533,8 +533,8 @@ class TestJSONParser:
         complete, remainder = send_return(consumer, b'[["string"], ["second"]]remainder')
 
         # Assert
-        assert complete == b'[["string"], ["second"]]'
-        assert remainder == b"remainder"
+        assert bytes(complete) == b'[["string"], ["second"]]'
+        assert bytes(remainder) == b"remainder"
 
     def test____raw_parse____list_frame____skip_bracket_in_strings(self) -> None:
         # Arrange
@@ -545,8 +545,8 @@ class TestJSONParser:
         complete, remainder = send_return(consumer, b'["string]", "second]"]remainder')
 
         # Assert
-        assert complete == b'["string]", "second]"]'
-        assert remainder == b"remainder"
+        assert bytes(complete) == b'["string]", "second]"]'
+        assert bytes(remainder) == b"remainder"
 
     def test____raw_parse____list_frame____whitespaces(self) -> None:
         # Arrange
@@ -561,8 +561,8 @@ class TestJSONParser:
         complete, remainder = send_return(consumer, b"]\n")
 
         # Assert
-        assert complete == b'[{\n"data": 42,\n "test": true},\nnull,\n"string"\n]\n'
-        assert remainder == b""
+        assert bytes(complete) == b'[{\n"data": 42,\n "test": true},\nnull,\n"string"\n]'
+        assert bytes(remainder) == b""
 
     def test____raw_parse____leading_whitespace_skip(self) -> None:
         # Arrange
@@ -575,8 +575,8 @@ class TestJSONParser:
         complete, remainder = send_return(consumer, b":42}]remainder")
 
         # Assert
-        assert complete == b'[{"data":42}]'
-        assert remainder == b"remainder"
+        assert bytes(complete) == b'[{"data":42}]'
+        assert bytes(remainder) == b"remainder"
 
     def test____raw_parse____list_frame____escaped_quote(self) -> None:
         # Arrange
@@ -587,8 +587,8 @@ class TestJSONParser:
         complete, remainder = send_return(consumer, b'["data\\""]remainder')
 
         # Assert
-        assert complete == b'["data\\""]'
-        assert remainder == b"remainder"
+        assert bytes(complete) == b'["data\\""]'
+        assert bytes(remainder) == b"remainder"
 
     def test____raw_parse____list_frame____escaped_quote____partial(self) -> None:
         # Arrange
@@ -601,8 +601,8 @@ class TestJSONParser:
         complete, remainder = send_return(consumer, b'"]remainder')
 
         # Assert
-        assert complete == b'["data\\""]'
-        assert remainder == b"remainder"
+        assert bytes(complete) == b'["data\\""]'
+        assert bytes(remainder) == b"remainder"
 
     def test____raw_parse____string_frame(self) -> None:
         # Arrange
@@ -615,8 +615,8 @@ class TestJSONParser:
         complete, remainder = send_return(consumer, b'"remainder')
 
         # Assert
-        assert complete == b'"data{}"'
-        assert remainder == b"remainder"
+        assert bytes(complete) == b'"data{}"'
+        assert bytes(remainder) == b"remainder"
 
     def test____raw_parse____string_frame____leading_whitespace_skip(self) -> None:
         # Arrange
@@ -629,8 +629,8 @@ class TestJSONParser:
         complete, remainder = send_return(consumer, b'"remainder')
 
         # Assert
-        assert complete == b'"data"'
-        assert remainder == b"remainder"
+        assert bytes(complete) == b'"data"'
+        assert bytes(remainder) == b"remainder"
 
     def test____raw_parse____string_frame____escaped_quote(self) -> None:
         # Arrange
@@ -641,8 +641,8 @@ class TestJSONParser:
         complete, remainder = send_return(consumer, b'"data\\""remainder')
 
         # Assert
-        assert complete == b'"data\\""'
-        assert remainder == b"remainder"
+        assert bytes(complete) == b'"data\\""'
+        assert bytes(remainder) == b"remainder"
 
     def test____raw_parse____string_frame____escaped_quote____partial(self) -> None:
         # Arrange
@@ -655,8 +655,8 @@ class TestJSONParser:
         complete, remainder = send_return(consumer, b'"remainder')
 
         # Assert
-        assert complete == b'"data\\""'
-        assert remainder == b"remainder"
+        assert bytes(complete) == b'"data\\""'
+        assert bytes(remainder) == b"remainder"
 
     def test____raw_parse____string_frame____escape_character(self) -> None:
         # Arrange
@@ -669,8 +669,8 @@ class TestJSONParser:
         complete, remainder = send_return(consumer, b'"remainder')
 
         # Assert
-        assert complete == b'"data\\\\"'
-        assert remainder == b"remainder"
+        assert bytes(complete) == b'"data\\\\"'
+        assert bytes(remainder) == b"remainder"
 
     def test____raw_parse____plain_value(self) -> None:
         # Arrange
@@ -682,8 +682,8 @@ class TestJSONParser:
         complete, remainder = send_return(consumer, b"ue\nremainder")
 
         # Assert
-        assert complete == b"true\n"
-        assert remainder == b"remainder"
+        assert bytes(complete) == b"true"
+        assert bytes(remainder) == b"remainder"
 
     def test____raw_parse____plain_value____first_character_is_invalid(self) -> None:
         # Arrange
@@ -694,8 +694,8 @@ class TestJSONParser:
         complete, remainder = send_return(consumer, b"\0")
 
         # Assert
-        assert complete == b"\0"
-        assert remainder == b""
+        assert bytes(complete) == b"\0"
+        assert bytes(remainder) == b""
 
     def test____raw_parse____plain_value____leading_whitespace_skip(self) -> None:
         # Arrange
@@ -708,8 +708,8 @@ class TestJSONParser:
         complete, remainder = send_return(consumer, b"ue\nremainder")
 
         # Assert
-        assert complete == b"true\n"
-        assert remainder == b"remainder"
+        assert bytes(complete) == b"true"
+        assert bytes(remainder) == b"remainder"
 
     @pytest.mark.parametrize("limit", [0, -42], ids=lambda p: f"limit=={p}")
     def test____raw_parse____invalid_limit(self, limit: int) -> None:
@@ -723,19 +723,19 @@ class TestJSONParser:
     @pytest.mark.parametrize(
         ["start_frame", "end_frame"],
         [
-            pytest.param(b'{"data":', b'"something"}\n', id="object frame"),
-            pytest.param(b'["data",', b'"something"]\n', id="list frame"),
-            pytest.param(b'"data', b' something"\n', id="string frame"),
+            pytest.param(b'{"data":', b'"something"}', id="object frame"),
+            pytest.param(b'["data",', b'"something"]', id="list frame"),
+            pytest.param(b'"data', b' something"', id="string frame"),
             pytest.param(b"123", b"45\n", id="plain value"),
         ],
     )
-    @pytest.mark.parametrize("end_frame_found", [False, True], ids=lambda p: f"end_frame_found=={p}")
-    def test____raw_parse____reached_limit(self, start_frame: bytes, end_frame: bytes, end_frame_found: bool) -> None:
+    @pytest.mark.parametrize("add_end_frame", [False, True], ids=lambda p: f"add_end_frame=={p}")
+    def test____raw_parse____reached_limit(self, start_frame: bytes, end_frame: bytes, add_end_frame: bool) -> None:
         # Arrange
         consumer = _JSONParser.raw_parse(limit=2)
         next(consumer)
         data_to_test = start_frame
-        if end_frame_found:
+        if add_end_frame:
             data_to_test += end_frame
 
         # Act
@@ -743,9 +743,31 @@ class TestJSONParser:
             consumer.send(data_to_test)
 
         # Assert
-        if end_frame_found:
+        if add_end_frame:
             assert str(exc_info.value) == "JSON object's end frame is found, but chunk is longer than limit"
-            assert bytes(exc_info.value.remaining_data) == b"\n"
         else:
             assert str(exc_info.value) == "JSON object's end frame is not found, and chunk exceed the limit"
-            assert bytes(exc_info.value.remaining_data) == b""
+        assert bytes(exc_info.value.remaining_data) == b""
+
+    @pytest.mark.parametrize(
+        ["start_frame", "end_frame"],
+        [
+            pytest.param(b'{"data":', b'"something"}', id="object frame"),
+            pytest.param(b'["data",', b'"something"]', id="list frame"),
+            pytest.param(b'"data', b' something"', id="string frame"),
+            pytest.param(b"123", b"45\n", id="plain value"),
+        ],
+    )
+    def test____raw_parse____handle_null_bytes(self, start_frame: bytes, end_frame: bytes) -> None:
+        # Arrange
+        consumer = _JSONParser.raw_parse(limit=DEFAULT_LIMIT)
+        next(consumer)
+
+        # Act
+        consumer.send(start_frame)
+        consumer.send(b"")
+        complete, remainder = send_return(consumer, end_frame)
+
+        # Assert
+        assert bytes(complete) == (start_frame + end_frame).rstrip()
+        assert bytes(remainder) == b""
