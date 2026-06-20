@@ -592,8 +592,8 @@ def _wrap_generic_buffered_incremental_deserialize(
     buffer: memoryview,
     func: Callable[[], Generator[None, ReadableBuffer, tuple[_T_ReceivedDTOPacket, ReadableBuffer]]],
 ) -> Generator[None, int, tuple[_T_ReceivedDTOPacket, ReadableBuffer]]:
-    next(gen := func())
-    with contextlib.closing(gen):
+    with contextlib.closing(func()) as gen:
+        next(gen)
         while True:
             nbytes: int = yield
             try:

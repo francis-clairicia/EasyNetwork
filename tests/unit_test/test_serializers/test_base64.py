@@ -17,7 +17,7 @@ class TestBase64EncoderSerializer:
     @pytest.fixture(params=["standard", "urlsafe"])
     @staticmethod
     def alphabet(request: pytest.FixtureRequest) -> Literal["standard", "urlsafe"]:
-        return getattr(request, "param")
+        return request.param
 
     @pytest.fixture(autouse=True)
     @staticmethod

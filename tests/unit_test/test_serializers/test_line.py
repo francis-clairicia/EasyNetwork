@@ -24,17 +24,17 @@ class TestStringLineSerializer:
     @pytest.fixture(params=list(_NEWLINES))
     @staticmethod
     def newline(request: pytest.FixtureRequest) -> Literal["LF", "CR", "CRLF"]:
-        return getattr(request, "param")
+        return request.param
 
     @pytest.fixture(params=["ascii"])
     @staticmethod
     def encoding(request: pytest.FixtureRequest) -> str:
-        return getattr(request, "param")
+        return request.param
 
     @pytest.fixture(params=["strict"])
     @staticmethod
     def unicode_errors(request: pytest.FixtureRequest) -> str:
-        return getattr(request, "param")
+        return request.param
 
     @pytest.fixture(params=[False, True], ids=lambda p: f"keep_end=={p}")
     @staticmethod

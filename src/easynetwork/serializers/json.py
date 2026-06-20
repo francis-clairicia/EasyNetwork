@@ -31,7 +31,8 @@ from typing import TYPE_CHECKING, Any, final
 
 from ..exceptions import DeserializeError, IncrementalDeserializeError, LimitOverrunError
 from ..lowlevel.constants import DEFAULT_SERIALIZER_LIMIT
-from .abc import AbstractIncrementalPacketSerializer
+from .abc import BufferedIncrementalPacketSerializer
+from .base_stream import _buffered_readuntil
 from .tools import GeneratorStreamReader
 
 if TYPE_CHECKING:
@@ -71,7 +72,7 @@ class JSONDecoderConfig:
     strict: bool = True
 
 
-class JSONSerializer(AbstractIncrementalPacketSerializer[Any, Any]):
+class JSONSerializer(BufferedIncrementalPacketSerializer[Any, Any, bytearray]):
     """
     A :term:`serializer` built on top of the :mod:`json` module.
     """
@@ -272,6 +273,52 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[Any, Any]):
         else:
             complete_document, remaining_data = yield from _JSONParser.raw_parse(limit=self.__limit)
 
+        packet, remaining_data = self.__deserialize_incremental_document(complete_document, remaining_data)
+        return packet, bytes(remaining_data)
+
+    @final
+    def create_deserializer_buffer(self, sizehint: int, /) -> bytearray:
+        """
+        See :meth:`.BufferedIncrementalPacketSerializer.create_deserializer_buffer` documentation for details.
+
+        .. versionadded:: NEXT_VERSION
+        """
+        # Ignore sizehint, we have our own limit
+        return bytearray(self.__limit)
+
+    @final
+    def buffered_incremental_deserialize(self, buffer: bytearray, /) -> Generator[int, int, tuple[Any, ReadableBuffer]]:
+        """
+        Creates a Python object representing the raw JSON :term:`packet`.
+
+        See :meth:`.BufferedIncrementalPacketSerializer.buffered_incremental_deserialize` documentation for details.
+
+        .. versionadded:: NEXT_VERSION
+
+        Raises:
+            LimitOverrunError: Reached buffer size limit.
+            IncrementalDeserializeError: A :class:`UnicodeError` or :class:`~json.JSONDecodeError` have been raised.
+
+        Returns:
+            a tuple with the deserialized Python object and the unused trailing data.
+        """
+        complete_document: ReadableBuffer
+        remaining_data: ReadableBuffer
+        if self.__use_lines:
+            sepidx, offset, buflen = yield from _buffered_readuntil(buffer, b"\n")
+            with memoryview(buffer) as buffer_view:
+                complete_document = buffer_view[:sepidx]
+                remaining_data = buffer_view[offset:buflen]
+            del buffer_view
+        else:
+            complete_document, remaining_data = yield from _JSONParser.raw_parse_with_external_buffer(buffer)
+        return self.__deserialize_incremental_document(complete_document, remaining_data)
+
+    def __deserialize_incremental_document(
+        self,
+        complete_document: ReadableBuffer,
+        remaining_data: ReadableBuffer,
+    ) -> tuple[Any, ReadableBuffer]:
         packet: Any
         try:
             document: str = str(complete_document, self.__encoding, self.__unicode_errors)
@@ -302,7 +349,7 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[Any, Any]):
                     },
                 ) from exc
             raise IncrementalDeserializeError(msg, remaining_data) from exc
-        return packet, bytes(remaining_data)
+        return packet, remaining_data
 
     @property
     @final
@@ -348,8 +395,8 @@ class _JSONParser:
             raise ValueError("limit must be a positive integer")
 
         buffer = bytearray()
-        start_idx = next(consumer := cls.__raw_parse_impl(buffer=buffer, limit=limit))
-        with closing(consumer):
+        with closing(cls.__raw_parse_impl(buffer=buffer, limit=limit)) as consumer:
+            start_idx = next(consumer)
             while True:
                 del buffer[start_idx:]
                 to_write: bytes = yield
@@ -360,6 +407,16 @@ class _JSONParser:
                     start_idx = consumer.send(nbytes)
                 except StopIteration as exc:
                     return exc.value
+
+    @classmethod
+    def raw_parse_with_external_buffer(
+        cls,
+        buffer: bytearray,
+    ) -> Generator[int, int, tuple[ReadableBuffer, ReadableBuffer]]:
+        limit = len(buffer)
+        if limit <= 0:
+            raise ValueError("the buffer is empty")
+        return (yield from cls.__raw_parse_impl(buffer=buffer, limit=limit))
 
     @classmethod
     def __raw_parse_impl(

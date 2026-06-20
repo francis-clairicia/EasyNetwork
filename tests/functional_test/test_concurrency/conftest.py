@@ -45,7 +45,7 @@ class EchoDatagramRequestHandler(AsyncDatagramRequestHandler[str, str]):
     ]
 )
 def ipproto(request: pytest.FixtureRequest) -> Literal["TCP", "UDP", "UNIX_STREAM", "UNIX_DGRAM"]:
-    return getattr(request, "param")
+    return request.param
 
 
 def _build_server(

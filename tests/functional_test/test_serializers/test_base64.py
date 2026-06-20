@@ -34,7 +34,7 @@ class BaseTestBase64EncoderSerializer(BaseTestBufferedIncrementalSerializer):
     @pytest.fixture(scope="class", params=["standard", "urlsafe"])
     @staticmethod
     def alphabet(request: pytest.FixtureRequest) -> Literal["standard", "urlsafe"]:
-        return getattr(request, "param")
+        return request.param
 
     @pytest.fixture(scope="class")
     @classmethod
@@ -142,7 +142,7 @@ class TestBase64EncoderSerializerChecksum(BaseTestBase64EncoderSerializer):
     @pytest.fixture(scope="class", params=[False, True], ids=lambda boolean: f"checksum=={boolean}")
     @staticmethod
     def checksum(request: pytest.FixtureRequest) -> bool:
-        return getattr(request, "param")
+        return request.param
 
 
 @final

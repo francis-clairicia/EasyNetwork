@@ -170,7 +170,7 @@ class TestAutoSeparatedPacketSerializer:
     @pytest.fixture(params=[False, True], ids=lambda p: f"check_separator=={p}")
     @staticmethod
     def check_separator(request: pytest.FixtureRequest) -> bool:
-        return getattr(request, "param")
+        return request.param
 
     @pytest.fixture(params=["data", "buffer"])
     @staticmethod

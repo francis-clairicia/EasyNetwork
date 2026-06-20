@@ -52,23 +52,42 @@ def bench_JSONSerializer_incremental_serialize(
 
 @pytest.mark.benchmark(group=SerializerGroup.JSON_INCREMENTAL_DESERIALIZE)
 @pytest.mark.parametrize("use_lines", [False, True], ids=lambda p: f"use_lines=={p}")
+@pytest.mark.parametrize("buffered", [False, True], ids=lambda p: f"buffered=={p}")
 def bench_JSONSerializer_incremental_deserialize(
     use_lines: bool,
+    buffered: bool,
     benchmark: BenchmarkFixture,
     json_data: bytes,
     json_object: Any,
 ) -> None:
     serializer = JSONSerializer(use_lines=use_lines)
 
-    def deserialize() -> Any:
-        consumer = serializer.incremental_deserialize()
-        next(consumer)
-        try:
-            consumer.send(json_data)
-        except StopIteration as exc:
-            return exc.value
-        else:
-            raise RuntimeError("consumer yielded")
+    if buffered:
+        nbytes = len(json_data)
+        buffer: bytearray = serializer.create_deserializer_buffer(nbytes)
+        buffer[:nbytes] = json_data
+
+        def deserialize() -> Any:
+            consumer = serializer.buffered_incremental_deserialize(buffer)
+            next(consumer)
+            try:
+                consumer.send(nbytes)
+            except StopIteration as exc:
+                return exc.value
+            else:
+                raise RuntimeError("consumer yielded")
+
+    else:
+
+        def deserialize() -> Any:
+            consumer = serializer.incremental_deserialize()
+            next(consumer)
+            try:
+                consumer.send(json_data)
+            except StopIteration as exc:
+                return exc.value
+            else:
+                raise RuntimeError("consumer yielded")
 
     result, _ = benchmark(deserialize)
 
