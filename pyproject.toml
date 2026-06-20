@@ -119,7 +119,7 @@ test-trio = [
     "pytest-trio~=0.8.0",
 ]
 coverage = [
-    "coverage~=7.10",
+    "coverage~=7.10,<7.14",
 ]
 doc = [
     "sphinx>=8.2,<9",
@@ -146,9 +146,6 @@ benchmark-servers-deps = [
 
 [tool.pdm]
 distribution = true
-
-[tool.pdm.scripts]
-post_lock = "pre-commit run pdm-export --all-files"
 
 [tool.pdm.resolution]
 allow-prerelases = false
