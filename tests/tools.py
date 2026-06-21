@@ -30,7 +30,7 @@ def _make_skipif_platform(platform: str | tuple[str, ...], reason: str, *, skip_
     if skip_only_on_ci:
         # skip if 'CI' is set to a non-empty value
         # CI=true is always set for Github Actions
-        # c.f. https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/store-information-in-variables#default-environment-variables
+        # c.f. https://docs.github.com/en/actions/reference/workflows-and-actions/variables#default-environment-variables
         condition = condition and bool(os.environ.get("CI", ""))
     return pytest.mark.skipif(condition, reason=reason)
 
