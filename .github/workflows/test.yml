@@ -80,7 +80,7 @@ jobs:
 
     name: test (${{ matrix.os }}, ${{ matrix.python_version }})
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Setup tox (python ${{ matrix.python_version }})
@@ -140,7 +140,7 @@ jobs:
 
     name: test (freebsd-${{ matrix.os_version }}, ${{ matrix.python_version }})
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Launch tests
@@ -204,7 +204,7 @@ jobs:
 
     name: test (openbsd-${{ matrix.os_version }}, ${{ matrix.python_version }})
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Launch tests
@@ -266,7 +266,7 @@ jobs:
 
     name: test (netbsd-10.1, ${{ matrix.python_version }})
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Launch tests
