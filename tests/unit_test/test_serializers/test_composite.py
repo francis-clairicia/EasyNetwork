@@ -1,8 +1,13 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from typing import TYPE_CHECKING, Any, assert_type
 
+from easynetwork.serializers.abc import (
+    AbstractIncrementalPacketSerializer,
+    AbstractPacketSerializer,
+    BufferedIncrementalPacketSerializer,
+)
 from easynetwork.serializers.composite import (
     StapledBufferedIncrementalPacketSerializer,
     StapledIncrementalPacketSerializer,
@@ -17,6 +22,36 @@ if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
 
+class _PacketSerializer(AbstractPacketSerializer[str, str]):
+    def serialize(self, packet: str) -> bytes:
+        raise NotImplementedError
+
+    def deserialize(self, data: bytes) -> str:
+        raise NotImplementedError
+
+
+class _IncrementalPacketSerializer(AbstractIncrementalPacketSerializer[str, str]):
+    def incremental_serialize(self, packet: str) -> Generator[bytes]:
+        raise NotImplementedError
+
+    def incremental_deserialize(self) -> Generator[None, bytes, tuple[str, bytes]]:
+        raise NotImplementedError
+
+
+class _BufferedIncrementalPacketSerializer(BufferedIncrementalPacketSerializer[str, str, bytearray]):
+    def incremental_serialize(self, packet: str) -> Generator[bytes]:
+        raise NotImplementedError
+
+    def incremental_deserialize(self) -> Generator[None, bytes, tuple[str, bytes]]:
+        raise NotImplementedError
+
+    def create_deserializer_buffer(self, sizehint: int) -> bytearray:
+        raise NotImplementedError
+
+    def buffered_incremental_deserialize(self, buffer: bytearray) -> Generator[None, int, tuple[str, bytes]]:
+        raise NotImplementedError
+
+
 class TestStapledPacketSerializer:
     def test____init_subclass____cannot_be_subclassed(self) -> None:
         # Arrange
@@ -29,32 +64,27 @@ class TestStapledPacketSerializer:
 
     def test____dunder_new____instance_and_type_hint(self) -> None:
         # Arrange
-        from easynetwork.serializers import JSONSerializer, PickleSerializer, StringLineSerializer
 
-        ### PickleSerializer is a one-shot serializer
-        ### JSONSerializer is an incremental serializer
-        ### StringLineSerializer is a buffered incremental serializer
-        #
         # Act
         stapled_serializer = StapledPacketSerializer(
-            PickleSerializer(),
-            PickleSerializer(),
+            _PacketSerializer(),
+            _PacketSerializer(),
         )
         stapled_incremental_serializer = StapledPacketSerializer(
-            JSONSerializer(),
-            JSONSerializer(),
+            _IncrementalPacketSerializer(),
+            _IncrementalPacketSerializer(),
         )
         stapled_buffered_incremental_serializer = StapledPacketSerializer(
-            StringLineSerializer(),
-            StringLineSerializer(),
+            _IncrementalPacketSerializer(),
+            _BufferedIncrementalPacketSerializer(),
         )
 
         # Assert
         #
         ## These statements are only understandable by mypy
         ## assert_type() is a no-op at runtime
-        assert_type(stapled_serializer, StapledPacketSerializer[Any, Any])
-        assert_type(stapled_incremental_serializer, StapledIncrementalPacketSerializer[Any, Any])
+        assert_type(stapled_serializer, StapledPacketSerializer[str, str])
+        assert_type(stapled_incremental_serializer, StapledIncrementalPacketSerializer[str, str])
         assert_type(stapled_buffered_incremental_serializer, StapledBufferedIncrementalPacketSerializer[str, str, bytearray])
 
         assert type(stapled_serializer) is StapledPacketSerializer
@@ -135,26 +165,22 @@ class TestStapledIncrementalPacketSerializer:
 
     def test____dunder_new____instance_and_type_hint(self) -> None:
         # Arrange
-        from easynetwork.serializers import JSONSerializer, StringLineSerializer
 
-        ### JSONSerializer is an incremental serializer
-        ### StringLineSerializer is a buffered incremental serializer
-        #
         # Act
         stapled_incremental_serializer = StapledIncrementalPacketSerializer(
-            JSONSerializer(),
-            JSONSerializer(),
+            _IncrementalPacketSerializer(),
+            _IncrementalPacketSerializer(),
         )
         stapled_buffered_incremental_serializer = StapledIncrementalPacketSerializer(
-            StringLineSerializer(),
-            StringLineSerializer(),
+            _IncrementalPacketSerializer(),
+            _BufferedIncrementalPacketSerializer(),
         )
 
         # Assert
         #
         ## These statements are only understandable by mypy
         ## assert_type() is a no-op at runtime
-        assert_type(stapled_incremental_serializer, StapledIncrementalPacketSerializer[Any, Any])
+        assert_type(stapled_incremental_serializer, StapledIncrementalPacketSerializer[str, str])
         assert_type(stapled_buffered_incremental_serializer, StapledBufferedIncrementalPacketSerializer[str, str, bytearray])
 
         assert type(stapled_incremental_serializer) is StapledIncrementalPacketSerializer
@@ -240,14 +266,11 @@ class TestStapledBufferedIncrementalPacketSerializer:
 
     def test____dunder_new____instance_and_type_hint(self) -> None:
         # Arrange
-        from easynetwork.serializers import StringLineSerializer
 
-        ### StringLineSerializer is a buffered incremental serializer
-        #
         # Act
         stapled_buffered_incremental_serializer = StapledBufferedIncrementalPacketSerializer(
-            StringLineSerializer(),
-            StringLineSerializer(),
+            _IncrementalPacketSerializer(),
+            _BufferedIncrementalPacketSerializer(),
         )
 
         # Assert

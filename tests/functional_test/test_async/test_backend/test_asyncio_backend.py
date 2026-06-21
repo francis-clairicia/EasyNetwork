@@ -1357,7 +1357,7 @@ class TestAsyncioBackendShieldedCancellation:
         request: pytest.FixtureRequest,
         backend: AsyncBackend,
     ) -> Callable[[], Awaitable[Any]]:
-        match getattr(request, "param"):
+        match request.param:
             case "cancel_shielded_coro_yield":
                 return backend.cancel_shielded_coro_yield
             case "ignore_cancellation":

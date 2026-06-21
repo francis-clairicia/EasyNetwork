@@ -34,12 +34,6 @@ the base class of ``sent_packet_serializer`` and ``received_packet_serializer``:
 StapledPacketSerializer(...)
 >>> isinstance(_, (AbstractIncrementalPacketSerializer, BufferedIncrementalPacketSerializer))
 False
->>>
->>> StapledPacketSerializer(sent_packet_serializer=StringLineSerializer(), received_packet_serializer=JSONSerializer())
-StapledIncrementalPacketSerializer(...)
->>> isinstance(_, AbstractIncrementalPacketSerializer)
-True
->>>
 >>> StapledPacketSerializer(sent_packet_serializer=JSONSerializer(), received_packet_serializer=StringLineSerializer())
 StapledBufferedIncrementalPacketSerializer(...)
 >>> isinstance(_, BufferedIncrementalPacketSerializer)

@@ -26,12 +26,12 @@ class TestStringLineSerializer(BaseTestBufferedIncrementalSerializer):
     @pytest.fixture(scope="class", params=list(_NEWLINES))
     @staticmethod
     def newline(request: pytest.FixtureRequest) -> Literal["LF", "CR", "CRLF"]:
-        return getattr(request, "param")
+        return request.param
 
     @pytest.fixture(scope="class", params=["ascii", "utf-8"])
     @staticmethod
     def encoding(request: pytest.FixtureRequest) -> str:
-        return getattr(request, "param")
+        return request.param
 
     @pytest.fixture(scope="class")
     @classmethod
@@ -90,7 +90,7 @@ class TestStringLineSerializer(BaseTestBufferedIncrementalSerializer):
     @pytest.fixture(scope="class", params=["unicode_error"])
     @staticmethod
     def invalid_complete_data(request: pytest.FixtureRequest) -> bytes:
-        match getattr(request, "param"):
+        match request.param:
             case "unicode_error":
                 return "é".encode("latin-1")
             case _:
@@ -99,7 +99,7 @@ class TestStringLineSerializer(BaseTestBufferedIncrementalSerializer):
     @pytest.fixture(scope="class", params=["unicode_error", "limit_overrun_without_newline", "limit_overrun_with_newline"])
     @classmethod
     def invalid_partial_data(cls, request: pytest.FixtureRequest, newline: Literal["CR", "LF", "CRLF"]) -> bytes:
-        match getattr(request, "param"):
+        match request.param:
             case "unicode_error":
                 return "é".encode("latin-1") + _NEWLINES[newline]
             case "limit_overrun_without_newline":

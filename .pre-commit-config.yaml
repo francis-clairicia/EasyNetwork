@@ -109,5 +109,5 @@ repos:
         name: check changelog filenames
         language: fail
         files: ^changelog\.d/
-        exclude: ^changelog\.d/(?:\.git\w+|\d+\.(?:packaging|deps|added|fixed|deprecated|removed|security|doc)(?:\.\d+)?\.rst)$
+        exclude: ^changelog\.d/(?:\.git\w+|\d+\.(?:packaging|deps|added|changed|fixed|deprecated|removed|security|doc)(?:\.\d+)?\.rst)$
         entry: Invalid changelog filename

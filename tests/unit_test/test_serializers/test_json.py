@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Generator
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from easynetwork.exceptions import DeserializeError, IncrementalDeserializeError, LimitOverrunError
 from easynetwork.lowlevel.constants import DEFAULT_SERIALIZER_LIMIT as DEFAULT_LIMIT
@@ -10,12 +11,13 @@ from easynetwork.serializers.tools import GeneratorStreamReader
 
 import pytest
 
-from ...tools import send_return
+from ...tools import send_return, write_in_buffer
 from .base import BaseSerializerConfigInstanceCheck
 
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
 
+    from _typeshed import ReadableBuffer
     from pytest_mock import MockerFixture
 
 
@@ -89,12 +91,17 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
     @pytest.fixture(params=[True, False], ids=lambda boolean: f"use_lines=={boolean}")
     @staticmethod
     def use_lines(request: pytest.FixtureRequest) -> bool:
-        return getattr(request, "param")
+        return request.param
 
     @pytest.fixture
     @staticmethod
     def mock_json_parser(mocker: MockerFixture) -> MagicMock:
         return mocker.patch.object(_JSONParser, "raw_parse", autospec=True)
+
+    @pytest.fixture
+    @staticmethod
+    def mock_json_parser_buffered(mocker: MockerFixture) -> MagicMock:
+        return mocker.patch.object(_JSONParser, "raw_parse_with_external_buffer", autospec=True)
 
     @pytest.fixture
     @staticmethod
@@ -105,6 +112,12 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
     @staticmethod
     def mock_generator_stream_reader_cls(mock_generator_stream_reader: MagicMock, mocker: MockerFixture) -> MagicMock:
         return mocker.patch(f"{JSONSerializer.__module__}.GeneratorStreamReader", return_value=mock_generator_stream_reader)
+
+    @pytest.fixture(params=["data", "buffer"])
+    @staticmethod
+    def incremental_deserialize_mode(request: pytest.FixtureRequest) -> str:
+        assert request.param in ("data", "buffer")
+        return request.param
 
     def test____properties____right_values(self, debug_mode: bool) -> None:
         # Arrange
@@ -305,14 +318,14 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
         # Arrange
         def raw_parse_side_effect(*args: Any, **kwargs: Any) -> Generator[None, bytes, tuple[bytes, bytes]]:
             data = yield
-            return data, b"Hello World !"
+            return data.removesuffix(b"\n"), b"Hello World !"
 
         def reader_read_until_side_effect(*args: Any, **kwargs: Any) -> Generator[None, bytes, bytes]:
             data = yield
-            return data
+            return data.removesuffix(b"\n")
 
         serializer: JSONSerializer = JSONSerializer(use_lines=use_lines)
-        data = b'{"data": 42}'
+        data = b'{"data": 42}\n'
         mock_decoder.decode.return_value = mocker.sentinel.packet
         mock_json_parser.side_effect = raw_parse_side_effect
         mock_generator_stream_reader.read_until.side_effect = reader_read_until_side_effect
@@ -334,14 +347,63 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
             mock_generator_stream_reader_cls.assert_not_called()
             mock_generator_stream_reader.read_until.assert_not_called()
             mock_generator_stream_reader.read_all.assert_not_called()
-        mock_decoder.decode.assert_called_once_with(data.decode())
+        mock_decoder.decode.assert_called_once_with(data.decode().removesuffix("\n"))
         assert packet is mocker.sentinel.packet
         assert remaining_data == b"Hello World !"
 
+    def test____buffered_incremental_deserialize____parse_and_decode_data(
+        self,
+        use_lines: bool,
+        mock_decoder: MagicMock,
+        mock_json_parser_buffered: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        def raw_parse_side_effect(buffer: bytearray, **kwargs: Any) -> Generator[int, int, tuple[bytes, bytes]]:
+            nread = yield 0
+            sepidx = buffer.find(b"\n", 0, nread)
+            assert sepidx > 0
+            return bytes(buffer[:sepidx]), bytes(buffer[sepidx + 1 : nread])
+
+        def reader_read_until_side_effect(buffer: bytearray, separator: bytes) -> Generator[int, int, tuple[int, int, int]]:
+            nread = yield 0
+            sepidx = buffer.find(separator, 0, nread)
+            assert sepidx > 0
+            return sepidx, sepidx + len(separator), nread
+
+        serializer: JSONSerializer = JSONSerializer(use_lines=use_lines)
+        data = b'{"data": 42}\n'
+        expected_remaining_data = b"Hello World !"
+        mock_decoder.decode.return_value = mocker.sentinel.packet
+        mock_json_parser_buffered.side_effect = raw_parse_side_effect
+        mock_buffer_read_until = mocker.patch(f"{JSONSerializer.__module__}._buffered_readuntil", autospec=True)
+        mock_buffer_read_until.side_effect = reader_read_until_side_effect
+
+        # Act
+        buffer = serializer.create_deserializer_buffer(serializer.buffer_limit)
+        consumer = serializer.buffered_incremental_deserialize(buffer)
+        assert next(consumer) == 0
+        buffer[: len(data)] = data
+        buffer[len(data) : len(data) + len(expected_remaining_data)] = expected_remaining_data
+        packet, remaining_data = send_return(consumer, len(data) + len(expected_remaining_data))
+
+        # Assert
+        if use_lines:
+            mock_json_parser_buffered.assert_not_called()
+            mock_buffer_read_until.assert_called_once_with(buffer, b"\n")
+        else:
+            mock_json_parser_buffered.assert_called_once_with(buffer)
+            mock_buffer_read_until.assert_not_called()
+        mock_decoder.decode.assert_called_once_with(data.decode().removesuffix("\n"))
+        assert packet is mocker.sentinel.packet
+        assert bytes(remaining_data) == expected_remaining_data
+
     def test____incremental_deserialize____translate_unicode_decode_errors(
         self,
+        incremental_deserialize_mode: Literal["data", "buffer"],
         mock_decoder: MagicMock,
         mock_json_parser: MagicMock,
+        mock_json_parser_buffered: MagicMock,
         debug_mode: bool,
         mocker: MockerFixture,
     ) -> None:
@@ -350,6 +412,10 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
             data = yield
             return data, mocker.sentinel.remaining_data
 
+        def raw_parse_buffered_side_effect(buffer: bytearray, **kwargs: Any) -> Generator[int, int, tuple[bytes, bytes]]:
+            nread = yield 0
+            return bytes(buffer[:nread]), mocker.sentinel.remaining_data
+
         serializer: JSONSerializer = JSONSerializer(
             encoding="utf-8",
             use_lines=False,
@@ -357,13 +423,26 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
         )
         data = "é".encode("latin-1")
         mock_json_parser.side_effect = raw_parse_side_effect
+        mock_json_parser_buffered.side_effect = raw_parse_buffered_side_effect
 
         # Act
-        consumer = serializer.incremental_deserialize()
-        next(consumer)
-        with pytest.raises(IncrementalDeserializeError) as exc_info:
-            _ = consumer.send(data)
-        exception = exc_info.value
+        match incremental_deserialize_mode:
+            case "data":
+                consumer = serializer.incremental_deserialize()
+                next(consumer)
+                with pytest.raises(IncrementalDeserializeError) as exc_info:
+                    _ = consumer.send(data)
+                exception = exc_info.value
+            case "buffer":
+                buffer = serializer.create_deserializer_buffer(serializer.buffer_limit)
+                consumer = serializer.buffered_incremental_deserialize(buffer)
+                assert next(consumer) == 0
+                buffer[: len(data)] = data
+                with pytest.raises(IncrementalDeserializeError) as exc_info:
+                    _ = consumer.send(len(data))
+                exception = exc_info.value
+            case _:
+                pytest.fail("Invalid fixture argument")
 
         # Assert
         mock_decoder.decode.assert_not_called()
@@ -376,8 +455,10 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
 
     def test____incremental_deserialize____translate_json_decode_errors(
         self,
+        incremental_deserialize_mode: Literal["data", "buffer"],
         mock_decoder: MagicMock,
         mock_json_parser: MagicMock,
+        mock_json_parser_buffered: MagicMock,
         debug_mode: bool,
         mocker: MockerFixture,
     ) -> None:
@@ -388,6 +469,10 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
             data = yield
             return data, mocker.sentinel.remaining_data
 
+        def raw_parse_buffered_side_effect(buffer: bytearray, **kwargs: Any) -> Generator[int, int, tuple[bytes, bytes]]:
+            nread = yield 0
+            return bytes(buffer[:nread]), mocker.sentinel.remaining_data
+
         serializer: JSONSerializer = JSONSerializer(
             use_lines=False,
             debug=debug_mode,
@@ -395,13 +480,26 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
         data = b"invalid\ndocument"
         mock_decoder.decode.side_effect = JSONDecodeError("Invalid payload", data.decode(), 8)
         mock_json_parser.side_effect = raw_parse_side_effect
+        mock_json_parser_buffered.side_effect = raw_parse_buffered_side_effect
 
         # Act
-        consumer = serializer.incremental_deserialize()
-        next(consumer)
-        with pytest.raises(IncrementalDeserializeError) as exc_info:
-            _ = consumer.send(data)
-        exception = exc_info.value
+        match incremental_deserialize_mode:
+            case "data":
+                consumer = serializer.incremental_deserialize()
+                next(consumer)
+                with pytest.raises(IncrementalDeserializeError) as exc_info:
+                    _ = consumer.send(data)
+                exception = exc_info.value
+            case "buffer":
+                buffer = serializer.create_deserializer_buffer(serializer.buffer_limit)
+                consumer = serializer.buffered_incremental_deserialize(buffer)
+                assert next(consumer) == 0
+                buffer[: len(data)] = data
+                with pytest.raises(IncrementalDeserializeError) as exc_info:
+                    _ = consumer.send(len(data))
+                exception = exc_info.value
+            case _:
+                pytest.fail("Invalid fixture argument")
 
         # Assert
         mock_decoder.decode.assert_called_once()
@@ -419,9 +517,36 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
 
 
 class TestJSONParser:
-    def test____raw_parse____object_frame(self) -> None:
+    @staticmethod
+    @pytest.fixture(params=[False, True], ids=lambda p: f"buffered=={p}")
+    def buffered(request: pytest.FixtureRequest) -> bool:
+        return request.param
+
+    @staticmethod
+    def raw_parse(*, limit: int, buffered: bool) -> Generator[None, bytes, tuple[ReadableBuffer, ReadableBuffer]]:
+        if not buffered:
+            return _JSONParser.raw_parse(limit=limit)
+
+        def wrapper(limit: int) -> Generator[None, bytes, tuple[ReadableBuffer, ReadableBuffer]]:
+            buffer = bytearray(limit)
+            with (
+                memoryview(buffer) as buffer_view,
+                contextlib.closing(consumer := _JSONParser.raw_parse_with_external_buffer(buffer)),
+            ):
+                del buffer
+                start_idx = next(consumer)
+                while True:
+                    nbytes = write_in_buffer(buffer_view, (yield), start_pos=start_idx, too_short_buffer="fill_at_most")
+                    try:
+                        start_idx = consumer.send(nbytes)
+                    except StopIteration as exc:
+                        return exc.value
+
+        return wrapper(limit)
+
+    def test____raw_parse____object_frame(self, buffered: bool) -> None:
         # Arrange
-        consumer = _JSONParser.raw_parse(limit=DEFAULT_LIMIT)
+        consumer = self.raw_parse(limit=DEFAULT_LIMIT, buffered=buffered)
         next(consumer)
 
         # Act
@@ -429,36 +554,36 @@ class TestJSONParser:
         complete, remainder = send_return(consumer, b":42}remainder")
 
         # Assert
-        assert complete == b'{"data":42}'
-        assert remainder == b"remainder"
+        assert bytes(complete) == b'{"data":42}'
+        assert bytes(remainder) == b"remainder"
 
-    def test____raw_parse____object_frame____skip_inner_brackets(self) -> None:
+    def test____raw_parse____object_frame____skip_inner_brackets(self, buffered: bool) -> None:
         # Arrange
-        consumer = _JSONParser.raw_parse(limit=DEFAULT_LIMIT)
+        consumer = self.raw_parse(limit=DEFAULT_LIMIT, buffered=buffered)
         next(consumer)
 
         # Act
         complete, remainder = send_return(consumer, b'{"data": {"something": 42}}remainder')
 
         # Assert
-        assert complete == b'{"data": {"something": 42}}'
-        assert remainder == b"remainder"
+        assert bytes(complete) == b'{"data": {"something": 42}}'
+        assert bytes(remainder) == b"remainder"
 
-    def test____raw_parse____object_frame____skip_bracket_in_strings(self) -> None:
+    def test____raw_parse____object_frame____skip_bracket_in_strings(self, buffered: bool) -> None:
         # Arrange
-        consumer = _JSONParser.raw_parse(limit=DEFAULT_LIMIT)
+        consumer = self.raw_parse(limit=DEFAULT_LIMIT, buffered=buffered)
         next(consumer)
 
         # Act
         complete, remainder = send_return(consumer, b'{"data}": "something}"}remainder')
 
         # Assert
-        assert complete == b'{"data}": "something}"}'
-        assert remainder == b"remainder"
+        assert bytes(complete) == b'{"data}": "something}"}'
+        assert bytes(remainder) == b"remainder"
 
-    def test____raw_parse____object_frame____whitespaces(self) -> None:
+    def test____raw_parse____object_frame____whitespaces(self, buffered: bool) -> None:
         # Arrange
-        consumer = _JSONParser.raw_parse(limit=DEFAULT_LIMIT)
+        consumer = self.raw_parse(limit=DEFAULT_LIMIT, buffered=buffered)
         next(consumer)
 
         # Act
@@ -467,12 +592,12 @@ class TestJSONParser:
         complete, remainder = send_return(consumer, b"}\n")
 
         # Assert
-        assert complete == b'{"data": 42,\n"list": [true, false, null]\n}\n'
-        assert remainder == b""
+        assert bytes(complete) == b'{"data": 42,\n"list": [true, false, null]\n}'
+        assert bytes(remainder) == b""
 
-    def test____raw_parse____object_frame____leading_whitespace_skip(self) -> None:
+    def test____raw_parse____object_frame____leading_whitespace_skip(self, buffered: bool) -> None:
         # Arrange
-        consumer = _JSONParser.raw_parse(limit=DEFAULT_LIMIT)
+        consumer = self.raw_parse(limit=DEFAULT_LIMIT, buffered=buffered)
         next(consumer)
 
         # Act
@@ -481,24 +606,24 @@ class TestJSONParser:
         complete, remainder = send_return(consumer, b":42}remainder")
 
         # Assert
-        assert complete == b'{"data":42}'
-        assert remainder == b"remainder"
+        assert bytes(complete) == b'{"data":42}'
+        assert bytes(remainder) == b"remainder"
 
-    def test____raw_parse____object_frame____escaped_quote(self) -> None:
+    def test____raw_parse____object_frame____escaped_quote(self, buffered: bool) -> None:
         # Arrange
-        consumer = _JSONParser.raw_parse(limit=DEFAULT_LIMIT)
+        consumer = self.raw_parse(limit=DEFAULT_LIMIT, buffered=buffered)
         next(consumer)
 
         # Act
         complete, remainder = send_return(consumer, b'{"data\\"":42}remainder')
 
         # Assert
-        assert complete == b'{"data\\"":42}'
-        assert remainder == b"remainder"
+        assert bytes(complete) == b'{"data\\"":42}'
+        assert bytes(remainder) == b"remainder"
 
-    def test____raw_parse____object_frame____escaped_quote____partial(self) -> None:
+    def test____raw_parse____object_frame____escaped_quote____partial(self, buffered: bool) -> None:
         # Arrange
-        consumer = _JSONParser.raw_parse(limit=DEFAULT_LIMIT)
+        consumer = self.raw_parse(limit=DEFAULT_LIMIT, buffered=buffered)
         next(consumer)
 
         # Act
@@ -507,12 +632,12 @@ class TestJSONParser:
         complete, remainder = send_return(consumer, b'":42}remainder')
 
         # Assert
-        assert complete == b'{"data\\"":42}'
-        assert remainder == b"remainder"
+        assert bytes(complete) == b'{"data\\"":42}'
+        assert bytes(remainder) == b"remainder"
 
-    def test____raw_parse____list_frame(self) -> None:
+    def test____raw_parse____list_frame(self, buffered: bool) -> None:
         # Arrange
-        consumer = _JSONParser.raw_parse(limit=DEFAULT_LIMIT)
+        consumer = self.raw_parse(limit=DEFAULT_LIMIT, buffered=buffered)
         next(consumer)
 
         # Act
@@ -521,36 +646,36 @@ class TestJSONParser:
         complete, remainder = send_return(consumer, b"]remainder")
 
         # Assert
-        assert complete == b'[{"data":42}]'
-        assert remainder == b"remainder"
+        assert bytes(complete) == b'[{"data":42}]'
+        assert bytes(remainder) == b"remainder"
 
-    def test____raw_parse____list_frame____skip_inner_brackets(self) -> None:
+    def test____raw_parse____list_frame____skip_inner_brackets(self, buffered: bool) -> None:
         # Arrange
-        consumer = _JSONParser.raw_parse(limit=DEFAULT_LIMIT)
+        consumer = self.raw_parse(limit=DEFAULT_LIMIT, buffered=buffered)
         next(consumer)
 
         # Act
         complete, remainder = send_return(consumer, b'[["string"], ["second"]]remainder')
 
         # Assert
-        assert complete == b'[["string"], ["second"]]'
-        assert remainder == b"remainder"
+        assert bytes(complete) == b'[["string"], ["second"]]'
+        assert bytes(remainder) == b"remainder"
 
-    def test____raw_parse____list_frame____skip_bracket_in_strings(self) -> None:
+    def test____raw_parse____list_frame____skip_bracket_in_strings(self, buffered: bool) -> None:
         # Arrange
-        consumer = _JSONParser.raw_parse(limit=DEFAULT_LIMIT)
+        consumer = self.raw_parse(limit=DEFAULT_LIMIT, buffered=buffered)
         next(consumer)
 
         # Act
         complete, remainder = send_return(consumer, b'["string]", "second]"]remainder')
 
         # Assert
-        assert complete == b'["string]", "second]"]'
-        assert remainder == b"remainder"
+        assert bytes(complete) == b'["string]", "second]"]'
+        assert bytes(remainder) == b"remainder"
 
-    def test____raw_parse____list_frame____whitespaces(self) -> None:
+    def test____raw_parse____list_frame____whitespaces(self, buffered: bool) -> None:
         # Arrange
-        consumer = _JSONParser.raw_parse(limit=DEFAULT_LIMIT)
+        consumer = self.raw_parse(limit=DEFAULT_LIMIT, buffered=buffered)
         next(consumer)
 
         # Act
@@ -561,12 +686,12 @@ class TestJSONParser:
         complete, remainder = send_return(consumer, b"]\n")
 
         # Assert
-        assert complete == b'[{\n"data": 42,\n "test": true},\nnull,\n"string"\n]\n'
-        assert remainder == b""
+        assert bytes(complete) == b'[{\n"data": 42,\n "test": true},\nnull,\n"string"\n]'
+        assert bytes(remainder) == b""
 
-    def test____raw_parse____leading_whitespace_skip(self) -> None:
+    def test____raw_parse____leading_whitespace_skip(self, buffered: bool) -> None:
         # Arrange
-        consumer = _JSONParser.raw_parse(limit=DEFAULT_LIMIT)
+        consumer = self.raw_parse(limit=DEFAULT_LIMIT, buffered=buffered)
         next(consumer)
 
         # Act
@@ -575,24 +700,24 @@ class TestJSONParser:
         complete, remainder = send_return(consumer, b":42}]remainder")
 
         # Assert
-        assert complete == b'[{"data":42}]'
-        assert remainder == b"remainder"
+        assert bytes(complete) == b'[{"data":42}]'
+        assert bytes(remainder) == b"remainder"
 
-    def test____raw_parse____list_frame____escaped_quote(self) -> None:
+    def test____raw_parse____list_frame____escaped_quote(self, buffered: bool) -> None:
         # Arrange
-        consumer = _JSONParser.raw_parse(limit=DEFAULT_LIMIT)
+        consumer = self.raw_parse(limit=DEFAULT_LIMIT, buffered=buffered)
         next(consumer)
 
         # Act
         complete, remainder = send_return(consumer, b'["data\\""]remainder')
 
         # Assert
-        assert complete == b'["data\\""]'
-        assert remainder == b"remainder"
+        assert bytes(complete) == b'["data\\""]'
+        assert bytes(remainder) == b"remainder"
 
-    def test____raw_parse____list_frame____escaped_quote____partial(self) -> None:
+    def test____raw_parse____list_frame____escaped_quote____partial(self, buffered: bool) -> None:
         # Arrange
-        consumer = _JSONParser.raw_parse(limit=DEFAULT_LIMIT)
+        consumer = self.raw_parse(limit=DEFAULT_LIMIT, buffered=buffered)
         next(consumer)
 
         # Act
@@ -601,12 +726,12 @@ class TestJSONParser:
         complete, remainder = send_return(consumer, b'"]remainder')
 
         # Assert
-        assert complete == b'["data\\""]'
-        assert remainder == b"remainder"
+        assert bytes(complete) == b'["data\\""]'
+        assert bytes(remainder) == b"remainder"
 
-    def test____raw_parse____string_frame(self) -> None:
+    def test____raw_parse____string_frame(self, buffered: bool) -> None:
         # Arrange
-        consumer = _JSONParser.raw_parse(limit=DEFAULT_LIMIT)
+        consumer = self.raw_parse(limit=DEFAULT_LIMIT, buffered=buffered)
         next(consumer)
 
         # Act
@@ -615,12 +740,12 @@ class TestJSONParser:
         complete, remainder = send_return(consumer, b'"remainder')
 
         # Assert
-        assert complete == b'"data{}"'
-        assert remainder == b"remainder"
+        assert bytes(complete) == b'"data{}"'
+        assert bytes(remainder) == b"remainder"
 
-    def test____raw_parse____string_frame____leading_whitespace_skip(self) -> None:
+    def test____raw_parse____string_frame____leading_whitespace_skip(self, buffered: bool) -> None:
         # Arrange
-        consumer = _JSONParser.raw_parse(limit=DEFAULT_LIMIT)
+        consumer = self.raw_parse(limit=DEFAULT_LIMIT, buffered=buffered)
         next(consumer)
 
         # Act
@@ -629,24 +754,24 @@ class TestJSONParser:
         complete, remainder = send_return(consumer, b'"remainder')
 
         # Assert
-        assert complete == b'"data"'
-        assert remainder == b"remainder"
+        assert bytes(complete) == b'"data"'
+        assert bytes(remainder) == b"remainder"
 
-    def test____raw_parse____string_frame____escaped_quote(self) -> None:
+    def test____raw_parse____string_frame____escaped_quote(self, buffered: bool) -> None:
         # Arrange
-        consumer = _JSONParser.raw_parse(limit=DEFAULT_LIMIT)
+        consumer = self.raw_parse(limit=DEFAULT_LIMIT, buffered=buffered)
         next(consumer)
 
         # Act
         complete, remainder = send_return(consumer, b'"data\\""remainder')
 
         # Assert
-        assert complete == b'"data\\""'
-        assert remainder == b"remainder"
+        assert bytes(complete) == b'"data\\""'
+        assert bytes(remainder) == b"remainder"
 
-    def test____raw_parse____string_frame____escaped_quote____partial(self) -> None:
+    def test____raw_parse____string_frame____escaped_quote____partial(self, buffered: bool) -> None:
         # Arrange
-        consumer = _JSONParser.raw_parse(limit=DEFAULT_LIMIT)
+        consumer = self.raw_parse(limit=DEFAULT_LIMIT, buffered=buffered)
         next(consumer)
 
         # Act
@@ -655,12 +780,12 @@ class TestJSONParser:
         complete, remainder = send_return(consumer, b'"remainder')
 
         # Assert
-        assert complete == b'"data\\""'
-        assert remainder == b"remainder"
+        assert bytes(complete) == b'"data\\""'
+        assert bytes(remainder) == b"remainder"
 
-    def test____raw_parse____string_frame____escape_character(self) -> None:
+    def test____raw_parse____string_frame____escape_character(self, buffered: bool) -> None:
         # Arrange
-        consumer = _JSONParser.raw_parse(limit=DEFAULT_LIMIT)
+        consumer = self.raw_parse(limit=DEFAULT_LIMIT, buffered=buffered)
         next(consumer)
 
         # Act
@@ -669,12 +794,12 @@ class TestJSONParser:
         complete, remainder = send_return(consumer, b'"remainder')
 
         # Assert
-        assert complete == b'"data\\\\"'
-        assert remainder == b"remainder"
+        assert bytes(complete) == b'"data\\\\"'
+        assert bytes(remainder) == b"remainder"
 
-    def test____raw_parse____plain_value(self) -> None:
+    def test____raw_parse____plain_value(self, buffered: bool) -> None:
         # Arrange
-        consumer = _JSONParser.raw_parse(limit=DEFAULT_LIMIT)
+        consumer = self.raw_parse(limit=DEFAULT_LIMIT, buffered=buffered)
         next(consumer)
 
         # Act
@@ -682,24 +807,24 @@ class TestJSONParser:
         complete, remainder = send_return(consumer, b"ue\nremainder")
 
         # Assert
-        assert complete == b"true\n"
-        assert remainder == b"remainder"
+        assert bytes(complete) == b"true"
+        assert bytes(remainder) == b"remainder"
 
-    def test____raw_parse____plain_value____first_character_is_invalid(self) -> None:
+    def test____raw_parse____plain_value____first_character_is_invalid(self, buffered: bool) -> None:
         # Arrange
-        consumer = _JSONParser.raw_parse(limit=DEFAULT_LIMIT)
+        consumer = self.raw_parse(limit=DEFAULT_LIMIT, buffered=buffered)
         next(consumer)
 
         # Act
         complete, remainder = send_return(consumer, b"\0")
 
         # Assert
-        assert complete == b"\0"
-        assert remainder == b""
+        assert bytes(complete) == b"\0"
+        assert bytes(remainder) == b""
 
-    def test____raw_parse____plain_value____leading_whitespace_skip(self) -> None:
+    def test____raw_parse____plain_value____leading_whitespace_skip(self, buffered: bool) -> None:
         # Arrange
-        consumer = _JSONParser.raw_parse(limit=DEFAULT_LIMIT)
+        consumer = self.raw_parse(limit=DEFAULT_LIMIT, buffered=buffered)
         next(consumer)
 
         # Act
@@ -708,34 +833,48 @@ class TestJSONParser:
         complete, remainder = send_return(consumer, b"ue\nremainder")
 
         # Assert
-        assert complete == b"true\n"
-        assert remainder == b"remainder"
+        assert bytes(complete) == b"true"
+        assert bytes(remainder) == b"remainder"
 
     @pytest.mark.parametrize("limit", [0, -42], ids=lambda p: f"limit=={p}")
     def test____raw_parse____invalid_limit(self, limit: int) -> None:
         # Arrange
-        consumer = _JSONParser.raw_parse(limit=limit)
+        consumer = self.raw_parse(limit=limit, buffered=False)
 
         # Act & Assert
         with pytest.raises(ValueError, match=r"^limit must be a positive integer$"):
             next(consumer)
 
+    def test____raw_parse____empty_buffer(self) -> None:
+        # Arrange
+        consumer = self.raw_parse(limit=0, buffered=True)
+
+        # Act & Assert
+        with pytest.raises(ValueError, match=r"^the buffer is empty$"):
+            next(consumer)
+
     @pytest.mark.parametrize(
         ["start_frame", "end_frame"],
         [
-            pytest.param(b'{"data":', b'"something"}\n', id="object frame"),
-            pytest.param(b'["data",', b'"something"]\n', id="list frame"),
-            pytest.param(b'"data', b' something"\n', id="string frame"),
+            pytest.param(b'{"data":', b'"something"}', id="object frame"),
+            pytest.param(b'["data",', b'"something"]', id="list frame"),
+            pytest.param(b'"data', b' something"', id="string frame"),
             pytest.param(b"123", b"45\n", id="plain value"),
         ],
     )
-    @pytest.mark.parametrize("end_frame_found", [False, True], ids=lambda p: f"end_frame_found=={p}")
-    def test____raw_parse____reached_limit(self, start_frame: bytes, end_frame: bytes, end_frame_found: bool) -> None:
+    @pytest.mark.parametrize("add_end_frame", [False, True], ids=lambda p: f"add_end_frame=={p}")
+    def test____raw_parse____reached_limit(
+        self,
+        start_frame: bytes,
+        end_frame: bytes,
+        add_end_frame: bool,
+        buffered: bool,
+    ) -> None:
         # Arrange
-        consumer = _JSONParser.raw_parse(limit=2)
+        consumer = self.raw_parse(limit=2, buffered=buffered)
         next(consumer)
         data_to_test = start_frame
-        if end_frame_found:
+        if add_end_frame:
             data_to_test += end_frame
 
         # Act
@@ -743,9 +882,31 @@ class TestJSONParser:
             consumer.send(data_to_test)
 
         # Assert
-        if end_frame_found:
+        if add_end_frame and not buffered:
             assert str(exc_info.value) == "JSON object's end frame is found, but chunk is longer than limit"
-            assert bytes(exc_info.value.remaining_data) == b"\n"
         else:
             assert str(exc_info.value) == "JSON object's end frame is not found, and chunk exceed the limit"
-            assert bytes(exc_info.value.remaining_data) == b""
+        assert bytes(exc_info.value.remaining_data) == b""
+
+    @pytest.mark.parametrize(
+        ["start_frame", "end_frame"],
+        [
+            pytest.param(b'{"data":', b'"something"}', id="object frame"),
+            pytest.param(b'["data",', b'"something"]', id="list frame"),
+            pytest.param(b'"data', b' something"', id="string frame"),
+            pytest.param(b"123", b"45\n", id="plain value"),
+        ],
+    )
+    def test____raw_parse____handle_null_bytes(self, start_frame: bytes, end_frame: bytes, buffered: bool) -> None:
+        # Arrange
+        consumer = self.raw_parse(limit=DEFAULT_LIMIT, buffered=buffered)
+        next(consumer)
+
+        # Act
+        consumer.send(start_frame)
+        consumer.send(b"")
+        complete, remainder = send_return(consumer, end_frame)
+
+        # Assert
+        assert bytes(complete) == (start_frame + end_frame).rstrip()
+        assert bytes(remainder) == b""

@@ -28,7 +28,7 @@ class TestAsyncExecutor:
     @pytest.fixture(params=[False, True], ids=lambda p: f"handle_context=={p}")
     @staticmethod
     def executor_handle_contexts(request: pytest.FixtureRequest) -> bool:
-        return getattr(request, "param")
+        return request.param
 
     @pytest.fixture
     @staticmethod

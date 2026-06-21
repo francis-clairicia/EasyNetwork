@@ -10,7 +10,7 @@ from easynetwork.serializers.json import JSONEncoderConfig, JSONSerializer
 
 import pytest
 
-from .base import BaseTestIncrementalSerializer, BaseTestSerializerExtraData
+from .base import BaseTestBufferedIncrementalSerializer, BaseTestSerializerExtraData
 from .samples.json import BIG_JSON, SAMPLES
 
 # 'BIG_JSON' serialized is approximatively 7.5KiB long.
@@ -20,7 +20,7 @@ TOO_BIG_JSON_SERIALIZED = json.dumps(TOO_BIG_JSON, ensure_ascii=False).encode("u
 
 
 @final
-class TestJSONSerializer(BaseTestIncrementalSerializer, BaseTestSerializerExtraData):
+class TestJSONSerializer(BaseTestBufferedIncrementalSerializer, BaseTestSerializerExtraData):
     #### Serializers
 
     BUFFER_LIMIT = 14 * 1024  # 14KiB
@@ -94,7 +94,7 @@ class TestJSONSerializer(BaseTestIncrementalSerializer, BaseTestSerializerExtraD
     @pytest.fixture(scope="class", params=[b"invalid", b"\0", '{"é": 123}'.encode("latin-1")])
     @staticmethod
     def invalid_complete_data(request: Any, use_lines: bool) -> bytes:
-        data: bytes = getattr(request, "param")
+        data: bytes = request.param
         if use_lines:
             data += b"\n"
         return data
@@ -113,20 +113,17 @@ class TestJSONSerializer(BaseTestIncrementalSerializer, BaseTestSerializerExtraD
     )
     @classmethod
     def invalid_partial_data(cls, request: Any, use_lines: bool) -> bytes:
-        data: bytes = getattr(request, "param")
+        data: bytes = request.param
         if len(data) <= cls.BUFFER_LIMIT and use_lines:
             data += b"\n"
         return data
 
     @pytest.fixture(scope="class")
     @classmethod
-    def invalid_partial_data_extra_data(cls, invalid_partial_data: bytes, use_lines: bool) -> tuple[bytes, bytes]:
+    def invalid_partial_data_extra_data(cls, invalid_partial_data: bytes) -> tuple[bytes, bytes]:
         if len(invalid_partial_data) > cls.BUFFER_LIMIT:
             if invalid_partial_data.endswith(b"\n"):
-                if use_lines:
-                    return (b"remaining_data", b"remaining_data")
-                else:
-                    return (b"remaining_data", b"\nremaining_data")
+                return (b"remaining_data", b"remaining_data")
             return (b"remaining_data", b"")
         if invalid_partial_data.startswith(b"\0"):
             return (b"", b"")
