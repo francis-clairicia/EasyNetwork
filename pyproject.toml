@@ -321,13 +321,11 @@ issue_format = "`#{issue} <https://github.com/francis-clairicia/EasyNetwork/pull
     directory = "packaging"
     name = "Packaging"
     showcontent = true
-    check = false
 
     [[tool.towncrier.type]]
     directory = "deps"
     name = "Dependency changes"
     showcontent = true
-    check = false
 
     [[tool.towncrier.type]]
     directory = "added"
