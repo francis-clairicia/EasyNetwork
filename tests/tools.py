@@ -25,13 +25,15 @@ _V_co = TypeVar("_V_co", covariant=True)
 _T_Args = TypeVarTuple("_T_Args")
 
 
+# CI=true is always set for Github Actions
+# c.f. https://docs.github.com/en/actions/reference/workflows-and-actions/variables#default-environment-variables
+RUNNING_ON_CI = bool(os.environ.get("CI", ""))
+
+
 def _make_skipif_platform(platform: str | tuple[str, ...], reason: str, *, skip_only_on_ci: bool) -> pytest.MarkDecorator:
     condition: bool = sys.platform.startswith(platform)
     if skip_only_on_ci:
-        # skip if 'CI' is set to a non-empty value
-        # CI=true is always set for Github Actions
-        # c.f. https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/store-information-in-variables#default-environment-variables
-        condition = condition and bool(os.environ.get("CI", ""))
+        condition &= RUNNING_ON_CI
     return pytest.mark.skipif(condition, reason=reason)
 
 
@@ -89,7 +91,9 @@ class PlatformMarkers:
     supports_abstract_sockets = runs_only_on_platform("linux", "abstract sockets are available only on Linux")
     abstract_sockets_unsupported = skipif_platform_linux_because("abstract sockets are available only on Linux")
 
-    supports_sending_unix_credentials = runs_only_on_platform(("linux", "freebsd", "netbsd"), "Cannot send unix credentials")
+    supports_sending_unix_credentials = runs_only_on_platform(
+        ("linux", "freebsd", "netbsd"), reason=f"Cannot send unix credentials on {sys.platform}"
+    )
 
     supports_socket_sendmsg = pytest.mark.skipif(
         not hasattr(socket.socket, "sendmsg"), reason=f"socket.sendmsg() is not available on {sys.platform}"

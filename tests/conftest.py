@@ -6,16 +6,32 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+if TYPE_CHECKING:
+    from coverage import Coverage
+
 random.seed(42)  # Fully deterministic random output
 
 
+def _get_coverage_instance(config: pytest.Config) -> Coverage | None:
+    if (plugin := config.pluginmanager.getplugin("_cov")) and plugin.cov_controller:
+        return plugin.cov_controller.cov
+    return None
+
+
+@pytest.hookimpl(tryfirst=True)
 def pytest_report_header(config: pytest.Config) -> list[str]:
+    from .tools import RUNNING_ON_CI
+
     headers: list[str] = []
     addopts: str = os.environ.get("PYTEST_ADDOPTS", "")
     if addopts:
         headers.append(f"PYTEST_ADDOPTS: {addopts}")
     if config.pluginmanager.has_plugin("xdist") and config.getoption("numprocesses", 0):
         headers.append(f"distribution: {config.getoption('dist', 'no')}")
+    if coverage_instance := _get_coverage_instance(config):
+        headers.append(f"coverage core: {coverage_instance.config.core or 'default'}")
+    if RUNNING_ON_CI:
+        headers.append("running on CI: true")
     return headers
 
 

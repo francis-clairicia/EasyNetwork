@@ -88,7 +88,7 @@ def pytest_asyncio_loop_factories(config: pytest.Config) -> Mapping[str, LoopFac
     return _get_event_loop_factories_from_config(config)
 
 
-@pytest.hookimpl(trylast=True)
+@pytest.hookimpl(tryfirst=True)
 def pytest_report_header(config: pytest.Config) -> list[str]:
     event_loops = _get_event_loop_factories_from_config(config)
     return [

@@ -9,5 +9,6 @@ updates:
       prefix: "[dependabot]"
     labels:
       - "integration"
+      - "pr-skip-changelog"
     reviewers:
       - "francis-clairicia"
