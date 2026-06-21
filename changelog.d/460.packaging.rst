@@ -1,0 +1,1 @@
+**BREAKING CHANGE**: Dropped support of Python 3.11. The minimal supported Python version is now **3.12.4**.
