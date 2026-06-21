@@ -163,13 +163,8 @@ if sys.platform != "win32":
     def __compute_default_unix_sockets_ancillary_data_bufsize() -> int:
         from collections.abc import Callable
 
-        try:
-            CMSG_LEN: Callable[[int], int] = getattr(_socket, "CMSG_LEN")
-        except AttributeError:
-            return 0
-        else:
-            CMSG_SPACE: Callable[[int], int] = getattr(_socket, "CMSG_SPACE", CMSG_LEN)
-            return CMSG_SPACE(8192)
+        CMSG_SPACE: Callable[[int], int] = getattr(_socket, "CMSG_SPACE", _socket.CMSG_LEN)
+        return CMSG_SPACE(8192)
 
     # Ancillary data buffer size for a recvmsg(2) operation
     DEFAULT_UNIX_SOCKETS_ANCILLARY_DATA_BUFSIZE: Final[int] = __compute_default_unix_sockets_ancillary_data_bufsize()
