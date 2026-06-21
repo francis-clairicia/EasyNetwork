@@ -7,11 +7,11 @@ import importlib
 import sys
 from collections.abc import Callable, Mapping
 from types import MappingProxyType
-from typing import Any, TypeAlias, assert_never
+from typing import Any, assert_never
 
 import pytest
 
-LoopFactory: TypeAlias = Callable[[], asyncio.AbstractEventLoop]
+type LoopFactory = Callable[[], asyncio.AbstractEventLoop]
 
 
 class EventLoop(enum.StrEnum):
@@ -40,7 +40,7 @@ def _get_proactor_event_loop() -> type[asyncio.AbstractEventLoop] | None:
     return getattr(asyncio, "ProactorEventLoop", None)
 
 
-def _get_uvloop_event_loop_factory() -> Callable[[], asyncio.AbstractEventLoop] | None:
+def _get_uvloop_event_loop_factory() -> LoopFactory | None:
     try:
         uvloop: Any = importlib.import_module("uvloop")
     except ModuleNotFoundError:

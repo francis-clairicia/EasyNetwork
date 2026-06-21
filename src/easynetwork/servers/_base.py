@@ -31,7 +31,7 @@ import threading as _threading
 from abc import abstractmethod
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from types import TracebackType
-from typing import TYPE_CHECKING, Any, Generic, Literal, NoReturn, Protocol, TypeVar
+from typing import TYPE_CHECKING, Any, Literal, NoReturn, Protocol
 
 from ..exceptions import ClientClosedError, ServerAlreadyRunning, ServerClosedError
 from ..lowlevel import _utils, constants
@@ -51,12 +51,6 @@ class _SupportsAclose(Protocol):
     def aclose(self) -> Awaitable[object]: ...
 
 
-_T_Address = TypeVar("_T_Address")
-_T_Return = TypeVar("_T_Return")
-_T_Default = TypeVar("_T_Default")
-_T_AsyncServer = TypeVar("_T_AsyncServer", bound=AbstractAsyncNetworkServer)
-
-
 ##############################################################################################################
 #
 # BLOCKING SERVER
@@ -64,7 +58,7 @@ _T_AsyncServer = TypeVar("_T_AsyncServer", bound=AbstractAsyncNetworkServer)
 ##############################################################################################################
 
 
-class BaseStandaloneNetworkServerImpl(AbstractNetworkServer, Generic[_T_AsyncServer]):
+class BaseStandaloneNetworkServerImpl[AsyncServer: AbstractAsyncNetworkServer](AbstractNetworkServer):
     __slots__ = (
         "__server_factory",
         "__default_runner_options",
@@ -80,7 +74,7 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer, Generic[_T_AsyncSer
     def __init__(
         self,
         backend: AsyncBackend | BuiltinAsyncBackendLiteral | None,
-        server_factory: Callable[[AsyncBackend], _T_AsyncServer],
+        server_factory: Callable[[AsyncBackend], AsyncServer],
         *,
         runner_options: Mapping[str, Any] | None = None,
     ) -> None:
@@ -89,8 +83,8 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer, Generic[_T_AsyncSer
         backend = ensure_backend("asyncio" if backend is None else backend)
 
         self.__backend: AsyncBackend = backend
-        self.__server_factory: Callable[[AsyncBackend], _T_AsyncServer] = server_factory
-        self.__server: _T_AsyncServer | None = None
+        self.__server_factory: Callable[[AsyncBackend], AsyncServer] = server_factory
+        self.__server: AsyncServer | None = None
         self.__threads_portal: ThreadsPortal | None = None
         self.__is_shutdown = _threading.Event()
         self.__is_shutdown.set()
@@ -99,22 +93,22 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer, Generic[_T_AsyncSer
         self.__bootstrap_lock = ForkSafeLock()
         self.__default_runner_options: dict[str, Any] = dict(runner_options) if runner_options else {}
 
-    def _run_sync_or_else(
+    def _run_sync_or_else[R, D](
         self,
-        f: Callable[[ThreadsPortal, _T_AsyncServer], _T_Return],
-        default: Callable[[], _T_Default],
-    ) -> _T_Return | _T_Default:
+        f: Callable[[ThreadsPortal, AsyncServer], R],
+        default: Callable[[], D],
+    ) -> R | D:
         with self.__bootstrap_lock.get():
             if (portal := self.__threads_portal) is not None and (server := self.__server) is not None:
                 with contextlib.suppress(RuntimeError, concurrent.futures.CancelledError):
                     return f(portal, server)
         return default()
 
-    def _run_sync_or(
+    def _run_sync_or[R, D](
         self,
-        f: Callable[[ThreadsPortal, _T_AsyncServer], _T_Return],
-        default: _T_Default,
-    ) -> _T_Return | _T_Default:
+        f: Callable[[ThreadsPortal, AsyncServer], R],
+        default: D,
+    ) -> R | D:
         return self._run_sync_or_else(f, lambda: default)
 
     @_utils.inherit_doc(AbstractNetworkServer)
@@ -212,9 +206,6 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer, Generic[_T_AsyncSer
             backend.bootstrap(serve_forever, runner_options=runner_options)
 
 
-_T_LowLevelServer = TypeVar("_T_LowLevelServer", bound=_SupportsAclose)
-
-
 ##############################################################################################################
 #
 # ASYNCHRONOUS SERVER
@@ -239,7 +230,7 @@ class _BindServer(contextlib.AbstractContextManager[None, None]):
         self.detach()
 
 
-class BaseAsyncNetworkServerImpl(AbstractAsyncNetworkServer, Generic[_T_LowLevelServer, _T_Address]):
+class BaseAsyncNetworkServerImpl[LowLevelServer: _SupportsAclose, Address](AbstractAsyncNetworkServer):
     __slots__ = (
         "__backend",
         "__servers",
@@ -261,9 +252,9 @@ class BaseAsyncNetworkServerImpl(AbstractAsyncNetworkServer, Generic[_T_LowLevel
         self,
         *,
         backend: AsyncBackend | BuiltinAsyncBackendLiteral | None,
-        servers_factory: Callable[[], Awaitable[Sequence[_T_LowLevelServer]]],
+        servers_factory: Callable[[], Awaitable[Sequence[LowLevelServer]]],
         initialize_service: Callable[[contextlib.AsyncExitStack], Awaitable[None]],
-        lowlevel_serve: Callable[[_T_LowLevelServer, TaskGroup], Awaitable[NoReturn]],
+        lowlevel_serve: Callable[[LowLevelServer, TaskGroup], Awaitable[NoReturn]],
         logger: logging.Logger,
     ) -> None:
         super().__init__()
@@ -271,9 +262,9 @@ class BaseAsyncNetworkServerImpl(AbstractAsyncNetworkServer, Generic[_T_LowLevel
         backend = ensure_backend(backend)
 
         self.__backend: AsyncBackend = backend
-        self.__servers_factory_cb: Callable[[], Awaitable[Sequence[_T_LowLevelServer]]] | None = servers_factory
+        self.__servers_factory_cb: Callable[[], Awaitable[Sequence[LowLevelServer]]] | None = servers_factory
         self.__initialize_service_cb: Callable[[contextlib.AsyncExitStack], Awaitable[None]] = initialize_service
-        self.__lowlevel_serve_cb: Callable[[_T_LowLevelServer, TaskGroup], Awaitable[NoReturn]] = lowlevel_serve
+        self.__lowlevel_serve_cb: Callable[[LowLevelServer, TaskGroup], Awaitable[NoReturn]] = lowlevel_serve
 
         self.__servers_factory_scope: CancelScope | None = None
         self.__server_run_scope: CancelScope | None = None
@@ -281,7 +272,7 @@ class BaseAsyncNetworkServerImpl(AbstractAsyncNetworkServer, Generic[_T_LowLevel
         self.__server_close_lock = backend.create_lock()
         self.__server_close_guard = _utils.ResourceGuard("Cannot close server during serve_forever() setup.")
 
-        self.__servers: list[_T_LowLevelServer] = []
+        self.__servers: list[LowLevelServer] = []
         self.__is_shutdown = backend.create_event()
         self.__is_shutdown.set()
         self.__server_tasks: list[Task[NoReturn]] = []
@@ -311,7 +302,7 @@ class BaseAsyncNetworkServerImpl(AbstractAsyncNetworkServer, Generic[_T_LowLevel
                 raise ServerClosedError("Closed server")
             if self.__servers:
                 return
-            listeners: list[_T_LowLevelServer] = []
+            listeners: list[LowLevelServer] = []
             try:
                 with self.__backend.open_cancel_scope() as self.__servers_factory_scope:
                     await self.__backend.coro_yield()
@@ -343,13 +334,13 @@ class BaseAsyncNetworkServerImpl(AbstractAsyncNetworkServer, Generic[_T_LowLevel
                     group.start_soon(task.wait)
 
     @classmethod
-    async def __close_all_servers(cls, backend: AsyncBackend, servers: Sequence[_T_LowLevelServer]) -> None:
+    async def __close_all_servers(cls, backend: AsyncBackend, servers: Sequence[LowLevelServer]) -> None:
         async with backend.create_task_group() as group:
             for server in servers:
                 group.start_soon(cls.__close_server, server)
 
     @classmethod
-    async def __close_server(cls, server: _T_LowLevelServer) -> None:
+    async def __close_server(cls, server: LowLevelServer) -> None:
         await server.aclose()
 
     @_utils.inherit_doc(AbstractAsyncNetworkServer)
@@ -417,7 +408,7 @@ class BaseAsyncNetworkServerImpl(AbstractAsyncNetworkServer, Generic[_T_LowLevel
                 reset_scope()
 
     @abstractmethod
-    def get_addresses(self) -> Sequence[_T_Address]:
+    def get_addresses(self) -> Sequence[Address]:
         """
         Returns all interfaces to which the server is bound.
 
@@ -432,7 +423,7 @@ class BaseAsyncNetworkServerImpl(AbstractAsyncNetworkServer, Generic[_T_LowLevel
 
     async def __serve(
         self,
-        server: _T_LowLevelServer,
+        server: LowLevelServer,
         task_group: TaskGroup,
     ) -> NoReturn:
         lowlevel_serve = self.__lowlevel_serve_cb
@@ -449,7 +440,7 @@ class BaseAsyncNetworkServerImpl(AbstractAsyncNetworkServer, Generic[_T_LowLevel
         if not self.__active_tasks and self.__server_run_scope is not None:
             self.__server_run_scope.cancel()
 
-    def _with_lowlevel_servers(self, f: Callable[[Sequence[_T_LowLevelServer]], _T_Return]) -> _T_Return:
+    def _with_lowlevel_servers[R](self, f: Callable[[Sequence[LowLevelServer]], R]) -> R:
         servers = tuple(self.__servers)
         return f(servers)
 
@@ -462,7 +453,7 @@ class BaseAsyncNetworkServerImpl(AbstractAsyncNetworkServer, Generic[_T_LowLevel
         return self.__logger
 
 
-class ClientErrorHandler(Generic[_T_Address]):
+class ClientErrorHandler[Address]:
     __slots__ = (
         "__logger",
         "__client_address_cb",
@@ -473,11 +464,11 @@ class ClientErrorHandler(Generic[_T_Address]):
         self,
         *,
         logger: logging.Logger,
-        client_address_cb: Callable[[], _T_Address],
+        client_address_cb: Callable[[], Address],
         suppress_errors: type[Exception] | tuple[type[Exception], ...],
     ) -> None:
         self.__logger: logging.Logger = logger
-        self.__client_address_cb: Callable[[], _T_Address] = client_address_cb
+        self.__client_address_cb: Callable[[], Address] = client_address_cb
         self.__suppress_errors: type[Exception] | tuple[type[Exception], ...] = suppress_errors
 
     def __enter__(self) -> None:
@@ -535,8 +526,8 @@ class ClientErrorHandler(Generic[_T_Address]):
         self.__logger.error("Exception occurred during processing of request from %s", client_address, exc_info=exc)
         self.__logger.error("-" * 40)
 
-    def __compute_client_address(self) -> _T_Address | Literal["<unknown>"]:
-        client_address: _T_Address | Literal["<unknown>"] = "<unknown>"
+    def __compute_client_address(self) -> Address | Literal["<unknown>"]:
+        client_address: Address | Literal["<unknown>"] = "<unknown>"
         with contextlib.suppress(Exception):
             client_address = self.__client_address_cb()
         return client_address

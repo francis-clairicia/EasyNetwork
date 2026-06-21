@@ -29,19 +29,14 @@ __all__ = [
 ]
 
 from abc import ABCMeta, abstractmethod
-from collections.abc import Callable, Coroutine, Iterable
+from collections.abc import Buffer, Callable, Coroutine, Iterable
 from types import TracebackType
-from typing import TYPE_CHECKING, Any, Generic, NoReturn, Self, TypeVar
+from typing import TYPE_CHECKING, Any, NoReturn, Self
 
 from ... import typed_attr
 
 if TYPE_CHECKING:
-    from _typeshed import WriteableBuffer
-
     from ..backend.abc import AsyncBackend, TaskGroup
-
-_T_co = TypeVar("_T_co", covariant=True)
-_T_Address = TypeVar("_T_Address")
 
 
 class AsyncBaseTransport(typed_attr.TypedAttributeProvider, metaclass=ABCMeta):
@@ -130,7 +125,7 @@ class AsyncStreamReadTransport(AsyncBaseTransport):
             return bytes(buffer[:nbytes])
 
     @abstractmethod
-    async def recv_into(self, buffer: WriteableBuffer) -> int:
+    async def recv_into(self, buffer: Buffer) -> int:
         """
         Read into the given `buffer`.
 
@@ -170,7 +165,7 @@ class AsyncStreamReadTransport(AsyncBaseTransport):
 
     async def recv_with_ancillary_into(
         self,
-        buffer: WriteableBuffer,
+        buffer: Buffer,
         ancillary_bufsize: int,
     ) -> tuple[int, Any]:  # pragma: no cover
         """
@@ -361,7 +356,7 @@ class AsyncDatagramTransport(AsyncDatagramWriteTransport, AsyncDatagramReadTrans
     __slots__ = ()
 
 
-class AsyncListener(AsyncBaseTransport, Generic[_T_co]):
+class AsyncListener[T](AsyncBaseTransport):
     """
     An interface for objects that let you accept incoming connections.
     """
@@ -369,7 +364,7 @@ class AsyncListener(AsyncBaseTransport, Generic[_T_co]):
     __slots__ = ()
 
     @abstractmethod
-    async def serve(self, handler: Callable[[_T_co], Coroutine[Any, Any, None]], task_group: TaskGroup | None = None) -> NoReturn:
+    async def serve(self, handler: Callable[[T], Coroutine[Any, Any, None]], task_group: TaskGroup | None = None) -> NoReturn:
         """
         Accept incoming connections as they come in and start tasks to handle them.
 
@@ -380,7 +375,7 @@ class AsyncListener(AsyncBaseTransport, Generic[_T_co]):
         raise NotImplementedError
 
 
-class AsyncDatagramListener(AsyncBaseTransport, Generic[_T_Address]):
+class AsyncDatagramListener[Address](AsyncBaseTransport):
     """
     An interface specialized for objects that let you handle incoming datagrams from anywhere.
     """
@@ -390,7 +385,7 @@ class AsyncDatagramListener(AsyncBaseTransport, Generic[_T_Address]):
     @abstractmethod
     async def serve(
         self,
-        handler: Callable[[bytes, _T_Address], Coroutine[Any, Any, None]],
+        handler: Callable[[bytes, Address], Coroutine[Any, Any, None]],
         task_group: TaskGroup | None = None,
     ) -> NoReturn:
         """
@@ -407,7 +402,7 @@ class AsyncDatagramListener(AsyncBaseTransport, Generic[_T_Address]):
 
     async def serve_with_ancillary(
         self,
-        handler: Callable[[bytes, Any | None, _T_Address], Coroutine[Any, Any, None]],
+        handler: Callable[[bytes, Any | None, Address], Coroutine[Any, Any, None]],
         ancillary_bufsize: int,
         task_group: TaskGroup | None = None,
     ) -> NoReturn:  # pragma: no cover
@@ -433,7 +428,7 @@ class AsyncDatagramListener(AsyncBaseTransport, Generic[_T_Address]):
         raise UnsupportedOperation("This transport does not have ancillary data support.")
 
     @abstractmethod
-    async def send_to(self, data: bytes | bytearray | memoryview, address: _T_Address) -> None:
+    async def send_to(self, data: bytes | bytearray | memoryview, address: Address) -> None:
         """
         Send the `data` bytes to the remote peer `address`.
 
@@ -453,7 +448,7 @@ class AsyncDatagramListener(AsyncBaseTransport, Generic[_T_Address]):
         self,
         data: bytes | bytearray | memoryview,
         ancillary_data: Any,
-        address: _T_Address,
+        address: Address,
     ) -> None:  # pragma: no cover
         """
         Send the `data` bytes to the remote peer `address` with ancillary data.

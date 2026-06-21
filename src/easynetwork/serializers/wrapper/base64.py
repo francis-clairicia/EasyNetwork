@@ -24,14 +24,13 @@ import os
 from collections.abc import Callable
 from typing import Literal, final
 
-from ..._typevars import _T_ReceivedDTOPacket, _T_SentDTOPacket
 from ...exceptions import DeserializeError
 from ...lowlevel.constants import DEFAULT_SERIALIZER_LIMIT
 from ..abc import AbstractPacketSerializer
 from ..base_stream import AutoSeparatedPacketSerializer
 
 
-class Base64EncoderSerializer(AutoSeparatedPacketSerializer[_T_SentDTOPacket, _T_ReceivedDTOPacket]):
+class Base64EncoderSerializer[SentDTOPacket, ReceivedDTOPacket](AutoSeparatedPacketSerializer[SentDTOPacket, ReceivedDTOPacket]):
     """
     A :term:`serializer wrapper` to handle base64 encoded data, built on top of :mod:`base64` module.
     """
@@ -40,7 +39,7 @@ class Base64EncoderSerializer(AutoSeparatedPacketSerializer[_T_SentDTOPacket, _T
 
     def __init__(
         self,
-        serializer: AbstractPacketSerializer[_T_SentDTOPacket, _T_ReceivedDTOPacket],
+        serializer: AbstractPacketSerializer[SentDTOPacket, ReceivedDTOPacket],
         *,
         alphabet: Literal["standard", "urlsafe"] = "urlsafe",
         checksum: bool | str | bytes = False,
@@ -76,7 +75,7 @@ class Base64EncoderSerializer(AutoSeparatedPacketSerializer[_T_SentDTOPacket, _T
         )
         if not isinstance(serializer, AbstractPacketSerializer):
             raise TypeError(f"Expected a serializer instance, got {serializer!r}")
-        self.__serializer: AbstractPacketSerializer[_T_SentDTOPacket, _T_ReceivedDTOPacket] = serializer
+        self.__serializer: AbstractPacketSerializer[SentDTOPacket, ReceivedDTOPacket] = serializer
         self.__checksum: Callable[[bytes], bytes] | None
         match checksum:
             case False:
@@ -123,7 +122,7 @@ class Base64EncoderSerializer(AutoSeparatedPacketSerializer[_T_SentDTOPacket, _T
         return base64.urlsafe_b64encode(os.urandom(32))
 
     @final
-    def serialize(self, packet: _T_SentDTOPacket) -> bytes:
+    def serialize(self, packet: SentDTOPacket) -> bytes:
         """
         Serializes `packet` and encodes the result in base64.
 
@@ -139,7 +138,7 @@ class Base64EncoderSerializer(AutoSeparatedPacketSerializer[_T_SentDTOPacket, _T
         return self.__encode(data)
 
     @final
-    def deserialize(self, data: bytes) -> _T_ReceivedDTOPacket:
+    def deserialize(self, data: bytes) -> ReceivedDTOPacket:
         """
         Decodes base64 token `data` and deserializes the result.
 

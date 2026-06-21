@@ -23,29 +23,25 @@ __all__ = [
 ]
 
 import dataclasses
-from collections.abc import Generator
-from typing import TYPE_CHECKING, Any, Generic, final
+from collections.abc import Buffer, Generator
+from typing import Any, final
 
-from .._typevars import _T_ReceivedPacket, _T_SentPacket
 from ..exceptions import StreamProtocolParseError
 from ..protocol import AnyStreamProtocolType, BufferedStreamProtocol, StreamProtocol
 from ._final import runtime_final_class
 
-if TYPE_CHECKING:
-    from _typeshed import ReadableBuffer, WriteableBuffer
-
 
 @final
 @runtime_final_class
-class StreamDataProducer(Generic[_T_SentPacket]):
+class StreamDataProducer[SentPacket]:
     __slots__ = ("__protocol",)
 
-    def __init__(self, protocol: AnyStreamProtocolType[_T_SentPacket, Any]) -> None:
+    def __init__(self, protocol: AnyStreamProtocolType[SentPacket, Any]) -> None:
         super().__init__()
         _check_any_protocol(protocol)
-        self.__protocol: AnyStreamProtocolType[_T_SentPacket, Any] = protocol
+        self.__protocol: AnyStreamProtocolType[SentPacket, Any] = protocol
 
-    def generate(self, packet: _T_SentPacket) -> Generator[bytes]:
+    def generate(self, packet: SentPacket) -> Generator[bytes]:
         try:
             yield from self.__protocol.generate_chunks(packet)
         except Exception as exc:
@@ -54,14 +50,14 @@ class StreamDataProducer(Generic[_T_SentPacket]):
 
 @final
 @runtime_final_class
-class StreamDataConsumer(Generic[_T_ReceivedPacket]):
+class StreamDataConsumer[ReceivedPacket]:
     __slots__ = ("__protocol", "__buffer", "__consumer")
 
-    def __init__(self, protocol: StreamProtocol[Any, _T_ReceivedPacket]) -> None:
+    def __init__(self, protocol: StreamProtocol[Any, ReceivedPacket]) -> None:
         super().__init__()
         _check_protocol(protocol)
-        self.__protocol: StreamProtocol[Any, _T_ReceivedPacket] = protocol
-        self.__consumer: Generator[None, bytes, tuple[_T_ReceivedPacket, bytes]] | None = None
+        self.__protocol: StreamProtocol[Any, ReceivedPacket] = protocol
+        self.__consumer: Generator[None, bytes, tuple[ReceivedPacket, bytes]] | None = None
         self.__buffer: bytes = b""
 
     def __del__(self) -> None:
@@ -70,7 +66,7 @@ class StreamDataConsumer(Generic[_T_ReceivedPacket]):
         except AttributeError:
             return
 
-    def next(self, received_chunk: bytes | None) -> _T_ReceivedPacket:
+    def next(self, received_chunk: bytes | None) -> ReceivedPacket:
         if not received_chunk:
             if not (received_chunk := self.__buffer):
                 raise StopIteration
@@ -91,7 +87,7 @@ class StreamDataConsumer(Generic[_T_ReceivedPacket]):
             # Will be re-assigned if needed
             self.__consumer = None
         self.__buffer = b""
-        packet: _T_ReceivedPacket
+        packet: ReceivedPacket
         remaining: bytes
         try:
             consumer.send(received_chunk)
@@ -120,7 +116,7 @@ class StreamDataConsumer(Generic[_T_ReceivedPacket]):
 
 @final
 @runtime_final_class
-class BufferedStreamDataConsumer(Generic[_T_ReceivedPacket]):
+class BufferedStreamDataConsumer[ReceivedPacket]:
     __slots__ = (
         "__protocol",
         "__buffer",
@@ -131,13 +127,13 @@ class BufferedStreamDataConsumer(Generic[_T_ReceivedPacket]):
         "__consumer",
     )
 
-    def __init__(self, protocol: BufferedStreamProtocol[Any, _T_ReceivedPacket, Any], buffer_size_hint: int) -> None:
+    def __init__(self, protocol: BufferedStreamProtocol[Any, ReceivedPacket, Any], buffer_size_hint: int) -> None:
         super().__init__()
         _check_buffered_protocol(protocol)
         if not isinstance(buffer_size_hint, int) or buffer_size_hint <= 0:
             raise ValueError(f"{buffer_size_hint=!r}")
-        self.__protocol: BufferedStreamProtocol[Any, _T_ReceivedPacket, WriteableBuffer] = protocol
-        self.__consumer: Generator[int | None, int, tuple[_T_ReceivedPacket, ReadableBuffer]] | None = None
+        self.__protocol: BufferedStreamProtocol[Any, ReceivedPacket, Buffer] = protocol
+        self.__consumer: Generator[int | None, int, tuple[ReceivedPacket, Buffer]] | None = None
         self.__buffer: _BufferRef | None = None
         self.__exported_write_buffer_view: memoryview | None = None
         self.__buffer_start: int = 0
@@ -150,7 +146,7 @@ class BufferedStreamDataConsumer(Generic[_T_ReceivedPacket]):
         except AttributeError:
             return
 
-    def next(self, nb_updated_bytes: int | None) -> _T_ReceivedPacket:
+    def next(self, nb_updated_bytes: int | None) -> ReceivedPacket:
         if nb_updated_bytes is None:
             nb_updated_bytes = 0
         else:
@@ -175,8 +171,8 @@ class BufferedStreamDataConsumer(Generic[_T_ReceivedPacket]):
         # Will be re-assigned if needed
         self.__consumer = None
 
-        packet: _T_ReceivedPacket
-        remaining: ReadableBuffer
+        packet: ReceivedPacket
+        remaining: Buffer
         try:
             self.__buffer_start = consumer.send(nb_updated_bytes) or 0
         except StopIteration as exc:
@@ -252,7 +248,7 @@ class BufferedStreamDataConsumer(Generic[_T_ReceivedPacket]):
         if consumer is not None:
             consumer.close()
 
-    def __save_remainder_in_buffer(self, remaining_data: ReadableBuffer) -> None:
+    def __save_remainder_in_buffer(self, remaining_data: Buffer) -> None:
         with memoryview(remaining_data) as remaining_data:
             nbytes = remaining_data.nbytes
             if not nbytes:
@@ -273,7 +269,7 @@ class BufferedStreamDataConsumer(Generic[_T_ReceivedPacket]):
             buffer_view.release()
 
     @staticmethod
-    def __validate_created_buffer(buffer: WriteableBuffer) -> None:
+    def __validate_created_buffer(buffer: Buffer) -> None:
         with memoryview(buffer) as buffer:
             if buffer.readonly:
                 raise ValueError("protocol.create_buffer() returned a read-only buffer")
@@ -291,7 +287,7 @@ class BufferedStreamDataConsumer(Generic[_T_ReceivedPacket]):
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class _BufferRef:
-    ref: WriteableBuffer
+    ref: Buffer
     view: memoryview = dataclasses.field(init=False)
 
     def __post_init__(self) -> None:

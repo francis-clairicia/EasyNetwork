@@ -11,8 +11,8 @@ Practical application — Build an FTP server from scratch
 ------
 
 
-TL;DR
-=====
+Preamble
+========
 
 Yes, I know, you will never need to create your own FTP server (unless you want your own service). However, it is still interesting
 to see the structure of such a model, based on a standardized communication protocol.

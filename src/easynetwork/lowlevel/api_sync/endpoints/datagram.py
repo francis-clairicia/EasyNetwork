@@ -26,16 +26,15 @@ import dataclasses
 import math
 import warnings
 from collections.abc import Callable, Mapping
-from typing import Any, Generic
+from typing import Any
 
-from ...._typevars import _T_ReceivedPacket, _T_SentPacket
 from ....exceptions import DatagramProtocolParseError
 from ....protocol import DatagramProtocol
 from ... import _utils
 from ..transports import abc as _transports
 
 
-class DatagramReceiverEndpoint(_transports.BaseTransport, Generic[_T_ReceivedPacket]):
+class DatagramReceiverEndpoint[ReceivedPacket](_transports.BaseTransport):
     """
     A read-only communication endpoint based on unreliable packets of data.
     """
@@ -48,7 +47,7 @@ class DatagramReceiverEndpoint(_transports.BaseTransport, Generic[_T_ReceivedPac
     def __init__(
         self,
         transport: _transports.DatagramReadTransport,
-        protocol: DatagramProtocol[Any, _T_ReceivedPacket],
+        protocol: DatagramProtocol[Any, ReceivedPacket],
     ) -> None:
         """
         Parameters:
@@ -61,7 +60,7 @@ class DatagramReceiverEndpoint(_transports.BaseTransport, Generic[_T_ReceivedPac
         if not isinstance(protocol, DatagramProtocol):
             raise TypeError(f"Expected a DatagramProtocol object, got {protocol!r}")
 
-        self.__receiver: _DataReceiverImpl[_T_ReceivedPacket] = _DataReceiverImpl(transport, protocol)
+        self.__receiver: _DataReceiverImpl[ReceivedPacket] = _DataReceiverImpl(transport, protocol)
 
         self.__transport: _transports.DatagramReadTransport = transport
 
@@ -89,7 +88,7 @@ class DatagramReceiverEndpoint(_transports.BaseTransport, Generic[_T_ReceivedPac
         """
         self.__transport.close()
 
-    def recv_packet(self, *, timeout: float | None = None) -> _T_ReceivedPacket:
+    def recv_packet(self, *, timeout: float | None = None) -> ReceivedPacket:
         """
         Waits for a new packet from the remote endpoint.
 
@@ -118,7 +117,7 @@ class DatagramReceiverEndpoint(_transports.BaseTransport, Generic[_T_ReceivedPac
         ancillary_data_received: Callable[[Any], object],
         *,
         timeout: float | None = None,
-    ) -> _T_ReceivedPacket:
+    ) -> ReceivedPacket:
         """
         Waits for a new packet with ancillary data to arrive from the remote endpoint.
 
@@ -152,7 +151,7 @@ class DatagramReceiverEndpoint(_transports.BaseTransport, Generic[_T_ReceivedPac
         return self.__transport.extra_attributes
 
 
-class DatagramSenderEndpoint(_transports.BaseTransport, Generic[_T_SentPacket]):
+class DatagramSenderEndpoint[SentPacket](_transports.BaseTransport):
     """
     A write-only communication endpoint based on unreliable packets of data.
     """
@@ -165,7 +164,7 @@ class DatagramSenderEndpoint(_transports.BaseTransport, Generic[_T_SentPacket]):
     def __init__(
         self,
         transport: _transports.DatagramWriteTransport,
-        protocol: DatagramProtocol[_T_SentPacket, Any],
+        protocol: DatagramProtocol[SentPacket, Any],
     ) -> None:
         """
         Parameters:
@@ -178,7 +177,7 @@ class DatagramSenderEndpoint(_transports.BaseTransport, Generic[_T_SentPacket]):
         if not isinstance(protocol, DatagramProtocol):
             raise TypeError(f"Expected a DatagramProtocol object, got {protocol!r}")
 
-        self.__sender: _DataSenderImpl[_T_SentPacket] = _DataSenderImpl(transport, protocol)
+        self.__sender: _DataSenderImpl[SentPacket] = _DataSenderImpl(transport, protocol)
 
         self.__transport: _transports.DatagramWriteTransport = transport
 
@@ -206,7 +205,7 @@ class DatagramSenderEndpoint(_transports.BaseTransport, Generic[_T_SentPacket]):
         """
         self.__transport.close()
 
-    def send_packet(self, packet: _T_SentPacket, *, timeout: float | None = None) -> None:
+    def send_packet(self, packet: SentPacket, *, timeout: float | None = None) -> None:
         """
         Sends `packet` to the remote endpoint.
 
@@ -232,7 +231,7 @@ class DatagramSenderEndpoint(_transports.BaseTransport, Generic[_T_SentPacket]):
 
         return sender.send(packet, timeout)
 
-    def send_packet_with_ancillary(self, packet: _T_SentPacket, ancillary_data: Any, *, timeout: float | None = None) -> None:
+    def send_packet_with_ancillary(self, packet: SentPacket, ancillary_data: Any, *, timeout: float | None = None) -> None:
         """
         Sends `packet` to the remote endpoint with ancillary data.
 
@@ -263,7 +262,7 @@ class DatagramSenderEndpoint(_transports.BaseTransport, Generic[_T_SentPacket]):
         return self.__transport.extra_attributes
 
 
-class DatagramEndpoint(_transports.BaseTransport, Generic[_T_SentPacket, _T_ReceivedPacket]):
+class DatagramEndpoint[SentPacket, ReceivedPacket](_transports.BaseTransport):
     """
     A full-duplex communication endpoint based on unreliable packets of data.
     """
@@ -277,7 +276,7 @@ class DatagramEndpoint(_transports.BaseTransport, Generic[_T_SentPacket, _T_Rece
     def __init__(
         self,
         transport: _transports.DatagramTransport,
-        protocol: DatagramProtocol[_T_SentPacket, _T_ReceivedPacket],
+        protocol: DatagramProtocol[SentPacket, ReceivedPacket],
     ) -> None:
         """
         Parameters:
@@ -290,8 +289,8 @@ class DatagramEndpoint(_transports.BaseTransport, Generic[_T_SentPacket, _T_Rece
         if not isinstance(protocol, DatagramProtocol):
             raise TypeError(f"Expected a DatagramProtocol object, got {protocol!r}")
 
-        self.__sender: _DataSenderImpl[_T_SentPacket] = _DataSenderImpl(transport, protocol)
-        self.__receiver: _DataReceiverImpl[_T_ReceivedPacket] = _DataReceiverImpl(transport, protocol)
+        self.__sender: _DataSenderImpl[SentPacket] = _DataSenderImpl(transport, protocol)
+        self.__receiver: _DataReceiverImpl[ReceivedPacket] = _DataReceiverImpl(transport, protocol)
 
         self.__transport: _transports.DatagramTransport = transport
 
@@ -319,7 +318,7 @@ class DatagramEndpoint(_transports.BaseTransport, Generic[_T_SentPacket, _T_Rece
         """
         self.__transport.close()
 
-    def send_packet(self, packet: _T_SentPacket, *, timeout: float | None = None) -> None:
+    def send_packet(self, packet: SentPacket, *, timeout: float | None = None) -> None:
         """
         Sends `packet` to the remote endpoint.
 
@@ -345,7 +344,7 @@ class DatagramEndpoint(_transports.BaseTransport, Generic[_T_SentPacket, _T_Rece
 
         return sender.send(packet, timeout)
 
-    def send_packet_with_ancillary(self, packet: _T_SentPacket, ancillary_data: Any, *, timeout: float | None = None) -> None:
+    def send_packet_with_ancillary(self, packet: SentPacket, ancillary_data: Any, *, timeout: float | None = None) -> None:
         """
         Sends `packet` to the remote endpoint with ancillary data.
 
@@ -370,7 +369,7 @@ class DatagramEndpoint(_transports.BaseTransport, Generic[_T_SentPacket, _T_Rece
 
         return sender.send_with_ancillary(packet, ancillary_data, timeout)
 
-    def recv_packet(self, *, timeout: float | None = None) -> _T_ReceivedPacket:
+    def recv_packet(self, *, timeout: float | None = None) -> ReceivedPacket:
         """
         Waits for a new packet from the remote endpoint.
 
@@ -399,7 +398,7 @@ class DatagramEndpoint(_transports.BaseTransport, Generic[_T_SentPacket, _T_Rece
         ancillary_data_received: Callable[[Any], object],
         *,
         timeout: float | None = None,
-    ) -> _T_ReceivedPacket:
+    ) -> ReceivedPacket:
         """
         Waits for a new packet with ancillary data to arrive from the remote endpoint.
 
@@ -434,11 +433,11 @@ class DatagramEndpoint(_transports.BaseTransport, Generic[_T_SentPacket, _T_Rece
 
 
 @dataclasses.dataclass(slots=True)
-class _DataSenderImpl(Generic[_T_SentPacket]):
+class _DataSenderImpl[SentPacket]:
     transport: _transports.DatagramWriteTransport
-    protocol: DatagramProtocol[_T_SentPacket, Any]
+    protocol: DatagramProtocol[SentPacket, Any]
 
-    def send(self, packet: _T_SentPacket, timeout: float) -> None:
+    def send(self, packet: SentPacket, timeout: float) -> None:
         try:
             datagram: bytes = self.protocol.make_datagram(packet)
         except Exception as exc:
@@ -448,7 +447,7 @@ class _DataSenderImpl(Generic[_T_SentPacket]):
 
         self.transport.send(datagram, timeout)
 
-    def send_with_ancillary(self, packet: _T_SentPacket, ancillary_data: Any, timeout: float) -> None:
+    def send_with_ancillary(self, packet: SentPacket, ancillary_data: Any, timeout: float) -> None:
         try:
             datagram: bytes = self.protocol.make_datagram(packet)
         except Exception as exc:
@@ -460,11 +459,11 @@ class _DataSenderImpl(Generic[_T_SentPacket]):
 
 
 @dataclasses.dataclass(slots=True)
-class _DataReceiverImpl(Generic[_T_ReceivedPacket]):
+class _DataReceiverImpl[ReceivedPacket]:
     transport: _transports.DatagramReadTransport
-    protocol: DatagramProtocol[Any, _T_ReceivedPacket]
+    protocol: DatagramProtocol[Any, ReceivedPacket]
 
-    def receive(self, timeout: float) -> _T_ReceivedPacket:
+    def receive(self, timeout: float) -> ReceivedPacket:
         datagram = self.transport.recv(timeout)
         try:
             return self.protocol.build_packet_from_datagram(datagram)
@@ -480,7 +479,7 @@ class _DataReceiverImpl(Generic[_T_ReceivedPacket]):
         ancillary_bufsize: int,
         ancillary_data_received: Callable[[Any], object],
         timeout: float,
-    ) -> _T_ReceivedPacket:
+    ) -> ReceivedPacket:
         datagram, ancdata = self.transport.recv_with_ancillary(ancillary_bufsize, timeout)
         try:
             try:

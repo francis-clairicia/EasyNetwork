@@ -26,9 +26,8 @@ import math
 import types
 import warnings
 from collections.abc import AsyncGenerator, Callable, Mapping
-from typing import Any, Generic, NoReturn, assert_never
+from typing import Any, NoReturn, assert_never
 
-from ...._typevars import _T_Request, _T_Response
 from ....exceptions import UnsupportedOperation
 from ....protocol import AnyStreamProtocolType
 from ... import _stream, _utils
@@ -37,7 +36,7 @@ from ..backend.abc import AsyncBackend, TaskGroup
 from ..transports import abc as _transports, utils as _transports_utils
 
 
-class ConnectedStreamClient(_transports.AsyncBaseTransport, Generic[_T_Response]):
+class ConnectedStreamClient[Response](_transports.AsyncBaseTransport):
     """
     Write-end of the connected client.
     """
@@ -52,12 +51,12 @@ class ConnectedStreamClient(_transports.AsyncBaseTransport, Generic[_T_Response]
         self,
         *,
         _transport: _transports.AsyncStreamWriteTransport,
-        _producer: _stream.StreamDataProducer[_T_Response],
+        _producer: _stream.StreamDataProducer[Response],
     ) -> None:
         super().__init__()
 
         self.__transport: _transports.AsyncStreamWriteTransport = _transport
-        self.__producer: _stream.StreamDataProducer[_T_Response] = _producer
+        self.__producer: _stream.StreamDataProducer[Response] = _producer
         self.__send_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently sending data on this endpoint")
 
     def is_closing(self) -> bool:
@@ -81,7 +80,7 @@ class ConnectedStreamClient(_transports.AsyncBaseTransport, Generic[_T_Response]
         with self.__send_guard:
             await self.__transport.aclose()
 
-    async def send_packet(self, packet: _T_Response) -> None:
+    async def send_packet(self, packet: Response) -> None:
         """
         Sends `packet` to the remote endpoint.
 
@@ -95,7 +94,7 @@ class ConnectedStreamClient(_transports.AsyncBaseTransport, Generic[_T_Response]
         with self.__send_guard:
             await self.__transport.send_all_from_iterable(self.__producer.generate(packet))
 
-    async def send_packet_with_ancillary(self, packet: _T_Response, ancillary_data: Any) -> None:
+    async def send_packet_with_ancillary(self, packet: Response, ancillary_data: Any) -> None:
         """
         Sends `packet` to the remote endpoint with ancillary data.
 
@@ -126,7 +125,7 @@ class ConnectedStreamClient(_transports.AsyncBaseTransport, Generic[_T_Response]
         return self.__transport.extra_attributes
 
 
-class AsyncStreamServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T_Response]):
+class AsyncStreamServer[Request, Response](_transports.AsyncBaseTransport):
     """
     Stream listener interface.
     """
@@ -141,7 +140,7 @@ class AsyncStreamServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T_R
     def __init__(
         self,
         listener: _transports.AsyncListener[_transports.AsyncStreamTransport],
-        protocol: AnyStreamProtocolType[_T_Response, _T_Request],
+        protocol: AnyStreamProtocolType[Response, Request],
         max_recv_size: int,
     ) -> None:
         """
@@ -161,7 +160,7 @@ class AsyncStreamServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T_R
             raise ValueError("'max_recv_size' must be a strictly positive integer")
 
         self.__listener: _transports.AsyncListener[_transports.AsyncStreamTransport] = listener
-        self.__protocol: AnyStreamProtocolType[_T_Response, _T_Request] = protocol
+        self.__protocol: AnyStreamProtocolType[Response, Request] = protocol
         self.__max_recv_size: int = max_recv_size
         self.__serve_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently accepting new connections")
 
@@ -195,9 +194,7 @@ class AsyncStreamServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T_R
 
     async def serve(
         self,
-        client_connected_cb: Callable[
-            [ConnectedStreamClient[_T_Response]], AsyncGenerator[float | RecvParams | None, _T_Request]
-        ],
+        client_connected_cb: Callable[[ConnectedStreamClient[Response]], AsyncGenerator[float | RecvParams | None, Request]],
         task_group: TaskGroup | None = None,
         *,
         disconnect_error_filter: Callable[[Exception], bool] | None = None,
@@ -233,9 +230,7 @@ class AsyncStreamServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T_R
 
     async def __client_coroutine(
         self,
-        client_connected_cb: Callable[
-            [ConnectedStreamClient[_T_Response]], AsyncGenerator[float | RecvParams | None, _T_Request]
-        ],
+        client_connected_cb: Callable[[ConnectedStreamClient[Response]], AsyncGenerator[float | RecvParams | None, Request]],
         disconnect_error_filter: Callable[[Exception], bool] | None,
         ancillary_bufsize: int | None,
         transport: _transports.AsyncStreamTransport,
@@ -253,9 +248,9 @@ class AsyncStreamServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T_R
             transport_close_exit_stack.push_async_callback(_transports_utils.aclose_forcefully, transport)
 
             producer = _stream.StreamDataProducer(self.__protocol)
-            consumer: _stream.StreamDataConsumer[_T_Request] | _stream.BufferedStreamDataConsumer[_T_Request]
+            consumer: _stream.StreamDataConsumer[Request] | _stream.BufferedStreamDataConsumer[Request]
 
-            request_receiver: _RequestReceiver[_T_Request] | _BufferedRequestReceiver[_T_Request]
+            request_receiver: _RequestReceiver[Request] | _BufferedRequestReceiver[Request]
             match self.__protocol:
                 case BufferedStreamProtocol():
                     consumer = _stream.BufferedStreamDataConsumer(self.__protocol, self.__max_recv_size)
@@ -298,7 +293,7 @@ class AsyncStreamServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T_R
                 return
             else:
                 try:
-                    request: _T_Request | None
+                    request: Request | None
                     _timeout_scope_ctx = self.backend().timeout
                     _no_timeout_scope = contextlib.nullcontext()
                     _validate_timeout_delay = _utils.validate_optional_timeout_delay
@@ -357,9 +352,9 @@ class AsyncStreamServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T_R
 
 
 @dataclasses.dataclass(kw_only=True, eq=False, slots=True)
-class _RequestReceiver(Generic[_T_Request]):
+class _RequestReceiver[Request]:
     transport: _transports.AsyncStreamReadTransport
-    consumer: _stream.StreamDataConsumer[_T_Request]
+    consumer: _stream.StreamDataConsumer[Request]
     max_recv_size: int
     ancillary_bufsize: int | None
     disconnect_error_filter: Callable[[Exception], bool] | None
@@ -369,7 +364,7 @@ class _RequestReceiver(Generic[_T_Request]):
         assert self.max_recv_size > 0, f"{self.max_recv_size=}"  # nosec assert_used
         self.__backend = self.transport.backend()
 
-    async def next(self) -> _T_Request:
+    async def next(self) -> Request:
         consumer = self.consumer
         try:
             request = consumer.next(None)
@@ -399,7 +394,7 @@ class _RequestReceiver(Generic[_T_Request]):
 
         raise StopAsyncIteration
 
-    async def next_with_ancillary(self, ancillary_data_params: RecvAncillaryDataParams) -> _T_Request:
+    async def next_with_ancillary(self, ancillary_data_params: RecvAncillaryDataParams) -> Request:
         ancillary_bufsize = self.ancillary_bufsize
         if ancillary_bufsize is None:
             raise UnsupportedOperation("The server is not configured to handle ancillary data (ancillary_bufsize=None).")
@@ -439,9 +434,9 @@ class _RequestReceiver(Generic[_T_Request]):
 
 
 @dataclasses.dataclass(kw_only=True, eq=False, slots=True)
-class _BufferedRequestReceiver(Generic[_T_Request]):
+class _BufferedRequestReceiver[Request]:
     transport: _transports.AsyncStreamReadTransport
-    consumer: _stream.BufferedStreamDataConsumer[_T_Request]
+    consumer: _stream.BufferedStreamDataConsumer[Request]
     ancillary_bufsize: int | None
     disconnect_error_filter: Callable[[Exception], bool] | None
     __backend: AsyncBackend = dataclasses.field(init=False)
@@ -449,7 +444,7 @@ class _BufferedRequestReceiver(Generic[_T_Request]):
     def __post_init__(self) -> None:
         self.__backend = self.transport.backend()
 
-    async def next(self) -> _T_Request:
+    async def next(self) -> Request:
         consumer = self.consumer
         try:
             request = consumer.next(None)
@@ -477,7 +472,7 @@ class _BufferedRequestReceiver(Generic[_T_Request]):
 
         raise StopAsyncIteration
 
-    async def next_with_ancillary(self, ancillary_data_params: RecvAncillaryDataParams) -> _T_Request:
+    async def next_with_ancillary(self, ancillary_data_params: RecvAncillaryDataParams) -> Request:
         ancillary_bufsize = self.ancillary_bufsize
         if ancillary_bufsize is None:
             raise UnsupportedOperation("The server is not configured to handle ancillary data (ancillary_bufsize=None).")

@@ -22,9 +22,8 @@ __all__ = [
 
 import logging
 from collections.abc import Mapping, Sequence
-from typing import Any, Generic
+from typing import Any
 
-from .._typevars import _T_Request, _T_Response
 from ..lowlevel.api_async.backend.abc import AsyncBackend
 from ..lowlevel.api_async.backend.utils import BuiltinAsyncBackendLiteral
 from ..lowlevel.socket import SocketAddress, SocketProxy
@@ -34,9 +33,8 @@ from .async_udp import AsyncUDPNetworkServer
 from .handlers import AsyncDatagramRequestHandler
 
 
-class StandaloneUDPNetworkServer(
-    _base.BaseStandaloneNetworkServerImpl[AsyncUDPNetworkServer[_T_Request, _T_Response]],
-    Generic[_T_Request, _T_Response],
+class StandaloneUDPNetworkServer[Request, Response](
+    _base.BaseStandaloneNetworkServerImpl[AsyncUDPNetworkServer[Request, Response]],
 ):
     """
     A network server for UDP communication.
@@ -50,8 +48,8 @@ class StandaloneUDPNetworkServer(
         self,
         host: str | None | Sequence[str],
         port: int,
-        protocol: DatagramProtocol[_T_Response, _T_Request],
-        request_handler: AsyncDatagramRequestHandler[_T_Request, _T_Response],
+        protocol: DatagramProtocol[Response, Request],
+        request_handler: AsyncDatagramRequestHandler[Request, Response],
         backend: AsyncBackend | BuiltinAsyncBackendLiteral | None = None,
         *,
         runner_options: Mapping[str, Any] | None = None,

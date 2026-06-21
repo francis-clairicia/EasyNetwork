@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import json
 from collections.abc import Generator
-from typing import Any, TypeAlias
+from typing import Any
 
 from easynetwork.exceptions import DeserializeError, IncrementalDeserializeError
 from easynetwork.serializers.abc import AbstractIncrementalPacketSerializer
 
-SentPacket: TypeAlias = Any
-ReceivedPacket: TypeAlias = Any
+type SentPacket = Any
+type ReceivedPacket = Any
 
 
 class MyJSONSerializer(AbstractIncrementalPacketSerializer[SentPacket, ReceivedPacket]):

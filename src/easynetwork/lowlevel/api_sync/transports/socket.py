@@ -29,9 +29,9 @@ import socket
 import sys
 import warnings
 from collections import deque
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Buffer, Callable, Iterable, Mapping
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar
+from typing import TYPE_CHECKING, Any
 
 try:
     import ssl
@@ -47,11 +47,6 @@ from . import base_selector
 
 if TYPE_CHECKING:
     from ssl import SSLContext, SSLSession, SSLSocket
-
-    from _typeshed import ReadableBuffer, WriteableBuffer
-
-_P = ParamSpec("_P")
-_T_Return = TypeVar("_T_Return")
 
 
 def _close_stream_socket(sock: socket.socket) -> None:
@@ -119,7 +114,7 @@ class SocketStreamTransport(base_selector.SelectorStreamTransport):
             raise base_selector.WouldBlockOnRead(self.__socket.fileno()) from None
 
     @_utils.inherit_doc(base_selector.SelectorStreamTransport)
-    def recv_noblock_into(self, buffer: WriteableBuffer) -> int:
+    def recv_noblock_into(self, buffer: Buffer) -> int:
         try:
             return self.__socket.recv_into(buffer)
         except (BlockingIOError, InterruptedError):
@@ -143,7 +138,7 @@ class SocketStreamTransport(base_selector.SelectorStreamTransport):
         @_utils.inherit_doc(base_selector.SelectorStreamTransport)
         def recv_noblock_with_ancillary_into(
             self,
-            buffer: WriteableBuffer,
+            buffer: Buffer,
             ancillary_bufsize: int,
         ) -> tuple[int, list[tuple[int, int, bytes]]]:
             if not _unix_utils.is_unix_socket_family(self.__socket.family):
@@ -170,7 +165,7 @@ class SocketStreamTransport(base_selector.SelectorStreamTransport):
             def send_all_noblock_with_ancillary(
                 self,
                 iterable_of_data: Iterable[bytes | bytearray | memoryview],
-                ancillary_data: Iterable[tuple[int, int, ReadableBuffer]],
+                ancillary_data: Iterable[tuple[int, int, Buffer]],
             ) -> None:
                 if not _unix_utils.is_unix_socket_family(self.__socket.family):
                     return super().send_all_noblock_with_ancillary(iterable_of_data, ancillary_data)
@@ -188,7 +183,7 @@ class SocketStreamTransport(base_selector.SelectorStreamTransport):
             def send_all_with_ancillary(
                 self,
                 iterable_of_data: Iterable[bytes | bytearray | memoryview],
-                ancillary_data: Iterable[tuple[int, int, ReadableBuffer]],
+                ancillary_data: Iterable[tuple[int, int, Buffer]],
                 timeout: float,
             ) -> None:
                 if hasattr(ancillary_data, "__next__"):
@@ -350,7 +345,7 @@ class SSLStreamTransport(base_selector.SelectorStreamTransport):
             return b""
 
     @_utils.inherit_doc(base_selector.SelectorStreamTransport)
-    def recv_noblock_into(self, buffer: WriteableBuffer) -> int:
+    def recv_noblock_into(self, buffer: Buffer) -> int:
         try:
             return self._try_ssl_method(self.__socket.recv_into, buffer)
         except _ssl_module.SSLZeroReturnError if _ssl_module else ():
@@ -375,7 +370,7 @@ class SSLStreamTransport(base_selector.SelectorStreamTransport):
         # ssl.SSLSocket.shutdown() would close both read and write streams
         raise UnsupportedOperation("SSL/TLS API does not support sending EOF.")
 
-    def _try_ssl_method(self, socket_method: Callable[_P, _T_Return], /, *args: _P.args, **kwargs: _P.kwargs) -> _T_Return:
+    def _try_ssl_method[**P, R](self, socket_method: Callable[P, R], /, *args: P.args, **kwargs: P.kwargs) -> R:
         if _ssl_module is None:
             raise RuntimeError("stdlib ssl module not available")
         try:
@@ -482,7 +477,7 @@ class SocketDatagramTransport(base_selector.SelectorDatagramTransport):
         def send_noblock_with_ancillary(
             self,
             data: bytes | bytearray | memoryview,
-            ancillary_data: Iterable[tuple[int, int, ReadableBuffer]],
+            ancillary_data: Iterable[tuple[int, int, Buffer]],
         ) -> None:
             if not _unix_utils.is_unix_socket_family(self.__socket.family):
                 return super().send_noblock_with_ancillary(data, ancillary_data)
@@ -495,7 +490,7 @@ class SocketDatagramTransport(base_selector.SelectorDatagramTransport):
         def send_with_ancillary(
             self,
             data: bytes | bytearray | memoryview,
-            ancillary_data: Iterable[tuple[int, int, ReadableBuffer]],
+            ancillary_data: Iterable[tuple[int, int, Buffer]],
             timeout: float,
         ) -> None:
             if hasattr(ancillary_data, "__next__"):

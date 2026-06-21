@@ -1,17 +1,14 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Generator
-from typing import TYPE_CHECKING, Any, TypeAlias
+from collections.abc import Buffer, Generator
+from typing import Any
 
 from easynetwork.exceptions import DeserializeError, IncrementalDeserializeError
 from easynetwork.serializers.abc import BufferedIncrementalPacketSerializer
 
-if TYPE_CHECKING:
-    from _typeshed import ReadableBuffer
-
-SentPacket: TypeAlias = Any
-ReceivedPacket: TypeAlias = Any
+type SentPacket = Any
+type ReceivedPacket = Any
 
 
 class MyJSONSerializer(BufferedIncrementalPacketSerializer[SentPacket, ReceivedPacket, bytearray]):
@@ -67,7 +64,7 @@ class MyJSONSerializer(BufferedIncrementalPacketSerializer[SentPacket, ReceivedP
     def buffered_incremental_deserialize(
         self,
         buffer: bytearray,
-    ) -> Generator[int | None, int, tuple[ReceivedPacket, ReadableBuffer]]:
+    ) -> Generator[int | None, int, tuple[ReceivedPacket, Buffer]]:
         buffer_size = len(buffer)
         newline = b"\r\n"
         separator_length = len(newline)

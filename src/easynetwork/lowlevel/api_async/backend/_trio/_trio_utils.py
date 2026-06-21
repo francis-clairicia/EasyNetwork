@@ -28,7 +28,6 @@ import errno as _errno
 import socket as _socket
 import types
 from collections.abc import Awaitable, Callable
-from typing import TypeVar
 
 import trio
 from trio.lowlevel import (
@@ -37,9 +36,6 @@ from trio.lowlevel import (
 )
 
 from .... import _utils
-
-_T_Socket = TypeVar("_T_Socket", bound=_socket.socket)
-_T_Return = TypeVar("_T_Return")
 
 
 class convert_trio_resource_errors(contextlib.AbstractContextManager[None, None]):
@@ -158,16 +154,16 @@ def close_socket_and_notify(sock: _socket.socket) -> None:
         sock.close()
 
 
-async def retry_socket_method(
-    waiter: Callable[[_T_Socket], Awaitable[None]],
-    sock: _T_Socket,
-    callback: Callable[[], _T_Return],
+async def retry_socket_method[Socket: _socket.socket, R](
+    waiter: Callable[[Socket], Awaitable[None]],
+    sock: Socket,
+    callback: Callable[[], R],
     /,
     *,
     always_yield: bool,
     checkpoint_if_cancelled: bool = True,
     exceptions_to_catch: type[Exception] | tuple[type[Exception], ...] = BlockingIOError,
-) -> _T_Return:
+) -> R:
     if checkpoint_if_cancelled:
         await _trio_checkpoint_if_cancelled()
     while True:

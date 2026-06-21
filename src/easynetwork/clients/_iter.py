@@ -21,23 +21,22 @@ __all__ = ["AsyncClientRecvIterator", "ClientRecvIterator"]
 from collections.abc import AsyncIterator, Iterator
 from typing import Any
 
-from .._typevars import _T_ReceivedPacket
 from ..lowlevel import _utils
 from .abc import AbstractAsyncNetworkClient, AbstractNetworkClient
 
 
-class ClientRecvIterator(Iterator[_T_ReceivedPacket]):
+class ClientRecvIterator[ReceivedPacket](Iterator[ReceivedPacket]):
     __slots__ = (
         "__client",
         "__timeout",
     )
 
-    def __init__(self, client: AbstractNetworkClient[Any, _T_ReceivedPacket], timeout: float | None) -> None:
+    def __init__(self, client: AbstractNetworkClient[Any, ReceivedPacket], timeout: float | None) -> None:
         super().__init__()
-        self.__client: AbstractNetworkClient[Any, _T_ReceivedPacket] = client
+        self.__client: AbstractNetworkClient[Any, ReceivedPacket] = client
         self.__timeout: float | None = timeout
 
-    def __next__(self) -> _T_ReceivedPacket:
+    def __next__(self) -> ReceivedPacket:
         try:
             with _utils.ElapsedTime() as elapsed:
                 packet = self.__client.recv_packet(timeout=self.__timeout)
@@ -48,22 +47,22 @@ class ClientRecvIterator(Iterator[_T_ReceivedPacket]):
         return packet
 
 
-class AsyncClientRecvIterator(AsyncIterator[_T_ReceivedPacket]):
+class AsyncClientRecvIterator[ReceivedPacket](AsyncIterator[ReceivedPacket]):
     __slots__ = (
         "__client",
         "__backend",
         "__timeout",
     )
 
-    def __init__(self, client: AbstractAsyncNetworkClient[Any, _T_ReceivedPacket], timeout: float | None) -> None:
+    def __init__(self, client: AbstractAsyncNetworkClient[Any, ReceivedPacket], timeout: float | None) -> None:
         super().__init__()
         if timeout is None:
             timeout = float("inf")
-        self.__client: AbstractAsyncNetworkClient[Any, _T_ReceivedPacket] = client
+        self.__client: AbstractAsyncNetworkClient[Any, ReceivedPacket] = client
         self.__timeout: float = timeout
         self.__backend = client.backend()
 
-    async def __anext__(self) -> _T_ReceivedPacket:
+    async def __anext__(self) -> ReceivedPacket:
         try:
             with self.__backend.timeout(self.__timeout), _utils.ElapsedTime() as elapsed:
                 packet = await self.__client.recv_packet()

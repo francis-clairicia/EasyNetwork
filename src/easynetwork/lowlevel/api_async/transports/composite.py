@@ -25,9 +25,9 @@ __all__ = [
 ]
 
 import contextlib
-from collections.abc import AsyncIterator, Callable, Iterable, Mapping
+from collections.abc import AsyncIterator, Buffer, Callable, Iterable, Mapping
 from dataclasses import dataclass, field as dataclass_field
-from typing import TYPE_CHECKING, Any, Generic, TypeVar, final
+from typing import TYPE_CHECKING, Any, final
 
 from ... import _utils
 from ..._final import runtime_final_class
@@ -35,22 +35,16 @@ from . import abc as _transports
 from .utils import aclose_forcefully
 
 if TYPE_CHECKING:
-    from _typeshed import WriteableBuffer
-
     from ..backend.abc import AsyncBackend
-
-
-_T_SendStreamTransport = TypeVar("_T_SendStreamTransport", bound=_transports.AsyncStreamWriteTransport)
-_T_ReceiveStreamTransport = TypeVar("_T_ReceiveStreamTransport", bound=_transports.AsyncStreamReadTransport)
-
-_T_SendDatagramTransport = TypeVar("_T_SendDatagramTransport", bound=_transports.AsyncDatagramWriteTransport)
-_T_ReceiveDatagramTransport = TypeVar("_T_ReceiveDatagramTransport", bound=_transports.AsyncDatagramReadTransport)
 
 
 @final
 @runtime_final_class
 @dataclass(frozen=True, slots=True)
-class AsyncStapledStreamTransport(_transports.AsyncStreamTransport, Generic[_T_SendStreamTransport, _T_ReceiveStreamTransport]):
+class AsyncStapledStreamTransport[
+    SendStreamTransport: _transports.AsyncStreamWriteTransport,
+    ReceiveStreamTransport: _transports.AsyncStreamReadTransport,
+](_transports.AsyncStreamTransport):
     """
     An asynchronous continous stream data transport that merges two transports.
 
@@ -59,10 +53,10 @@ class AsyncStapledStreamTransport(_transports.AsyncStreamTransport, Generic[_T_S
     .. versionadded:: 1.1
     """
 
-    send_transport: _T_SendStreamTransport
+    send_transport: SendStreamTransport
     """The write part of the transport."""
 
-    receive_transport: _T_ReceiveStreamTransport
+    receive_transport: ReceiveStreamTransport
     """The read part of the transport."""
 
     _backend: AsyncBackend = dataclass_field(init=False)
@@ -97,7 +91,7 @@ class AsyncStapledStreamTransport(_transports.AsyncStreamTransport, Generic[_T_S
         """
         return await self.receive_transport.recv(bufsize)
 
-    async def recv_into(self, buffer: WriteableBuffer) -> int:
+    async def recv_into(self, buffer: Buffer) -> int:
         """
         Calls :meth:`self.receive_transport.recv_into() <.AsyncStreamReadTransport.recv_into>`.
         """
@@ -111,7 +105,7 @@ class AsyncStapledStreamTransport(_transports.AsyncStreamTransport, Generic[_T_S
         """
         return await self.receive_transport.recv_with_ancillary(bufsize, ancillary_bufsize)
 
-    async def recv_with_ancillary_into(self, buffer: WriteableBuffer, ancillary_bufsize: int) -> tuple[int, Any]:
+    async def recv_with_ancillary_into(self, buffer: Buffer, ancillary_bufsize: int) -> tuple[int, Any]:
         """
         Calls :meth:`self.receive_transport.recv_with_ancillary_into() <.AsyncStreamReadTransport.recv_with_ancillary_into>`.
 
@@ -179,10 +173,10 @@ class AsyncStapledStreamTransport(_transports.AsyncStreamTransport, Generic[_T_S
 @final
 @runtime_final_class
 @dataclass(frozen=True, slots=True)
-class AsyncStapledDatagramTransport(
-    _transports.AsyncDatagramTransport,
-    Generic[_T_SendDatagramTransport, _T_ReceiveDatagramTransport],
-):
+class AsyncStapledDatagramTransport[
+    SendDatagramTransport: _transports.AsyncDatagramWriteTransport,
+    ReceiveDatagramTransport: _transports.AsyncDatagramReadTransport,
+](_transports.AsyncDatagramTransport):
     """
     An asynchronous transport of unreliable packets of data that merges two transports.
 
@@ -191,10 +185,10 @@ class AsyncStapledDatagramTransport(
     .. versionadded:: 1.1
     """
 
-    send_transport: _T_SendDatagramTransport
+    send_transport: SendDatagramTransport
     """The write part of the transport."""
 
-    receive_transport: _T_ReceiveDatagramTransport
+    receive_transport: ReceiveDatagramTransport
     """The read part of the transport."""
 
     _backend: AsyncBackend = dataclass_field(init=False)

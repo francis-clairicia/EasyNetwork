@@ -24,14 +24,12 @@ __all__ = [
 
 from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Generic, final
+from typing import Any, final
 
-from ._typevars import _T_ReceivedDTOPacket, _T_ReceivedPacket, _T_SentDTOPacket, _T_SentPacket
 from .lowlevel import _utils
 
 
-class AbstractPacketConverterComposite(
-    Generic[_T_SentPacket, _T_ReceivedPacket, _T_SentDTOPacket, _T_ReceivedDTOPacket],
+class AbstractPacketConverterComposite[SentPacket, ReceivedPacket, SentDTOPacket, ReceivedDTOPacket](
     metaclass=ABCMeta,
 ):
     """
@@ -44,7 +42,7 @@ class AbstractPacketConverterComposite(
     __slots__ = ("__weakref__",)
 
     @abstractmethod
-    def create_from_dto_packet(self, packet: _T_ReceivedDTOPacket, /) -> _T_ReceivedPacket:
+    def create_from_dto_packet(self, packet: ReceivedDTOPacket, /) -> ReceivedPacket:
         """
         Constructs the business object from the :term:`DTO` `packet`.
 
@@ -60,7 +58,7 @@ class AbstractPacketConverterComposite(
         raise NotImplementedError
 
     @abstractmethod
-    def convert_to_dto_packet(self, obj: _T_SentPacket, /) -> _T_SentDTOPacket:
+    def convert_to_dto_packet(self, obj: SentPacket, /) -> SentDTOPacket:
         """
         Creates the :term:`DTO` packet from the business object `obj`.
 
@@ -74,21 +72,21 @@ class AbstractPacketConverterComposite(
 
 
 @dataclass(frozen=True, slots=True)
-class StapledPacketConverter(
-    AbstractPacketConverterComposite[_T_SentPacket, _T_ReceivedPacket, _T_SentDTOPacket, _T_ReceivedDTOPacket]
+class StapledPacketConverter[SentPacket, ReceivedPacket, SentDTOPacket, ReceivedDTOPacket](
+    AbstractPacketConverterComposite[SentPacket, ReceivedPacket, SentDTOPacket, ReceivedDTOPacket]
 ):
     """
     A :term:`composite converter` that merges two converters.
     """
 
-    sent_packet_converter: AbstractPacketConverterComposite[_T_SentPacket, Any, _T_SentDTOPacket, Any]
+    sent_packet_converter: AbstractPacketConverterComposite[SentPacket, Any, SentDTOPacket, Any]
     """Sent packet converter."""
 
-    received_packet_converter: AbstractPacketConverterComposite[Any, _T_ReceivedPacket, Any, _T_ReceivedDTOPacket]
+    received_packet_converter: AbstractPacketConverterComposite[Any, ReceivedPacket, Any, ReceivedDTOPacket]
     """Received packet converter."""
 
     @final
-    def create_from_dto_packet(self, packet: _T_ReceivedDTOPacket, /) -> _T_ReceivedPacket:
+    def create_from_dto_packet(self, packet: ReceivedDTOPacket, /) -> ReceivedPacket:
         """
         Calls ``self.received_packet_converter.create_from_dto_packet(packet)``.
 
@@ -104,7 +102,7 @@ class StapledPacketConverter(
         return self.received_packet_converter.create_from_dto_packet(packet)
 
     @final
-    def convert_to_dto_packet(self, obj: _T_SentPacket, /) -> _T_SentDTOPacket:
+    def convert_to_dto_packet(self, obj: SentPacket, /) -> SentDTOPacket:
         """
         Calls ``self.sent_packet_converter.convert_to_dto_packet(obj)``.
 
@@ -117,9 +115,8 @@ class StapledPacketConverter(
         return self.sent_packet_converter.convert_to_dto_packet(obj)
 
 
-class AbstractPacketConverter(
-    AbstractPacketConverterComposite[_T_SentPacket, _T_SentPacket, _T_SentDTOPacket, _T_SentDTOPacket],
-    Generic[_T_SentPacket, _T_SentDTOPacket],
+class AbstractPacketConverter[SentPacket, SentDTOPacket](
+    AbstractPacketConverterComposite[SentPacket, SentPacket, SentDTOPacket, SentDTOPacket],
 ):
     """
     The base class for implementing a :term:`converter`.
@@ -132,10 +129,10 @@ class AbstractPacketConverter(
 
     @abstractmethod
     @_utils.inherit_doc(AbstractPacketConverterComposite)
-    def create_from_dto_packet(self, packet: _T_SentDTOPacket, /) -> _T_SentPacket:
+    def create_from_dto_packet(self, packet: SentDTOPacket, /) -> SentPacket:
         raise NotImplementedError
 
     @abstractmethod
     @_utils.inherit_doc(AbstractPacketConverterComposite)
-    def convert_to_dto_packet(self, obj: _T_SentPacket, /) -> _T_SentDTOPacket:
+    def convert_to_dto_packet(self, obj: SentPacket, /) -> SentDTOPacket:
         raise NotImplementedError

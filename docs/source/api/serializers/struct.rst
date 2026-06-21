@@ -7,9 +7,6 @@ Structure Serializer
 .. autoclass:: StructSerializer
    :members:
 
-.. autotypevar:: _T_NamedTuple
-   :noindex:
-
 .. autoclass:: NamedTupleStructSerializer
    :members:
 

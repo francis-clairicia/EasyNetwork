@@ -32,7 +32,7 @@ __all__ = [
 
 import errno as _errno
 import socket as _socket
-from collections.abc import Callable
+import sys
 from typing import Final
 
 # Buffer size for a recv(2) operation
@@ -136,35 +136,42 @@ SC_IOV_MAX: Final[int] = __get_sysconf("SC_IOV_MAX")
 
 del __get_sysconf
 
-# Socket control message type for sending/receiving unix credentials.
-SCM_CREDENTIALS: Final[int | None] = next(
-    (
-        msg_type
-        for name in (
-            # Linux
-            "SCM_CREDENTIALS",
-            # FreeBSD
-            "SCM_CREDS2",
-            # NetBSD
-            "SCM_CREDS",
-        )
-        if (msg_type := getattr(_socket, name, None)) is not None
-    ),
-    None,
-)
+if sys.platform != "win32":
 
+    __all__ += [
+        "DEFAULT_UNIX_SOCKETS_ANCILLARY_DATA_BUFSIZE",
+        "SCM_CREDENTIALS",
+    ]
 
-def __compute_default_unix_sockets_ancillary_data_bufsize() -> int:
-    try:
-        CMSG_LEN: Callable[[int], int] = getattr(_socket, "CMSG_LEN")
-    except AttributeError:
-        return 0
-    else:
-        CMSG_SPACE: Callable[[int], int] = getattr(_socket, "CMSG_SPACE", CMSG_LEN)
-        return CMSG_SPACE(8192)
+    # Socket control message type for sending/receiving unix credentials.
+    SCM_CREDENTIALS: Final[int | None] = next(
+        (
+            msg_type
+            for name in (
+                # Linux
+                "SCM_CREDENTIALS",
+                # FreeBSD
+                "SCM_CREDS2",
+                # NetBSD
+                "SCM_CREDS",
+            )
+            if (msg_type := getattr(_socket, name, None)) is not None
+        ),
+        None,
+    )
 
+    def __compute_default_unix_sockets_ancillary_data_bufsize() -> int:
+        from collections.abc import Callable
 
-# Ancillary data buffer size for a recvmsg(2) operation
-DEFAULT_UNIX_SOCKETS_ANCILLARY_DATA_BUFSIZE: Final[int] = __compute_default_unix_sockets_ancillary_data_bufsize()
+        try:
+            CMSG_LEN: Callable[[int], int] = getattr(_socket, "CMSG_LEN")
+        except AttributeError:
+            return 0
+        else:
+            CMSG_SPACE: Callable[[int], int] = getattr(_socket, "CMSG_SPACE", CMSG_LEN)
+            return CMSG_SPACE(8192)
 
-del __compute_default_unix_sockets_ancillary_data_bufsize
+    # Ancillary data buffer size for a recvmsg(2) operation
+    DEFAULT_UNIX_SOCKETS_ANCILLARY_DATA_BUFSIZE: Final[int] = __compute_default_unix_sockets_ancillary_data_bufsize()
+
+    del __compute_default_unix_sockets_ancillary_data_bufsize

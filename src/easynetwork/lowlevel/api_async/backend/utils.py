@@ -22,13 +22,13 @@ __all__ = [
     "new_builtin_backend",
 ]
 
-from typing import Literal, TypeAlias, assert_never, cast
+from typing import Literal, assert_never, cast
 
 import sniffio
 
 from .abc import AsyncBackend
 
-BuiltinAsyncBackendLiteral: TypeAlias = Literal["asyncio", "trio"]
+type BuiltinAsyncBackendLiteral = Literal["asyncio", "trio"]
 """Supported asynchronous framework names."""
 
 

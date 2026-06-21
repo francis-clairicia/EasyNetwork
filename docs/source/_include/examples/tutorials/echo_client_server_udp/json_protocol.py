@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from typing import Any, TypeAlias
+from typing import Any
 
 from easynetwork.protocol import DatagramProtocol
 from easynetwork.serializers import JSONSerializer
 
 # Use of type aliases in order not to see two Any types without real meaning
 # In our case, any serializable object will be sent/received
-SentDataType: TypeAlias = Any
-ReceivedDataType: TypeAlias = Any
+type SentDataType = Any
+type ReceivedDataType = Any
 
 
 class JSONDatagramProtocol(DatagramProtocol[SentDataType, ReceivedDataType]):

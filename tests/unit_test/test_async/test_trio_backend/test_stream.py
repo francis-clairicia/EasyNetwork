@@ -4,7 +4,7 @@ import contextlib
 import errno
 import logging
 import os
-from collections.abc import AsyncIterator, Callable, Coroutine, Iterable, Iterator
+from collections.abc import AsyncIterator, Buffer, Callable, Coroutine, Iterable, Iterator
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.exceptions import UnsupportedOperation
@@ -27,7 +27,6 @@ if TYPE_CHECKING:
     from easynetwork.lowlevel.api_async.backend._trio.stream.listener import TrioListenerSocketAdapter
     from easynetwork.lowlevel.api_async.backend._trio.stream.socket import TrioStreamSocketAdapter
 
-    from _typeshed import ReadableBuffer
     from pytest_mock import MockerFixture
 
 
@@ -466,7 +465,7 @@ class TestTrioStreamSocketAdapter(BaseTestTrioSocketStream, MixinTestSocketSendM
         # Arrange
         chunks: list[list[bytes]] = []
 
-        def sendmsg_side_effect(buffers: Iterable[ReadableBuffer], *args: Any) -> int:
+        def sendmsg_side_effect(buffers: Iterable[Buffer], *args: Any) -> int:
             buffers = list(buffers)
             chunks.append(list(map(bytes, buffers)))
             return sum(memoryview(v).nbytes for v in buffers)
@@ -491,7 +490,7 @@ class TestTrioStreamSocketAdapter(BaseTestTrioSocketStream, MixinTestSocketSendM
         # Arrange
         chunks: list[list[bytes]] = []
 
-        def sendmsg_side_effect(buffers: Iterable[ReadableBuffer], *args: Any) -> int:
+        def sendmsg_side_effect(buffers: Iterable[Buffer], *args: Any) -> int:
             buffers = list(buffers)
             chunks.append(list(map(bytes, buffers)))
             return sum(memoryview(v).nbytes for v in buffers)
@@ -517,7 +516,7 @@ class TestTrioStreamSocketAdapter(BaseTestTrioSocketStream, MixinTestSocketSendM
         # Arrange
         chunks: list[list[bytes]] = []
 
-        def sendmsg_side_effect(buffers: Iterable[ReadableBuffer], *args: Any) -> int:
+        def sendmsg_side_effect(buffers: Iterable[Buffer], *args: Any) -> int:
             buffers = list(buffers)
             chunks.append(list(map(bytes, buffers)))
             return min(sum(memoryview(v).nbytes for v in buffers), 3)
@@ -545,7 +544,7 @@ class TestTrioStreamSocketAdapter(BaseTestTrioSocketStream, MixinTestSocketSendM
         # Arrange
         chunks: list[list[bytes]] = []
 
-        def sendmsg_side_effect(buffers: Iterable[ReadableBuffer], *args: Any) -> int:
+        def sendmsg_side_effect(buffers: Iterable[Buffer], *args: Any) -> int:
             buffers = list(buffers)
             chunks.append(list(map(bytes, buffers)))
             return sum(memoryview(v).nbytes for v in buffers)
@@ -591,7 +590,7 @@ class TestTrioStreamSocketAdapter(BaseTestTrioSocketStream, MixinTestSocketSendM
         chunks: list[list[bytes]] = []
         ancillary_data_sent: list[list[Any]] = []
 
-        def sendmsg_side_effect(buffers: Iterable[ReadableBuffer], ancdata: Iterable[Any]) -> int:
+        def sendmsg_side_effect(buffers: Iterable[Buffer], ancdata: Iterable[Any]) -> int:
             for _ in range(2):
                 chunks.append(list(map(bytes, buffers)))
                 ancillary_data_sent.append(list(ancdata))
@@ -623,7 +622,7 @@ class TestTrioStreamSocketAdapter(BaseTestTrioSocketStream, MixinTestSocketSendM
         # Arrange
         chunks: list[list[bytes]] = []
 
-        def sendmsg_side_effect(buffers: Iterable[ReadableBuffer]) -> int:
+        def sendmsg_side_effect(buffers: Iterable[Buffer]) -> int:
             # Ensure we are not giving the islice directly.
             assert not isinstance(buffers, Iterator)
 
@@ -652,7 +651,7 @@ class TestTrioStreamSocketAdapter(BaseTestTrioSocketStream, MixinTestSocketSendM
         # Arrange
         chunks: list[list[bytes]] = []
 
-        def sendmsg_side_effect(buffers: Iterable[ReadableBuffer]) -> int:
+        def sendmsg_side_effect(buffers: Iterable[Buffer]) -> int:
             buffers = list(buffers)
             chunks.append(list(map(bytes, buffers)))
             return sum(memoryview(v).nbytes for v in buffers)
@@ -679,7 +678,7 @@ class TestTrioStreamSocketAdapter(BaseTestTrioSocketStream, MixinTestSocketSendM
         # Arrange
         chunks: list[list[bytes]] = []
 
-        def sendmsg_side_effect(buffers: Iterable[ReadableBuffer]) -> int:
+        def sendmsg_side_effect(buffers: Iterable[Buffer]) -> int:
             buffers = list(buffers)
             chunks.append(list(map(bytes, buffers)))
             return min(sum(memoryview(v).nbytes for v in buffers), 3)
@@ -709,7 +708,7 @@ class TestTrioStreamSocketAdapter(BaseTestTrioSocketStream, MixinTestSocketSendM
         # Arrange
         chunks: list[list[bytes]] = []
 
-        def sendmsg_side_effect(buffers: Iterable[ReadableBuffer]) -> int:
+        def sendmsg_side_effect(buffers: Iterable[Buffer]) -> int:
             buffers = list(buffers)
             chunks.append(list(map(bytes, buffers)))
             return sum(memoryview(v).nbytes for v in buffers)

@@ -22,9 +22,8 @@ __all__ = [
 
 import logging
 from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING, Any, Generic
+from typing import TYPE_CHECKING, Any
 
-from .._typevars import _T_Request, _T_Response
 from ..lowlevel.api_async.backend.abc import AsyncBackend
 from ..lowlevel.api_async.backend.utils import BuiltinAsyncBackendLiteral
 from ..lowlevel.socket import SocketAddress, SocketProxy
@@ -37,9 +36,8 @@ if TYPE_CHECKING:
     from ssl import SSLContext as _SSLContext
 
 
-class StandaloneTCPNetworkServer(
-    _base.BaseStandaloneNetworkServerImpl[AsyncTCPNetworkServer[_T_Request, _T_Response]],
-    Generic[_T_Request, _T_Response],
+class StandaloneTCPNetworkServer[Request, Response](
+    _base.BaseStandaloneNetworkServerImpl[AsyncTCPNetworkServer[Request, Response]],
 ):
     """
     A network server for TCP connections.
@@ -53,8 +51,8 @@ class StandaloneTCPNetworkServer(
         self,
         host: str | None | Sequence[str],
         port: int,
-        protocol: AnyStreamProtocolType[_T_Response, _T_Request],
-        request_handler: AsyncStreamRequestHandler[_T_Request, _T_Response],
+        protocol: AnyStreamProtocolType[Response, Request],
+        request_handler: AsyncStreamRequestHandler[Request, Response],
         backend: AsyncBackend | BuiltinAsyncBackendLiteral | None = None,
         *,
         runner_options: Mapping[str, Any] | None = None,

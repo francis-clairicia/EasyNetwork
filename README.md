@@ -56,7 +56,7 @@ Interested ? Here is the documentation : https://easynetwork.readthedocs.io/
 import asyncio
 import logging
 from collections.abc import AsyncGenerator
-from typing import Any, TypeAlias
+from typing import Any
 
 from easynetwork.protocol import StreamProtocol
 from easynetwork.serializers import JSONSerializer
@@ -65,8 +65,8 @@ from easynetwork.servers.handlers import AsyncStreamClient, AsyncStreamRequestHa
 
 # These TypeAliases are there to help you understand
 # where requests and responses are used in the code
-RequestType: TypeAlias = Any
-ResponseType: TypeAlias = Any
+type RequestType = Any
+type ResponseType = Any
 
 
 class JSONProtocol(StreamProtocol[ResponseType, RequestType]):
@@ -120,14 +120,14 @@ if __name__ == "__main__":
 
 ### TCP Echo client with JSON data
 ```py
-from typing import Any, TypeAlias
+from typing import Any
 
 from easynetwork.clients import TCPNetworkClient
 from easynetwork.protocol import StreamProtocol
 from easynetwork.serializers import JSONSerializer
 
-RequestType: TypeAlias = Any
-ResponseType: TypeAlias = Any
+type RequestType = Any
+type ResponseType = Any
 
 
 class JSONProtocol(StreamProtocol[RequestType, ResponseType]):

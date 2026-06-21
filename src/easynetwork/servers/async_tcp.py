@@ -23,9 +23,8 @@ import logging
 import weakref
 from collections.abc import AsyncIterator, Callable, Coroutine, Mapping, Sequence
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Generic, NoReturn, TypeVar, final
+from typing import TYPE_CHECKING, Any, NoReturn, final
 
-from .._typevars import _T_Request, _T_Response
 from ..exceptions import ClientClosedError
 from ..lowlevel import _utils, constants
 from ..lowlevel._final import runtime_final_class
@@ -54,9 +53,8 @@ if TYPE_CHECKING:
     from ssl import SSLContext
 
 
-class AsyncTCPNetworkServer(
-    _base.BaseAsyncNetworkServerImpl[_stream_server.AsyncStreamServer[_T_Request, _T_Response], SocketAddress],
-    Generic[_T_Request, _T_Response],
+class AsyncTCPNetworkServer[Request, Response](
+    _base.BaseAsyncNetworkServerImpl[_stream_server.AsyncStreamServer[Request, Response], SocketAddress],
 ):
     """
     An asynchronous network server for TCP connections.
@@ -74,8 +72,8 @@ class AsyncTCPNetworkServer(
         self,
         host: str | None | Sequence[str],
         port: int,
-        protocol: AnyStreamProtocolType[_T_Response, _T_Request],
-        request_handler: AsyncStreamRequestHandler[_T_Request, _T_Response],
+        protocol: AnyStreamProtocolType[Response, Request],
+        request_handler: AsyncStreamRequestHandler[Request, Response],
         backend: AsyncBackend | BuiltinAsyncBackendLiteral | None = None,
         *,
         ssl: SSLContext | None = None,
@@ -185,8 +183,8 @@ class AsyncTCPNetworkServer(
                 reuse_port=reuse_port,
             )
 
-        self.__protocol: AnyStreamProtocolType[_T_Response, _T_Request] = protocol
-        self.__request_handler: AsyncStreamRequestHandler[_T_Request, _T_Response] = request_handler
+        self.__protocol: AnyStreamProtocolType[Response, Request] = protocol
+        self.__request_handler: AsyncStreamRequestHandler[Request, Response] = request_handler
         self.__max_recv_size: int = max_recv_size
         self.__client_connection_log_level: int = logging.INFO if log_client_connection else logging.DEBUG
 
@@ -227,7 +225,7 @@ class AsyncTCPNetworkServer(
             for listener in listeners
         ]
 
-    async def __activate_listeners(self) -> list[_stream_server.AsyncStreamServer[_T_Request, _T_Response]]:
+    async def __activate_listeners(self) -> list[_stream_server.AsyncStreamServer[Request, Response]]:
         return [
             _stream_server.AsyncStreamServer(
                 listener,
@@ -245,7 +243,7 @@ class AsyncTCPNetworkServer(
 
     async def __lowlevel_serve(
         self,
-        server: _stream_server.AsyncStreamServer[_T_Request, _T_Response],
+        server: _stream_server.AsyncStreamServer[Request, Response],
         task_group: TaskGroup,
     ) -> NoReturn:
         def disconnect_error_filter(exc: Exception) -> bool:
@@ -269,8 +267,8 @@ class AsyncTCPNetworkServer(
     @contextlib.asynccontextmanager
     async def __client_initializer(
         self,
-        lowlevel_client: _stream_server.ConnectedStreamClient[_T_Response],
-    ) -> AsyncIterator[AsyncStreamClient[_T_Response] | None]:
+        lowlevel_client: _stream_server.ConnectedStreamClient[Response],
+    ) -> AsyncIterator[AsyncStreamClient[Response] | None]:
         async with contextlib.AsyncExitStack() as client_exit_stack:
             client_exit_stack.enter_context(self._bind_server())
 
@@ -354,12 +352,9 @@ class AsyncTCPNetworkServer(
         )
 
 
-_T_Value = TypeVar("_T_Value")
-
-
 @final
 @runtime_final_class
-class _ConnectedClientAPI(AsyncStreamClient[_T_Response]):
+class _ConnectedClientAPI[Response](AsyncStreamClient[Response]):
     __slots__ = (
         "__client",
         "__closing",
@@ -372,9 +367,9 @@ class _ConnectedClientAPI(AsyncStreamClient[_T_Response]):
     def __init__(
         self,
         address: SocketAddress,
-        client: _stream_server.ConnectedStreamClient[_T_Response],
+        client: _stream_server.ConnectedStreamClient[Response],
     ) -> None:
-        self.__client: _stream_server.ConnectedStreamClient[_T_Response] = client
+        self.__client: _stream_server.ConnectedStreamClient[Response] = client
         self.__closing: bool = False
         self.__send_lock = client.backend().create_fair_lock()
         self.__proxy: SocketProxy = SocketProxy(client.extra(INETSocketAttribute.socket))
@@ -420,7 +415,7 @@ class _ConnectedClientAPI(AsyncStreamClient[_T_Response]):
                 self.__closing = True
                 await self.__client.aclose()
 
-    async def send_packet(self, packet: _T_Response, /) -> None:
+    async def send_packet(self, packet: Response, /) -> None:
         async with self.__send_lock:
             if self.__closing:
                 raise ClientClosedError("Closed client")
@@ -430,7 +425,7 @@ class _ConnectedClientAPI(AsyncStreamClient[_T_Response]):
         return self.__client.backend()
 
     @staticmethod
-    def __simple_attribute_return(value: _T_Value) -> _T_Value:
+    def __simple_attribute_return[T](value: T) -> T:
         return value
 
     @property

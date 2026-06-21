@@ -39,7 +39,6 @@ else:
     from collections.abc import Awaitable, Callable, Iterator
     from typing import Any, final, overload
 
-    from .._typevars import _T_ReceivedPacket, _T_SentPacket
     from ..exceptions import ClientClosedError
     from ..lowlevel import _unix_utils, _utils, constants
     from ..lowlevel.api_async.backend.abc import AsyncBackend, ILock
@@ -52,7 +51,7 @@ else:
     from . import _base
     from .abc import AbstractAsyncNetworkClient
 
-    class AsyncUnixDatagramClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
+    class AsyncUnixDatagramClient[SentPacket, ReceivedPacket](AbstractAsyncNetworkClient[SentPacket, ReceivedPacket]):
         """
         An asynchronous Unix datagram client.
 
@@ -72,7 +71,7 @@ else:
             self,
             path: str | os.PathLike[str] | bytes | UnixSocketAddress,
             /,
-            protocol: DatagramProtocol[_T_SentPacket, _T_ReceivedPacket],
+            protocol: DatagramProtocol[SentPacket, ReceivedPacket],
             backend: AsyncBackend | BuiltinAsyncBackendLiteral | None = ...,
             *,
             local_path: str | os.PathLike[str] | bytes | UnixSocketAddress | None = ...,
@@ -83,7 +82,7 @@ else:
             self,
             socket: _socket.socket,
             /,
-            protocol: DatagramProtocol[_T_SentPacket, _T_ReceivedPacket],
+            protocol: DatagramProtocol[SentPacket, ReceivedPacket],
             backend: AsyncBackend | BuiltinAsyncBackendLiteral | None = ...,
         ) -> None: ...
 
@@ -91,7 +90,7 @@ else:
             self,
             __arg: str | os.PathLike[str] | bytes | UnixSocketAddress | _socket.socket,
             /,
-            protocol: DatagramProtocol[_T_SentPacket, _T_ReceivedPacket],
+            protocol: DatagramProtocol[SentPacket, ReceivedPacket],
             backend: AsyncBackend | BuiltinAsyncBackendLiteral | None = None,
             **kwargs: Any,
         ) -> None:
@@ -161,8 +160,8 @@ else:
         async def __create_endpoint(
             transport_factory: Callable[[], Awaitable[AsyncDatagramTransport]],
             *,
-            protocol: DatagramProtocol[_T_SentPacket, _T_ReceivedPacket],
-        ) -> AsyncDatagramEndpoint[_T_SentPacket, _T_ReceivedPacket]:
+            protocol: DatagramProtocol[SentPacket, ReceivedPacket],
+        ) -> AsyncDatagramEndpoint[SentPacket, ReceivedPacket]:
             transport = await transport_factory()
             socket = transport.extra(UNIXSocketAttribute.socket)
             local_name = UnixSocketAddress.from_raw(socket.getsockname())
@@ -256,7 +255,7 @@ else:
                 else:
                     await self.__endpoint.aclose()
 
-        async def send_packet(self, packet: _T_SentPacket, *, ancillary_data: SocketAncillary | None = None) -> None:
+        async def send_packet(self, packet: SentPacket, *, ancillary_data: SocketAncillary | None = None) -> None:
             """
             Sends `packet` to the remote endpoint. Does not require task synchronization.
 
@@ -288,7 +287,7 @@ else:
             *,
             ancillary_data: SocketAncillary | None = None,
             ancillary_bufsize: int | None = None,
-        ) -> _T_ReceivedPacket:
+        ) -> ReceivedPacket:
             """
             Waits for a new packet to arrive from the remote endpoint. Does not require task synchronization.
 

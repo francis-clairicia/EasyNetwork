@@ -25,28 +25,22 @@ import inspect
 import logging
 from collections.abc import AsyncGenerator, Callable, Hashable
 from contextlib import AbstractAsyncContextManager, AsyncExitStack
-from typing import TypeVar, TypeVarTuple
 
-from .._typevars import _T_Request, _T_Response
 from ..lowlevel import _utils
 from ..lowlevel.api_async.servers import datagram as _datagram_server, stream as _stream_server
 from ..lowlevel.request_handler import RecvParams
 from .handlers import AsyncDatagramClient, AsyncDatagramRequestHandler, AsyncStreamClient, AsyncStreamRequestHandler
 
-_T_Address = TypeVar("_T_Address", bound=Hashable)
 
-_T_VarArgs = TypeVarTuple("_T_VarArgs")
-
-
-def build_lowlevel_stream_server_handler(
+def build_lowlevel_stream_server_handler[*VarArgs, Request, Response](
     initializer: Callable[
-        [_stream_server.ConnectedStreamClient[_T_Response], *_T_VarArgs],
-        AbstractAsyncContextManager[AsyncStreamClient[_T_Response] | None],
+        [_stream_server.ConnectedStreamClient[Response], *VarArgs],
+        AbstractAsyncContextManager[AsyncStreamClient[Response] | None],
     ],
-    request_handler: AsyncStreamRequestHandler[_T_Request, _T_Response],
-    *args: *_T_VarArgs,
+    request_handler: AsyncStreamRequestHandler[Request, Response],
+    *args: *VarArgs,
     logger: logging.Logger | None = None,
-) -> Callable[[_stream_server.ConnectedStreamClient[_T_Response]], AsyncGenerator[float | RecvParams | None, _T_Request]]:
+) -> Callable[[_stream_server.ConnectedStreamClient[Response]], AsyncGenerator[float | RecvParams | None, Request]]:
     """
     Creates an :term:`asynchronous generator` function, usable by :meth:`.AsyncStreamServer.serve`, from
     an :class:`.AsyncStreamRequestHandler`.
@@ -71,8 +65,8 @@ def build_lowlevel_stream_server_handler(
     from ..lowlevel.api_async.transports import utils as _transports_utils
 
     async def handler(
-        lowlevel_client: _stream_server.ConnectedStreamClient[_T_Response], /
-    ) -> AsyncGenerator[float | RecvParams | None, _T_Request]:
+        lowlevel_client: _stream_server.ConnectedStreamClient[Response], /
+    ) -> AsyncGenerator[float | RecvParams | None, Request]:
         async with initializer(lowlevel_client, *args) as client, AsyncExitStack() as request_handler_exit_stack:
             del lowlevel_client
 
@@ -80,8 +74,8 @@ def build_lowlevel_stream_server_handler(
                 # Initialization failed, but must not raise an exception.
                 return
 
-            request_handler_generator: AsyncGenerator[float | RecvParams | None, _T_Request]
-            request: _T_Request | None
+            request_handler_generator: AsyncGenerator[float | RecvParams | None, Request]
+            request: Request | None
             recv_params: float | RecvParams | None
 
             _on_connection_hook = request_handler.on_connection(client)
@@ -165,16 +159,16 @@ def build_lowlevel_stream_server_handler(
     return handler
 
 
-def build_lowlevel_datagram_server_handler(
+def build_lowlevel_datagram_server_handler[*VarArgs, Request, Response, Address: Hashable](
     initializer: Callable[
-        [_datagram_server.DatagramClientContext[_T_Response, _T_Address], *_T_VarArgs],
-        AbstractAsyncContextManager[AsyncDatagramClient[_T_Response] | None],
+        [_datagram_server.DatagramClientContext[Response, Address], *VarArgs],
+        AbstractAsyncContextManager[AsyncDatagramClient[Response] | None],
     ],
-    request_handler: AsyncDatagramRequestHandler[_T_Request, _T_Response],
-    *args: *_T_VarArgs,
+    request_handler: AsyncDatagramRequestHandler[Request, Response],
+    *args: *VarArgs,
 ) -> Callable[
-    [_datagram_server.DatagramClientContext[_T_Response, _T_Address]],
-    AsyncGenerator[float | RecvParams | None, _T_Request],
+    [_datagram_server.DatagramClientContext[Response, Address]],
+    AsyncGenerator[float | RecvParams | None, Request],
 ]:
     """
     Creates an :term:`asynchronous generator` function, usable by :meth:`.AsyncDatagramServer.serve`, from
@@ -194,8 +188,8 @@ def build_lowlevel_datagram_server_handler(
     """
 
     async def handler(
-        lowlevel_client: _datagram_server.DatagramClientContext[_T_Response, _T_Address], /
-    ) -> AsyncGenerator[float | RecvParams | None, _T_Request]:
+        lowlevel_client: _datagram_server.DatagramClientContext[Response, Address], /
+    ) -> AsyncGenerator[float | RecvParams | None, Request]:
         async with initializer(lowlevel_client, *args) as client:
             del lowlevel_client
 
@@ -204,7 +198,7 @@ def build_lowlevel_datagram_server_handler(
                 return
 
             request_handler_generator = request_handler.handle(client)
-            request: _T_Request | None
+            request: Request | None
             recv_params: float | RecvParams | None
             try:
                 recv_params = await anext(request_handler_generator)

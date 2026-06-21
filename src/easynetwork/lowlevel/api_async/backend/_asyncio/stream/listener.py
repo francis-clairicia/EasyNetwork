@@ -36,7 +36,7 @@ import warnings
 from abc import abstractmethod
 from collections.abc import Callable, Coroutine, Mapping
 from types import MappingProxyType
-from typing import Any, Generic, NoReturn, TypeVar, final
+from typing import Any, NoReturn, final
 
 from ......exceptions import UnsupportedOperation
 from ..... import _utils, constants, socket as socket_tools
@@ -45,10 +45,8 @@ from ...abc import AsyncBackend, CancelScope, TaskGroup
 from ..tasks import TaskUtils
 from .socket import AsyncioTransportStreamSocketAdapter, StreamReaderBufferedProtocol
 
-_T_Stream = TypeVar("_T_Stream", bound=AsyncStreamTransport)
 
-
-class ListenerSocketAdapter(AsyncListener[_T_Stream]):
+class ListenerSocketAdapter[Stream: AsyncStreamTransport](AsyncListener[Stream]):
     __slots__ = (
         "__backend",
         "__socket",
@@ -63,7 +61,7 @@ class ListenerSocketAdapter(AsyncListener[_T_Stream]):
         self,
         backend: AsyncBackend,
         socket: _socket.socket,
-        accepted_socket_factory: AbstractAcceptedSocketFactory[_T_Stream],
+        accepted_socket_factory: AbstractAcceptedSocketFactory[Stream],
         *,
         backlog: int,
     ) -> None:
@@ -111,7 +109,7 @@ class ListenerSocketAdapter(AsyncListener[_T_Stream]):
 
     async def serve(
         self,
-        handler: Callable[[_T_Stream], Coroutine[Any, Any, None]],
+        handler: Callable[[Stream], Coroutine[Any, Any, None]],
         task_group: TaskGroup | None = None,
     ) -> NoReturn:
         connect = self.__accepted_socket_factory.connect
@@ -276,7 +274,7 @@ class ListenerSocketAdapter(AsyncListener[_T_Stream]):
         return self.__extra_attributes
 
 
-class AbstractAcceptedSocketFactory(Generic[_T_Stream]):
+class AbstractAcceptedSocketFactory[Stream: AsyncStreamTransport]:
     __slots__ = ()
 
     @abstractmethod
@@ -284,7 +282,7 @@ class AbstractAcceptedSocketFactory(Generic[_T_Stream]):
         raise NotImplementedError
 
     @abstractmethod
-    async def connect(self, backend: AsyncBackend, socket: _socket.socket) -> _T_Stream:
+    async def connect(self, backend: AsyncBackend, socket: _socket.socket) -> Stream:
         raise NotImplementedError
 
 

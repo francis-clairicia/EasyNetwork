@@ -27,15 +27,14 @@ import errno as _errno
 import math
 import warnings
 from collections.abc import Callable, Mapping
-from typing import Any, Generic, assert_never
+from typing import Any, assert_never
 
-from ...._typevars import _T_ReceivedPacket, _T_SentPacket
 from ....protocol import AnyStreamProtocolType
 from ... import _stream, _utils
 from ..transports import abc as _transports
 
 
-class StreamReceiverEndpoint(_transports.BaseTransport, Generic[_T_ReceivedPacket]):
+class StreamReceiverEndpoint[ReceivedPacket](_transports.BaseTransport):
     """
     A read-only communication endpoint based on continuous stream data transport.
     """
@@ -48,7 +47,7 @@ class StreamReceiverEndpoint(_transports.BaseTransport, Generic[_T_ReceivedPacke
     def __init__(
         self,
         transport: _transports.StreamReadTransport,
-        protocol: AnyStreamProtocolType[Any, _T_ReceivedPacket],
+        protocol: AnyStreamProtocolType[Any, ReceivedPacket],
         max_recv_size: int,
     ) -> None:
         """
@@ -62,7 +61,7 @@ class StreamReceiverEndpoint(_transports.BaseTransport, Generic[_T_ReceivedPacke
             raise TypeError(f"Expected a StreamReadTransport object, got {transport!r}")
         _check_max_recv_size_value(max_recv_size)
 
-        self.__receiver: _DataReceiverImpl[_T_ReceivedPacket] | _BufferedReceiverImpl[_T_ReceivedPacket] = _get_receiver(
+        self.__receiver: _DataReceiverImpl[ReceivedPacket] | _BufferedReceiverImpl[ReceivedPacket] = _get_receiver(
             transport=transport,
             protocol=protocol,
             max_recv_size=max_recv_size,
@@ -97,7 +96,7 @@ class StreamReceiverEndpoint(_transports.BaseTransport, Generic[_T_ReceivedPacke
         finally:
             self.__receiver.clear()
 
-    def recv_packet(self, *, timeout: float | None = None) -> _T_ReceivedPacket:
+    def recv_packet(self, *, timeout: float | None = None) -> ReceivedPacket:
         """
         Waits for a new packet to arrive from the remote endpoint.
 
@@ -127,7 +126,7 @@ class StreamReceiverEndpoint(_transports.BaseTransport, Generic[_T_ReceivedPacke
         ancillary_data_received: Callable[[Any], object],
         *,
         timeout: float | None = None,
-    ) -> _T_ReceivedPacket:
+    ) -> ReceivedPacket:
         """
         Waits for a new packet with ancillary data to arrive from the remote endpoint.
 
@@ -163,7 +162,7 @@ class StreamReceiverEndpoint(_transports.BaseTransport, Generic[_T_ReceivedPacke
         return self.__transport.extra_attributes
 
 
-class StreamSenderEndpoint(_transports.BaseTransport, Generic[_T_SentPacket]):
+class StreamSenderEndpoint[SentPacket](_transports.BaseTransport):
     """
     A write-only communication endpoint based on continuous stream data transport.
     """
@@ -176,7 +175,7 @@ class StreamSenderEndpoint(_transports.BaseTransport, Generic[_T_SentPacket]):
     def __init__(
         self,
         transport: _transports.StreamWriteTransport,
-        protocol: AnyStreamProtocolType[_T_SentPacket, Any],
+        protocol: AnyStreamProtocolType[SentPacket, Any],
     ) -> None:
         """
         Parameters:
@@ -187,7 +186,7 @@ class StreamSenderEndpoint(_transports.BaseTransport, Generic[_T_SentPacket]):
         if not isinstance(transport, _transports.StreamWriteTransport):
             raise TypeError(f"Expected a StreamWriteTransport object, got {transport!r}")
 
-        self.__sender: _DataSenderImpl[_T_SentPacket] = _DataSenderImpl(transport, _stream.StreamDataProducer(protocol))
+        self.__sender: _DataSenderImpl[SentPacket] = _DataSenderImpl(transport, _stream.StreamDataProducer(protocol))
         self.__transport: _transports.StreamWriteTransport = transport
 
     def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
@@ -214,7 +213,7 @@ class StreamSenderEndpoint(_transports.BaseTransport, Generic[_T_SentPacket]):
         """
         self.__transport.close()
 
-    def send_packet(self, packet: _T_SentPacket, *, timeout: float | None = None) -> None:
+    def send_packet(self, packet: SentPacket, *, timeout: float | None = None) -> None:
         """
         Sends `packet` to the remote endpoint.
 
@@ -241,7 +240,7 @@ class StreamSenderEndpoint(_transports.BaseTransport, Generic[_T_SentPacket]):
 
         return sender.send(packet, timeout)
 
-    def send_packet_with_ancillary(self, packet: _T_SentPacket, ancillary_data: Any, *, timeout: float | None = None) -> None:
+    def send_packet_with_ancillary(self, packet: SentPacket, ancillary_data: Any, *, timeout: float | None = None) -> None:
         """
         Sends `packet` to the remote endpoint with ancillary data.
 
@@ -272,7 +271,7 @@ class StreamSenderEndpoint(_transports.BaseTransport, Generic[_T_SentPacket]):
         return self.__transport.extra_attributes
 
 
-class StreamEndpoint(_transports.BaseTransport, Generic[_T_SentPacket, _T_ReceivedPacket]):
+class StreamEndpoint[SentPacket, ReceivedPacket](_transports.BaseTransport):
     """
     A full-duplex communication endpoint based on continuous stream data transport.
     """
@@ -287,7 +286,7 @@ class StreamEndpoint(_transports.BaseTransport, Generic[_T_SentPacket, _T_Receiv
     def __init__(
         self,
         transport: _transports.StreamTransport,
-        protocol: AnyStreamProtocolType[_T_SentPacket, _T_ReceivedPacket],
+        protocol: AnyStreamProtocolType[SentPacket, ReceivedPacket],
         max_recv_size: int,
     ) -> None:
         """
@@ -301,8 +300,8 @@ class StreamEndpoint(_transports.BaseTransport, Generic[_T_SentPacket, _T_Receiv
             raise TypeError(f"Expected a StreamTransport object, got {transport!r}")
         _check_max_recv_size_value(max_recv_size)
 
-        self.__sender: _DataSenderImpl[_T_SentPacket] = _DataSenderImpl(transport, _stream.StreamDataProducer(protocol))
-        self.__receiver: _DataReceiverImpl[_T_ReceivedPacket] | _BufferedReceiverImpl[_T_ReceivedPacket] = _get_receiver(
+        self.__sender: _DataSenderImpl[SentPacket] = _DataSenderImpl(transport, _stream.StreamDataProducer(protocol))
+        self.__receiver: _DataReceiverImpl[ReceivedPacket] | _BufferedReceiverImpl[ReceivedPacket] = _get_receiver(
             transport=transport,
             protocol=protocol,
             max_recv_size=max_recv_size,
@@ -338,7 +337,7 @@ class StreamEndpoint(_transports.BaseTransport, Generic[_T_SentPacket, _T_Receiv
         finally:
             self.__receiver.clear()
 
-    def send_packet(self, packet: _T_SentPacket, *, timeout: float | None = None) -> None:
+    def send_packet(self, packet: SentPacket, *, timeout: float | None = None) -> None:
         """
         Sends `packet` to the remote endpoint.
 
@@ -368,7 +367,7 @@ class StreamEndpoint(_transports.BaseTransport, Generic[_T_SentPacket, _T_Receiv
 
         return sender.send(packet, timeout)
 
-    def send_packet_with_ancillary(self, packet: _T_SentPacket, ancillary_data: Any, *, timeout: float | None = None) -> None:
+    def send_packet_with_ancillary(self, packet: SentPacket, ancillary_data: Any, *, timeout: float | None = None) -> None:
         """
         Sends `packet` to the remote endpoint with ancillary data.
 
@@ -413,7 +412,7 @@ class StreamEndpoint(_transports.BaseTransport, Generic[_T_SentPacket, _T_Receiv
         transport.send_eof()
         self.__eof_sent = True
 
-    def recv_packet(self, *, timeout: float | None = None) -> _T_ReceivedPacket:
+    def recv_packet(self, *, timeout: float | None = None) -> ReceivedPacket:
         """
         Waits for a new packet to arrive from the remote endpoint.
 
@@ -443,7 +442,7 @@ class StreamEndpoint(_transports.BaseTransport, Generic[_T_SentPacket, _T_Receiv
         ancillary_data_received: Callable[[Any], object],
         *,
         timeout: float | None = None,
-    ) -> _T_ReceivedPacket:
+    ) -> ReceivedPacket:
         """
         Waits for a new packet with ancillary data to arrive from the remote endpoint.
 
@@ -480,28 +479,28 @@ class StreamEndpoint(_transports.BaseTransport, Generic[_T_SentPacket, _T_Receiv
 
 
 @dataclasses.dataclass(slots=True)
-class _DataSenderImpl(Generic[_T_SentPacket]):
+class _DataSenderImpl[SentPacket]:
     transport: _transports.StreamWriteTransport
-    producer: _stream.StreamDataProducer[_T_SentPacket]
+    producer: _stream.StreamDataProducer[SentPacket]
 
-    def send(self, packet: _T_SentPacket, timeout: float) -> None:
+    def send(self, packet: SentPacket, timeout: float) -> None:
         return self.transport.send_all_from_iterable(self.producer.generate(packet), timeout)
 
-    def send_with_ancillary(self, packet: _T_SentPacket, ancillary_data: Any, timeout: float) -> None:
+    def send_with_ancillary(self, packet: SentPacket, ancillary_data: Any, timeout: float) -> None:
         return self.transport.send_all_with_ancillary(self.producer.generate(packet), ancillary_data, timeout)
 
 
 @dataclasses.dataclass(slots=True)
-class _DataReceiverImpl(Generic[_T_ReceivedPacket]):
+class _DataReceiverImpl[ReceivedPacket]:
     transport: _transports.StreamReadTransport
-    consumer: _stream.StreamDataConsumer[_T_ReceivedPacket]
+    consumer: _stream.StreamDataConsumer[ReceivedPacket]
     max_recv_size: int
     _eof_reached: bool = dataclasses.field(init=False, default=False)
 
     def clear(self) -> None:
         self.consumer.clear()
 
-    def receive(self, timeout: float) -> _T_ReceivedPacket:
+    def receive(self, timeout: float) -> ReceivedPacket:
         consumer = self.consumer
         try:
             return consumer.next(None)
@@ -536,7 +535,7 @@ class _DataReceiverImpl(Generic[_T_ReceivedPacket]):
         ancillary_bufsize: int,
         ancillary_data_received: Callable[[Any], object],
         timeout: float,
-    ) -> _T_ReceivedPacket:
+    ) -> ReceivedPacket:
         consumer = self.consumer
         try:
             return consumer.next(None)
@@ -569,15 +568,15 @@ class _DataReceiverImpl(Generic[_T_ReceivedPacket]):
 
 
 @dataclasses.dataclass(slots=True)
-class _BufferedReceiverImpl(Generic[_T_ReceivedPacket]):
+class _BufferedReceiverImpl[ReceivedPacket]:
     transport: _transports.StreamReadTransport
-    consumer: _stream.BufferedStreamDataConsumer[_T_ReceivedPacket]
+    consumer: _stream.BufferedStreamDataConsumer[ReceivedPacket]
     _eof_reached: bool = dataclasses.field(init=False, default=False)
 
     def clear(self) -> None:
         self.consumer.clear()
 
-    def receive(self, timeout: float) -> _T_ReceivedPacket:
+    def receive(self, timeout: float) -> ReceivedPacket:
         consumer = self.consumer
         try:
             return consumer.next(None)
@@ -610,7 +609,7 @@ class _BufferedReceiverImpl(Generic[_T_ReceivedPacket]):
         ancillary_bufsize: int,
         ancillary_data_received: Callable[[Any], object],
         timeout: float,
-    ) -> _T_ReceivedPacket:
+    ) -> ReceivedPacket:
         consumer = self.consumer
         try:
             return consumer.next(None)
@@ -641,12 +640,12 @@ class _BufferedReceiverImpl(Generic[_T_ReceivedPacket]):
         raise _utils.error_from_errno(_errno.ECONNABORTED, "{strerror} (end-of-stream)")
 
 
-def _get_receiver(
+def _get_receiver[ReceivedPacket](
     transport: _transports.StreamReadTransport,
-    protocol: AnyStreamProtocolType[Any, _T_ReceivedPacket],
+    protocol: AnyStreamProtocolType[Any, ReceivedPacket],
     *,
     max_recv_size: int,
-) -> _DataReceiverImpl[_T_ReceivedPacket] | _BufferedReceiverImpl[_T_ReceivedPacket]:
+) -> _DataReceiverImpl[ReceivedPacket] | _BufferedReceiverImpl[ReceivedPacket]:
     from ....protocol import BufferedStreamProtocol, StreamProtocol
 
     _stream._check_any_protocol(protocol)

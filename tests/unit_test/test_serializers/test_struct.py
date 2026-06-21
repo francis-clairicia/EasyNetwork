@@ -375,7 +375,7 @@ class TestNamedTupleStructSerializer(BaseTestStructBasedSerializer):
 
         # Act & Assert
         with pytest.raises(TypeError, match=r"^Expected a namedtuple_cls instance, got namedtuple_cls_copy\(x=1234, y=56789\)$"):
-            _ = serializer.iter_values(namedtuple_instance)  # type: ignore[arg-type]
+            _ = serializer.iter_values(namedtuple_instance)
 
     def test____from_tuple____construct_namedtuple____without_strings(self) -> None:
         # Arrange

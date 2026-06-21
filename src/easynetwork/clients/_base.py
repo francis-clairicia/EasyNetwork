@@ -24,7 +24,7 @@ import contextlib
 import dataclasses
 import errno as _errno
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING, Generic, TypeVar
+from typing import TYPE_CHECKING
 
 try:
     import ssl
@@ -44,16 +44,14 @@ from ..lowlevel.api_async.transports.utils import aclose_forcefully
 if TYPE_CHECKING:
     from ssl import SSLContext
 
-_T_Endpoint = TypeVar("_T_Endpoint", bound=AsyncBaseTransport)
-
 
 @dataclasses.dataclass(kw_only=True, slots=True)
-class _AsyncTransportConnector(Generic[_T_Endpoint]):
-    endpoint_factory: Callable[[], Awaitable[_T_Endpoint]]
+class _AsyncTransportConnector[Endpoint: AsyncBaseTransport]:
+    endpoint_factory: Callable[[], Awaitable[Endpoint]]
     scope: CancelScope
 
-    async def get(self) -> _T_Endpoint | None:
-        endpoint: _T_Endpoint | None = None
+    async def get(self) -> Endpoint | None:
+        endpoint: Endpoint | None = None
         with self.scope:
             endpoint = await self.endpoint_factory()
         if endpoint is not None and self.scope.cancel_called():
@@ -62,7 +60,7 @@ class _AsyncTransportConnector(Generic[_T_Endpoint]):
         return endpoint
 
 
-class DeferredAsyncEndpointInit(Generic[_T_Endpoint]):
+class DeferredAsyncEndpointInit[Endpoint: AsyncBaseTransport]:
     __slots__ = (
         "__backend",
         "__endpoint",
@@ -74,17 +72,17 @@ class DeferredAsyncEndpointInit(Generic[_T_Endpoint]):
         self,
         *,
         backend: AsyncBackend,
-        endpoint_factory: Callable[[], Awaitable[_T_Endpoint]],
+        endpoint_factory: Callable[[], Awaitable[Endpoint]],
     ) -> None:
         self.__backend: AsyncBackend = backend
-        self.__endpoint: _T_Endpoint | None = None
-        self.__transport_connector: _AsyncTransportConnector[_T_Endpoint] | None = _AsyncTransportConnector(
+        self.__endpoint: Endpoint | None = None
+        self.__transport_connector: _AsyncTransportConnector[Endpoint] | None = _AsyncTransportConnector(
             endpoint_factory=endpoint_factory,
             scope=backend.open_cancel_scope(),
         )
         self.__transport_connector_lock: ILock = backend.create_lock()
 
-    def get_endpoint_unchecked(self) -> _T_Endpoint | None:
+    def get_endpoint_unchecked(self) -> Endpoint | None:
         return self.__endpoint
 
     def is_closing(self) -> bool:
@@ -103,7 +101,7 @@ class DeferredAsyncEndpointInit(Generic[_T_Endpoint]):
             return
         await self.__endpoint.aclose()
 
-    async def connect(self) -> _T_Endpoint:
+    async def connect(self) -> Endpoint:
         async with self.__transport_connector_lock:
             if self.__endpoint is None:
                 endpoint = None
@@ -121,7 +119,7 @@ class DeferredAsyncEndpointInit(Generic[_T_Endpoint]):
             raise self.__closed()
         return self.__endpoint
 
-    def get_sync(self) -> _T_Endpoint:
+    def get_sync(self) -> Endpoint:
         if self.__endpoint is None:
             if self.__transport_connector is not None:
                 raise _utils.error_from_errno(_errno.ENOTCONN)

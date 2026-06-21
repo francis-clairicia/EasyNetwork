@@ -35,10 +35,8 @@ __all__ = [
     "UnsupportedOperation",
 ]
 
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    from _typeshed import ReadableBuffer
+from collections.abc import Buffer
+from typing import Any
 
 
 class BusyResourceError(RuntimeError):
@@ -80,7 +78,7 @@ class DeserializeError(Exception):
 class IncrementalDeserializeError(DeserializeError):
     """Error raised by an :term:`incremental serializer` if the data format is invalid."""
 
-    def __init__(self, message: str, remaining_data: ReadableBuffer, error_info: Any = None) -> None:
+    def __init__(self, message: str, remaining_data: Buffer, error_info: Any = None) -> None:
         """
         Parameters:
             message: Error message.
@@ -90,14 +88,14 @@ class IncrementalDeserializeError(DeserializeError):
 
         super().__init__(message, error_info=error_info)
 
-        self.remaining_data: ReadableBuffer = remaining_data
+        self.remaining_data: Buffer = remaining_data
         """Unused trailing data."""
 
 
 class LimitOverrunError(IncrementalDeserializeError):
     """Reached the buffer size limit while looking for a separator."""
 
-    def __init__(self, message: str, buffer: ReadableBuffer, consumed: int, separator: bytes = b"") -> None:
+    def __init__(self, message: str, buffer: Buffer, consumed: int, separator: bytes = b"") -> None:
         """
         Parameters:
             message: Error message.
@@ -159,7 +157,7 @@ class DatagramProtocolParseError(BaseProtocolParseError):
 class StreamProtocolParseError(BaseProtocolParseError):
     """Parsing error raised by :class:`easynetwork.protocol.StreamProtocol`."""
 
-    def __init__(self, remaining_data: ReadableBuffer, error: IncrementalDeserializeError | PacketConversionError) -> None:
+    def __init__(self, remaining_data: Buffer, error: IncrementalDeserializeError | PacketConversionError) -> None:
         """
         Parameters:
             remaining_data: Unused trailing data.
@@ -171,7 +169,7 @@ class StreamProtocolParseError(BaseProtocolParseError):
         self.error: IncrementalDeserializeError | PacketConversionError
         """Error instance."""
 
-        self.remaining_data: ReadableBuffer = remaining_data
+        self.remaining_data: Buffer = remaining_data
         """Unused trailing data."""
 
 

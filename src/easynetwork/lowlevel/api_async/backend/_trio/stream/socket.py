@@ -23,9 +23,9 @@ import itertools
 import sys
 import warnings
 from collections import deque
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Buffer, Callable, Iterable, Mapping
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, final
+from typing import Any, final
 
 import trio
 
@@ -33,9 +33,6 @@ from ..... import _unix_utils, _utils, constants, socket as socket_tools
 from ....transports.abc import AsyncStreamTransport
 from ...abc import AsyncBackend
 from .._trio_utils import convert_trio_resource_errors
-
-if TYPE_CHECKING:
-    from _typeshed import ReadableBuffer, WriteableBuffer
 
 
 @final
@@ -73,7 +70,7 @@ class TrioStreamSocketAdapter(AsyncStreamTransport):
         with convert_trio_resource_errors(broken_resource_errno=_errno.ECONNABORTED):
             return await self.__stream.receive_some(bufsize)
 
-    async def recv_into(self, buffer: WriteableBuffer) -> int:
+    async def recv_into(self, buffer: Buffer) -> int:
         with convert_trio_resource_errors(broken_resource_errno=_errno.ECONNABORTED):
             return await self.__stream.socket.recv_into(buffer)
 
@@ -90,7 +87,7 @@ class TrioStreamSocketAdapter(AsyncStreamTransport):
 
         async def recv_with_ancillary_into(
             self,
-            buffer: WriteableBuffer,
+            buffer: Buffer,
             ancillary_bufsize: int,
         ) -> tuple[int, list[tuple[int, int, bytes]]]:
             if not _unix_utils.is_unix_socket_family((socket := self.__stream.socket).family):
@@ -110,7 +107,7 @@ class TrioStreamSocketAdapter(AsyncStreamTransport):
             async def send_all_with_ancillary(
                 self,
                 iterable_of_data: Iterable[bytes | bytearray | memoryview],
-                ancillary_data: Iterable[tuple[int, int, ReadableBuffer]],
+                ancillary_data: Iterable[tuple[int, int, Buffer]],
             ) -> None:
                 if not _unix_utils.is_unix_socket_family((socket := self.__stream.socket).family):
                     return await super().send_all_with_ancillary(iterable_of_data, ancillary_data)

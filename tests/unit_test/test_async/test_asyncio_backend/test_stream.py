@@ -10,10 +10,10 @@ import logging
 import os
 import ssl
 import sys
-from collections.abc import AsyncIterator, Callable, Coroutine, Iterable
+from collections.abc import AsyncIterator, Buffer, Callable, Coroutine, Iterable
 from errno import EBADF, errorcode as errno_errorcode
 from socket import SHUT_WR
-from typing import TYPE_CHECKING, Any, Literal, NoReturn, TypeAlias
+from typing import TYPE_CHECKING, Any, Literal, NoReturn
 
 from easynetwork.exceptions import BusyResourceError, UnsupportedOperation
 from easynetwork.lowlevel.api_async.backend._asyncio.backend import AsyncIOBackend
@@ -51,7 +51,6 @@ if sys.platform != "win32":
 if TYPE_CHECKING:
     from unittest.mock import AsyncMock, MagicMock
 
-    from _typeshed import ReadableBuffer
     from pytest_mock import MockerFixture
 
 
@@ -1606,7 +1605,7 @@ if sys.platform != "win32":
             # Arrange
             chunks: list[list[bytes]] = []
 
-            def sendmsg_side_effect(buffers: Iterable[ReadableBuffer], *args: Any) -> int:
+            def sendmsg_side_effect(buffers: Iterable[Buffer], *args: Any) -> int:
                 buffers = list(buffers)
                 chunks.append(list(map(bytes, buffers)))
                 return sum(memoryview(v).nbytes for v in buffers)
@@ -1634,7 +1633,7 @@ if sys.platform != "win32":
             # Arrange
             chunks: list[list[bytes]] = []
 
-            def sendmsg_side_effect(buffers: Iterable[ReadableBuffer], *args: Any) -> int:
+            def sendmsg_side_effect(buffers: Iterable[Buffer], *args: Any) -> int:
                 buffers = list(buffers)
                 chunks.append(list(map(bytes, buffers)))
                 return min(sum(memoryview(v).nbytes for v in buffers), 3)
@@ -1665,7 +1664,7 @@ if sys.platform != "win32":
             # Arrange
             chunks: list[list[bytes]] = []
 
-            def sendmsg_side_effect(buffers: Iterable[ReadableBuffer], *args: Any) -> int:
+            def sendmsg_side_effect(buffers: Iterable[Buffer], *args: Any) -> int:
                 buffers = list(buffers)
                 chunks.append(list(map(bytes, buffers)))
                 return sum(memoryview(v).nbytes for v in buffers)
@@ -1700,7 +1699,7 @@ if sys.platform != "win32":
             chunks: list[list[bytes]] = []
             ancillary_data_sent: list[list[Any]] = []
 
-            def sendmsg_side_effect(buffers: Iterable[ReadableBuffer], ancdata: Iterable[Any]) -> int:
+            def sendmsg_side_effect(buffers: Iterable[Buffer], ancdata: Iterable[Any]) -> int:
                 buffers = list(buffers)
                 ancdata = list(ancdata)
                 if to_raise:
@@ -1760,7 +1759,7 @@ if sys.platform != "win32":
             # Arrange
             chunks: list[list[bytes]] = []
 
-            def sendmsg_side_effect(buffers: Iterable[ReadableBuffer]) -> int:
+            def sendmsg_side_effect(buffers: Iterable[Buffer]) -> int:
                 buffers = list(buffers)
                 chunks.append(list(map(bytes, buffers)))
                 return sum(memoryview(v).nbytes for v in buffers)
@@ -1789,7 +1788,7 @@ if sys.platform != "win32":
             # Arrange
             chunks: list[list[bytes]] = []
 
-            def sendmsg_side_effect(buffers: Iterable[ReadableBuffer]) -> int:
+            def sendmsg_side_effect(buffers: Iterable[Buffer]) -> int:
                 buffers = list(buffers)
                 chunks.append(list(map(bytes, buffers)))
                 return sum(memoryview(v).nbytes for v in buffers)
@@ -1820,7 +1819,7 @@ if sys.platform != "win32":
             # Arrange
             chunks: list[list[bytes]] = []
 
-            def sendmsg_side_effect(buffers: Iterable[ReadableBuffer]) -> int:
+            def sendmsg_side_effect(buffers: Iterable[Buffer]) -> int:
                 buffers = list(buffers)
                 chunks.append(list(map(bytes, buffers)))
                 return min(sum(memoryview(v).nbytes for v in buffers), 3)
@@ -1854,7 +1853,7 @@ if sys.platform != "win32":
             # Arrange
             chunks: list[list[bytes]] = []
 
-            def sendmsg_side_effect(buffers: Iterable[ReadableBuffer]) -> int:
+            def sendmsg_side_effect(buffers: Iterable[Buffer]) -> int:
                 buffers = list(buffers)
                 chunks.append(list(map(bytes, buffers)))
                 return sum(memoryview(v).nbytes for v in buffers)
@@ -1884,7 +1883,7 @@ if sys.platform != "win32":
             to_raise: list[type[OSError]] = [BlockingIOError]
             chunks: list[list[bytes]] = []
 
-            def sendmsg_side_effect(buffers: Iterable[ReadableBuffer]) -> int:
+            def sendmsg_side_effect(buffers: Iterable[Buffer]) -> int:
                 if to_raise:
                     raise to_raise.pop(0)
                 buffers = list(buffers)
@@ -2286,7 +2285,7 @@ if sys.platform != "win32":
             assert transport.backend() is asyncio_backend
 
 
-_ProtocolDataReceiver: TypeAlias = Callable[[StreamReaderBufferedProtocol, int], Coroutine[Any, Any, bytes]]
+type _ProtocolDataReceiver = Callable[[StreamReaderBufferedProtocol, int], Coroutine[Any, Any, bytes]]
 
 
 class TestStreamReaderBufferedProtocol(BaseTestTransportWithSSL):
