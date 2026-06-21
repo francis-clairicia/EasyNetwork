@@ -76,7 +76,7 @@ jobs:
       - name: Setup tox
         uses: ./.github/actions/setup-tox
         with:
-          python-version: '3.11'
+          python-version: '3.12'
       - name: Compute SOURCE_DATE_EPOCH from commit date
         if: env.SOURCE_DATE_EPOCH == ''
         run: |

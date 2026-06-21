@@ -25,7 +25,7 @@ import types
 from collections import deque
 from collections.abc import Awaitable, Callable, Coroutine, Generator, Iterable
 from types import TracebackType
-from typing import Any, ClassVar, NamedTuple, Self, TypeVar, TypeVarTuple, cast, final
+from typing import Any, ClassVar, NamedTuple, Self, TypeVar, TypeVarTuple, final
 from weakref import WeakKeyDictionary
 
 from .... import _utils
@@ -540,7 +540,7 @@ class TaskUtils:
 
     @classmethod
     def create_task_info(cls, task: asyncio.Task[Any]) -> TaskInfo:
-        return TaskInfo(id(task), task.get_name(), cast(Coroutine[Any, Any, Any] | None, task.get_coro()))
+        return TaskInfo(id(task), task.get_name(), task.get_coro())
 
     @classmethod
     def compute_task_name_from_func(cls, func: Callable[..., Any]) -> str:

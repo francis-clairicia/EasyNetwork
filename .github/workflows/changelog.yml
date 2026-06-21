@@ -30,6 +30,6 @@ jobs:
       - name: Setup tox
         uses: ./.github/actions/setup-tox
         with:
-          python-version: '3.11'
+          python-version: '3.12'
       - name: Check for changelog fragment
         run: tox run -e towncrier_check -- --compare-with origin/${{ github.base_ref }}

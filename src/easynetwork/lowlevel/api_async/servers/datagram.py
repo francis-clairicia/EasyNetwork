@@ -41,22 +41,11 @@ from ..transports import abc as _transports
 _T_Address = TypeVar("_T_Address", bound=Hashable)
 
 
-# Python 3.12.3 regression for weakref slots on generics
-# See https://github.com/python/cpython/issues/118033
-# @dataclasses.dataclass(frozen=True, unsafe_hash=True, slots=True, weakref_slot=True)
-
-
-@dataclasses.dataclass(frozen=True, unsafe_hash=True)
+@dataclasses.dataclass(frozen=True, unsafe_hash=True, slots=True, weakref_slot=True)
 class DatagramClientContext(Generic[_T_Response, _T_Address]):
     """
     Contains information about the remote endpoint which sends a datagram.
     """
-
-    __slots__ = (
-        "address",
-        "server",
-        "__weakref__",
-    )
 
     address: _T_Address
     """The client address."""

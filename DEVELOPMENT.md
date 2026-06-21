@@ -4,28 +4,28 @@
 
 ### System Requirements
 
-- CPython >= 3.11.0
+- CPython >= 3.12.4
 - [PDM](https://pdm-project.org/latest/#installation) >= 2.27
-- The [Rust Toolchain](https://rustup.rs/)
+- For benchmarks: The [Rust Toolchain](https://rustup.rs/)
 
 ### Virtual environment
 
 0. For the `pyenv` users, set the local python :
 ```sh
-pyenv local 3.11 3.12 3.13 3.14
+pyenv local 3.12 3.13 3.14
 ```
 
 1. Create the virtual environment :
 ```sh
 # Creates the virtual environment ( in .venv directory )
-pdm venv create --with-pip 3.11
+pdm venv create --with-pip 3.12
 
 # Tell pdm to use this virtualenv
 pdm use --venv in-project --no-version-file
 ```
 
 2. Activate the virtual environment in the current shell using either :
-    - the [manual way](https://docs.python.org/3.11/library/venv.html#how-venvs-work)
+    - the [manual way](https://docs.python.org/3/library/venv.html#how-venvs-work)
     - the [pdm venv CLI tool](https://pdm-project.org/latest/usage/venv/#activate-a-virtualenv)
 
 ### Installation

@@ -59,7 +59,7 @@ else:
     from .handlers import AsyncDatagramClient, AsyncDatagramRequestHandler, UNIXClientAttribute
     from .misc import build_lowlevel_datagram_server_handler
 
-    _UnnamedAddressesBehavior = Literal["ignore", "handle", "warn"]
+    _UnnamedAddressesBehavior: TypeAlias = Literal["ignore", "handle", "warn"]
 
     class AsyncUnixDatagramServer(
         _base.BaseAsyncNetworkServerImpl[
@@ -303,13 +303,11 @@ else:
         ) -> NoReturn:
 
             @functools.wraps(handler, assigned=())
+            @inspect.markcoroutinefunction
             def wrapper(datagram: bytes, addr: str | bytes | None, /) -> Coroutine[Any, Any, None]:
                 # A datagram received from an unnamed Unix datagram socket have a "None" address.
-                # https://github.com/python/cpython/blob/v3.11.10/Modules/socketmodule.c#L1321-L1324
+                # https://github.com/python/cpython/blob/v3.14.6/Modules/socketmodule.c#L1437-L1440
                 return handler(datagram, UnixSocketAddress() if addr is None else UnixSocketAddress.from_raw(addr))
-
-            if sys.version_info >= (3, 12):
-                inspect.markcoroutinefunction(wrapper)
 
             await self.__wrapped.serve(wrapper, task_group)
 
@@ -321,13 +319,11 @@ else:
         ) -> NoReturn:
 
             @functools.wraps(handler, assigned=())
+            @inspect.markcoroutinefunction
             def wrapper(datagram: bytes, ancdata: Any | None, addr: str | bytes | None, /) -> Coroutine[Any, Any, None]:
                 # A datagram received from an unnamed Unix datagram socket have a "None" address.
-                # https://github.com/python/cpython/blob/v3.11.10/Modules/socketmodule.c#L1321-L1324
+                # https://github.com/python/cpython/blob/v3.14.6/Modules/socketmodule.c#L1437-L1440
                 return handler(datagram, ancdata, UnixSocketAddress() if addr is None else UnixSocketAddress.from_raw(addr))
-
-            if sys.version_info >= (3, 12):
-                inspect.markcoroutinefunction(wrapper)
 
             await self.__wrapped.serve_with_ancillary(wrapper, ancillary_bufsize, task_group)
 
