@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import contextlib
 from collections.abc import Generator
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from easynetwork.exceptions import DeserializeError, IncrementalDeserializeError, LimitOverrunError
 from easynetwork.lowlevel.constants import DEFAULT_SERIALIZER_LIMIT as DEFAULT_LIMIT
@@ -100,6 +100,11 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
 
     @pytest.fixture
     @staticmethod
+    def mock_json_parser_buffered(mocker: MockerFixture) -> MagicMock:
+        return mocker.patch.object(_JSONParser, "raw_parse_with_external_buffer", autospec=True)
+
+    @pytest.fixture
+    @staticmethod
     def mock_generator_stream_reader(mocker: MockerFixture) -> MagicMock:
         return mocker.NonCallableMagicMock(spec=GeneratorStreamReader)
 
@@ -107,6 +112,12 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
     @staticmethod
     def mock_generator_stream_reader_cls(mock_generator_stream_reader: MagicMock, mocker: MockerFixture) -> MagicMock:
         return mocker.patch(f"{JSONSerializer.__module__}.GeneratorStreamReader", return_value=mock_generator_stream_reader)
+
+    @pytest.fixture(params=["data", "buffer"])
+    @staticmethod
+    def incremental_deserialize_mode(request: pytest.FixtureRequest) -> str:
+        assert request.param in ("data", "buffer")
+        return request.param
 
     def test____properties____right_values(self, debug_mode: bool) -> None:
         # Arrange
@@ -307,14 +318,14 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
         # Arrange
         def raw_parse_side_effect(*args: Any, **kwargs: Any) -> Generator[None, bytes, tuple[bytes, bytes]]:
             data = yield
-            return data, b"Hello World !"
+            return data.removesuffix(b"\n"), b"Hello World !"
 
         def reader_read_until_side_effect(*args: Any, **kwargs: Any) -> Generator[None, bytes, bytes]:
             data = yield
-            return data
+            return data.removesuffix(b"\n")
 
         serializer: JSONSerializer = JSONSerializer(use_lines=use_lines)
-        data = b'{"data": 42}'
+        data = b'{"data": 42}\n'
         mock_decoder.decode.return_value = mocker.sentinel.packet
         mock_json_parser.side_effect = raw_parse_side_effect
         mock_generator_stream_reader.read_until.side_effect = reader_read_until_side_effect
@@ -336,14 +347,63 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
             mock_generator_stream_reader_cls.assert_not_called()
             mock_generator_stream_reader.read_until.assert_not_called()
             mock_generator_stream_reader.read_all.assert_not_called()
-        mock_decoder.decode.assert_called_once_with(data.decode())
+        mock_decoder.decode.assert_called_once_with(data.decode().removesuffix("\n"))
         assert packet is mocker.sentinel.packet
         assert remaining_data == b"Hello World !"
 
+    def test____buffered_incremental_deserialize____parse_and_decode_data(
+        self,
+        use_lines: bool,
+        mock_decoder: MagicMock,
+        mock_json_parser_buffered: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        def raw_parse_side_effect(buffer: bytearray, **kwargs: Any) -> Generator[int, int, tuple[bytes, bytes]]:
+            nread = yield 0
+            sepidx = buffer.find(b"\n", 0, nread)
+            assert sepidx > 0
+            return bytes(buffer[:sepidx]), bytes(buffer[sepidx + 1 : nread])
+
+        def reader_read_until_side_effect(buffer: bytearray, separator: bytes) -> Generator[int, int, tuple[int, int, int]]:
+            nread = yield 0
+            sepidx = buffer.find(separator, 0, nread)
+            assert sepidx > 0
+            return sepidx, sepidx + len(separator), nread
+
+        serializer: JSONSerializer = JSONSerializer(use_lines=use_lines)
+        data = b'{"data": 42}\n'
+        expected_remaining_data = b"Hello World !"
+        mock_decoder.decode.return_value = mocker.sentinel.packet
+        mock_json_parser_buffered.side_effect = raw_parse_side_effect
+        mock_buffer_read_until = mocker.patch(f"{JSONSerializer.__module__}._buffered_readuntil", autospec=True)
+        mock_buffer_read_until.side_effect = reader_read_until_side_effect
+
+        # Act
+        buffer = serializer.create_deserializer_buffer(serializer.buffer_limit)
+        consumer = serializer.buffered_incremental_deserialize(buffer)
+        assert next(consumer) == 0
+        buffer[: len(data)] = data
+        buffer[len(data) : len(data) + len(expected_remaining_data)] = expected_remaining_data
+        packet, remaining_data = send_return(consumer, len(data) + len(expected_remaining_data))
+
+        # Assert
+        if use_lines:
+            mock_json_parser_buffered.assert_not_called()
+            mock_buffer_read_until.assert_called_once_with(buffer, b"\n")
+        else:
+            mock_json_parser_buffered.assert_called_once_with(buffer)
+            mock_buffer_read_until.assert_not_called()
+        mock_decoder.decode.assert_called_once_with(data.decode().removesuffix("\n"))
+        assert packet is mocker.sentinel.packet
+        assert bytes(remaining_data) == expected_remaining_data
+
     def test____incremental_deserialize____translate_unicode_decode_errors(
         self,
+        incremental_deserialize_mode: Literal["data", "buffer"],
         mock_decoder: MagicMock,
         mock_json_parser: MagicMock,
+        mock_json_parser_buffered: MagicMock,
         debug_mode: bool,
         mocker: MockerFixture,
     ) -> None:
@@ -352,6 +412,10 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
             data = yield
             return data, mocker.sentinel.remaining_data
 
+        def raw_parse_buffered_side_effect(buffer: bytearray, **kwargs: Any) -> Generator[int, int, tuple[bytes, bytes]]:
+            nread = yield 0
+            return bytes(buffer[:nread]), mocker.sentinel.remaining_data
+
         serializer: JSONSerializer = JSONSerializer(
             encoding="utf-8",
             use_lines=False,
@@ -359,13 +423,26 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
         )
         data = "é".encode("latin-1")
         mock_json_parser.side_effect = raw_parse_side_effect
+        mock_json_parser_buffered.side_effect = raw_parse_buffered_side_effect
 
         # Act
-        consumer = serializer.incremental_deserialize()
-        next(consumer)
-        with pytest.raises(IncrementalDeserializeError) as exc_info:
-            _ = consumer.send(data)
-        exception = exc_info.value
+        match incremental_deserialize_mode:
+            case "data":
+                consumer = serializer.incremental_deserialize()
+                next(consumer)
+                with pytest.raises(IncrementalDeserializeError) as exc_info:
+                    _ = consumer.send(data)
+                exception = exc_info.value
+            case "buffer":
+                buffer = serializer.create_deserializer_buffer(serializer.buffer_limit)
+                consumer = serializer.buffered_incremental_deserialize(buffer)
+                assert next(consumer) == 0
+                buffer[: len(data)] = data
+                with pytest.raises(IncrementalDeserializeError) as exc_info:
+                    _ = consumer.send(len(data))
+                exception = exc_info.value
+            case _:
+                pytest.fail("Invalid fixture argument")
 
         # Assert
         mock_decoder.decode.assert_not_called()
@@ -378,8 +455,10 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
 
     def test____incremental_deserialize____translate_json_decode_errors(
         self,
+        incremental_deserialize_mode: Literal["data", "buffer"],
         mock_decoder: MagicMock,
         mock_json_parser: MagicMock,
+        mock_json_parser_buffered: MagicMock,
         debug_mode: bool,
         mocker: MockerFixture,
     ) -> None:
@@ -390,6 +469,10 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
             data = yield
             return data, mocker.sentinel.remaining_data
 
+        def raw_parse_buffered_side_effect(buffer: bytearray, **kwargs: Any) -> Generator[int, int, tuple[bytes, bytes]]:
+            nread = yield 0
+            return bytes(buffer[:nread]), mocker.sentinel.remaining_data
+
         serializer: JSONSerializer = JSONSerializer(
             use_lines=False,
             debug=debug_mode,
@@ -397,13 +480,26 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
         data = b"invalid\ndocument"
         mock_decoder.decode.side_effect = JSONDecodeError("Invalid payload", data.decode(), 8)
         mock_json_parser.side_effect = raw_parse_side_effect
+        mock_json_parser_buffered.side_effect = raw_parse_buffered_side_effect
 
         # Act
-        consumer = serializer.incremental_deserialize()
-        next(consumer)
-        with pytest.raises(IncrementalDeserializeError) as exc_info:
-            _ = consumer.send(data)
-        exception = exc_info.value
+        match incremental_deserialize_mode:
+            case "data":
+                consumer = serializer.incremental_deserialize()
+                next(consumer)
+                with pytest.raises(IncrementalDeserializeError) as exc_info:
+                    _ = consumer.send(data)
+                exception = exc_info.value
+            case "buffer":
+                buffer = serializer.create_deserializer_buffer(serializer.buffer_limit)
+                consumer = serializer.buffered_incremental_deserialize(buffer)
+                assert next(consumer) == 0
+                buffer[: len(data)] = data
+                with pytest.raises(IncrementalDeserializeError) as exc_info:
+                    _ = consumer.send(len(data))
+                exception = exc_info.value
+            case _:
+                pytest.fail("Invalid fixture argument")
 
         # Assert
         mock_decoder.decode.assert_called_once()

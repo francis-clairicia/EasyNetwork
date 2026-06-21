@@ -38,8 +38,6 @@ from .tools import GeneratorStreamReader
 if TYPE_CHECKING:
     from _typeshed import ReadableBuffer
 
-_OBJECT_START = (b"{", b"[", b'"')
-
 
 @dataclass(kw_only=True)
 class JSONEncoderConfig:
@@ -75,6 +73,9 @@ class JSONDecoderConfig:
 class JSONSerializer(BufferedIncrementalPacketSerializer[Any, Any, bytearray]):
     """
     A :term:`serializer` built on top of the :mod:`json` module.
+
+    .. versionchanged:: NEXT_VERSION
+        ``JSONSerializer`` is now a subclass of :class:`.BufferedIncrementalPacketSerializer`.
     """
 
     __slots__ = (
@@ -366,6 +367,9 @@ class JSONSerializer(BufferedIncrementalPacketSerializer[Any, Any, bytearray]):
         Maximum buffer size. Read-only attribute.
         """
         return self.__limit
+
+
+_OBJECT_START = (b"{", b"[", b'"')
 
 
 class _JSONParser:
