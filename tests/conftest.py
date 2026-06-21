@@ -20,6 +20,8 @@ def _get_coverage_instance(config: pytest.Config) -> Coverage | None:
 
 @pytest.hookimpl(tryfirst=True)
 def pytest_report_header(config: pytest.Config) -> list[str]:
+    from .tools import RUNNING_ON_CI
+
     headers: list[str] = []
     addopts: str = os.environ.get("PYTEST_ADDOPTS", "")
     if addopts:
@@ -28,9 +30,7 @@ def pytest_report_header(config: pytest.Config) -> list[str]:
         headers.append(f"distribution: {config.getoption('dist', 'no')}")
     if coverage_instance := _get_coverage_instance(config):
         headers.append(f"coverage core: {coverage_instance.config.core or 'default'}")
-    # CI=true is always set for Github Actions
-    # c.f. https://docs.github.com/en/actions/reference/workflows-and-actions/variables#default-environment-variables
-    if os.environ.get("CI", ""):
+    if RUNNING_ON_CI:
         headers.append("running on CI: true")
     return headers
 
