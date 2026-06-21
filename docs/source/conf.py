@@ -39,13 +39,11 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx.ext.todo",
     # Dependencies
-    "enum_tools.autoenum",
     "sphinx_rtd_theme",
     "sphinx_tabs.tabs",
     "sphinx_toolbox.collapse",
     "sphinx_toolbox.github",
     "sphinx_toolbox.sidebar_links",
-    "sphinx_toolbox.more_autodoc.genericalias",
     "sphinx_toolbox.more_autodoc.autonamedtuple",
     "sphinx_toolbox.more_autodoc.autoprotocol",
     "sphinx_toolbox.more_autodoc.no_docstring",
