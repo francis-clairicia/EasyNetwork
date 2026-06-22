@@ -6,7 +6,7 @@ import asyncio
 import contextlib
 from collections.abc import Callable, Coroutine, Iterator
 from socket import socket as Socket
-from typing import TYPE_CHECKING, Any, TypedDict, TypeVar
+from typing import TYPE_CHECKING, Any, TypedDict
 
 import pytest
 import pytest_asyncio
@@ -17,8 +17,6 @@ if TYPE_CHECKING:
     from unittest.mock import AsyncMock, MagicMock
 
     from pytest_mock import MockerFixture
-
-_T = TypeVar("_T")
 
 
 class MockedEventLoopSockMethods(TypedDict):
@@ -144,10 +142,10 @@ class BaseTestAsyncSocket:
             yield
 
     @staticmethod
-    async def _busy_socket_task(
-        coroutine: Coroutine[Any, Any, _T],
+    async def _busy_socket_task[R](
+        coroutine: Coroutine[Any, Any, R],
         mock_socket_method: MagicMock,
-    ) -> asyncio.Task[_T]:
+    ) -> asyncio.Task[R]:
         mock_socket_method.reset_mock()
         task = asyncio.create_task(coroutine)
         await asyncio.sleep(0)

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import itertools
 import struct
-from collections.abc import Generator
+from collections.abc import Buffer, Generator
 from typing import TYPE_CHECKING, Any, Literal, assert_never
 
 from easynetwork.exceptions import IncrementalDeserializeError, StreamProtocolParseError
@@ -13,7 +13,6 @@ import pytest
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
 
-    from _typeshed import ReadableBuffer
     from pytest_mock import MockerFixture
 
 
@@ -581,7 +580,7 @@ class TestBufferedStreamDataConsumer:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        def side_effect(buffer: memoryview) -> Generator[int | None, int, tuple[Any, ReadableBuffer]]:
+        def side_effect(buffer: memoryview) -> Generator[int | None, int, tuple[Any, Buffer]]:
             nbytes = yield zero_or_none
             data = buffer[:nbytes]
             assert data.tobytes() == b"Hello world"
@@ -619,7 +618,7 @@ class TestBufferedStreamDataConsumer:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        def side_effect(buffer: memoryview) -> Generator[int | None, int, tuple[Any, ReadableBuffer]]:
+        def side_effect(buffer: memoryview) -> Generator[int | None, int, tuple[Any, Buffer]]:
             nbytes = yield zero_or_none
             data = buffer[:nbytes]
             assert data.tobytes() == b"Hello world"
@@ -653,7 +652,7 @@ class TestBufferedStreamDataConsumer:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        def side_effect(buffer: memoryview) -> Generator[int | None, int, tuple[Any, ReadableBuffer]]:
+        def side_effect(buffer: memoryview) -> Generator[int | None, int, tuple[Any, Buffer]]:
             for i in range(buffer.nbytes):
                 buffer[i] = 0
             nbytes = yield zero_or_none
@@ -679,7 +678,7 @@ class TestBufferedStreamDataConsumer:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        def side_effect(buffer: memoryview) -> Generator[int | None, int, tuple[Any, ReadableBuffer]]:
+        def side_effect(buffer: memoryview) -> Generator[int | None, int, tuple[Any, Buffer]]:
             nbytes = yield zero_or_none
             assert bytes(buffer[:nbytes]) == b"Hello"
             nbytes = yield zero_or_none
@@ -718,7 +717,7 @@ class TestBufferedStreamDataConsumer:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        def side_effect(buffer: memoryview) -> Generator[int | None, int, tuple[Any, ReadableBuffer]]:
+        def side_effect(buffer: memoryview) -> Generator[int | None, int, tuple[Any, Buffer]]:
             nbytes = yield zero_or_none
             assert bytes(buffer[:nbytes]) == b"HelloWorld"
             return mocker.sentinel.packet, b"Bye"
@@ -746,12 +745,12 @@ class TestBufferedStreamDataConsumer:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        def setup_side_effect(buffer: memoryview) -> Generator[int | None, int, tuple[Any, ReadableBuffer]]:
+        def setup_side_effect(buffer: memoryview) -> Generator[int | None, int, tuple[Any, Buffer]]:
             nbytes = yield zero_or_none
             assert bytes(buffer[:nbytes]) == b"Hello"
             return mocker.sentinel.packet_in_setup, b"World"
 
-        def test_side_effect(buffer: memoryview) -> Generator[int | None, int, tuple[Any, ReadableBuffer]]:
+        def test_side_effect(buffer: memoryview) -> Generator[int | None, int, tuple[Any, Buffer]]:
             nbytes = yield zero_or_none
             assert bytes(buffer[:nbytes]) == b"WorldHello"
             return mocker.sentinel.packet, b"Bye"
@@ -780,7 +779,7 @@ class TestBufferedStreamDataConsumer:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        def side_effect(buffer: memoryview) -> Generator[int | None, int, tuple[Any, ReadableBuffer]]:
+        def side_effect(buffer: memoryview) -> Generator[int | None, int, tuple[Any, Buffer]]:
             buffer[:5] = b"Hello"
             nbytes = yield 5
             assert bytes(buffer[: 5 + nbytes]) == b"HelloWorld"
@@ -805,7 +804,7 @@ class TestBufferedStreamDataConsumer:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        def side_effect(buffer: memoryview) -> Generator[int | None, int, tuple[Any, ReadableBuffer]]:
+        def side_effect(buffer: memoryview) -> Generator[int | None, int, tuple[Any, Buffer]]:
             buffer[:5] = b"Hello"
             nbytes = yield 5
             assert bytes(buffer[: 5 + nbytes]) == b"HelloWorld!"
@@ -832,7 +831,7 @@ class TestBufferedStreamDataConsumer:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        def side_effect(buffer: memoryview) -> Generator[int | None, int, tuple[Any, ReadableBuffer]]:
+        def side_effect(buffer: memoryview) -> Generator[int | None, int, tuple[Any, Buffer]]:
             nbytes = yield 0
             assert bytes(buffer[:nbytes]) == b"Hello"
             nbytes += yield nbytes
@@ -858,7 +857,7 @@ class TestBufferedStreamDataConsumer:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        def side_effect(buffer: memoryview) -> Generator[int | None, int, tuple[Any, ReadableBuffer]]:
+        def side_effect(buffer: memoryview) -> Generator[int | None, int, tuple[Any, Buffer]]:
             nbytes = yield -10
             assert nbytes == 5
             assert bytes(buffer[-10:-5]) == b"Hello"
@@ -932,7 +931,7 @@ class TestBufferedStreamDataConsumer:
         mock_buffered_stream_protocol: MagicMock,
     ) -> None:
         # Arrange
-        def side_effect(buffer: memoryview) -> Generator[int | None, int, tuple[Any, ReadableBuffer]]:
+        def side_effect(buffer: memoryview) -> Generator[int | None, int, tuple[Any, Buffer]]:
             nbytes = yield zero_or_none
             assert bytes(buffer[:nbytes]) == b"Hello world"
             match remainder_type:

@@ -25,25 +25,21 @@ import types
 from collections import deque
 from collections.abc import Awaitable, Callable, Coroutine, Generator, Iterable
 from types import TracebackType
-from typing import Any, ClassVar, NamedTuple, Self, TypeVar, TypeVarTuple, cast, final
+from typing import Any, ClassVar, NamedTuple, Self, final
 from weakref import WeakKeyDictionary
 
 from .... import _utils
 from ...._final import runtime_final_class
 from ..abc import CancelScope as AbstractCancelScope, Task as AbstractTask, TaskGroup as AbstractTaskGroup, TaskInfo
 
-_T = TypeVar("_T")
-_T_co = TypeVar("_T_co", covariant=True)
-_T_PosArgs = TypeVarTuple("_T_PosArgs")
-
 
 @final
 @runtime_final_class
-class Task(AbstractTask[_T_co]):
+class Task[R](AbstractTask[R]):
     __slots__ = ("__task", "__h")
 
-    def __init__(self, task: asyncio.Task[_T_co]) -> None:
-        self.__task: asyncio.Task[_T_co] = task
+    def __init__(self, task: asyncio.Task[R]) -> None:
+        self.__task: asyncio.Task[R] = task
         self.__h: int | None = None
 
     def __repr__(self) -> str:
@@ -88,13 +84,13 @@ class Task(AbstractTask[_T_co]):
         finally:
             task.remove_done_callback(on_task_done)
 
-    async def join(self) -> _T_co:
+    async def join(self) -> R:
         try:
             return await asyncio.shield(self.__task)
         finally:
             del self  # This is needed to avoid circular reference with raised exception
 
-    async def join_or_cancel(self) -> _T_co:
+    async def join_or_cancel(self) -> R:
         try:
             return await self.__task
         finally:
@@ -132,11 +128,11 @@ class TaskGroup(AbstractTaskGroup):
         finally:
             del exc_val, exc_tb, asyncio_tg, self
 
-    def start_soon(
+    def start_soon[*PosArgs](
         self,
-        coro_func: Callable[[*_T_PosArgs], Coroutine[Any, Any, _T]],
+        coro_func: Callable[[*PosArgs], Coroutine[Any, Any, Any]],
         /,
-        *args: *_T_PosArgs,
+        *args: *PosArgs,
         name: str | None = None,
     ) -> None:
         coroutine = coro_func(*args)
@@ -148,13 +144,13 @@ class TaskGroup(AbstractTaskGroup):
         finally:
             del coroutine
 
-    async def start(
+    async def start[*PosArgs, R](
         self,
-        coro_func: Callable[[*_T_PosArgs], Coroutine[Any, Any, _T]],
+        coro_func: Callable[[*PosArgs], Coroutine[Any, Any, R]],
         /,
-        *args: *_T_PosArgs,
+        *args: *PosArgs,
         name: str | None = None,
-    ) -> AbstractTask[_T]:
+    ) -> AbstractTask[R]:
         loop = asyncio.get_running_loop()
         waiter: asyncio.Future[None] = loop.create_future()
 
@@ -182,11 +178,11 @@ class TaskGroup(AbstractTaskGroup):
         return task
 
     @staticmethod
-    async def __task_coroutine(
-        coro_func: Callable[[*_T_PosArgs], Awaitable[_T]],
-        args: tuple[*_T_PosArgs],
+    async def __task_coroutine[*PosArgs, R](
+        coro_func: Callable[[*PosArgs], Awaitable[R]],
+        args: tuple[*PosArgs],
         waiter: asyncio.Future[None],
-    ) -> _T:
+    ) -> R:
         if waiter.done():
             await asyncio.sleep(0)
         else:
@@ -463,7 +459,7 @@ class TaskUtils:
 
     @classmethod
     @types.coroutine
-    def cancel_shielded_await(cls, awaitable: Awaitable[_T], /) -> Generator[Any, Any, _T]:
+    def cancel_shielded_await[R](cls, awaitable: Awaitable[R], /) -> Generator[Any, Any, R]:
         current_task: asyncio.Task[Any] = cls.current_asyncio_task()
         coroutine = awaitable.__await__()
         try:
@@ -540,7 +536,7 @@ class TaskUtils:
 
     @classmethod
     def create_task_info(cls, task: asyncio.Task[Any]) -> TaskInfo:
-        return TaskInfo(id(task), task.get_name(), cast(Coroutine[Any, Any, Any] | None, task.get_coro()))
+        return TaskInfo(id(task), task.get_name(), task.get_coro())
 
     @classmethod
     def compute_task_name_from_func(cls, func: Callable[..., Any]) -> str:

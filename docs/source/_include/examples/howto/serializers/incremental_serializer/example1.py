@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import json
-from typing import Any, TypeAlias
+from typing import Any
 
 from easynetwork.exceptions import DeserializeError
 from easynetwork.serializers.base_stream import AutoSeparatedPacketSerializer
 
-SentPacket: TypeAlias = Any
-ReceivedPacket: TypeAlias = Any
+type SentPacket = Any
+type ReceivedPacket = Any
 
 
 class MyJSONSerializer(AutoSeparatedPacketSerializer[SentPacket, ReceivedPacket]):

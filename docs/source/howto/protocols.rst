@@ -135,8 +135,8 @@ The :term:`protocol objects <protocol object>` raise a :exc:`.BaseProtocolParseE
 The Converters
 ==============
 
-TL;DR: Why should you always have a converter in your protocol object?
-----------------------------------------------------------------------
+Why should you always have a converter in your protocol object?
+---------------------------------------------------------------
 
 Unless the :term:`serializer` is already making the tea and coffee for you, in 99% of cases the data received can be anything,
 as long as it's in the right format. On the other hand, the application has to comply with the format for sending data to the remote endpoint.

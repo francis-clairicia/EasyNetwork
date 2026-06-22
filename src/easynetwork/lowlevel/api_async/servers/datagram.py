@@ -28,9 +28,8 @@ import warnings
 import weakref
 from collections import deque
 from collections.abc import AsyncGenerator, Callable, Hashable, Mapping
-from typing import Any, Generic, NoReturn, TypeVar
+from typing import Any, NoReturn
 
-from ...._typevars import _T_Request, _T_Response
 from ....exceptions import DatagramProtocolParseError, UnsupportedOperation
 from ....protocol import DatagramProtocol
 from ... import _utils
@@ -38,30 +37,17 @@ from ...request_handler import RecvAncillaryDataParams, RecvParams
 from ..backend.abc import AsyncBackend, ICondition, TaskGroup
 from ..transports import abc as _transports
 
-_T_Address = TypeVar("_T_Address", bound=Hashable)
 
-
-# Python 3.12.3 regression for weakref slots on generics
-# See https://github.com/python/cpython/issues/118033
-# @dataclasses.dataclass(frozen=True, unsafe_hash=True, slots=True, weakref_slot=True)
-
-
-@dataclasses.dataclass(frozen=True, unsafe_hash=True)
-class DatagramClientContext(Generic[_T_Response, _T_Address]):
+@dataclasses.dataclass(frozen=True, unsafe_hash=True, slots=True, weakref_slot=True)
+class DatagramClientContext[Response, Address: Hashable]:
     """
     Contains information about the remote endpoint which sends a datagram.
     """
 
-    __slots__ = (
-        "address",
-        "server",
-        "__weakref__",
-    )
-
-    address: _T_Address
+    address: Address
     """The client address."""
 
-    server: AsyncDatagramServer[Any, _T_Response, _T_Address]
+    server: AsyncDatagramServer[Any, Response, Address]
     """The server which receives the datagram."""
 
     @_utils.inherit_doc(_transports.AsyncBaseTransport)
@@ -69,7 +55,7 @@ class DatagramClientContext(Generic[_T_Response, _T_Address]):
         return self.server.backend()
 
 
-class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T_Response, _T_Address]):
+class AsyncDatagramServer[Request, Response, Address: Hashable](_transports.AsyncBaseTransport):
     """
     Datagram packet listener interface.
     """
@@ -82,8 +68,8 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
 
     def __init__(
         self,
-        listener: _transports.AsyncDatagramListener[_T_Address],
-        protocol: DatagramProtocol[_T_Response, _T_Request],
+        listener: _transports.AsyncDatagramListener[Address],
+        protocol: DatagramProtocol[Response, Request],
     ) -> None:
         """
         Parameters:
@@ -95,8 +81,8 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
         if not isinstance(protocol, DatagramProtocol):
             raise TypeError(f"Expected a DatagramProtocol object, got {protocol!r}")
 
-        self.__listener: _transports.AsyncDatagramListener[_T_Address] = listener
-        self.__protocol: DatagramProtocol[_T_Response, _T_Request] = protocol
+        self.__listener: _transports.AsyncDatagramListener[Address] = listener
+        self.__protocol: DatagramProtocol[Response, Request] = protocol
         self.__serve_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently receiving datagrams")
 
     def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
@@ -127,7 +113,7 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
     def backend(self) -> AsyncBackend:
         return self.__listener.backend()
 
-    async def send_packet_to(self, packet: _T_Response, address: _T_Address) -> None:
+    async def send_packet_to(self, packet: Response, address: Address) -> None:
         """
         Sends `packet` to the remote endpoint `address`.
 
@@ -145,7 +131,7 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
 
         await self.__listener.send_to(datagram, address)
 
-    async def send_packet_with_ancillary_to(self, packet: _T_Response, ancillary_data: Any, address: _T_Address) -> None:
+    async def send_packet_with_ancillary_to(self, packet: Response, ancillary_data: Any, address: Address) -> None:
         """
         Sends `packet` to the remote endpoint `address` with ancillary data.
 
@@ -169,7 +155,7 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
     async def serve(
         self,
         datagram_received_cb: Callable[
-            [DatagramClientContext[_T_Response, _T_Address]], AsyncGenerator[float | RecvParams | None, _T_Request]
+            [DatagramClientContext[Response, Address]], AsyncGenerator[float | RecvParams | None, Request]
         ],
         task_group: TaskGroup | None = None,
     ) -> NoReturn:
@@ -204,10 +190,10 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
     async def serve_with_ancillary(
         self,
         datagram_received_cb: Callable[
-            [DatagramClientContext[_T_Response, _T_Address]], AsyncGenerator[float | RecvParams | None, _T_Request]
+            [DatagramClientContext[Response, Address]], AsyncGenerator[float | RecvParams | None, Request]
         ],
         ancillary_bufsize: int,
-        ancillary_data_unused: Callable[[Any, _T_Address], object] | None = None,
+        ancillary_data_unused: Callable[[Any, Address], object] | None = None,
         task_group: TaskGroup | None = None,
     ) -> NoReturn:
         """
@@ -242,18 +228,18 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
     async def __serve_impl(
         self,
         datagram_received_cb: Callable[
-            [DatagramClientContext[_T_Response, _T_Address]], AsyncGenerator[float | RecvParams | None, _T_Request]
+            [DatagramClientContext[Response, Address]], AsyncGenerator[float | RecvParams | None, Request]
         ],
         task_group: TaskGroup | None,
         *,
-        server_ancillary_data_params: _ServerAncillaryDataParams[_T_Address] | None = None,
+        server_ancillary_data_params: _ServerAncillaryDataParams[Address] | None = None,
     ) -> NoReturn:
         with self.__serve_guard:
             listener = self.__listener
             backend = listener.backend()
 
-            client_data_cache: weakref.WeakValueDictionary[_T_Address, _ClientData] = weakref.WeakValueDictionary()
-            client_ctx_cache: weakref.WeakValueDictionary[_T_Address, DatagramClientContext[_T_Response, _T_Address]] = (
+            client_data_cache: weakref.WeakValueDictionary[Address, _ClientData] = weakref.WeakValueDictionary()
+            client_ctx_cache: weakref.WeakValueDictionary[Address, DatagramClientContext[Response, Address]] = (
                 weakref.WeakValueDictionary()
             )
 
@@ -262,7 +248,7 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
             async with backend.create_task_group() if task_group is None else contextlib.nullcontext(task_group) as task_group:
 
                 # The responsibility for ordering datagram reception is shifted to the listener.
-                async def handler(datagram: bytes, address: _T_Address, ancillary_data: Any | None = None, /) -> None:
+                async def handler(datagram: bytes, address: Address, ancillary_data: Any | None = None, /) -> None:
                     try:
                         client_data = client_data_cache[address]
                     except KeyError:
@@ -299,12 +285,12 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
     async def __client_coroutine(
         self,
         datagram_received_cb: Callable[
-            [DatagramClientContext[_T_Response, _T_Address]], AsyncGenerator[float | RecvParams | None, _T_Request]
+            [DatagramClientContext[Response, Address]], AsyncGenerator[float | RecvParams | None, Request]
         ],
-        client_ctx: DatagramClientContext[_T_Response, _T_Address],
+        client_ctx: DatagramClientContext[Response, Address],
         client_data: _ClientData,
         task_group: TaskGroup,
-        server_ancillary_data_params: _ServerAncillaryDataParams[_T_Address] | None,
+        server_ancillary_data_params: _ServerAncillaryDataParams[Address] | None,
         default_context: contextvars.Context,
     ) -> None:
         client_data.mark_running()
@@ -341,10 +327,10 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
     async def __client_coroutine_inner_loop(
         self,
         *,
-        request_handler_generator: AsyncGenerator[float | RecvParams | None, _T_Request],
+        request_handler_generator: AsyncGenerator[float | RecvParams | None, Request],
         client_data: _ClientData,
-        client_address: _T_Address,
-        server_ancillary_data_params: _ServerAncillaryDataParams[_T_Address] | None,
+        client_address: Address,
+        server_ancillary_data_params: _ServerAncillaryDataParams[Address] | None,
     ) -> None:
         timeout: float
         recv_params: RecvParams
@@ -362,7 +348,7 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
             )
             return
         else:
-            request: _T_Request | None
+            request: Request | None
             try:
                 try:
                     try:
@@ -425,12 +411,12 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
         self,
         *,
         datagram_received_cb: Callable[
-            [DatagramClientContext[_T_Response, _T_Address]], AsyncGenerator[float | RecvParams | None, _T_Request]
+            [DatagramClientContext[Response, Address]], AsyncGenerator[float | RecvParams | None, Request]
         ],
-        client_ctx: DatagramClientContext[_T_Response, _T_Address],
+        client_ctx: DatagramClientContext[Response, Address],
         client_data: _ClientData,
         task_group: TaskGroup,
-        server_ancillary_data_params: _ServerAncillaryDataParams[_T_Address] | None,
+        server_ancillary_data_params: _ServerAncillaryDataParams[Address] | None,
         default_context: contextvars.Context,
     ) -> None:
         if client_data.queue_is_empty():
@@ -462,8 +448,8 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
     @staticmethod
     def __parse_datagram(
         datagram: bytes,
-        protocol: DatagramProtocol[_T_Response, _T_Request],
-    ) -> _T_Request:
+        protocol: DatagramProtocol[Response, Request],
+    ) -> Request:
         try:
             return protocol.build_packet_from_datagram(datagram)
         except DatagramProtocolParseError:
@@ -476,8 +462,8 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
         *,
         ancillary_data: Any | None,
         recv_with_ancillary: RecvAncillaryDataParams | None,
-        server_ancillary_data_params: _ServerAncillaryDataParams[_T_Address] | None,
-        client_address: _T_Address,
+        server_ancillary_data_params: _ServerAncillaryDataParams[Address] | None,
+        client_address: Address,
     ) -> None:
         if server_ancillary_data_params is None:
             if recv_with_ancillary is not None:
@@ -501,9 +487,9 @@ class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T
 
 
 @dataclasses.dataclass(kw_only=True, frozen=True, slots=True)
-class _ServerAncillaryDataParams(Generic[_T_Address]):
+class _ServerAncillaryDataParams[Address]:
     bufsize: int
-    data_unused: Callable[[Any, _T_Address], object] | None
+    data_unused: Callable[[Any, Address], object] | None
 
 
 @enum.unique

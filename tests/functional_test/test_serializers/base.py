@@ -3,8 +3,8 @@ from __future__ import annotations
 import random
 import weakref
 from abc import ABCMeta
-from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, final
+from collections.abc import Buffer, Callable
+from typing import Any, final
 
 from easynetwork.exceptions import DeserializeError, IncrementalDeserializeError
 from easynetwork.lowlevel._utils import iter_bytes
@@ -17,9 +17,6 @@ from easynetwork.serializers.abc import (
 import pytest
 
 from ...tools import send_return, write_data_and_extra_in_buffer, write_in_buffer
-
-if TYPE_CHECKING:
-    from _typeshed import WriteableBuffer
 
 
 class BaseTestSerializer(metaclass=ABCMeta):
@@ -268,7 +265,7 @@ class BaseTestBufferedIncrementalSerializer(BaseTestIncrementalSerializer):
 
     def test____buffered_incremental_deserialize____one_shot_chunk(
         self,
-        serializer_for_deserialization: BufferedIncrementalPacketSerializer[Any, Any, WriteableBuffer],
+        serializer_for_deserialization: BufferedIncrementalPacketSerializer[Any, Any, Buffer],
         complete_data_for_incremental_deserialize: bytes,
         packet_to_serialize: Any,
     ) -> None:
@@ -293,7 +290,7 @@ class BaseTestBufferedIncrementalSerializer(BaseTestIncrementalSerializer):
 
     def test____buffered_incremental_deserialize____with_remaining_data(
         self,
-        serializer_for_deserialization: BufferedIncrementalPacketSerializer[Any, Any, WriteableBuffer],
+        serializer_for_deserialization: BufferedIncrementalPacketSerializer[Any, Any, Buffer],
         complete_data_for_incremental_deserialize: bytes,
         packet_to_serialize: Any,
         incremental_extra_data: bytes,
@@ -325,7 +322,7 @@ class BaseTestBufferedIncrementalSerializer(BaseTestIncrementalSerializer):
 
     def test____buffered_incremental_deserialize____give_chunk_byte_per_byte(
         self,
-        serializer_for_deserialization: BufferedIncrementalPacketSerializer[Any, Any, WriteableBuffer],
+        serializer_for_deserialization: BufferedIncrementalPacketSerializer[Any, Any, Buffer],
         complete_data_for_incremental_deserialize: bytes,
         packet_to_serialize: Any,
     ) -> None:
@@ -352,7 +349,7 @@ class BaseTestBufferedIncrementalSerializer(BaseTestIncrementalSerializer):
 
     def test____buffered_incremental_deserialize____invalid_data(
         self,
-        serializer_for_deserialization: BufferedIncrementalPacketSerializer[Any, Any, WriteableBuffer],
+        serializer_for_deserialization: BufferedIncrementalPacketSerializer[Any, Any, Buffer],
         invalid_partial_data: bytes,
         invalid_partial_data_extra_data: tuple[bytes, bytes],
     ) -> None:

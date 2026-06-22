@@ -55,7 +55,7 @@ import weakref
 from abc import abstractmethod
 from collections import deque
 from collections.abc import Callable, Iterable, Iterator, Sequence
-from typing import TYPE_CHECKING, Any, Concatenate, ParamSpec, Protocol, Self, TypeGuard, TypeVar, overload
+from typing import TYPE_CHECKING, Any, Concatenate, Protocol, Self, TypeGuard, overload
 
 try:
     import ssl as _ssl
@@ -73,13 +73,6 @@ if TYPE_CHECKING:
 
     from .socket import ISocket, SupportsSocketOptions
 
-_P = ParamSpec("_P")
-_T_Return = TypeVar("_T_Return")
-_T_Arg = TypeVar("_T_Arg")
-
-_T_Exception = TypeVar("_T_Exception", bound=BaseException)
-_T_Func = TypeVar("_T_Func", bound=Callable[..., Any])
-
 
 def replace_kwargs(kwargs: dict[str, Any], keys: dict[str, str]) -> None:
     if not keys:
@@ -93,26 +86,24 @@ def replace_kwargs(kwargs: dict[str, Any], keys: dict[str, str]) -> None:
             pass
 
 
-def make_callback(func: Callable[_P, _T_Return], /, *args: _P.args, **kwargs: _P.kwargs) -> Callable[[], _T_Return]:
+def make_callback[**P, R](func: Callable[P, R], /, *args: P.args, **kwargs: P.kwargs) -> Callable[[], R]:
     return functools.partial(func, *args, **kwargs)
 
 
 @overload
-def weak_method_proxy(weak_method: weakref.WeakMethod[Callable[_P, _T_Return]], /) -> Callable[_P, _T_Return]: ...
+def weak_method_proxy[**P, R](weak_method: weakref.WeakMethod[Callable[P, R]], /) -> Callable[P, R]: ...
 
 
 @overload
-def weak_method_proxy(weak_method: Callable[_P, _T_Return], /) -> Callable[_P, _T_Return]: ...
+def weak_method_proxy[**P, R](weak_method: Callable[P, R], /) -> Callable[P, R]: ...
 
 
-def weak_method_proxy(
-    weak_method: weakref.WeakMethod[Callable[_P, _T_Return]] | Callable[_P, _T_Return], /
-) -> Callable[_P, _T_Return]:
+def weak_method_proxy[**P, R](weak_method: weakref.WeakMethod[Callable[P, R]] | Callable[P, R], /) -> Callable[P, R]:
     if not isinstance(weak_method, weakref.WeakMethod):
         weak_method = weakref.WeakMethod(weak_method)
 
     @functools.wraps(weak_method, assigned=(), updated=())
-    def weak_method_proxy(*args: _P.args, **kwargs: _P.kwargs) -> _T_Return:
+    def weak_method_proxy(*args: P.args, **kwargs: P.kwargs) -> R:
         method = weak_method()
         if method is None:
             raise ReferenceError("weakly-referenced object no longer exists")
@@ -122,24 +113,24 @@ def weak_method_proxy(
 
 
 @overload
-def prepend_argument(
-    arg: _T_Arg,
+def prepend_argument[**P, Arg, R](
+    arg: Arg,
     func: None = ...,
-) -> Callable[[Callable[Concatenate[_T_Arg, _P], _T_Return]], Callable[_P, _T_Return]]: ...
+) -> Callable[[Callable[Concatenate[Arg, P], R]], Callable[P, R]]: ...
 
 
 @overload
-def prepend_argument(
-    arg: _T_Arg,
-    func: Callable[Concatenate[_T_Arg, _P], _T_Return],
-) -> Callable[_P, _T_Return]: ...
+def prepend_argument[**P, Arg, R](
+    arg: Arg,
+    func: Callable[Concatenate[Arg, P], R],
+) -> Callable[P, R]: ...
 
 
-def prepend_argument(
-    arg: _T_Arg,
-    func: Callable[Concatenate[_T_Arg, _P], _T_Return] | None = None,
-) -> Callable[[Callable[Concatenate[_T_Arg, _P], _T_Return]], Callable[_P, _T_Return]] | Callable[_P, _T_Return]:
-    def decorator(func: Callable[Concatenate[_T_Arg, _P], _T_Return], /) -> Callable[_P, _T_Return]:
+def prepend_argument[**P, Arg, R](
+    arg: Arg,
+    func: Callable[Concatenate[Arg, P], R] | None = None,
+) -> Callable[[Callable[Concatenate[Arg, P], R]], Callable[P, R]] | Callable[P, R]:
+    def decorator(func: Callable[Concatenate[Arg, P], R], /) -> Callable[P, R]:
         return functools.partial(func, arg)
 
     if func is not None:
@@ -161,10 +152,10 @@ def get_callable_name(func: Callable[..., Any]) -> str:
     return f"{module}.{qualname}"
 
 
-def inherit_doc(base_cls: type[Any]) -> Callable[[_T_Func], _T_Func]:
+def inherit_doc[F: Callable[..., Any]](base_cls: type[Any]) -> Callable[[F], F]:
     assert isinstance(base_cls, type)  # nosec assert_used
 
-    def decorator(dest_func: _T_Func) -> _T_Func:
+    def decorator(dest_func: F) -> F:
         ref_func: Any = getattr(base_cls, dest_func.__name__)
         dest_func.__doc__ = ref_func.__doc__
         return dest_func
@@ -370,7 +361,7 @@ def convert_socket_bind_error(exc: OSError, addr: Any) -> OSError:
         return OSError(_errno.EINVAL, msg).with_traceback(exc.__traceback__)
 
 
-def exception_with_notes(exc: _T_Exception, notes: str | Iterable[str]) -> _T_Exception:
+def exception_with_notes[E: BaseException](exc: E, notes: str | Iterable[str]) -> E:
     if isinstance(notes, str):
         notes = (notes,)
     for note in notes:
@@ -378,7 +369,7 @@ def exception_with_notes(exc: _T_Exception, notes: str | Iterable[str]) -> _T_Ex
     return exc
 
 
-def remove_traceback_frames_in_place(exc: _T_Exception, n: int) -> _T_Exception:
+def remove_traceback_frames_in_place[E: BaseException](exc: E, n: int) -> E:
     tb = exc.__traceback__
     for _ in range(n):
         if tb is None:

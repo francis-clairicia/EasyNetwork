@@ -26,7 +26,7 @@ import socket as _socket
 import warnings
 from collections.abc import Awaitable, Callable, Iterator, Mapping
 from types import MappingProxyType
-from typing import Any, Literal, TypeVar, overload
+from typing import Any, Literal, overload
 
 from .....exceptions import BusyResourceError
 from .... import _utils, socket as socket_tools
@@ -34,9 +34,6 @@ from ...transports.abc import AsyncBaseTransport
 from ..abc import AsyncBackend, CancelScope
 from . import _asyncio_utils
 from .tasks import TaskUtils
-
-_T_Data = TypeVar("_T_Data")
-_T_Result = TypeVar("_T_Result")
 
 
 class BaseRawSocketTransport(AsyncBaseTransport):
@@ -93,13 +90,13 @@ class BaseRawSocketTransport(AsyncBaseTransport):
                     write_scope.cancel()
                     raise
 
-    async def _sock_recv(
+    async def _sock_recv[Result](
         self,
         requester: str,
         *,
-        recv: Callable[[_socket.socket], _T_Result],
-        try_async_recv: Callable[[asyncio.AbstractEventLoop, _socket.socket], Awaitable[_T_Result]] | None = None,
-    ) -> _T_Result:
+        recv: Callable[[_socket.socket], Result],
+        try_async_recv: Callable[[asyncio.AbstractEventLoop, _socket.socket], Awaitable[Result]] | None = None,
+    ) -> Result:
         with self._read_task_context(requester) as sock:
             loop = asyncio.get_running_loop()
             if try_async_recv is not None:
@@ -115,13 +112,13 @@ class BaseRawSocketTransport(AsyncBaseTransport):
                     pass
                 await _asyncio_utils.wait_until_readable(sock, loop)
 
-    async def _sock_send(
+    async def _sock_send[Result](
         self,
         requester: str,
         *,
-        send: Callable[[_socket.socket], _T_Result],
-        try_async_send: Callable[[asyncio.AbstractEventLoop, _socket.socket], Awaitable[_T_Result]] | None = None,
-    ) -> _T_Result:
+        send: Callable[[_socket.socket], Result],
+        try_async_send: Callable[[asyncio.AbstractEventLoop, _socket.socket], Awaitable[Result]] | None = None,
+    ) -> Result:
         loop = asyncio.get_running_loop()
         with self._write_task_context(requester, loop=loop) as sock:
             if try_async_send is not None:
@@ -137,15 +134,15 @@ class BaseRawSocketTransport(AsyncBaseTransport):
                     pass
                 await _asyncio_utils.wait_until_writable(sock, loop)
 
-    async def _sock_send_all(
+    async def _sock_send_all[Data, Result](
         self,
         requester: str,
         *,
-        data: _T_Data,
-        send: Callable[[_socket.socket, _T_Data], _T_Result],
-        send_success: Callable[[_T_Result, _T_Data], _T_Data],
-        retry_send: Callable[[_T_Data], object],
-        try_async_send: Callable[[asyncio.AbstractEventLoop, _socket.socket, _T_Data], Awaitable[None]] | None = None,
+        data: Data,
+        send: Callable[[_socket.socket, Data], Result],
+        send_success: Callable[[Result, Data], Data],
+        retry_send: Callable[[Data], object],
+        try_async_send: Callable[[asyncio.AbstractEventLoop, _socket.socket, Data], Awaitable[None]] | None = None,
     ) -> None:
         try:
             loop = asyncio.get_running_loop()

@@ -1,19 +1,16 @@
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, TypeVarTuple
+from typing import TYPE_CHECKING
 
 from easynetwork.lowlevel.api_async.backend.abc import AsyncBackend, IEvent, ILock
 from easynetwork.lowlevel.api_async.backend.utils import new_builtin_backend
 
 import pytest
-import sniffio
+
+from ....tools import AsyncEventScheduling
 
 if TYPE_CHECKING:
     from pytest_mock import MockerFixture
-
-
-_T_Args = TypeVarTuple("_T_Args")
 
 
 class TestFairLock:
@@ -44,20 +41,6 @@ class TestFairLock:
                 return lock
             case _:
                 pytest.fail(f"Invalid param: {request.param!r}")
-
-    @staticmethod
-    def call_soon(f: Callable[[*_T_Args], Any], *args: *_T_Args) -> None:
-        match sniffio.current_async_library():
-            case "asyncio":
-                import asyncio
-
-                asyncio.get_running_loop().call_soon(f, *args)
-            case "trio":
-                import trio
-
-                trio.lowlevel.current_trio_token().run_sync_soon(f, *args)
-            case _:
-                pytest.fail("unknown async library")
 
     async def test____acquire____fifo_acquire____manual(
         self,
@@ -224,7 +207,7 @@ class TestFairLock:
                 t1.cancel()
                 fair_lock.release()
 
-            self.call_soon(trigger)
+            AsyncEventScheduling.call_soon(trigger)
             with pytest.raises(backend.get_cancelled_exc_class()):
                 # Wait for cancellation
                 await t1.join()

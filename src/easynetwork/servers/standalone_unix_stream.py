@@ -36,9 +36,8 @@ else:
     import logging
     import os
     from collections.abc import Mapping, Sequence
-    from typing import Any, Generic
+    from typing import Any
 
-    from .._typevars import _T_Request, _T_Response
     from ..lowlevel.api_async.backend.abc import AsyncBackend
     from ..lowlevel.api_async.backend.utils import BuiltinAsyncBackendLiteral
     from ..lowlevel.socket import SocketProxy, UnixSocketAddress
@@ -47,9 +46,8 @@ else:
     from .async_unix_stream import AsyncUnixStreamServer
     from .handlers import AsyncStreamRequestHandler
 
-    class StandaloneUnixStreamServer(
-        _base.BaseStandaloneNetworkServerImpl[AsyncUnixStreamServer[_T_Request, _T_Response]],
-        Generic[_T_Request, _T_Response],
+    class StandaloneUnixStreamServer[Request, Response](
+        _base.BaseStandaloneNetworkServerImpl[AsyncUnixStreamServer[Request, Response]],
     ):
         """
         A Unix stream server.
@@ -64,8 +62,8 @@ else:
         def __init__(
             self,
             path: str | os.PathLike[str] | bytes | UnixSocketAddress,
-            protocol: AnyStreamProtocolType[_T_Response, _T_Request],
-            request_handler: AsyncStreamRequestHandler[_T_Request, _T_Response],
+            protocol: AnyStreamProtocolType[Response, Request],
+            request_handler: AsyncStreamRequestHandler[Request, Response],
             backend: AsyncBackend | BuiltinAsyncBackendLiteral | None = None,
             *,
             runner_options: Mapping[str, Any] | None = None,

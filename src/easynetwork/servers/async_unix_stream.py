@@ -40,9 +40,8 @@ else:
     import weakref
     from collections.abc import AsyncIterator, Callable, Coroutine, Mapping, Sequence
     from types import MappingProxyType
-    from typing import Any, Generic, NoReturn, TypeVar, final
+    from typing import Any, NoReturn, final
 
-    from .._typevars import _T_Request, _T_Response
     from ..exceptions import ClientClosedError
     from ..lowlevel import _unix_utils, _utils
     from ..lowlevel._final import runtime_final_class
@@ -57,9 +56,8 @@ else:
     from .handlers import AsyncStreamClient, AsyncStreamRequestHandler, UNIXClientAttribute
     from .misc import build_lowlevel_stream_server_handler
 
-    class AsyncUnixStreamServer(
-        _base.BaseAsyncNetworkServerImpl[_stream_server.AsyncStreamServer[_T_Request, _T_Response], UnixSocketAddress],
-        Generic[_T_Request, _T_Response],
+    class AsyncUnixStreamServer[Request, Response](
+        _base.BaseAsyncNetworkServerImpl[_stream_server.AsyncStreamServer[Request, Response], UnixSocketAddress],
     ):
         """
         An asynchronous Unix stream server.
@@ -80,8 +78,8 @@ else:
         def __init__(
             self,
             path: str | os.PathLike[str] | bytes | UnixSocketAddress,
-            protocol: AnyStreamProtocolType[_T_Response, _T_Request],
-            request_handler: AsyncStreamRequestHandler[_T_Request, _T_Response],
+            protocol: AnyStreamProtocolType[Response, Request],
+            request_handler: AsyncStreamRequestHandler[Request, Response],
             backend: AsyncBackend | BuiltinAsyncBackendLiteral | None = None,
             *,
             backlog: int | None = None,
@@ -150,8 +148,8 @@ else:
                 mode=mode,
             )
 
-            self.__protocol: AnyStreamProtocolType[_T_Response, _T_Request] = protocol
-            self.__request_handler: AsyncStreamRequestHandler[_T_Request, _T_Response] = request_handler
+            self.__protocol: AnyStreamProtocolType[Response, Request] = protocol
+            self.__request_handler: AsyncStreamRequestHandler[Request, Response] = request_handler
             self.__max_recv_size: int = max_recv_size
             self.__ancillary_bufsize: int = ancillary_bufsize
             self.__client_connection_log_level: int = logging.INFO if log_client_connection else logging.DEBUG
@@ -186,7 +184,7 @@ else:
                 except OSError as exc:
                     logger.error("Unable to clean up listening Unix socket %r: %s", os.fspath(path), exc)
 
-        async def __activate_listeners(self) -> list[_stream_server.AsyncStreamServer[_T_Request, _T_Response]]:
+        async def __activate_listeners(self) -> list[_stream_server.AsyncStreamServer[Request, Response]]:
             listener = await self.__listener_factory()
 
             local_name = UnixSocketAddress.from_raw(listener.extra(UNIXSocketAttribute.sockname))
@@ -208,7 +206,7 @@ else:
 
         async def __lowlevel_serve(
             self,
-            server: _stream_server.AsyncStreamServer[_T_Request, _T_Response],
+            server: _stream_server.AsyncStreamServer[Request, Response],
             task_group: TaskGroup,
         ) -> NoReturn:
             def disconnect_error_filter(exc: Exception) -> bool:  # pragma: no cover
@@ -231,8 +229,8 @@ else:
         @contextlib.asynccontextmanager
         async def __client_initializer(
             self,
-            lowlevel_client: _stream_server.ConnectedStreamClient[_T_Response],
-        ) -> AsyncIterator[AsyncStreamClient[_T_Response] | None]:
+            lowlevel_client: _stream_server.ConnectedStreamClient[Response],
+        ) -> AsyncIterator[AsyncStreamClient[Response] | None]:
             async with contextlib.AsyncExitStack() as client_exit_stack:
                 client_exit_stack.enter_context(self._bind_server())
 
@@ -269,7 +267,7 @@ else:
                     raise
 
         @staticmethod
-        def __log_client_disconnection(logger: logging.Logger, level: int, client: _ConnectedClientAPI[_T_Response]) -> None:
+        def __log_client_disconnection(logger: logging.Logger, level: int, client: _ConnectedClientAPI[Response]) -> None:
             logger.log(level, "%s disconnected", client.extra(UNIXClientAttribute.peer_name, UnixSocketAddress()))
 
         @_utils.inherit_doc(_base.BaseAsyncNetworkServerImpl)
@@ -294,11 +292,9 @@ else:
                 lambda servers: tuple(SocketProxy(server.extra(UNIXSocketAttribute.socket)) for server in servers)
             )
 
-    _T_Value = TypeVar("_T_Value")
-
     @final
     @runtime_final_class
-    class _ConnectedClientAPI(AsyncStreamClient[_T_Response]):
+    class _ConnectedClientAPI[Response](AsyncStreamClient[Response]):
         __slots__ = (
             "__client",
             "__closing",
@@ -312,9 +308,9 @@ else:
         def __init__(
             self,
             initial_peer_name: UnixSocketAddress,
-            client: _stream_server.ConnectedStreamClient[_T_Response],
+            client: _stream_server.ConnectedStreamClient[Response],
         ) -> None:
-            self.__client: _stream_server.ConnectedStreamClient[_T_Response] = client
+            self.__client: _stream_server.ConnectedStreamClient[Response] = client
             self.__closing: bool = False
             self.__send_lock = client.backend().create_fair_lock()
             self.__proxy: SocketProxy = SocketProxy(client.extra(UNIXSocketAttribute.socket))
@@ -358,13 +354,13 @@ else:
                     self.__closing = True
                     await self.__client.aclose()
 
-        async def send_packet(self, packet: _T_Response, /) -> None:
+        async def send_packet(self, packet: Response, /) -> None:
             async with self.__send_lock:
                 if self.__closing:
                     raise ClientClosedError("Closed client")
                 await self.__client.send_packet(packet)
 
-        async def send_packet_with_ancillary(self, packet: _T_Response, ancillary_data: Any, /) -> None:
+        async def send_packet_with_ancillary(self, packet: Response, ancillary_data: Any, /) -> None:
             async with self.__send_lock:
                 if self.__closing:
                     raise ClientClosedError("Closed client")
@@ -387,7 +383,7 @@ else:
                 raise TypedAttributeLookupError("credentials not available") from exc
 
         @staticmethod
-        def __simple_attribute_return(value: _T_Value) -> _T_Value:
+        def __simple_attribute_return[T](value: T) -> T:
             return value
 
         @property

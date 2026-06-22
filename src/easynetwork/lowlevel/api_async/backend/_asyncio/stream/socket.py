@@ -25,9 +25,9 @@ import socket as _socket
 import sys
 import traceback
 import warnings
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Buffer, Callable, Iterable, Mapping
 from types import MappingProxyType, TracebackType
-from typing import TYPE_CHECKING, Any, final, overload
+from typing import Any, final, overload
 
 from ......exceptions import UnsupportedOperation
 from ..... import _utils, socket as socket_tools
@@ -35,9 +35,6 @@ from ....transports.abc import AsyncStreamTransport
 from ...abc import AsyncBackend
 from .._flow_control import WriteFlowControl, add_flowcontrol_defaults
 from ..tasks import TaskUtils
-
-if TYPE_CHECKING:
-    from _typeshed import WriteableBuffer
 
 
 @final
@@ -113,7 +110,7 @@ class AsyncioTransportStreamSocketAdapter(AsyncStreamTransport):
     async def recv(self, bufsize: int) -> bytes:
         return await self.__protocol.receive_data(bufsize)
 
-    async def recv_into(self, buffer: WriteableBuffer) -> int:
+    async def recv_into(self, buffer: Buffer) -> int:
         return await self.__protocol.receive_data_into(buffer)
 
     async def send_all(self, data: bytes | bytearray | memoryview) -> None:
@@ -148,9 +145,6 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
     from ..... import _unix_utils, constants
     from .. import _base_raw_transport
 
-    if TYPE_CHECKING:
-        from _typeshed import ReadableBuffer
-
     @final
     class RawUnixStreamSocketAdapter(AsyncStreamTransport, _base_raw_transport.BaseRawSocketTransport):
         __slots__ = ()
@@ -173,7 +167,7 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
                 recv=lambda sock: sock.recv(bufsize),
             )
 
-        async def recv_into(self, buffer: WriteableBuffer) -> int:
+        async def recv_into(self, buffer: Buffer) -> int:
             return await self._sock_recv(
                 "recv_into",
                 try_async_recv=lambda loop, sock: loop.sock_recv_into(sock, buffer),
@@ -197,7 +191,7 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
 
             async def recv_with_ancillary_into(
                 self,
-                buffer: WriteableBuffer,
+                buffer: Buffer,
                 ancillary_bufsize: int,
             ) -> tuple[int, list[tuple[int, int, bytes]]]:
                 msg, ancdata, _, _ = await self._sock_recv(
@@ -221,7 +215,7 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
             async def send_all_with_ancillary(
                 self,
                 iterable_of_data: Iterable[bytes | bytearray | memoryview],
-                ancillary_data: Iterable[tuple[int, int, ReadableBuffer]],
+                ancillary_data: Iterable[tuple[int, int, Buffer]],
             ) -> None:
                 buffers: deque[memoryview] = deque(map(memoryview, iterable_of_data))  # type: ignore[arg-type]
                 del iterable_of_data
@@ -300,7 +294,7 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
         self.__loop: asyncio.AbstractEventLoop = loop
         self.__buffer: bytearray | None = bytearray(self.max_size)
         self.__buffer_view: memoryview = memoryview(self.__buffer)
-        self.__external_buffer_view: WriteableBuffer | None = None
+        self.__external_buffer_view: Buffer | None = None
         self.__buffer_nbytes_written: int = 0
         self.__transport: asyncio.Transport | None = None
         self.__closed: asyncio.Future[None] = loop.create_future()
@@ -349,7 +343,7 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
 
         self.__transport = None
 
-    def get_buffer(self, sizehint: int) -> WriteableBuffer:
+    def get_buffer(self, sizehint: int) -> Buffer:
         if (external_buffer_view := self.__external_buffer_view) is not None:
             return external_buffer_view
         # Ignore sizehint, the buffer is already at its maximum size.
@@ -409,7 +403,7 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
         self._maybe_resume_transport()
         return data
 
-    async def receive_data_into(self, buffer: WriteableBuffer, /) -> int:
+    async def receive_data_into(self, buffer: Buffer, /) -> int:
         self._check_for_connection_lost()
 
         with memoryview(buffer) as buffer:
@@ -442,9 +436,9 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
     async def _wait_for_data(self, requester: str, external_buffer: None) -> None: ...
 
     @overload
-    async def _wait_for_data(self, requester: str, external_buffer: WriteableBuffer) -> int | None: ...
+    async def _wait_for_data(self, requester: str, external_buffer: Buffer) -> int | None: ...
 
-    async def _wait_for_data(self, requester: str, external_buffer: WriteableBuffer | None) -> int | None:
+    async def _wait_for_data(self, requester: str, external_buffer: Buffer | None) -> int | None:
         if self.__read_waiter is not None:
             raise RuntimeError(f"{requester}() called while another coroutine is already waiting for incoming data")
 

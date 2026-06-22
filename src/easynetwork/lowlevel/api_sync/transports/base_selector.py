@@ -40,16 +40,11 @@ import errno as _errno
 import math
 import selectors
 from abc import abstractmethod
-from collections.abc import Callable, Iterable
-from typing import TYPE_CHECKING, Any, TypeVar
+from collections.abc import Buffer, Callable, Iterable
+from typing import Any
 
 from ... import _utils
 from . import abc as transports
-
-if TYPE_CHECKING:
-    from _typeshed import WriteableBuffer
-
-_T_Return = TypeVar("_T_Return")
 
 
 class WouldBlockOnRead(Exception):
@@ -104,11 +99,7 @@ class SelectorBaseTransport(transports.BaseTransport):
         if self._retry_interval <= 0:
             raise ValueError("retry_interval must be a strictly positive float")
 
-    def _retry(
-        self,
-        callback: Callable[[], _T_Return],
-        timeout: float,
-    ) -> tuple[_T_Return, float]:
+    def _retry[R](self, callback: Callable[[], R], timeout: float) -> tuple[R, float]:
         """
         Calls `callback` without argument and returns the output.
 
@@ -213,7 +204,7 @@ class SelectorStreamReadTransport(SelectorBaseTransport, transports.StreamReadTr
         return self._retry(lambda: self.recv_noblock(bufsize), timeout)[0]
 
     @abstractmethod
-    def recv_noblock_into(self, buffer: WriteableBuffer) -> int:
+    def recv_noblock_into(self, buffer: Buffer) -> int:
         """
         Read into the given `buffer`.
 
@@ -231,7 +222,7 @@ class SelectorStreamReadTransport(SelectorBaseTransport, transports.StreamReadTr
         """
         raise NotImplementedError
 
-    def recv_into(self, buffer: WriteableBuffer, timeout: float) -> int:
+    def recv_into(self, buffer: Buffer, timeout: float) -> int:
         """
         Read into the given `buffer`.
 
@@ -278,7 +269,7 @@ class SelectorStreamReadTransport(SelectorBaseTransport, transports.StreamReadTr
 
     def recv_noblock_with_ancillary_into(
         self,
-        buffer: WriteableBuffer,
+        buffer: Buffer,
         ancillary_bufsize: int,
     ) -> tuple[int, Any]:  # pragma: no cover
         """
@@ -305,7 +296,7 @@ class SelectorStreamReadTransport(SelectorBaseTransport, transports.StreamReadTr
 
         raise UnsupportedOperation("This transport does not have ancillary data support.")
 
-    def recv_with_ancillary_into(self, buffer: WriteableBuffer, ancillary_bufsize: int, timeout: float) -> tuple[int, Any]:
+    def recv_with_ancillary_into(self, buffer: Buffer, ancillary_bufsize: int, timeout: float) -> tuple[int, Any]:
         """
         Read into the given `buffer` with ancillary data.
 

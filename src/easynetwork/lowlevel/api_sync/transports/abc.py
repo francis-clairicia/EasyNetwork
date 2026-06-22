@@ -27,14 +27,11 @@ __all__ = [
 ]
 
 from abc import ABCMeta, abstractmethod
-from collections.abc import Iterable
+from collections.abc import Buffer, Iterable
 from types import TracebackType
-from typing import TYPE_CHECKING, Any, Self
+from typing import Any, Self
 
 from ... import _utils, typed_attr
-
-if TYPE_CHECKING:
-    from _typeshed import WriteableBuffer
 
 
 class BaseTransport(typed_attr.TypedAttributeProvider, metaclass=ABCMeta):
@@ -108,7 +105,7 @@ class StreamReadTransport(BaseTransport):
             return bytes(buffer[:nbytes])
 
     @abstractmethod
-    def recv_into(self, buffer: WriteableBuffer, timeout: float) -> int:
+    def recv_into(self, buffer: Buffer, timeout: float) -> int:
         """
         Read into the given `buffer`.
 
@@ -156,7 +153,7 @@ class StreamReadTransport(BaseTransport):
 
     def recv_with_ancillary_into(
         self,
-        buffer: WriteableBuffer,
+        buffer: Buffer,
         ancillary_bufsize: int,
         timeout: float,
     ) -> tuple[int, Any]:  # pragma: no cover

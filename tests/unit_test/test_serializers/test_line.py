@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
+from collections.abc import Buffer
+from typing import Literal
 
 from easynetwork.exceptions import DeserializeError, IncrementalDeserializeError, LimitOverrunError
 from easynetwork.lowlevel.constants import DEFAULT_SERIALIZER_LIMIT
@@ -9,9 +10,6 @@ from easynetwork.serializers.line import StringLineSerializer
 import pytest
 
 from ...tools import send_return, write_in_buffer
-
-if TYPE_CHECKING:
-    from _typeshed import ReadableBuffer
 
 _NEWLINES: dict[str, bytes] = {
     "LF": b"\n",
@@ -282,7 +280,7 @@ class TestStringLineSerializer:
 
         # Act
         sent_data = data_to_test + expected_remaining_data
-        remaining_data: ReadableBuffer
+        remaining_data: Buffer
         match incremental_deserialize_mode:
             case "data":
                 data_consumer = serializer.incremental_deserialize()
@@ -321,7 +319,7 @@ class TestStringLineSerializer:
         # Arrange
 
         # Act
-        remaining_data: ReadableBuffer
+        remaining_data: Buffer
         match incremental_deserialize_mode:
             case "data":
                 data_consumer = serializer.incremental_deserialize()

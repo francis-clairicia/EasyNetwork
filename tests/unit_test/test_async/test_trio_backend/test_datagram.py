@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import errno
 import logging
-from collections.abc import AsyncIterator, Callable, Iterable
+from collections.abc import AsyncIterator, Buffer, Callable, Iterable
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.exceptions import UnsupportedOperation
@@ -24,7 +24,6 @@ if TYPE_CHECKING:
     from easynetwork.lowlevel.api_async.backend._trio.datagram.listener import TrioDatagramListenerSocketAdapter
     from easynetwork.lowlevel.api_async.backend._trio.datagram.socket import TrioDatagramSocketAdapter
 
-    from _typeshed import ReadableBuffer
     from pytest_mock import MockerFixture
 
 
@@ -292,7 +291,7 @@ class TestTrioDatagramSocketAdapter(BaseTestSocketTransport):
         chunks: list[list[bytes]] = []
         ancillary_data_sent: list[list[Any]] = []
 
-        def sendmsg_side_effect(buffers: Iterable[ReadableBuffer], ancdata: Iterable[Any]) -> int:
+        def sendmsg_side_effect(buffers: Iterable[Buffer], ancdata: Iterable[Any]) -> int:
             for _ in range(2):
                 chunks.append(list(map(bytes, buffers)))
                 ancillary_data_sent.append(list(ancdata))
@@ -701,7 +700,7 @@ class TestTrioDatagramListenerSocketAdapter(BaseTestSocketTransport):
         # Arrange
         expected_wait_writable_nb_calls: int = block_count
 
-        def sendto_side_effect(data: ReadableBuffer, *args: Any) -> int:
+        def sendto_side_effect(data: Buffer, *args: Any) -> int:
             nonlocal block_count
 
             if block_count > 0:
@@ -767,7 +766,7 @@ class TestTrioDatagramListenerSocketAdapter(BaseTestSocketTransport):
         # Arrange
         expected_wait_writable_nb_calls: int = block_count
 
-        def sendmsg_side_effect(buffers: Iterable[ReadableBuffer], *args: Any) -> int:
+        def sendmsg_side_effect(buffers: Iterable[Buffer], *args: Any) -> int:
             nonlocal block_count
 
             if block_count > 0:
@@ -861,7 +860,7 @@ class TestTrioDatagramListenerSocketAdapter(BaseTestSocketTransport):
         chunks: list[list[bytes]] = []
         ancillary_data_sent: list[list[Any]] = []
 
-        def sendmsg_side_effect(buffers: Iterable[ReadableBuffer], ancdata: Iterable[Any], *args: Any) -> int:
+        def sendmsg_side_effect(buffers: Iterable[Buffer], ancdata: Iterable[Any], *args: Any) -> int:
             buffers = list(buffers)
             ancdata = list(ancdata)
             if to_raise:

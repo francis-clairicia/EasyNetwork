@@ -95,14 +95,10 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
 
     __all__ += ["RawUnixDatagramSocketAdapter"]
 
-    from collections.abc import Iterable
-    from typing import TYPE_CHECKING
+    from collections.abc import Buffer, Iterable
 
     from ..... import _unix_utils, constants
     from .. import _base_raw_transport
-
-    if TYPE_CHECKING:
-        from _typeshed import ReadableBuffer
 
     @final
     class RawUnixDatagramSocketAdapter(AsyncDatagramTransport, _base_raw_transport.BaseRawSocketTransport):
@@ -143,7 +139,7 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
             async def send_with_ancillary(
                 self,
                 data: bytes | bytearray | memoryview,
-                ancillary_data: Iterable[tuple[int, int, ReadableBuffer]],
+                ancillary_data: Iterable[tuple[int, int, Buffer]],
             ) -> None:
                 if hasattr(ancillary_data, "__next__"):
                     # Do not send the iterator directly because if sendmsg() blocks,

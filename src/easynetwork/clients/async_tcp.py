@@ -33,7 +33,6 @@ else:
     _ssl_module = _ssl
     del _ssl
 
-from .._typevars import _T_ReceivedPacket, _T_SentPacket
 from ..exceptions import ClientClosedError
 from ..lowlevel import _utils, constants
 from ..lowlevel.api_async.backend.abc import AsyncBackend, ILock
@@ -57,7 +56,7 @@ if TYPE_CHECKING:
     from ssl import SSLContext
 
 
-class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
+class AsyncTCPNetworkClient[SentPacket, ReceivedPacket](AbstractAsyncNetworkClient[SentPacket, ReceivedPacket]):
     """
     An asynchronous network client interface for TCP connections.
     """
@@ -75,7 +74,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         self,
         address: tuple[str, int],
         /,
-        protocol: AnyStreamProtocolType[_T_SentPacket, _T_ReceivedPacket],
+        protocol: AnyStreamProtocolType[SentPacket, ReceivedPacket],
         backend: AsyncBackend | BuiltinAsyncBackendLiteral | None = ...,
         *,
         local_address: tuple[str, int] | None = ...,
@@ -93,7 +92,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         self,
         socket: _socket.socket,
         /,
-        protocol: AnyStreamProtocolType[_T_SentPacket, _T_ReceivedPacket],
+        protocol: AnyStreamProtocolType[SentPacket, ReceivedPacket],
         backend: AsyncBackend | BuiltinAsyncBackendLiteral | None = ...,
         *,
         ssl: SSLContext | bool | None = ...,
@@ -108,7 +107,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         self,
         __arg: tuple[str, int] | _socket.socket,
         /,
-        protocol: AnyStreamProtocolType[_T_SentPacket, _T_ReceivedPacket],
+        protocol: AnyStreamProtocolType[SentPacket, ReceivedPacket],
         backend: AsyncBackend | BuiltinAsyncBackendLiteral | None = None,
         *,
         ssl: SSLContext | bool | None = None,
@@ -300,9 +299,9 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
     async def __create_endpoint(
         transport_factory: Callable[[], Awaitable[AsyncStreamTransport]],
         *,
-        protocol: AnyStreamProtocolType[_T_SentPacket, _T_ReceivedPacket],
+        protocol: AnyStreamProtocolType[SentPacket, ReceivedPacket],
         max_recv_size: int,
-    ) -> AsyncStreamEndpoint[_T_SentPacket, _T_ReceivedPacket]:
+    ) -> AsyncStreamEndpoint[SentPacket, ReceivedPacket]:
         transport = await transport_factory()
         socket = transport.extra(INETSocketAttribute.socket)
 
@@ -408,7 +407,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
             else:
                 await self.__endpoint.aclose()
 
-    async def send_packet(self, packet: _T_SentPacket) -> None:
+    async def send_packet(self, packet: SentPacket) -> None:
         """
         Sends `packet` to the remote endpoint. Does not require task synchronization.
 
@@ -449,7 +448,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
             with self.__convert_socket_error(endpoint=endpoint):
                 await endpoint.send_eof()
 
-    async def recv_packet(self) -> _T_ReceivedPacket:
+    async def recv_packet(self) -> ReceivedPacket:
         """
         Waits for a new packet to arrive from the remote endpoint. Does not require task synchronization.
 

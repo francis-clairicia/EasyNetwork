@@ -40,7 +40,6 @@ else:
     from collections.abc import Iterator
     from typing import Any, final, overload
 
-    from .._typevars import _T_ReceivedPacket, _T_SentPacket
     from ..exceptions import ClientClosedError
     from ..lowlevel import _lock, _unix_utils, _utils, constants
     from ..lowlevel.api_sync.endpoints.datagram import DatagramEndpoint
@@ -49,7 +48,7 @@ else:
     from ..protocol import DatagramProtocol
     from .abc import AbstractNetworkClient
 
-    class UnixDatagramClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
+    class UnixDatagramClient[SentPacket, ReceivedPacket](AbstractNetworkClient[SentPacket, ReceivedPacket]):
         """
         A Unix datagram client.
 
@@ -68,7 +67,7 @@ else:
             self,
             path: str | os.PathLike[str] | bytes | UnixSocketAddress,
             /,
-            protocol: DatagramProtocol[_T_SentPacket, _T_ReceivedPacket],
+            protocol: DatagramProtocol[SentPacket, ReceivedPacket],
             *,
             local_path: str | os.PathLike[str] | bytes | UnixSocketAddress | None = ...,
             retry_interval: float = ...,
@@ -79,7 +78,7 @@ else:
             self,
             socket: _socket.socket,
             /,
-            protocol: DatagramProtocol[_T_SentPacket, _T_ReceivedPacket],
+            protocol: DatagramProtocol[SentPacket, ReceivedPacket],
             *,
             retry_interval: float = ...,
         ) -> None: ...
@@ -88,7 +87,7 @@ else:
             self,
             __arg: _socket.socket | str | os.PathLike[str] | bytes | UnixSocketAddress,
             /,
-            protocol: DatagramProtocol[_T_SentPacket, _T_ReceivedPacket],
+            protocol: DatagramProtocol[SentPacket, ReceivedPacket],
             *,
             retry_interval: float = 1.0,
             **kwargs: Any,
@@ -151,7 +150,7 @@ else:
             self.__send_lock = _lock.ForkSafeLock(threading.Lock)
             self.__receive_lock = _lock.ForkSafeLock(threading.Lock)
             try:
-                self.__endpoint: DatagramEndpoint[_T_SentPacket, _T_ReceivedPacket] = DatagramEndpoint(transport, protocol)
+                self.__endpoint: DatagramEndpoint[SentPacket, ReceivedPacket] = DatagramEndpoint(transport, protocol)
                 self.__socket_proxy = SocketProxy(transport.extra(UNIXSocketAttribute.socket), lock=self.__send_lock.get)
             except BaseException:
                 transport.close()
@@ -198,7 +197,7 @@ else:
 
         def send_packet(
             self,
-            packet: _T_SentPacket,
+            packet: SentPacket,
             *,
             ancillary_data: SocketAncillary | None = None,
             timeout: float | None = None,
@@ -248,7 +247,7 @@ else:
             ancillary_data: SocketAncillary | None = None,
             ancillary_bufsize: int | None = None,
             timeout: float | None = None,
-        ) -> _T_ReceivedPacket:
+        ) -> ReceivedPacket:
             """
             Waits for a new packet from the remote endpoint. Thread-safe.
 

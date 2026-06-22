@@ -121,7 +121,7 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
         from ._errno import error_from_errno
 
         if sys.platform.startswith("netbsd"):
-            # The constants are not defined in _socket module (at least on 3.11).
+            # The constants are not defined in _socket module.
             # https://man.netbsd.org/unix.4
             SOL_LOCAL: int = 0
             LOCAL_PEEREID: int = 3
@@ -170,7 +170,7 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
 
         from ._errno import error_from_errno
 
-        # The constants are not defined in _socket module (at least on 3.11).
+        # The constants are not defined in _socket module.
         # c.f. https://stackoverflow.com/a/67971484
         SOL_LOCAL: int = 0
         LOCAL_PEERPID: int = 2

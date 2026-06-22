@@ -1266,13 +1266,12 @@ class TestAsyncioBackend:
         event_loop_slowdown_handle.cancel()
         assert checkpoints == ["task started"]
 
-    @pytest.mark.skipif(not hasattr(asyncio, "eager_task_factory"), reason="asyncio.eager_task_factory not implemented")
     async def test____create_threads_portal____run_coroutine_soon____eager_task(
         self,
         backend: AsyncBackend,
     ) -> None:
         event_loop = asyncio.get_running_loop()
-        event_loop.set_task_factory(getattr(asyncio, "eager_task_factory"))
+        event_loop.set_task_factory(asyncio.eager_task_factory)
 
         async def coroutine() -> int:
             return 42

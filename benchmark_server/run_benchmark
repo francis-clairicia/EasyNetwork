@@ -22,7 +22,7 @@ import time
 from collections.abc import Sequence
 from pathlib import Path
 from socket import SOCK_DGRAM, SOCK_STREAM
-from typing import TYPE_CHECKING, Final, Literal, NotRequired, TypeAlias, TypedDict, cast
+from typing import TYPE_CHECKING, Final, Literal, NotRequired, TypedDict, cast
 
 import docker
 import docker.errors
@@ -40,7 +40,7 @@ EXPOSED_PORT: Final[int] = 25000
 UNIX_SOCKET_PATH: Final[Path] = Path("/tmp") / "easynetwork" / "server.sock"
 
 
-_CommandLine: TypeAlias = tuple[str, ...]
+type _CommandLine = tuple[str, ...]
 
 
 class _PingOptions(TypedDict):

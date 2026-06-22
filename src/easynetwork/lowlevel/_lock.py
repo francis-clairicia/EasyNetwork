@@ -23,28 +23,26 @@ __all__ = ["ForkSafeLock"]
 import os
 import threading
 from collections.abc import Callable
-from typing import Generic, TypeVar, cast, overload
-
-_T_Lock = TypeVar("_T_Lock", bound="threading.RLock | threading.Lock")
+from typing import cast, overload
 
 
-class ForkSafeLock(Generic[_T_Lock]):
+class ForkSafeLock[Lock: (threading.RLock, threading.Lock)]:
     __slots__ = ("__pid", "__unsafe_lock", "__lock_factory", "__weakref__")
 
     @overload
     def __init__(self: ForkSafeLock[threading.RLock], lock_factory: None = ...) -> None: ...
 
     @overload
-    def __init__(self, lock_factory: Callable[[], _T_Lock]) -> None: ...
+    def __init__(self, lock_factory: Callable[[], Lock]) -> None: ...
 
-    def __init__(self, lock_factory: Callable[[], _T_Lock] | None = None) -> None:
+    def __init__(self, lock_factory: Callable[[], Lock] | None = None) -> None:
         if lock_factory is None:
-            lock_factory = cast(Callable[[], _T_Lock], threading.RLock)
-        self.__unsafe_lock: _T_Lock = lock_factory()
+            lock_factory = cast(Callable[[], Lock], threading.RLock)
+        self.__unsafe_lock: Lock = lock_factory()
         self.__pid: int = os.getpid()
-        self.__lock_factory: Callable[[], _T_Lock] = lock_factory
+        self.__lock_factory: Callable[[], Lock] = lock_factory
 
-    def get(self) -> _T_Lock:
+    def get(self) -> Lock:
         if self.__pid != os.getpid():
             self.__unsafe_lock = self.__lock_factory()
             self.__pid = os.getpid()

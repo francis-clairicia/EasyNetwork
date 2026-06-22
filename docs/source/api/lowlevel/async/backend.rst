@@ -267,3 +267,8 @@ Useful tools
 .. automodule:: easynetwork.lowlevel.api_async.backend.utils
    :no-docstring:
    :members:
+
+   .. py:type:: BuiltinAsyncBackendLiteral
+      :canonical: = Literal["asyncio", "trio"]
+
+      Supported asynchronous framework names.

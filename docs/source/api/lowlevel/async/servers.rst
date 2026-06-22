@@ -21,6 +21,3 @@ Datagram Servers
 
 .. automodule:: easynetwork.lowlevel.api_async.servers.datagram
    :members:
-
-.. autotypevar:: easynetwork.lowlevel.api_async.servers.datagram::_T_Address
-   :no-index:

@@ -39,16 +39,13 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx.ext.todo",
     # Dependencies
-    "enum_tools.autoenum",
     "sphinx_rtd_theme",
     "sphinx_tabs.tabs",
     "sphinx_toolbox.collapse",
     "sphinx_toolbox.github",
     "sphinx_toolbox.sidebar_links",
-    "sphinx_toolbox.more_autodoc.genericalias",
     "sphinx_toolbox.more_autodoc.autonamedtuple",
     "sphinx_toolbox.more_autodoc.autoprotocol",
-    "sphinx_toolbox.more_autodoc.typevars",
     "sphinx_toolbox.more_autodoc.no_docstring",
     "sphinxcontrib.towncrier.ext",
     # Custom
@@ -89,20 +86,18 @@ autodoc_type_aliases = {
     "Context": "contextvars.Context",
     "MemoryBIO": "ssl.MemoryBIO",
     "Pickler": "pickle.Pickler",
-    "ReadableBuffer": "bytes | bytearray | memoryview | collections.abc.Buffer",
     "SSLContext": "ssl.SSLContext",
     "SSLObject": "ssl.SSLObject",
     "SSLSession": "ssl.SSLSession",
     "SSLSocket": "ssl.SSLSocket",
     "Struct": "struct.Struct",
     "Unpickler": "pickle.Unpickler",
-    "WriteableBuffer": "bytearray | memoryview | collections.abc.Buffer",
     "ZLibCompress": "zlib.Compress",
     "ZLibDecompress": "zlib.Decompress",
 }
 autodoc_inherit_docstrings = False
 autodoc_mock_imports = [
-    "_typesched",
+    "_typeshed",
 ]
 
 # -- sphinx.ext.intersphinx configuration ------------------------------------

@@ -41,7 +41,6 @@ else:
     from collections.abc import Iterator
     from typing import Any, final, overload
 
-    from .._typevars import _T_ReceivedPacket, _T_SentPacket
     from ..exceptions import ClientClosedError
     from ..lowlevel import _lock, _unix_utils, _utils, constants
     from ..lowlevel.api_sync.endpoints.stream import StreamEndpoint
@@ -51,7 +50,7 @@ else:
     from . import _base
     from .abc import AbstractNetworkClient
 
-    class UnixStreamClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
+    class UnixStreamClient[SentPacket, ReceivedPacket](AbstractNetworkClient[SentPacket, ReceivedPacket]):
         """
         A Unix stream client.
 
@@ -71,7 +70,7 @@ else:
             self,
             path: str | os.PathLike[str] | bytes | UnixSocketAddress,
             /,
-            protocol: AnyStreamProtocolType[_T_SentPacket, _T_ReceivedPacket],
+            protocol: AnyStreamProtocolType[SentPacket, ReceivedPacket],
             *,
             connect_timeout: float | None = ...,
             local_path: str | os.PathLike[str] | bytes | UnixSocketAddress | None = ...,
@@ -84,7 +83,7 @@ else:
             self,
             socket: _socket.socket,
             /,
-            protocol: AnyStreamProtocolType[_T_SentPacket, _T_ReceivedPacket],
+            protocol: AnyStreamProtocolType[SentPacket, ReceivedPacket],
             *,
             max_recv_size: int | None = ...,
             retry_interval: float = ...,
@@ -94,7 +93,7 @@ else:
             self,
             __arg: _socket.socket | str | os.PathLike[str] | bytes | UnixSocketAddress,
             /,
-            protocol: AnyStreamProtocolType[_T_SentPacket, _T_ReceivedPacket],
+            protocol: AnyStreamProtocolType[SentPacket, ReceivedPacket],
             *,
             max_recv_size: int | None = None,
             retry_interval: float = 1.0,
@@ -206,7 +205,7 @@ else:
 
         def send_packet(
             self,
-            packet: _T_SentPacket,
+            packet: SentPacket,
             *,
             ancillary_data: SocketAncillary | None = None,
             timeout: float | None = None,
@@ -278,7 +277,7 @@ else:
             ancillary_data: SocketAncillary | None = None,
             ancillary_bufsize: int | None = None,
             timeout: float | None = None,
-        ) -> _T_ReceivedPacket:
+        ) -> ReceivedPacket:
             """
             Waits for a new packet to arrive from the remote endpoint. Thread-safe.
 

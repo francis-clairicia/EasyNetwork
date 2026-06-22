@@ -6,7 +6,7 @@ import errno
 import math
 import os
 import ssl
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Buffer, Callable, Iterable, Iterator
 from socket import AF_INET, SHUT_RDWR, SHUT_WR
 from typing import TYPE_CHECKING, Any
 
@@ -29,7 +29,6 @@ from ....base import BaseTestSocketTransport, MixinTestSocketSendMSG
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
 
-    from _typeshed import ReadableBuffer
     from pytest_mock import MockerFixture
 
 
@@ -457,7 +456,7 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
         # Arrange
         chunks: list[list[bytes]] = []
 
-        def sendmsg_side_effect(buffers: Iterable[ReadableBuffer], *args: Any) -> int:
+        def sendmsg_side_effect(buffers: Iterable[Buffer], *args: Any) -> int:
             buffers = list(buffers)
             chunks.append(list(map(bytes, buffers)))
             return sum(memoryview(v).nbytes for v in buffers)
@@ -483,7 +482,7 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
         # Arrange
         chunks: list[list[bytes]] = []
 
-        def sendmsg_side_effect(buffers: Iterable[ReadableBuffer], *args: Any) -> int:
+        def sendmsg_side_effect(buffers: Iterable[Buffer], *args: Any) -> int:
             buffers = list(buffers)
             chunks.append(list(map(bytes, buffers)))
             return sum(memoryview(v).nbytes for v in buffers)
@@ -510,7 +509,7 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
         # Arrange
         chunks: list[list[bytes]] = []
 
-        def sendmsg_side_effect(buffers: Iterable[ReadableBuffer], *args: Any) -> int:
+        def sendmsg_side_effect(buffers: Iterable[Buffer], *args: Any) -> int:
             buffers = list(buffers)
             chunks.append(list(map(bytes, buffers)))
             return min(sum(memoryview(v).nbytes for v in buffers), 3)
@@ -539,7 +538,7 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
         # Arrange
         chunks: list[list[bytes]] = []
 
-        def sendmsg_side_effect(buffers: Iterable[ReadableBuffer], *args: Any) -> int:
+        def sendmsg_side_effect(buffers: Iterable[Buffer], *args: Any) -> int:
             buffers = list(buffers)
             chunks.append(list(map(bytes, buffers)))
             return sum(memoryview(v).nbytes for v in buffers)
@@ -597,7 +596,7 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
         chunks: list[list[bytes]] = []
         ancillary_data_sent: list[list[Any]] = []
 
-        def sendmsg_side_effect(buffers: Iterable[ReadableBuffer], ancdata: Iterable[Any]) -> int:
+        def sendmsg_side_effect(buffers: Iterable[Buffer], ancdata: Iterable[Any]) -> int:
             buffers = list(buffers)
             ancdata = list(ancdata)
             if to_raise:
@@ -636,7 +635,7 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
         # Arrange
         chunks: list[list[bytes]] = []
 
-        def sendmsg_side_effect(buffers: Iterable[ReadableBuffer]) -> int:
+        def sendmsg_side_effect(buffers: Iterable[Buffer]) -> int:
             buffers = list(buffers)
             chunks.append(list(map(bytes, buffers)))
             return sum(memoryview(v).nbytes for v in buffers)
@@ -663,7 +662,7 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
         # Arrange
         chunks: list[list[bytes]] = []
 
-        def sendmsg_side_effect(buffers: Iterable[ReadableBuffer]) -> int:
+        def sendmsg_side_effect(buffers: Iterable[Buffer]) -> int:
             buffers = list(buffers)
             chunks.append(list(map(bytes, buffers)))
             return sum(memoryview(v).nbytes for v in buffers)
@@ -690,7 +689,7 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
         # Arrange
         chunks: list[list[bytes]] = []
 
-        def sendmsg_side_effect(buffers: Iterable[ReadableBuffer]) -> int:
+        def sendmsg_side_effect(buffers: Iterable[Buffer]) -> int:
             buffers = list(buffers)
             chunks.append(list(map(bytes, buffers)))
             return min(sum(memoryview(v).nbytes for v in buffers), 3)
@@ -721,7 +720,7 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
         # Arrange
         chunks: list[list[bytes]] = []
 
-        def sendmsg_side_effect(buffers: Iterable[ReadableBuffer]) -> int:
+        def sendmsg_side_effect(buffers: Iterable[Buffer]) -> int:
             buffers = list(buffers)
             chunks.append(list(map(bytes, buffers)))
             return sum(memoryview(v).nbytes for v in buffers)
@@ -751,7 +750,7 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
         to_raise: list[type[OSError]] = [error]
         chunks: list[list[bytes]] = []
 
-        def sendmsg_side_effect(buffers: Iterable[ReadableBuffer]) -> int:
+        def sendmsg_side_effect(buffers: Iterable[Buffer]) -> int:
             if to_raise:
                 raise to_raise.pop(0)
             buffers = list(buffers)
@@ -1888,7 +1887,7 @@ class TestSocketDatagramTransport(BaseTestSocketTransport):
         chunks: list[list[bytes]] = []
         ancillary_data_sent: list[list[Any]] = []
 
-        def sendmsg_side_effect(buffers: Iterable[ReadableBuffer], ancdata: Iterable[Any]) -> int:
+        def sendmsg_side_effect(buffers: Iterable[Buffer], ancdata: Iterable[Any]) -> int:
             buffers = list(buffers)
             ancdata = list(ancdata)
             if to_raise:

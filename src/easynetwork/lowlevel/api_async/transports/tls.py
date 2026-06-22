@@ -28,8 +28,8 @@ import functools
 import logging
 import warnings
 from collections import deque
-from collections.abc import Callable, Coroutine, Iterable, Mapping
-from typing import TYPE_CHECKING, Any, Final, NoReturn, Self, TypeVar, TypeVarTuple
+from collections.abc import Buffer, Callable, Coroutine, Iterable, Mapping
+from typing import TYPE_CHECKING, Any, Final, NoReturn, Self
 
 try:
     import ssl as _ssl
@@ -47,11 +47,6 @@ from .utils import aclose_forcefully
 
 if TYPE_CHECKING:
     from ssl import MemoryBIO, SSLContext, SSLObject, SSLSession
-
-    from _typeshed import WriteableBuffer
-
-_T_PosArgs = TypeVarTuple("_T_PosArgs")
-_T_Return = TypeVar("_T_Return")
 
 
 @dataclasses.dataclass(repr=False, eq=False, slots=True, kw_only=True)
@@ -213,7 +208,7 @@ class AsyncTLSStreamTransport(AsyncStreamTransport):
             raise
 
     @_utils.inherit_doc(AsyncStreamTransport)
-    async def recv_into(self, buffer: WriteableBuffer) -> int:
+    async def recv_into(self, buffer: Buffer) -> int:
         assert _ssl_module is not None, "stdlib ssl module not available"  # nosec assert_used
         nbytes = memoryview(buffer).nbytes or 1024
         try:
@@ -270,11 +265,11 @@ class AsyncTLSStreamTransport(AsyncStreamTransport):
         """
         raise UnsupportedOperation("SSL/TLS API does not support sending EOF.")
 
-    async def _retry_ssl_method(
+    async def _retry_ssl_method[*PosArgs, R](
         self,
-        ssl_object_method: Callable[[*_T_PosArgs], _T_Return],
-        *args: *_T_PosArgs,
-    ) -> _T_Return:
+        ssl_object_method: Callable[[*PosArgs], R],
+        *args: *PosArgs,
+    ) -> R:
         assert _ssl_module is not None, "stdlib ssl module not available"  # nosec assert_used
         while True:
             try:

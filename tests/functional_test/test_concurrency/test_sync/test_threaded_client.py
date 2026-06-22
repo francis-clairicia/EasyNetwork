@@ -3,7 +3,6 @@ from __future__ import annotations
 import time
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
-from typing import TypeAlias
 
 from easynetwork.clients.abc import AbstractNetworkClient
 from easynetwork.exceptions import ClientClosedError
@@ -12,7 +11,7 @@ import pytest
 
 from ....tools import PlatformMarkers, TimeTest
 
-ClientType: TypeAlias = AbstractNetworkClient[str, str]
+type ClientType = AbstractNetworkClient[str, str]
 
 
 pytestmark = [

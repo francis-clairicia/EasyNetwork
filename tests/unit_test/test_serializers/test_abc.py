@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import random
-from collections.abc import Generator
+from collections.abc import Buffer, Generator
 from typing import IO, TYPE_CHECKING, Any, Literal, final
 
 from easynetwork.exceptions import DeserializeError, IncrementalDeserializeError, LimitOverrunError
@@ -20,7 +20,6 @@ from ...tools import send_return, write_data_and_extra_in_buffer, write_in_buffe
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
 
-    from _typeshed import ReadableBuffer
     from pytest_mock import MockerFixture
 
 
@@ -351,7 +350,7 @@ class TestAutoSeparatedPacketSerializer:
 
         # Act
         sent_data = data_to_test + expected_remaining_data
-        remaining_data: ReadableBuffer
+        remaining_data: Buffer
         match incremental_deserialize_mode:
             case "data":
                 data_consumer = serializer.incremental_deserialize()
@@ -390,7 +389,7 @@ class TestAutoSeparatedPacketSerializer:
         mock_deserialize_func.return_value = mocker.sentinel.packet
 
         # Act
-        remaining_data: ReadableBuffer
+        remaining_data: Buffer
         match incremental_deserialize_mode:
             case "data":
                 data_consumer = serializer.incremental_deserialize()
@@ -1126,7 +1125,7 @@ class TestFileBasedPacketSerializer:
         mock_load_from_file_func.side_effect = side_effect
 
         # Act
-        remaining_data: ReadableBuffer
+        remaining_data: Buffer
         match incremental_deserialize_mode:
             case "data":
                 data_consumer = serializer.incremental_deserialize()
@@ -1160,7 +1159,7 @@ class TestFileBasedPacketSerializer:
         mock_load_from_file_func.side_effect = side_effect
 
         # Act
-        remaining_data: ReadableBuffer
+        remaining_data: Buffer
         match incremental_deserialize_mode:
             case "data":
                 data_consumer = serializer.incremental_deserialize()
@@ -1197,7 +1196,7 @@ class TestFileBasedPacketSerializer:
         mock_load_from_file_func.side_effect = side_effect
 
         # Act
-        remaining_data: ReadableBuffer
+        remaining_data: Buffer
         match incremental_deserialize_mode:
             case "data":
                 data_consumer = serializer.incremental_deserialize()

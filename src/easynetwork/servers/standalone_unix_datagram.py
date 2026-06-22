@@ -36,9 +36,8 @@ else:
     import logging
     import os
     from collections.abc import Mapping, Sequence
-    from typing import Any, Generic
+    from typing import Any
 
-    from .._typevars import _T_Request, _T_Response
     from ..lowlevel.api_async.backend.abc import AsyncBackend
     from ..lowlevel.api_async.backend.utils import BuiltinAsyncBackendLiteral
     from ..lowlevel.socket import SocketProxy, UnixSocketAddress
@@ -47,9 +46,8 @@ else:
     from .async_unix_datagram import AsyncUnixDatagramServer, _UnnamedAddressesBehavior
     from .handlers import AsyncDatagramRequestHandler
 
-    class StandaloneUnixDatagramServer(
-        _base.BaseStandaloneNetworkServerImpl[AsyncUnixDatagramServer[_T_Request, _T_Response]],
-        Generic[_T_Request, _T_Response],
+    class StandaloneUnixDatagramServer[Request, Response](
+        _base.BaseStandaloneNetworkServerImpl[AsyncUnixDatagramServer[Request, Response]],
     ):
         """
         A Unix datagram server.
@@ -64,8 +62,8 @@ else:
         def __init__(
             self,
             path: str | os.PathLike[str] | bytes | UnixSocketAddress,
-            protocol: DatagramProtocol[_T_Response, _T_Request],
-            request_handler: AsyncDatagramRequestHandler[_T_Request, _T_Response],
+            protocol: DatagramProtocol[Response, Request],
+            request_handler: AsyncDatagramRequestHandler[Request, Response],
             backend: AsyncBackend | BuiltinAsyncBackendLiteral | None = None,
             *,
             runner_options: Mapping[str, Any] | None = None,

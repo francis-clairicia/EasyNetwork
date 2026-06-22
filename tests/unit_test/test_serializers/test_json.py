@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Generator
+from collections.abc import Buffer, Generator
 from typing import TYPE_CHECKING, Any, Literal
 
 from easynetwork.exceptions import DeserializeError, IncrementalDeserializeError, LimitOverrunError
@@ -17,7 +17,6 @@ from .base import BaseSerializerConfigInstanceCheck
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
 
-    from _typeshed import ReadableBuffer
     from pytest_mock import MockerFixture
 
 
@@ -523,11 +522,11 @@ class TestJSONParser:
         return request.param
 
     @staticmethod
-    def raw_parse(*, limit: int, buffered: bool) -> Generator[None, bytes, tuple[ReadableBuffer, ReadableBuffer]]:
+    def raw_parse(*, limit: int, buffered: bool) -> Generator[None, bytes, tuple[Buffer, Buffer]]:
         if not buffered:
             return _JSONParser.raw_parse(limit=limit)
 
-        def wrapper(limit: int) -> Generator[None, bytes, tuple[ReadableBuffer, ReadableBuffer]]:
+        def wrapper(limit: int) -> Generator[None, bytes, tuple[Buffer, Buffer]]:
             buffer = bytearray(limit)
             with (
                 memoryview(buffer) as buffer_view,

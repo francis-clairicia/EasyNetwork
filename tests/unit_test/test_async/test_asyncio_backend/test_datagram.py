@@ -5,7 +5,7 @@ import contextlib
 import errno
 import logging
 import sys
-from collections.abc import AsyncIterator, Callable, Iterable, Iterator
+from collections.abc import AsyncIterator, Buffer, Callable, Iterable, Iterator
 from errno import EBADF
 from socket import AI_PASSIVE
 from typing import TYPE_CHECKING, Any, Literal, NoReturn, cast
@@ -43,7 +43,6 @@ if sys.platform != "win32":
 if TYPE_CHECKING:
     from unittest.mock import AsyncMock, MagicMock
 
-    from _typeshed import ReadableBuffer
     from pytest_mock import MockerFixture
 
 
@@ -1207,7 +1206,7 @@ if sys.platform != "win32":
             # Arrange
             chunks: list[list[bytes]] = []
 
-            def sendmsg_side_effect(buffers: Iterable[ReadableBuffer], *args: Any) -> int:
+            def sendmsg_side_effect(buffers: Iterable[Buffer], *args: Any) -> int:
                 buffers = list(buffers)
                 chunks.append(list(map(bytes, buffers)))
                 return sum(memoryview(v).nbytes for v in buffers)
@@ -1239,7 +1238,7 @@ if sys.platform != "win32":
             chunks: list[list[bytes]] = []
             ancillary_data_sent: list[list[Any]] = []
 
-            def sendmsg_side_effect(buffers: Iterable[ReadableBuffer], ancdata: Iterable[Any]) -> int:
+            def sendmsg_side_effect(buffers: Iterable[Buffer], ancdata: Iterable[Any]) -> int:
                 buffers = list(buffers)
                 ancdata = list(ancdata)
                 if to_raise:
@@ -2073,7 +2072,7 @@ if sys.platform != "win32":
             # Arrange
             chunks: list[list[bytes]] = []
 
-            def sendmsg_side_effect(buffers: Iterable[ReadableBuffer], *args: Any) -> int:
+            def sendmsg_side_effect(buffers: Iterable[Buffer], *args: Any) -> int:
                 buffers = list(buffers)
                 chunks.append(list(map(bytes, buffers)))
                 return sum(memoryview(v).nbytes for v in buffers)
@@ -2107,7 +2106,7 @@ if sys.platform != "win32":
             chunks: list[list[bytes]] = []
             ancillary_data_sent: list[list[Any]] = []
 
-            def sendmsg_side_effect(buffers: Iterable[ReadableBuffer], ancdata: Iterable[Any], *args: Any) -> int:
+            def sendmsg_side_effect(buffers: Iterable[Buffer], ancdata: Iterable[Any], *args: Any) -> int:
                 buffers = list(buffers)
                 ancdata = list(ancdata)
                 if to_raise:

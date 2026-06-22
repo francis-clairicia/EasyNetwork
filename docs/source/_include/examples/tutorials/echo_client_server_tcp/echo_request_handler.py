@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
-from typing import Any, TypeAlias
+from typing import Any
 
 from easynetwork.exceptions import StreamProtocolParseError
 from easynetwork.servers.handlers import AsyncStreamClient, AsyncStreamRequestHandler, INETClientAttribute
 
 # These TypeAliases are there to help you understand
 # where requests and responses are used
-RequestType: TypeAlias = Any
-ResponseType: TypeAlias = Any
+type RequestType = Any
+type ResponseType = Any
 
 
 class EchoRequestHandler(AsyncStreamRequestHandler[RequestType, ResponseType]):

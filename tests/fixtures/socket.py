@@ -33,7 +33,7 @@ def SO_PASSCRED_or_None() -> tuple[int, int] | None:
     if not sys.platform.startswith(("linux", "freebsd", "netbsd")):
         return None
 
-    # The constant is not defined in _socket module (at least on 3.11).
+    # The constant is not defined in _socket module.
     SOL_LOCAL: int = 0
     return next(
         (

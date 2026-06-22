@@ -24,7 +24,6 @@ import warnings
 from collections.abc import Awaitable, Callable, Iterator
 from typing import Any, final, overload
 
-from .._typevars import _T_ReceivedPacket, _T_SentPacket
 from ..exceptions import ClientClosedError
 from ..lowlevel import _utils, constants
 from ..lowlevel.api_async.backend.abc import AsyncBackend, ILock
@@ -38,7 +37,7 @@ from . import _base
 from .abc import AbstractAsyncNetworkClient
 
 
-class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
+class AsyncUDPNetworkClient[SentPacket, ReceivedPacket](AbstractAsyncNetworkClient[SentPacket, ReceivedPacket]):
     """
     An asynchronous network client interface for UDP communication.
     """
@@ -56,7 +55,7 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         self,
         address: tuple[str, int],
         /,
-        protocol: DatagramProtocol[_T_SentPacket, _T_ReceivedPacket],
+        protocol: DatagramProtocol[SentPacket, ReceivedPacket],
         backend: AsyncBackend | BuiltinAsyncBackendLiteral | None = ...,
         *,
         local_address: tuple[str, int] | None = ...,
@@ -68,7 +67,7 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         self,
         socket: _socket.socket,
         /,
-        protocol: DatagramProtocol[_T_SentPacket, _T_ReceivedPacket],
+        protocol: DatagramProtocol[SentPacket, ReceivedPacket],
         backend: AsyncBackend | BuiltinAsyncBackendLiteral | None = ...,
     ) -> None: ...
 
@@ -76,7 +75,7 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         self,
         __arg: tuple[str, int] | _socket.socket,
         /,
-        protocol: DatagramProtocol[_T_SentPacket, _T_ReceivedPacket],
+        protocol: DatagramProtocol[SentPacket, ReceivedPacket],
         backend: AsyncBackend | BuiltinAsyncBackendLiteral | None = None,
         **kwargs: Any,
     ) -> None:
@@ -138,8 +137,8 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
     async def __create_endpoint(
         transport_factory: Callable[[], Awaitable[AsyncDatagramTransport]],
         *,
-        protocol: DatagramProtocol[_T_SentPacket, _T_ReceivedPacket],
-    ) -> AsyncDatagramEndpoint[_T_SentPacket, _T_ReceivedPacket]:
+        protocol: DatagramProtocol[SentPacket, ReceivedPacket],
+    ) -> AsyncDatagramEndpoint[SentPacket, ReceivedPacket]:
         transport = await transport_factory()
         socket = transport.extra(INETSocketAttribute.socket)
 
@@ -234,7 +233,7 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
             else:
                 await self.__endpoint.aclose()
 
-    async def send_packet(self, packet: _T_SentPacket) -> None:
+    async def send_packet(self, packet: SentPacket) -> None:
         """
         Sends `packet` to the remote endpoint. Does not require task synchronization.
 
@@ -254,7 +253,7 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
                 await endpoint.send_packet(packet)
                 _utils.check_real_socket_state(endpoint.extra(INETSocketAttribute.socket))
 
-    async def recv_packet(self) -> _T_ReceivedPacket:
+    async def recv_packet(self) -> ReceivedPacket:
         """
         Waits for a new packet to arrive from the remote endpoint. Does not require task synchronization.
 

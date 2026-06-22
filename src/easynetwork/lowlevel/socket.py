@@ -48,7 +48,7 @@ import socket as _socket
 import sys
 import threading
 from abc import ABCMeta, abstractmethod
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Buffer, Callable, Iterable, Iterator
 from struct import Struct
 from typing import (
     TYPE_CHECKING,
@@ -56,11 +56,8 @@ from typing import (
     ClassVar,
     Literal,
     NamedTuple,
-    ParamSpec,
     Protocol,
     Self,
-    TypeAlias,
-    TypeVar,
     final,
     overload,
     runtime_checkable,
@@ -73,21 +70,16 @@ if TYPE_CHECKING:
     from socket import _RetAddress
     from ssl import SSLContext, SSLObject, SSLSocket, _PeerCertRetDictType
 
-    from _typeshed import ReadableBuffer
-
-_P = ParamSpec("_P")
-_T_Return = TypeVar("_T_Return")
-
 if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
 
     __all__ += ["RawUnixSocketAddress"]
 
     if sys.platform == "linux":
         # Abstract Unix socket addresses are returned as bytes.
-        RawUnixSocketAddress: TypeAlias = str | bytes
+        type RawUnixSocketAddress = str | bytes
         """An address associated with a Unix socket."""
     else:
-        RawUnixSocketAddress: TypeAlias = str
+        type RawUnixSocketAddress = str
         """An address associated with a Unix socket."""
 
 
@@ -209,7 +201,7 @@ class IPv6SocketAddress(NamedTuple):
         return self.host, self.port
 
 
-SocketAddress: TypeAlias = IPv4SocketAddress | IPv6SocketAddress
+type SocketAddress = IPv4SocketAddress | IPv6SocketAddress
 """An internet socket address, either IPv4 or IPv6."""
 
 
@@ -685,7 +677,7 @@ class SocketProxy:
 
         return f"{s}>"
 
-    def __execute(self, func: Callable[_P, _T_Return], /, *args: _P.args, **kwargs: _P.kwargs) -> _T_Return:
+    def __execute[**P, R](self, func: Callable[P, R], /, *args: P.args, **kwargs: P.kwargs) -> R:
         with lock_ctx() if (lock_ctx := self.__lock_ctx) is not None else contextlib.nullcontext():
             if (run := self.__runner) is not None:
                 if args or kwargs:
@@ -955,10 +947,10 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
             def messages(self) -> SCMCredentials:
                 return SCMCredentials(map(SocketCredential._make, self.struct.iter_unpack(self._data)))
 
-        SocketAncillaryMessages: TypeAlias = SCMRights | SCMCredentials
+        type SocketAncillaryMessages = SCMRights | SCMCredentials
         """Unix socket control messages."""
     else:
-        SocketAncillaryMessages: TypeAlias = SCMRights
+        type SocketAncillaryMessages = SCMRights
         """Unix socket control messages."""
 
     @final
@@ -1052,7 +1044,7 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
             """
             return (fd for msg in self.messages() if isinstance(msg, SCMRights) for fd in msg.fds)
 
-        def update_from_raw(self, messages: Iterable[tuple[int, int, ReadableBuffer]]) -> None:
+        def update_from_raw(self, messages: Iterable[tuple[int, int, Buffer]]) -> None:
             """
             Read raw socket control messages received from a unix socket.
 
@@ -1289,7 +1281,7 @@ def _cast_socket_kind(kind: int) -> int:
         return kind
 
 
-def _address_or_lookup_error(fileno: Callable[[], int], getsockaddr: Callable[[], _T_Return]) -> _T_Return:
+def _address_or_lookup_error[R](fileno: Callable[[], int], getsockaddr: Callable[[], R]) -> R:
     try:
         if fileno() < 0:
             from errno import EBADF
@@ -1304,7 +1296,7 @@ def _address_or_lookup_error(fileno: Callable[[], int], getsockaddr: Callable[[]
         raise TypedAttributeLookupError("address not available") from exc
 
 
-def _value_or_lookup_error(value: _T_Return | None) -> _T_Return:
+def _value_or_lookup_error[T](value: T | None) -> T:
     if value is None:
         from ..exceptions import TypedAttributeLookupError
 

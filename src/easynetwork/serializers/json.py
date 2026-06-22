@@ -24,19 +24,16 @@ __all__ = [
 
 
 import re
-from collections.abc import Callable, Generator
+from collections.abc import Buffer, Callable, Generator
 from contextlib import closing
 from dataclasses import asdict as dataclass_asdict, dataclass
-from typing import TYPE_CHECKING, Any, final
+from typing import Any, final
 
 from ..exceptions import DeserializeError, IncrementalDeserializeError, LimitOverrunError
 from ..lowlevel.constants import DEFAULT_SERIALIZER_LIMIT
 from .abc import BufferedIncrementalPacketSerializer
 from .base_stream import _buffered_readuntil
 from .tools import GeneratorStreamReader
-
-if TYPE_CHECKING:
-    from _typeshed import ReadableBuffer
 
 
 @dataclass(kw_only=True)
@@ -264,8 +261,8 @@ class JSONSerializer(BufferedIncrementalPacketSerializer[Any, Any, bytearray]):
         Returns:
             a tuple with the deserialized Python object and the unused trailing data.
         """
-        complete_document: ReadableBuffer
-        remaining_data: ReadableBuffer
+        complete_document: Buffer
+        remaining_data: Buffer
         if self.__use_lines:
             reader = GeneratorStreamReader()
             complete_document = yield from reader.read_until(b"\n", limit=self.__limit, keep_end=False)
@@ -288,7 +285,7 @@ class JSONSerializer(BufferedIncrementalPacketSerializer[Any, Any, bytearray]):
         return bytearray(self.__limit)
 
     @final
-    def buffered_incremental_deserialize(self, buffer: bytearray, /) -> Generator[int, int, tuple[Any, ReadableBuffer]]:
+    def buffered_incremental_deserialize(self, buffer: bytearray, /) -> Generator[int, int, tuple[Any, Buffer]]:
         """
         Creates a Python object representing the raw JSON :term:`packet`.
 
@@ -303,8 +300,8 @@ class JSONSerializer(BufferedIncrementalPacketSerializer[Any, Any, bytearray]):
         Returns:
             a tuple with the deserialized Python object and the unused trailing data.
         """
-        complete_document: ReadableBuffer
-        remaining_data: ReadableBuffer
+        complete_document: Buffer
+        remaining_data: Buffer
         if self.__use_lines:
             sepidx, offset, buflen = yield from _buffered_readuntil(buffer, b"\n")
             with memoryview(buffer) as buffer_view:
@@ -317,9 +314,9 @@ class JSONSerializer(BufferedIncrementalPacketSerializer[Any, Any, bytearray]):
 
     def __deserialize_incremental_document(
         self,
-        complete_document: ReadableBuffer,
-        remaining_data: ReadableBuffer,
-    ) -> tuple[Any, ReadableBuffer]:
+        complete_document: Buffer,
+        remaining_data: Buffer,
+    ) -> tuple[Any, Buffer]:
         packet: Any
         try:
             document: str = str(complete_document, self.__encoding, self.__unicode_errors)
@@ -394,7 +391,7 @@ class _JSONParser:
         cls,
         *,
         limit: int,
-    ) -> Generator[None, bytes, tuple[ReadableBuffer, ReadableBuffer]]:
+    ) -> Generator[None, bytes, tuple[Buffer, Buffer]]:
         if limit <= 0:
             raise ValueError("limit must be a positive integer")
 
@@ -413,10 +410,7 @@ class _JSONParser:
                     return exc.value
 
     @classmethod
-    def raw_parse_with_external_buffer(
-        cls,
-        buffer: bytearray,
-    ) -> Generator[int, int, tuple[ReadableBuffer, ReadableBuffer]]:
+    def raw_parse_with_external_buffer(cls, buffer: bytearray) -> Generator[int, int, tuple[Buffer, Buffer]]:
         limit = len(buffer)
         if limit <= 0:
             raise ValueError("the buffer is empty")
@@ -430,7 +424,7 @@ class _JSONParser:
         limit: int,
         _w: Callable[[bytes | bytearray, int, int], re.Match[bytes]] = _WHITESPACES.match,  # type: ignore[assignment]
         _np: Callable[[bytes | bytearray, int, int], re.Match[bytes] | None] = _NON_PRINTABLE.search,
-    ) -> Generator[int, int, tuple[ReadableBuffer, ReadableBuffer]]:
+    ) -> Generator[int, int, tuple[Buffer, Buffer]]:
         read_data = cls.__read_data
 
         start_idx: int

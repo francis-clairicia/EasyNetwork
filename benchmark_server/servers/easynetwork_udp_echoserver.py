@@ -39,7 +39,7 @@ class _BaseRequestHandler(AsyncDatagramRequestHandler[Any, Any]):
             except RuntimeError:
                 pass
             else:
-                loop.set_task_factory(getattr(asyncio, "eager_task_factory"))
+                loop.set_task_factory(asyncio.eager_task_factory)
 
 
 class EchoRequestHandlerNoTTL(_BaseRequestHandler):

@@ -36,14 +36,9 @@ from abc import ABCMeta, abstractmethod
 from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
 from contextlib import AbstractContextManager
 from types import TracebackType
-from typing import Any, Generic, Literal, NoReturn, ParamSpec, Protocol, Self, TypeVar, TypeVarTuple, Unpack
+from typing import Any, Literal, NoReturn, Protocol, Self
 
 from ..transports import abc as _transports
-
-_P = ParamSpec("_P")
-_T = TypeVar("_T")
-_T_co = TypeVar("_T_co", covariant=True)
-_T_PosArgs = TypeVarTuple("_T_PosArgs")
 
 
 class ILock(Protocol):
@@ -188,7 +183,7 @@ class ICondition(ILock, Protocol):
         ...
 
 
-class Task(Generic[_T_co], metaclass=ABCMeta):
+class Task[R](metaclass=ABCMeta):
     """
     A :class:`Task` object represents a concurrent "thread" of execution.
     """
@@ -256,7 +251,7 @@ class Task(Generic[_T_co], metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    async def join(self) -> _T_co:
+    async def join(self) -> R:
         """
         Blocks until the task has been completed, and returns the result.
 
@@ -273,7 +268,7 @@ class Task(Generic[_T_co], metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    async def join_or_cancel(self) -> _T_co:
+    async def join_or_cancel(self) -> R:
         """
         Similar to :meth:`Task.join` except that if the coroutine is cancelled, the cancellation is propagated to this task.
 
@@ -447,11 +442,11 @@ class TaskGroup(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    def start_soon(
+    def start_soon[*PosArgs](
         self,
-        coro_func: Callable[[Unpack[_T_PosArgs]], Coroutine[Any, Any, _T]],
+        coro_func: Callable[[*PosArgs], Coroutine[Any, Any, Any]],
         /,
-        *args: *_T_PosArgs,
+        *args: *PosArgs,
         name: str | None = ...,
     ) -> None:
         """
@@ -466,13 +461,13 @@ class TaskGroup(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    async def start(
+    async def start[*PosArgs, R](
         self,
-        coro_func: Callable[[Unpack[_T_PosArgs]], Coroutine[Any, Any, _T]],
+        coro_func: Callable[[*PosArgs], Coroutine[Any, Any, R]],
         /,
-        *args: *_T_PosArgs,
+        *args: *PosArgs,
         name: str | None = ...,
-    ) -> Task[_T]:
+    ) -> Task[R]:
         """
         Starts a new managed task in this task group. Blocks until the event loop starts the task.
 
@@ -519,13 +514,13 @@ class ThreadsPortal(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    def run_coroutine_soon(
+    def run_coroutine_soon[**P, R](
         self,
-        coro_func: Callable[_P, Awaitable[_T]],
+        coro_func: Callable[P, Awaitable[R]],
         /,
-        *args: _P.args,
-        **kwargs: _P.kwargs,
-    ) -> concurrent.futures.Future[_T]:
+        *args: P.args,
+        **kwargs: P.kwargs,
+    ) -> concurrent.futures.Future[R]:
         """
         Run the given async function in the bound event loop thread. Thread-safe.
 
@@ -543,7 +538,7 @@ class ThreadsPortal(metaclass=ABCMeta):
         """
         raise NotImplementedError
 
-    def run_coroutine(self, coro_func: Callable[_P, Awaitable[_T]], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
+    def run_coroutine[**P, R](self, coro_func: Callable[P, Awaitable[R]], /, *args: P.args, **kwargs: P.kwargs) -> R:
         """
         Run the given async function in the bound event loop thread, blocking until it is complete. Thread-safe.
 
@@ -569,7 +564,7 @@ class ThreadsPortal(metaclass=ABCMeta):
         return self.run_coroutine_soon(coro_func, *args, **kwargs).result()
 
     @abstractmethod
-    def run_sync_soon(self, func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> concurrent.futures.Future[_T]:
+    def run_sync_soon[**P, R](self, func: Callable[P, R], /, *args: P.args, **kwargs: P.kwargs) -> concurrent.futures.Future[R]:
         """
         Executes a function in the event loop thread from a worker thread. Thread-safe.
 
@@ -587,7 +582,7 @@ class ThreadsPortal(metaclass=ABCMeta):
         """
         raise NotImplementedError
 
-    def run_sync(self, func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
+    def run_sync[**P, R](self, func: Callable[P, R], /, *args: P.args, **kwargs: P.kwargs) -> R:
         """
         Executes a function in the event loop thread from a worker thread. Thread-safe.
 
@@ -621,12 +616,12 @@ class AsyncBackend(metaclass=ABCMeta):
     __slots__ = ("__weakref__",)
 
     @abstractmethod
-    def bootstrap(
+    def bootstrap[*PosArgs, R](
         self,
-        coro_func: Callable[[Unpack[_T_PosArgs]], Coroutine[Any, Any, _T]],
-        *args: *_T_PosArgs,
+        coro_func: Callable[[*PosArgs], Coroutine[Any, Any, R]],
+        *args: *PosArgs,
         runner_options: Mapping[str, Any] | None = ...,
-    ) -> _T:
+    ) -> R:
         """
         Runs an async function, and returns the result.
 
@@ -695,7 +690,7 @@ class AsyncBackend(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    async def ignore_cancellation(self, coroutine: Awaitable[_T_co]) -> _T_co:
+    async def ignore_cancellation[R](self, coroutine: Awaitable[R]) -> R:
         """
         Protect a :term:`coroutine` from being cancelled.
 
@@ -862,7 +857,7 @@ class AsyncBackend(metaclass=ABCMeta):
         """
         return await self.sleep(max(deadline - self.current_time(), 0))
 
-    async def gather(self, *coroutines: Awaitable[_T_co]) -> list[_T_co]:
+    async def gather[R](self, *coroutines: Awaitable[R]) -> list[R]:
         """
         Run awaitable objects in the `coroutines` sequence concurrently.
 
@@ -883,7 +878,7 @@ class AsyncBackend(metaclass=ABCMeta):
 
         from ..._utils import remove_traceback_frames_in_place
 
-        async def _await(coro: Awaitable[_T_co]) -> _T_co:
+        async def _await(coro: Awaitable[R]) -> R:
             try:
                 return await coro
             except BaseException as exc:
@@ -892,9 +887,9 @@ class AsyncBackend(metaclass=ABCMeta):
             finally:
                 del coro
 
-        coro_to_task: dict[Awaitable[_T_co], Task[_T_co]] = {}
+        coro_to_task: dict[Awaitable[R], Task[R]] = {}
 
-        children: list[Task[_T_co]] = []
+        children: list[Task[R]] = []
 
         async with self.create_task_group() as task_group:
             for coro in coroutines:
@@ -1294,13 +1289,13 @@ class AsyncBackend(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    async def run_in_thread(
+    async def run_in_thread[*PosArgs, R](
         self,
-        func: Callable[[*_T_PosArgs], _T],
+        func: Callable[[*PosArgs], R],
         /,
-        *args: *_T_PosArgs,
+        *args: *PosArgs,
         abandon_on_cancel: bool = ...,
-    ) -> _T:
+    ) -> R:
         """
         Executes a synchronous function in a worker thread.
 

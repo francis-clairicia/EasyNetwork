@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import io
 from collections.abc import Generator
-from typing import Any, TypeAlias
+from typing import Any
 
 from easynetwork.serializers.abc import BufferedIncrementalPacketSerializer
 
-SentPacket: TypeAlias = Any
-ReceivedPacket: TypeAlias = Any
+type SentPacket = Any
+type ReceivedPacket = Any
 
 
 class MySerializer(BufferedIncrementalPacketSerializer[SentPacket, ReceivedPacket, memoryview]):

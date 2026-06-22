@@ -20,9 +20,8 @@ __all__ = ["AbstractStructSerializer", "NamedTupleStructSerializer", "StructSeri
 
 from abc import abstractmethod
 from collections.abc import Iterable
-from typing import TYPE_CHECKING, Any, NamedTuple, TypeVar, final
+from typing import TYPE_CHECKING, Any, NamedTuple, final
 
-from .._typevars import _T_ReceivedDTOPacket, _T_SentDTOPacket
 from ..exceptions import DeserializeError
 from ..lowlevel import _utils
 from .base_stream import FixedSizePacketSerializer
@@ -36,7 +35,7 @@ if TYPE_CHECKING:
 _ENDIANNESS_CHARACTERS: frozenset[str] = frozenset({"@", "=", "<", ">", "!"})
 
 
-class AbstractStructSerializer(FixedSizePacketSerializer[_T_SentDTOPacket, _T_ReceivedDTOPacket]):
+class AbstractStructSerializer[SentDTOPacket, ReceivedDTOPacket](FixedSizePacketSerializer[SentDTOPacket, ReceivedDTOPacket]):
     r"""
     A base class for structured data.
 
@@ -94,7 +93,7 @@ class AbstractStructSerializer(FixedSizePacketSerializer[_T_SentDTOPacket, _T_Re
         self.__error_cls = struct_module.error
 
     @abstractmethod
-    def iter_values(self, packet: _T_SentDTOPacket, /) -> Iterable[Any]:
+    def iter_values(self, packet: SentDTOPacket, /) -> Iterable[Any]:
         """
         Returns an object suitable for :meth:`struct.Struct.pack`.
 
@@ -109,7 +108,7 @@ class AbstractStructSerializer(FixedSizePacketSerializer[_T_SentDTOPacket, _T_Re
         raise NotImplementedError
 
     @abstractmethod
-    def from_tuple(self, packet_tuple: tuple[Any, ...], /) -> _T_ReceivedDTOPacket:
+    def from_tuple(self, packet_tuple: tuple[Any, ...], /) -> ReceivedDTOPacket:
         """
         Finishes the packet deserialization by parsing the tuple obtained by :meth:`struct.Struct.unpack`.
 
@@ -124,7 +123,7 @@ class AbstractStructSerializer(FixedSizePacketSerializer[_T_SentDTOPacket, _T_Re
         raise NotImplementedError
 
     @final
-    def serialize(self, packet: _T_SentDTOPacket) -> bytes:
+    def serialize(self, packet: SentDTOPacket) -> bytes:
         """
         Returns the structured data representation of the Python object `packet`.
 
@@ -143,7 +142,7 @@ class AbstractStructSerializer(FixedSizePacketSerializer[_T_SentDTOPacket, _T_Re
         return self.__s.pack(*self.iter_values(packet))
 
     @final
-    def deserialize(self, data: bytes) -> _T_ReceivedDTOPacket:
+    def deserialize(self, data: bytes) -> ReceivedDTOPacket:
         """
         Creates a Python object representing the structure from `data`.
 
@@ -215,10 +214,7 @@ class StructSerializer(AbstractStructSerializer[tuple[Any, ...], tuple[Any, ...]
         return packet_tuple
 
 
-_T_NamedTuple = TypeVar("_T_NamedTuple", bound=NamedTuple)
-
-
-class NamedTupleStructSerializer(AbstractStructSerializer[_T_NamedTuple, _T_NamedTuple]):
+class NamedTupleStructSerializer[NamedTupleType: NamedTuple](AbstractStructSerializer[NamedTupleType, NamedTupleType]):
     r"""
     Generic class to handle a :term:`named tuple` with a :class:`struct.Struct` object.
 
@@ -258,7 +254,7 @@ class NamedTupleStructSerializer(AbstractStructSerializer[_T_NamedTuple, _T_Name
 
     def __init__(
         self,
-        namedtuple_cls: type[_T_NamedTuple],
+        namedtuple_cls: type[NamedTupleType],
         field_formats: SupportsKeysAndGetItem[str, str],
         format_endianness: str = "",
         encoding: str | None = "utf-8",
@@ -297,14 +293,14 @@ class NamedTupleStructSerializer(AbstractStructSerializer[_T_NamedTuple, _T_Name
             elif len(field_fmt) != 1 or not field_fmt.isalpha():
                 raise ValueError(f"{field!r}: Invalid field format")
         super().__init__(f"{format_endianness}{''.join(field_formats[field] for field in namedtuple_cls._fields)}", debug=debug)
-        self.__namedtuple_cls: type[_T_NamedTuple] = namedtuple_cls
+        self.__namedtuple_cls: type[NamedTupleType] = namedtuple_cls
         self.__string_fields: frozenset[str] = frozenset(string_fields)
         self.__encoding: str | None = encoding
         self.__unicode_errors: str = unicode_errors
         self.__strip_trailing_nul = bool(strip_string_trailing_nul_bytes)
 
     @final
-    def iter_values(self, packet: _T_NamedTuple) -> _T_NamedTuple:
+    def iter_values(self, packet: NamedTuple) -> NamedTuple:
         """
         Returns the named tuple to pack using :meth:`struct.Struct.pack`.
 
@@ -344,7 +340,7 @@ class NamedTupleStructSerializer(AbstractStructSerializer[_T_NamedTuple, _T_Name
         return packet
 
     @final
-    def from_tuple(self, packet_tuple: tuple[Any, ...], /) -> _T_NamedTuple:
+    def from_tuple(self, packet_tuple: tuple[Any, ...], /) -> NamedTupleType:
         r"""
         Constructs the named tuple from the given tuple.
 

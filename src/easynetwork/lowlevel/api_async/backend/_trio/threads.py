@@ -25,7 +25,7 @@ import inspect
 import threading
 from collections.abc import Awaitable, Callable
 from types import TracebackType
-from typing import ParamSpec, Self, TypeVar, final
+from typing import Self, final
 
 import trio
 
@@ -33,9 +33,6 @@ from .... import _lock, _utils
 from ...._final import runtime_final_class
 from ..abc import ThreadsPortal as AbstractThreadsPortal
 from .tasks import TaskGroup, TaskUtils
-
-_P = ParamSpec("_P")
-_T = TypeVar("_T")
 
 
 @final
@@ -74,17 +71,17 @@ class ThreadsPortal(AbstractThreadsPortal):
         finally:
             del self, exc_val, exc_tb
 
-    def run_coroutine_soon(
+    def run_coroutine_soon[**P, R](
         self,
-        coro_func: Callable[_P, Awaitable[_T]],
+        coro_func: Callable[P, Awaitable[R]],
         /,
-        *args: _P.args,
-        **kwargs: _P.kwargs,
-    ) -> concurrent.futures.Future[_T]:
+        *args: P.args,
+        **kwargs: P.kwargs,
+    ) -> concurrent.futures.Future[R]:
 
-        future: concurrent.futures.Future[_T] = concurrent.futures.Future()
+        future: concurrent.futures.Future[R] = concurrent.futures.Future()
 
-        def on_fut_done(payload: tuple[trio.lowlevel.TrioToken, trio.CancelScope], future: concurrent.futures.Future[_T]) -> None:
+        def on_fut_done(payload: tuple[trio.lowlevel.TrioToken, trio.CancelScope], future: concurrent.futures.Future[R]) -> None:
             if future.cancelled():
                 with contextlib.suppress(RuntimeError):
                     trio_token, cancel_scope = payload
@@ -127,11 +124,11 @@ class ThreadsPortal(AbstractThreadsPortal):
         self.run_sync_soon(schedule_task).result()
         return future
 
-    def run_sync_soon(self, func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> concurrent.futures.Future[_T]:
+    def run_sync_soon[**P, R](self, func: Callable[P, R], /, *args: P.args, **kwargs: P.kwargs) -> concurrent.futures.Future[R]:
         import sniffio
 
         run_sync_soon_waiter = self.__run_sync_soon_waiter
-        future: concurrent.futures.Future[_T] = concurrent.futures.Future()
+        future: concurrent.futures.Future[R] = concurrent.futures.Future()
 
         @trio.lowlevel.enable_ki_protection
         def callback() -> None:

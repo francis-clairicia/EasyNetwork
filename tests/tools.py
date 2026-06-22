@@ -8,21 +8,14 @@ import os
 import socket
 import sys
 import time
-from collections.abc import Callable, Generator, Iterator
-from typing import TYPE_CHECKING, Any, Literal, TypeAlias, TypeVar, TypeVarTuple, assert_never, final
+from collections.abc import Buffer, Callable, Generator, Iterator
+from typing import TYPE_CHECKING, Any, Literal, assert_never, final
 
 import pytest
 import sniffio
 
 if TYPE_CHECKING:
     import trio
-
-    from _typeshed import WriteableBuffer
-
-_T_contra = TypeVar("_T_contra", contravariant=True)
-_V_co = TypeVar("_V_co", covariant=True)
-
-_T_Args = TypeVarTuple("_T_Args")
 
 
 # CI=true is always set for Github Actions
@@ -116,13 +109,13 @@ class PlatformMarkers:
     )
 
 
-def send_return(gen: Generator[Any, _T_contra, _V_co], value: _T_contra, /) -> _V_co:
+def send_return[Send, Return](gen: Generator[Any, Send, Return], value: Send, /) -> Return:
     with pytest.raises(StopIteration) as exc_info:
         gen.send(value)
     return exc_info.value.value
 
 
-def next_return(gen: Generator[Any, Any, _V_co], /) -> _V_co:
+def next_return[Return](gen: Generator[Any, Any, Return], /) -> Return:
     with pytest.raises(StopIteration) as exc_info:
         gen.send(None)
     return exc_info.value.value
@@ -168,11 +161,11 @@ def is_uvloop_event_loop(event_loop: asyncio.AbstractEventLoop) -> bool:
     return isinstance(event_loop, uvloop.Loop)
 
 
-_TooShortBufferBehavior: TypeAlias = Literal["error", "fill_at_most", "xfail"]
+type _TooShortBufferBehavior = Literal["error", "fill_at_most", "xfail"]
 
 
 def write_in_buffer(
-    buffer: WriteableBuffer,
+    buffer: Buffer,
     to_write: bytes,
     *,
     start_pos: int | None = None,
@@ -197,7 +190,7 @@ def write_in_buffer(
 
 
 def write_data_and_extra_in_buffer(
-    buffer: WriteableBuffer,
+    buffer: Buffer,
     complete_data: bytes,
     extra_data: bytes,
     *,
@@ -282,7 +275,7 @@ class AsyncEventHandle:
 class AsyncEventScheduling:
 
     @staticmethod
-    def call_soon(func: Callable[[*_T_Args], Any], /, *args: *_T_Args) -> AsyncEventHandle:
+    def call_soon[*P](func: Callable[[*P], Any], /, *args: *P) -> AsyncEventHandle:
         match sniffio.current_async_library():
             case "asyncio":
                 loop = asyncio.get_running_loop()
@@ -293,7 +286,7 @@ class AsyncEventScheduling:
 
                 scope = trio.CancelScope()
 
-                async def in_nursery_task(func: Callable[[*_T_Args], Any], /, *args: *_T_Args) -> None:
+                async def in_nursery_task(func: Callable[[*P], Any], /, *args: *P) -> None:
                     with scope:
                         await trio.lowlevel.checkpoint_if_cancelled()
                         func(*args)
@@ -304,7 +297,7 @@ class AsyncEventScheduling:
                 raise NotImplementedError(lib_name)
 
     @staticmethod
-    def call_later(delay: float, func: Callable[[*_T_Args], Any], /, *args: *_T_Args) -> AsyncEventHandle:
+    def call_later[*P](delay: float, func: Callable[[*P], Any], /, *args: *P) -> AsyncEventHandle:
         match sniffio.current_async_library():
             case "asyncio":
                 loop = asyncio.get_running_loop()
@@ -315,7 +308,7 @@ class AsyncEventScheduling:
 
                 scope = trio.CancelScope()
 
-                async def in_nursery_task(func: Callable[[*_T_Args], Any], /, *args: *_T_Args) -> None:
+                async def in_nursery_task(func: Callable[[*P], Any], /, *args: *P) -> None:
                     with scope:
                         await trio.sleep(delay)
                         func(*args)
@@ -326,12 +319,12 @@ class AsyncEventScheduling:
                 raise NotImplementedError(lib_name)
 
 
-def call_later_with_nursery(
+def call_later_with_nursery[*P](
     nursery: trio.Nursery,
     seconds: float,
-    func: Callable[[*_T_Args], Any],
+    func: Callable[[*P], Any],
     /,
-    *args: *_T_Args,
+    *args: *P,
 ) -> trio.CancelScope:
     from trio import CancelScope, sleep
 
@@ -346,11 +339,11 @@ def call_later_with_nursery(
     return scope
 
 
-def call_soon_with_nursery(
+def call_soon_with_nursery[*P](
     nursery: trio.Nursery,
-    func: Callable[[*_T_Args], Any],
+    func: Callable[[*P], Any],
     /,
-    *args: *_T_Args,
+    *args: *P,
 ) -> trio.CancelScope:
     from trio import CancelScope
 

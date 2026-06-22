@@ -24,7 +24,7 @@ import logging
 import socket as _socket
 import sys
 import warnings
-from collections.abc import Awaitable, Callable, Coroutine, Iterable, Mapping
+from collections.abc import Awaitable, Buffer, Callable, Coroutine, Iterable, Mapping
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, NoReturn, final
 
@@ -42,8 +42,6 @@ from .._trio_utils import (
 
 if TYPE_CHECKING:
     from socket import _Address, _RetAddress
-
-    from _typeshed import ReadableBuffer
 
 
 @final
@@ -199,7 +197,7 @@ class TrioDatagramListenerSocketAdapter(AsyncDatagramListener["_RetAddress"]):
         async def send_with_ancillary_to(
             self,
             data: bytes | bytearray | memoryview,
-            ancillary_data: Iterable[tuple[int, int, ReadableBuffer]],
+            ancillary_data: Iterable[tuple[int, int, Buffer]],
             address: _Address,
         ) -> None:
             if not _unix_utils.is_unix_socket_family((listener := self.__listener).family):

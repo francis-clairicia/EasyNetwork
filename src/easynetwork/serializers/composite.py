@@ -22,55 +22,51 @@ __all__ = [
     "StapledPacketSerializer",
 ]
 
-from collections.abc import Generator
-from typing import TYPE_CHECKING, Any, Generic, Self, final, overload
+from collections.abc import Buffer, Generator
+from typing import TYPE_CHECKING, Any, Self, final, overload
 
-from .._typevars import _T_Buffer, _T_ReceivedDTOPacket, _T_SentDTOPacket
 from ..lowlevel._final import runtime_final_class
 from .abc import AbstractIncrementalPacketSerializer, AbstractPacketSerializer, BufferedIncrementalPacketSerializer
 
-if TYPE_CHECKING:
-    from _typeshed import ReadableBuffer
-
 
 @final
-class StapledPacketSerializer(AbstractPacketSerializer[_T_SentDTOPacket, _T_ReceivedDTOPacket]):
+class StapledPacketSerializer[SentDTOPacket, ReceivedDTOPacket](AbstractPacketSerializer[SentDTOPacket, ReceivedDTOPacket]):
     """
     A :term:`composite serializer` that merges two serializers.
     """
 
     __slots__ = ("__sent_packet_serializer", "__received_packet_serializer")
 
-    __sent_packet_serializer: AbstractPacketSerializer[_T_SentDTOPacket, Any]
-    __received_packet_serializer: AbstractPacketSerializer[Any, _T_ReceivedDTOPacket]
+    __sent_packet_serializer: AbstractPacketSerializer[SentDTOPacket, Any]
+    __received_packet_serializer: AbstractPacketSerializer[Any, ReceivedDTOPacket]
+
+    @overload
+    def __new__[BufferType: Buffer](
+        cls,
+        sent_packet_serializer: AbstractIncrementalPacketSerializer[SentDTOPacket, Any],
+        received_packet_serializer: BufferedIncrementalPacketSerializer[Any, ReceivedDTOPacket, BufferType],
+    ) -> StapledBufferedIncrementalPacketSerializer[SentDTOPacket, ReceivedDTOPacket, BufferType]: ...
 
     @overload
     def __new__(
         cls,
-        sent_packet_serializer: AbstractIncrementalPacketSerializer[_T_SentDTOPacket, Any],
-        received_packet_serializer: BufferedIncrementalPacketSerializer[Any, _T_ReceivedDTOPacket, _T_Buffer],
-    ) -> StapledBufferedIncrementalPacketSerializer[_T_SentDTOPacket, _T_ReceivedDTOPacket, _T_Buffer]: ...
+        sent_packet_serializer: AbstractIncrementalPacketSerializer[SentDTOPacket, Any],
+        received_packet_serializer: AbstractIncrementalPacketSerializer[Any, ReceivedDTOPacket],
+    ) -> StapledIncrementalPacketSerializer[SentDTOPacket, ReceivedDTOPacket]: ...
 
     @overload
     def __new__(
         cls,
-        sent_packet_serializer: AbstractIncrementalPacketSerializer[_T_SentDTOPacket, Any],
-        received_packet_serializer: AbstractIncrementalPacketSerializer[Any, _T_ReceivedDTOPacket],
-    ) -> StapledIncrementalPacketSerializer[_T_SentDTOPacket, _T_ReceivedDTOPacket]: ...
-
-    @overload
-    def __new__(
-        cls,
-        sent_packet_serializer: AbstractPacketSerializer[_T_SentDTOPacket, Any],
-        received_packet_serializer: AbstractPacketSerializer[Any, _T_ReceivedDTOPacket],
+        sent_packet_serializer: AbstractPacketSerializer[SentDTOPacket, Any],
+        received_packet_serializer: AbstractPacketSerializer[Any, ReceivedDTOPacket],
     ) -> Self: ...
 
     def __new__(
         cls,
-        sent_packet_serializer: AbstractPacketSerializer[_T_SentDTOPacket, Any],
-        received_packet_serializer: AbstractPacketSerializer[Any, _T_ReceivedDTOPacket],
+        sent_packet_serializer: AbstractPacketSerializer[SentDTOPacket, Any],
+        received_packet_serializer: AbstractPacketSerializer[Any, ReceivedDTOPacket],
     ) -> Self:
-        self: StapledPacketSerializer[_T_SentDTOPacket, _T_ReceivedDTOPacket]
+        self: StapledPacketSerializer[SentDTOPacket, ReceivedDTOPacket]
         match (sent_packet_serializer, received_packet_serializer):
             case (
                 AbstractIncrementalPacketSerializer(),
@@ -94,12 +90,12 @@ class StapledPacketSerializer(AbstractPacketSerializer[_T_SentDTOPacket, _T_Rece
         return self
 
     @property
-    def sent_packet_serializer(self) -> AbstractPacketSerializer[_T_SentDTOPacket, Any]:
+    def sent_packet_serializer(self) -> AbstractPacketSerializer[SentDTOPacket, Any]:
         """Sent packet serializer."""
         return self.__sent_packet_serializer
 
     @property
-    def received_packet_serializer(self) -> AbstractPacketSerializer[Any, _T_ReceivedDTOPacket]:
+    def received_packet_serializer(self) -> AbstractPacketSerializer[Any, ReceivedDTOPacket]:
         """Received packet serializer."""
         return self.__received_packet_serializer
 
@@ -108,7 +104,7 @@ class StapledPacketSerializer(AbstractPacketSerializer[_T_SentDTOPacket, _T_Rece
         received_packet_serializer = self.received_packet_serializer
         return f"{self.__class__.__name__}({sent_packet_serializer=!r}, {received_packet_serializer=!r})"
 
-    def serialize(self, packet: _T_SentDTOPacket) -> bytes:
+    def serialize(self, packet: SentDTOPacket) -> bytes:
         """
         Calls ``self.sent_packet_serializer.serialize(packet)``.
 
@@ -120,7 +116,7 @@ class StapledPacketSerializer(AbstractPacketSerializer[_T_SentDTOPacket, _T_Rece
         """
         return self.sent_packet_serializer.serialize(packet)
 
-    def deserialize(self, data: bytes) -> _T_ReceivedDTOPacket:
+    def deserialize(self, data: bytes) -> ReceivedDTOPacket:
         """
         Calls ``self.received_packet_serializer.deserialize(data)``.
 
@@ -137,10 +133,9 @@ class StapledPacketSerializer(AbstractPacketSerializer[_T_SentDTOPacket, _T_Rece
 
 
 @final
-class StapledIncrementalPacketSerializer(  # type: ignore[misc]
-    StapledPacketSerializer[_T_SentDTOPacket, _T_ReceivedDTOPacket],  # pyright: ignore
-    AbstractIncrementalPacketSerializer[_T_SentDTOPacket, _T_ReceivedDTOPacket],
-    Generic[_T_SentDTOPacket, _T_ReceivedDTOPacket],
+class StapledIncrementalPacketSerializer[SentDTOPacket, ReceivedDTOPacket](  # type: ignore[misc]
+    StapledPacketSerializer[SentDTOPacket, ReceivedDTOPacket],  # pyright: ignore
+    AbstractIncrementalPacketSerializer[SentDTOPacket, ReceivedDTOPacket],
 ):
     """
     A :term:`composite serializer` that merges two incremental serializers.
@@ -151,32 +146,32 @@ class StapledIncrementalPacketSerializer(  # type: ignore[misc]
     if TYPE_CHECKING:
 
         @overload
-        def __new__(
+        def __new__[BufferType: Buffer](
             cls,
-            sent_packet_serializer: AbstractIncrementalPacketSerializer[_T_SentDTOPacket, Any],
-            received_packet_serializer: BufferedIncrementalPacketSerializer[Any, _T_ReceivedDTOPacket, _T_Buffer],
-        ) -> StapledBufferedIncrementalPacketSerializer[_T_SentDTOPacket, _T_ReceivedDTOPacket, _T_Buffer]: ...
+            sent_packet_serializer: AbstractIncrementalPacketSerializer[SentDTOPacket, Any],
+            received_packet_serializer: BufferedIncrementalPacketSerializer[Any, ReceivedDTOPacket, BufferType],
+        ) -> StapledBufferedIncrementalPacketSerializer[SentDTOPacket, ReceivedDTOPacket, BufferType]: ...
 
         @overload
         def __new__(
             cls,
-            sent_packet_serializer: AbstractIncrementalPacketSerializer[_T_SentDTOPacket, Any],
-            received_packet_serializer: AbstractIncrementalPacketSerializer[Any, _T_ReceivedDTOPacket],
+            sent_packet_serializer: AbstractIncrementalPacketSerializer[SentDTOPacket, Any],
+            received_packet_serializer: AbstractIncrementalPacketSerializer[Any, ReceivedDTOPacket],
         ) -> Self: ...
 
         def __new__(
             cls,
-            sent_packet_serializer: AbstractIncrementalPacketSerializer[_T_SentDTOPacket, Any],
-            received_packet_serializer: AbstractIncrementalPacketSerializer[Any, _T_ReceivedDTOPacket],
+            sent_packet_serializer: AbstractIncrementalPacketSerializer[SentDTOPacket, Any],
+            received_packet_serializer: AbstractIncrementalPacketSerializer[Any, ReceivedDTOPacket],
         ) -> Self: ...
 
         @property
-        def sent_packet_serializer(self) -> AbstractIncrementalPacketSerializer[_T_SentDTOPacket, Any]: ...
+        def sent_packet_serializer(self) -> AbstractIncrementalPacketSerializer[SentDTOPacket, Any]: ...
 
         @property
-        def received_packet_serializer(self) -> AbstractIncrementalPacketSerializer[Any, _T_ReceivedDTOPacket]: ...
+        def received_packet_serializer(self) -> AbstractIncrementalPacketSerializer[Any, ReceivedDTOPacket]: ...
 
-    def incremental_serialize(self, packet: _T_SentDTOPacket) -> Generator[bytes]:
+    def incremental_serialize(self, packet: SentDTOPacket) -> Generator[bytes]:
         """
         Calls ``self.sent_packet_serializer.incremental_serialize(packet)``.
 
@@ -188,7 +183,7 @@ class StapledIncrementalPacketSerializer(  # type: ignore[misc]
         """
         return self.sent_packet_serializer.incremental_serialize(packet)
 
-    def incremental_deserialize(self) -> Generator[None, bytes, tuple[_T_ReceivedDTOPacket, bytes]]:
+    def incremental_deserialize(self) -> Generator[None, bytes, tuple[ReceivedDTOPacket, bytes]]:
         """
         Calls ``self.received_packet_serializer.incremental_deserialize()``.
 
@@ -205,10 +200,9 @@ class StapledIncrementalPacketSerializer(  # type: ignore[misc]
 
 
 @final
-class StapledBufferedIncrementalPacketSerializer(  # type: ignore[misc]
-    StapledIncrementalPacketSerializer[_T_SentDTOPacket, _T_ReceivedDTOPacket],  # pyright: ignore
-    BufferedIncrementalPacketSerializer[_T_SentDTOPacket, _T_ReceivedDTOPacket, _T_Buffer],
-    Generic[_T_SentDTOPacket, _T_ReceivedDTOPacket, _T_Buffer],
+class StapledBufferedIncrementalPacketSerializer[SentDTOPacket, ReceivedDTOPacket, BufferType: Buffer](  # type: ignore[misc]
+    StapledIncrementalPacketSerializer[SentDTOPacket, ReceivedDTOPacket],  # pyright: ignore
+    BufferedIncrementalPacketSerializer[SentDTOPacket, ReceivedDTOPacket, BufferType],
 ):
     """
     A :term:`composite serializer` that merges two incremental serializers with manual control of the receive buffer.
@@ -220,17 +214,17 @@ class StapledBufferedIncrementalPacketSerializer(  # type: ignore[misc]
 
         def __new__(
             cls,
-            sent_packet_serializer: AbstractIncrementalPacketSerializer[_T_SentDTOPacket, Any],
-            received_packet_serializer: BufferedIncrementalPacketSerializer[Any, _T_ReceivedDTOPacket, _T_Buffer],
+            sent_packet_serializer: AbstractIncrementalPacketSerializer[SentDTOPacket, Any],
+            received_packet_serializer: BufferedIncrementalPacketSerializer[Any, ReceivedDTOPacket, BufferType],
         ) -> Self: ...
 
         @property
-        def sent_packet_serializer(self) -> AbstractIncrementalPacketSerializer[_T_SentDTOPacket, Any]: ...
+        def sent_packet_serializer(self) -> AbstractIncrementalPacketSerializer[SentDTOPacket, Any]: ...
 
         @property
-        def received_packet_serializer(self) -> BufferedIncrementalPacketSerializer[Any, _T_ReceivedDTOPacket, _T_Buffer]: ...
+        def received_packet_serializer(self) -> BufferedIncrementalPacketSerializer[Any, ReceivedDTOPacket, BufferType]: ...
 
-    def create_deserializer_buffer(self, sizehint: int) -> _T_Buffer:
+    def create_deserializer_buffer(self, sizehint: int) -> BufferType:
         """
         Calls ``self.received_packet_serializer.create_deserializer_buffer(sizehint)``.
 
@@ -245,8 +239,8 @@ class StapledBufferedIncrementalPacketSerializer(  # type: ignore[misc]
 
     def buffered_incremental_deserialize(
         self,
-        buffer: _T_Buffer,
-    ) -> Generator[int | None, int, tuple[_T_ReceivedDTOPacket, ReadableBuffer]]:
+        buffer: BufferType,
+    ) -> Generator[int | None, int, tuple[ReceivedDTOPacket, Buffer]]:
         """
         Calls ``self.received_packet_serializer.buffered_incremental_deserialize(buffer)``.
 

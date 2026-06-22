@@ -24,29 +24,22 @@ __all__ = [
     "StapledStreamTransport",
 ]
 
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Buffer, Callable, Iterable, Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Generic, TypeVar, final
+from typing import Any, final
 
 from ... import _utils
 from ..._final import runtime_final_class
 from . import abc as _transports
 
-if TYPE_CHECKING:
-    from _typeshed import WriteableBuffer
-
-
-_T_SendStreamTransport = TypeVar("_T_SendStreamTransport", bound=_transports.StreamWriteTransport)
-_T_ReceiveStreamTransport = TypeVar("_T_ReceiveStreamTransport", bound=_transports.StreamReadTransport)
-
-_T_SendDatagramTransport = TypeVar("_T_SendDatagramTransport", bound=_transports.DatagramWriteTransport)
-_T_ReceiveDatagramTransport = TypeVar("_T_ReceiveDatagramTransport", bound=_transports.DatagramReadTransport)
-
 
 @final
 @runtime_final_class
 @dataclass(frozen=True, slots=True)
-class StapledStreamTransport(_transports.StreamTransport, Generic[_T_SendStreamTransport, _T_ReceiveStreamTransport]):
+class StapledStreamTransport[
+    SendStreamTransport: _transports.StreamWriteTransport,
+    ReceiveStreamTransport: _transports.StreamReadTransport,
+](_transports.StreamTransport):
     """
     A continous stream data transport that merges two transports.
 
@@ -55,10 +48,10 @@ class StapledStreamTransport(_transports.StreamTransport, Generic[_T_SendStreamT
     .. versionadded:: 1.1
     """
 
-    send_transport: _T_SendStreamTransport
+    send_transport: SendStreamTransport
     """The write part of the transport."""
 
-    receive_transport: _T_ReceiveStreamTransport
+    receive_transport: ReceiveStreamTransport
     """The read part of the transport."""
 
     def close(self) -> None:
@@ -82,7 +75,7 @@ class StapledStreamTransport(_transports.StreamTransport, Generic[_T_SendStreamT
         """
         return self.receive_transport.recv(bufsize, timeout)
 
-    def recv_into(self, buffer: WriteableBuffer, timeout: float) -> int:
+    def recv_into(self, buffer: Buffer, timeout: float) -> int:
         """
         Calls :meth:`self.receive_transport.recv_into() <.StreamReadTransport.recv_into>`.
         """
@@ -96,7 +89,7 @@ class StapledStreamTransport(_transports.StreamTransport, Generic[_T_SendStreamT
         """
         return self.receive_transport.recv_with_ancillary(bufsize, ancillary_bufsize, timeout)
 
-    def recv_with_ancillary_into(self, buffer: WriteableBuffer, ancillary_bufsize: int, timeout: float) -> tuple[int, Any]:
+    def recv_with_ancillary_into(self, buffer: Buffer, ancillary_bufsize: int, timeout: float) -> tuple[int, Any]:
         """
         Calls :meth:`self.receive_transport.recv_with_ancillary_into() <.StreamReadTransport.recv_with_ancillary_into>`.
 
@@ -167,7 +160,10 @@ class StapledStreamTransport(_transports.StreamTransport, Generic[_T_SendStreamT
 @final
 @runtime_final_class
 @dataclass(frozen=True, slots=True)
-class StapledDatagramTransport(_transports.DatagramTransport, Generic[_T_SendDatagramTransport, _T_ReceiveDatagramTransport]):
+class StapledDatagramTransport[
+    SendDatagramTransport: _transports.DatagramWriteTransport,
+    ReceiveDatagramTransport: _transports.DatagramReadTransport,
+](_transports.DatagramTransport):
     """
     A transport of unreliable packets of data that merges two transports.
 
@@ -176,10 +172,10 @@ class StapledDatagramTransport(_transports.DatagramTransport, Generic[_T_SendDat
     .. versionadded:: 1.1
     """
 
-    send_transport: _T_SendDatagramTransport
+    send_transport: SendDatagramTransport
     """The write part of the transport."""
 
-    receive_transport: _T_ReceiveDatagramTransport
+    receive_transport: ReceiveDatagramTransport
     """The read part of the transport."""
 
     def close(self) -> None:

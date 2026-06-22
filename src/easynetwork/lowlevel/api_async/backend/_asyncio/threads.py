@@ -25,15 +25,12 @@ import contextvars
 import inspect
 from collections.abc import Awaitable, Callable
 from types import TracebackType
-from typing import ParamSpec, Self, TypeVar, final
+from typing import Self, final
 
 from .... import _lock, _utils
 from ...._final import runtime_final_class
 from ..abc import ThreadsPortal as AbstractThreadsPortal
 from .tasks import TaskUtils
-
-_P = ParamSpec("_P")
-_T = TypeVar("_T")
 
 
 @final
@@ -71,16 +68,16 @@ class ThreadsPortal(AbstractThreadsPortal):
         finally:
             del self, exc_val, exc_tb
 
-    def run_coroutine_soon(
+    def run_coroutine_soon[**P, R](
         self,
-        coro_func: Callable[_P, Awaitable[_T]],
+        coro_func: Callable[P, Awaitable[R]],
         /,
-        *args: _P.args,
-        **kwargs: _P.kwargs,
-    ) -> concurrent.futures.Future[_T]:
-        future: concurrent.futures.Future[_T] = concurrent.futures.Future()
+        *args: P.args,
+        **kwargs: P.kwargs,
+    ) -> concurrent.futures.Future[R]:
+        future: concurrent.futures.Future[R] = concurrent.futures.Future()
 
-        def on_fut_done(task: asyncio.Task[None], future: concurrent.futures.Future[_T]) -> None:
+        def on_fut_done(task: asyncio.Task[None], future: concurrent.futures.Future[R]) -> None:
             if future.cancelled():
                 with contextlib.suppress(RuntimeError):
                     loop = task.get_loop()
@@ -123,7 +120,7 @@ class ThreadsPortal(AbstractThreadsPortal):
         self.run_sync_soon(schedule_task).result()
         return future
 
-    def run_sync_soon(self, func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> concurrent.futures.Future[_T]:
+    def run_sync_soon[**P, R](self, func: Callable[P, R], /, *args: P.args, **kwargs: P.kwargs) -> concurrent.futures.Future[R]:
         import sniffio
 
         def callback() -> None:
@@ -149,7 +146,7 @@ class ThreadsPortal(AbstractThreadsPortal):
         ctx = contextvars.copy_context()
         ctx.run(sniffio.current_async_library_cvar.set, "asyncio")
 
-        future: concurrent.futures.Future[_T] = concurrent.futures.Future()
+        future: concurrent.futures.Future[R] = concurrent.futures.Future()
 
         loop.call_soon_threadsafe(callback, context=ctx)
         return future

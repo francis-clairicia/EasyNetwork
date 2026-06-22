@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Buffer, Iterator
 from typing import TYPE_CHECKING, Any, Literal
 
 from easynetwork.exceptions import DeserializeError, IncrementalDeserializeError
@@ -17,7 +17,6 @@ from ...tools import send_return, write_in_buffer
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
 
-    from _typeshed import ReadableBuffer
     from pytest_mock import MockerFixture
 
 
@@ -303,7 +302,7 @@ class TestAbstractCompressorSerializer:
         # Arrange
         given_chunks: list[bytes] = []
 
-        def decompress_side_effect(b: ReadableBuffer) -> bytes:
+        def decompress_side_effect(b: Buffer) -> bytes:
             given_chunks.append(bytes(b))
             return b"decompressed " + b
 
@@ -314,7 +313,7 @@ class TestAbstractCompressorSerializer:
         mock_serializer.deserialize.return_value = mocker.sentinel.packet
 
         # Act
-        remaining_data: ReadableBuffer
+        remaining_data: Buffer
         match incremental_deserialize_mode:
             case "data":
                 data_consumer = serializer.incremental_deserialize()

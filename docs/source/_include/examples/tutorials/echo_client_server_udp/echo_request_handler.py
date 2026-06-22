@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
-from typing import Any, TypeAlias
+from typing import Any
 
 from easynetwork.exceptions import DatagramProtocolParseError
 from easynetwork.servers.handlers import AsyncDatagramClient, AsyncDatagramRequestHandler, INETClientAttribute
 
-RequestType: TypeAlias = Any
-ResponseType: TypeAlias = Any
+type RequestType = Any
+type ResponseType = Any
 
 
 class EchoRequestHandler(AsyncDatagramRequestHandler[RequestType, ResponseType]):

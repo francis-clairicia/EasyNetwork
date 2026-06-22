@@ -25,12 +25,10 @@ from __future__ import annotations
 __all__ = ["TypedAttributeProvider", "TypedAttributeSet"]
 
 from collections.abc import Callable, Mapping
-from typing import Any, TypeVar, final, overload
+from typing import Any, final, overload
 
 from ..exceptions import TypedAttributeLookupError
 
-_T_Attr = TypeVar("_T_Attr")
-_T_Default = TypeVar("_T_Default")
 undefined = object()
 
 
@@ -77,10 +75,10 @@ class TypedAttributeProvider:
         return {}
 
     @overload
-    def extra(self, attribute: _T_Attr) -> _T_Attr: ...
+    def extra[T](self, attribute: T) -> T: ...
 
     @overload
-    def extra(self, attribute: _T_Attr, default: _T_Default) -> _T_Attr | _T_Default: ...
+    def extra[T, D](self, attribute: T, default: D) -> T | D: ...
 
     @final
     def extra(self, attribute: Any, default: object = undefined) -> object:

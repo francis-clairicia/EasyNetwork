@@ -22,9 +22,9 @@ import errno as _errno
 import socket as _socket
 import sys
 import warnings
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Buffer, Callable, Iterable, Mapping
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, final
+from typing import Any, final
 
 import trio
 
@@ -32,9 +32,6 @@ from ..... import _unix_utils, _utils, socket as socket_tools
 from ....transports.abc import AsyncDatagramTransport
 from ...abc import AsyncBackend
 from .._trio_utils import convert_trio_resource_errors
-
-if TYPE_CHECKING:
-    from _typeshed import ReadableBuffer
 
 
 @final
@@ -95,7 +92,7 @@ class TrioDatagramSocketAdapter(AsyncDatagramTransport):
         async def send_with_ancillary(
             self,
             data: bytes | bytearray | memoryview,
-            ancillary_data: Iterable[tuple[int, int, ReadableBuffer]],
+            ancillary_data: Iterable[tuple[int, int, Buffer]],
         ) -> None:
             if not _unix_utils.is_unix_socket_family((socket := self.__socket).family):
                 return await super().send_with_ancillary(data, ancillary_data)

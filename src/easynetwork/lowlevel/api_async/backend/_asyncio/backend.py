@@ -25,16 +25,12 @@ import os
 import socket as _socket
 import sys
 from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
-from typing import Any, NoReturn, TypeVar, TypeVarTuple
+from typing import Any, NoReturn
 
 from .... import _unix_utils, _utils
 from ....constants import HAPPY_EYEBALLS_DELAY as _DEFAULT_HAPPY_EYEBALLS_DELAY
 from ...transports.abc import AsyncDatagramListener, AsyncDatagramTransport, AsyncListener, AsyncStreamTransport
 from ..abc import AsyncBackend as AbstractAsyncBackend, CancelScope, ICondition, IEvent, ILock, TaskGroup, TaskInfo, ThreadsPortal
-
-_T = TypeVar("_T")
-_T_co = TypeVar("_T_co", covariant=True)
-_T_PosArgs = TypeVarTuple("_T_PosArgs")
 
 
 class AsyncIOBackend(AbstractAsyncBackend):
@@ -67,12 +63,12 @@ class AsyncIOBackend(AbstractAsyncBackend):
     def __repr__(self) -> str:
         return f"<{type(self).__qualname__} object at {id(self):#x}>"
 
-    def bootstrap(
+    def bootstrap[*PosArgs, R](
         self,
-        coro_func: Callable[[*_T_PosArgs], Coroutine[Any, Any, _T]],
-        *args: *_T_PosArgs,
+        coro_func: Callable[[*PosArgs], Coroutine[Any, Any, R]],
+        *args: *PosArgs,
         runner_options: Mapping[str, Any] | None = None,
-    ) -> _T:
+    ) -> R:
         from sniffio import thread_local
 
         old_name, thread_local.name = thread_local.name, "asyncio"
@@ -91,7 +87,7 @@ class AsyncIOBackend(AbstractAsyncBackend):
     def get_cancelled_exc_class(self) -> type[BaseException]:
         return self.__asyncio.CancelledError
 
-    async def ignore_cancellation(self, coroutine: Awaitable[_T_co]) -> _T_co:
+    async def ignore_cancellation[R](self, coroutine: Awaitable[R]) -> R:
         return await self.__cancel_shielded_await(coroutine)
 
     def open_cancel_scope(self, *, deadline: float = math.inf) -> CancelScope:
@@ -399,13 +395,13 @@ class AsyncIOBackend(AbstractAsyncBackend):
             case _:
                 raise TypeError("lock must be a asyncio.Lock")
 
-    async def run_in_thread(
+    async def run_in_thread[*PosArgs, R](
         self,
-        func: Callable[[*_T_PosArgs], _T],
+        func: Callable[[*PosArgs], R],
         /,
-        *args: *_T_PosArgs,
+        *args: *PosArgs,
         abandon_on_cancel: bool = False,
-    ) -> _T:
+    ) -> R:
         import sniffio
 
         loop = self.__asyncio.get_running_loop()

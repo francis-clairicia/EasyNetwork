@@ -26,16 +26,15 @@ import dataclasses
 import errno as _errno
 import warnings
 from collections.abc import Callable, Mapping
-from typing import Any, Generic, assert_never
+from typing import Any, assert_never
 
-from ...._typevars import _T_ReceivedPacket, _T_SentPacket
 from ....protocol import AnyStreamProtocolType
 from ... import _stream, _utils
 from ..backend.abc import AsyncBackend
 from ..transports import abc as _transports
 
 
-class AsyncStreamReceiverEndpoint(_transports.AsyncBaseTransport, Generic[_T_ReceivedPacket]):
+class AsyncStreamReceiverEndpoint[ReceivedPacket](_transports.AsyncBaseTransport):
     """
     A read-only communication endpoint based on continuous stream data transport.
     """
@@ -49,7 +48,7 @@ class AsyncStreamReceiverEndpoint(_transports.AsyncBaseTransport, Generic[_T_Rec
     def __init__(
         self,
         transport: _transports.AsyncStreamReadTransport,
-        protocol: AnyStreamProtocolType[Any, _T_ReceivedPacket],
+        protocol: AnyStreamProtocolType[Any, ReceivedPacket],
         max_recv_size: int,
     ) -> None:
         """
@@ -63,7 +62,7 @@ class AsyncStreamReceiverEndpoint(_transports.AsyncBaseTransport, Generic[_T_Rec
             raise TypeError(f"Expected an AsyncStreamReadTransport object, got {transport!r}")
         _check_max_recv_size_value(max_recv_size)
 
-        self.__receiver: _DataReceiverImpl[_T_ReceivedPacket] | _BufferedReceiverImpl[_T_ReceivedPacket] = _get_receiver(
+        self.__receiver: _DataReceiverImpl[ReceivedPacket] | _BufferedReceiverImpl[ReceivedPacket] = _get_receiver(
             transport=transport,
             protocol=protocol,
             max_recv_size=max_recv_size,
@@ -104,7 +103,7 @@ class AsyncStreamReceiverEndpoint(_transports.AsyncBaseTransport, Generic[_T_Rec
         finally:
             self.__receiver.clear()
 
-    async def recv_packet(self) -> _T_ReceivedPacket:
+    async def recv_packet(self) -> ReceivedPacket:
         """
         Waits for a new packet to arrive from the remote endpoint.
 
@@ -124,7 +123,7 @@ class AsyncStreamReceiverEndpoint(_transports.AsyncBaseTransport, Generic[_T_Rec
         self,
         ancillary_bufsize: int,
         ancillary_data_received: Callable[[Any], object],
-    ) -> _T_ReceivedPacket:
+    ) -> ReceivedPacket:
         """
         Waits for a new packet with ancillary data to arrive from the remote endpoint.
 
@@ -158,7 +157,7 @@ class AsyncStreamReceiverEndpoint(_transports.AsyncBaseTransport, Generic[_T_Rec
         return self.__transport.extra_attributes
 
 
-class AsyncStreamSenderEndpoint(_transports.AsyncBaseTransport, Generic[_T_SentPacket]):
+class AsyncStreamSenderEndpoint[SentPacket](_transports.AsyncBaseTransport):
     """
     A write-only communication endpoint based on continuous stream data transport.
     """
@@ -172,7 +171,7 @@ class AsyncStreamSenderEndpoint(_transports.AsyncBaseTransport, Generic[_T_SentP
     def __init__(
         self,
         transport: _transports.AsyncStreamWriteTransport,
-        protocol: AnyStreamProtocolType[_T_SentPacket, Any],
+        protocol: AnyStreamProtocolType[SentPacket, Any],
     ) -> None:
         """
         Parameters:
@@ -183,7 +182,7 @@ class AsyncStreamSenderEndpoint(_transports.AsyncBaseTransport, Generic[_T_SentP
         if not isinstance(transport, _transports.AsyncStreamWriteTransport):
             raise TypeError(f"Expected an AsyncStreamWriteTransport object, got {transport!r}")
 
-        self.__sender: _DataSenderImpl[_T_SentPacket] = _DataSenderImpl(transport, _stream.StreamDataProducer(protocol))
+        self.__sender: _DataSenderImpl[SentPacket] = _DataSenderImpl(transport, _stream.StreamDataProducer(protocol))
 
         self.__transport: _transports.AsyncStreamWriteTransport = transport
         self.__send_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently sending data on this endpoint")
@@ -217,7 +216,7 @@ class AsyncStreamSenderEndpoint(_transports.AsyncBaseTransport, Generic[_T_SentP
         """
         await self.__transport.aclose()
 
-    async def send_packet(self, packet: _T_SentPacket) -> None:
+    async def send_packet(self, packet: SentPacket) -> None:
         """
         Sends `packet` to the remote endpoint.
 
@@ -233,7 +232,7 @@ class AsyncStreamSenderEndpoint(_transports.AsyncBaseTransport, Generic[_T_SentP
 
             return await sender.send(packet)
 
-    async def send_packet_with_ancillary(self, packet: _T_SentPacket, ancillary_data: Any) -> None:
+    async def send_packet_with_ancillary(self, packet: SentPacket, ancillary_data: Any) -> None:
         """
         Sends `packet` to the remote endpoint with ancillary data.
 
@@ -262,7 +261,7 @@ class AsyncStreamSenderEndpoint(_transports.AsyncBaseTransport, Generic[_T_SentP
         return self.__transport.extra_attributes
 
 
-class AsyncStreamEndpoint(_transports.AsyncBaseTransport, Generic[_T_SentPacket, _T_ReceivedPacket]):
+class AsyncStreamEndpoint[SentPacket, ReceivedPacket](_transports.AsyncBaseTransport):
     """
     A full-duplex communication endpoint based on continuous stream data transport.
     """
@@ -279,7 +278,7 @@ class AsyncStreamEndpoint(_transports.AsyncBaseTransport, Generic[_T_SentPacket,
     def __init__(
         self,
         transport: _transports.AsyncStreamTransport,
-        protocol: AnyStreamProtocolType[_T_SentPacket, _T_ReceivedPacket],
+        protocol: AnyStreamProtocolType[SentPacket, ReceivedPacket],
         max_recv_size: int,
     ) -> None:
         """
@@ -293,8 +292,8 @@ class AsyncStreamEndpoint(_transports.AsyncBaseTransport, Generic[_T_SentPacket,
             raise TypeError(f"Expected an AsyncStreamTransport object, got {transport!r}")
         _check_max_recv_size_value(max_recv_size)
 
-        self.__sender: _DataSenderImpl[_T_SentPacket] = _DataSenderImpl(transport, _stream.StreamDataProducer(protocol))
-        self.__receiver: _DataReceiverImpl[_T_ReceivedPacket] | _BufferedReceiverImpl[_T_ReceivedPacket] = _get_receiver(
+        self.__sender: _DataSenderImpl[SentPacket] = _DataSenderImpl(transport, _stream.StreamDataProducer(protocol))
+        self.__receiver: _DataReceiverImpl[ReceivedPacket] | _BufferedReceiverImpl[ReceivedPacket] = _get_receiver(
             transport=transport,
             protocol=protocol,
             max_recv_size=max_recv_size,
@@ -338,7 +337,7 @@ class AsyncStreamEndpoint(_transports.AsyncBaseTransport, Generic[_T_SentPacket,
             finally:
                 self.__receiver.clear()
 
-    async def send_packet(self, packet: _T_SentPacket) -> None:
+    async def send_packet(self, packet: SentPacket) -> None:
         """
         Sends `packet` to the remote endpoint.
 
@@ -360,7 +359,7 @@ class AsyncStreamEndpoint(_transports.AsyncBaseTransport, Generic[_T_SentPacket,
 
             return await sender.send(packet)
 
-    async def send_packet_with_ancillary(self, packet: _T_SentPacket, ancillary_data: Any) -> None:
+    async def send_packet_with_ancillary(self, packet: SentPacket, ancillary_data: Any) -> None:
         """
         Sends `packet` to the remote endpoint with ancillary data.
 
@@ -400,7 +399,7 @@ class AsyncStreamEndpoint(_transports.AsyncBaseTransport, Generic[_T_SentPacket,
             await transport.send_eof()
             self.__eof_sent = True
 
-    async def recv_packet(self) -> _T_ReceivedPacket:
+    async def recv_packet(self) -> ReceivedPacket:
         """
         Waits for a new packet to arrive from the remote endpoint.
 
@@ -420,7 +419,7 @@ class AsyncStreamEndpoint(_transports.AsyncBaseTransport, Generic[_T_SentPacket,
         self,
         ancillary_bufsize: int,
         ancillary_data_received: Callable[[Any], object],
-    ) -> _T_ReceivedPacket:
+    ) -> ReceivedPacket:
         """
         Waits for a new packet with ancillary data to arrive from the remote endpoint.
 
@@ -455,28 +454,28 @@ class AsyncStreamEndpoint(_transports.AsyncBaseTransport, Generic[_T_SentPacket,
 
 
 @dataclasses.dataclass(slots=True)
-class _DataSenderImpl(Generic[_T_SentPacket]):
+class _DataSenderImpl[SentPacket]:
     transport: _transports.AsyncStreamWriteTransport
-    producer: _stream.StreamDataProducer[_T_SentPacket]
+    producer: _stream.StreamDataProducer[SentPacket]
 
-    async def send(self, packet: _T_SentPacket) -> None:
+    async def send(self, packet: SentPacket) -> None:
         return await self.transport.send_all_from_iterable(self.producer.generate(packet))
 
-    async def send_with_ancillary(self, packet: _T_SentPacket, ancillary_data: Any) -> None:
+    async def send_with_ancillary(self, packet: SentPacket, ancillary_data: Any) -> None:
         return await self.transport.send_all_with_ancillary(self.producer.generate(packet), ancillary_data)
 
 
 @dataclasses.dataclass(slots=True)
-class _DataReceiverImpl(Generic[_T_ReceivedPacket]):
+class _DataReceiverImpl[ReceivedPacket]:
     transport: _transports.AsyncStreamReadTransport
-    consumer: _stream.StreamDataConsumer[_T_ReceivedPacket]
+    consumer: _stream.StreamDataConsumer[ReceivedPacket]
     max_recv_size: int
     _eof_reached: bool = dataclasses.field(init=False, default=False)
 
     def clear(self) -> None:
         self.consumer.clear()
 
-    async def receive(self) -> _T_ReceivedPacket:
+    async def receive(self) -> ReceivedPacket:
         consumer = self.consumer
         try:
             return consumer.next(None)
@@ -504,7 +503,7 @@ class _DataReceiverImpl(Generic[_T_ReceivedPacket]):
         self,
         ancillary_bufsize: int,
         ancillary_data_received: Callable[[Any], object],
-    ) -> _T_ReceivedPacket:
+    ) -> ReceivedPacket:
         consumer = self.consumer
         try:
             return consumer.next(None)
@@ -537,15 +536,15 @@ class _DataReceiverImpl(Generic[_T_ReceivedPacket]):
 
 
 @dataclasses.dataclass(slots=True)
-class _BufferedReceiverImpl(Generic[_T_ReceivedPacket]):
+class _BufferedReceiverImpl[ReceivedPacket]:
     transport: _transports.AsyncStreamReadTransport
-    consumer: _stream.BufferedStreamDataConsumer[_T_ReceivedPacket]
+    consumer: _stream.BufferedStreamDataConsumer[ReceivedPacket]
     _eof_reached: bool = dataclasses.field(init=False, default=False)
 
     def clear(self) -> None:
         self.consumer.clear()
 
-    async def receive(self) -> _T_ReceivedPacket:
+    async def receive(self) -> ReceivedPacket:
         consumer = self.consumer
         try:
             return consumer.next(None)
@@ -571,7 +570,7 @@ class _BufferedReceiverImpl(Generic[_T_ReceivedPacket]):
         self,
         ancillary_bufsize: int,
         ancillary_data_received: Callable[[Any], object],
-    ) -> _T_ReceivedPacket:
+    ) -> ReceivedPacket:
         consumer = self.consumer
         try:
             return consumer.next(None)
@@ -602,12 +601,12 @@ class _BufferedReceiverImpl(Generic[_T_ReceivedPacket]):
         raise _utils.error_from_errno(_errno.ECONNABORTED, "{strerror} (end-of-stream)")
 
 
-def _get_receiver(
+def _get_receiver[ReceivedPacket](
     transport: _transports.AsyncStreamReadTransport,
-    protocol: AnyStreamProtocolType[Any, _T_ReceivedPacket],
+    protocol: AnyStreamProtocolType[Any, ReceivedPacket],
     *,
     max_recv_size: int,
-) -> _DataReceiverImpl[_T_ReceivedPacket] | _BufferedReceiverImpl[_T_ReceivedPacket]:
+) -> _DataReceiverImpl[ReceivedPacket] | _BufferedReceiverImpl[ReceivedPacket]:
     from ....protocol import BufferedStreamProtocol, StreamProtocol
 
     _stream._check_any_protocol(protocol)
