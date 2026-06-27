@@ -397,18 +397,21 @@ class AsyncDatagramServer[Request, Response, Address: Hashable](_transports.Asyn
                                 timeout_scope = _timeout_scope_ctx(timeout)
                         with timeout_scope:
                             datagram, ancillary_data = await client_data.pop_datagram()
-                        self.__handle_ancillary_data(
-                            ancillary_data=ancillary_data,
-                            recv_with_ancillary=recv_params.recv_with_ancillary,
-                            server_ancillary_data_params=server_ancillary_data_params,
-                            client_address=client_address,
-                        )
-                        request = self.__parse_datagram(datagram, self.__protocol)
+                        try:
+                            self.__handle_ancillary_data(
+                                ancillary_data=ancillary_data,
+                                recv_with_ancillary=recv_params.recv_with_ancillary,
+                                server_ancillary_data_params=server_ancillary_data_params,
+                                client_address=client_address,
+                            )
+                            request = self.__parse_datagram(datagram, self.__protocol)
+                        finally:
+                            del datagram
                     except BaseException as exc:
                         del recv_params
                         recv_params = await request_handler_generator.athrow(exc)
                     else:
-                        del recv_params, datagram
+                        del recv_params
                         recv_params = await request_handler_generator.asend(request)
                     finally:
                         request = ancillary_data = None
