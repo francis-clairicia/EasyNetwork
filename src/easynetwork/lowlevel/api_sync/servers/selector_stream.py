@@ -443,7 +443,7 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
             task_exit_stack.callback(request_handler_context.run, request_handler_generator.close)
 
             try:
-                recv_params = _rcv(request_handler_context.run(next, request_handler_generator))
+                recv_params = request_handler_context.run(next, request_handler_generator)
             except StopIteration:
                 return
 
@@ -472,7 +472,7 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
         client_handler_token: _ClientHandlerToken,
         executor: concurrent.futures.Executor,
         task_exit_stack: contextlib.ExitStack,
-        recv_params: RecvParams,
+        recv_params: RecvParams | None,
     ) -> None:
         try:
             with task_exit_stack.pop_all() as task_exit_stack:
@@ -486,6 +486,7 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
                     request_handler_generator = client_data.request_handler_generator
                     try:
                         timeout: float
+                        recv_params = _rcv(recv_params)
                         if reader_future is None:
                             timeout = _utils.validate_optional_timeout_delay(recv_params.timeout, positive_check=True)
                         else:
@@ -530,10 +531,10 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
                         raise
                     except BaseException as exc:
                         del recv_params
-                        recv_params = _rcv(request_handler_context.run(request_handler_generator.throw, exc))
+                        recv_params = request_handler_context.run(request_handler_generator.throw, exc)
                     else:
                         del recv_params
-                        recv_params = _rcv(request_handler_context.run(request_handler_generator.send, request))
+                        recv_params = request_handler_context.run(request_handler_generator.send, request)
                 except StopIteration:
                     # Request handler stopped normally, attempt a graceful close.
                     client_data.transport_close_exit_stack.pop_all()
@@ -562,7 +563,7 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
         client_handler_token: _ClientHandlerToken,
         executor: concurrent.futures.Executor,
         task_exit_stack: contextlib.ExitStack,
-        recv_params: RecvParams,
+        recv_params: RecvParams | None,
     ) -> None:
         try:
             handler_future = executor.submit(
@@ -688,9 +689,9 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
             transport_close_exit_stack.callback(client.abort)
 
             timeout: float
-            recv_params: RecvParams
+            recv_params: RecvParams | None
             try:
-                recv_params = _rcv(next(request_handler_generator))
+                recv_params = next(request_handler_generator)
             except StopIteration:
                 return
             else:
@@ -699,6 +700,7 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
                     _validate_timeout_delay = _utils.validate_optional_timeout_delay
                     while not client.is_closing():
                         try:
+                            recv_params = _rcv(recv_params)
                             timeout = _validate_timeout_delay(recv_params.timeout, positive_check=True)
                             first_recv_try: bool = True
                             while True:
@@ -737,10 +739,10 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
                             raise
                         except BaseException as exc:
                             del recv_params
-                            recv_params = _rcv(request_handler_generator.throw(exc))
+                            recv_params = request_handler_generator.throw(exc)
                         else:
                             del recv_params
-                            recv_params = _rcv(request_handler_generator.send(request))
+                            recv_params = request_handler_generator.send(request)
                         finally:
                             request = None
                 except StopIteration:
@@ -1392,4 +1394,4 @@ def _rcv(param: RecvParams | None, /) -> RecvParams:
         case RecvParams():
             return param
         case _:
-            raise TypeError("Expected a RecvParams object or None")
+            raise TypeError(f"Expected a 'RecvParams' object, got {param!r} instead.")
