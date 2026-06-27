@@ -239,9 +239,7 @@ class SelectorDatagramServer[Request, Response, Address: Hashable](_transports.B
 
     def serve(
         self,
-        datagram_received_cb: Callable[
-            [DatagramClientContext[Response, Address]], Generator[RecvParams | None, Request]
-        ],
+        datagram_received_cb: Callable[[DatagramClientContext[Response, Address]], Generator[RecvParams | None, Request]],
         executor: concurrent.futures.Executor,
     ) -> None:
         """
@@ -267,9 +265,7 @@ class SelectorDatagramServer[Request, Response, Address: Hashable](_transports.B
 
     def serve_with_ancillary(
         self,
-        datagram_received_cb: Callable[
-            [DatagramClientContext[Response, Address]], Generator[RecvParams | None, Request]
-        ],
+        datagram_received_cb: Callable[[DatagramClientContext[Response, Address]], Generator[RecvParams | None, Request]],
         executor: concurrent.futures.Executor,
         ancillary_bufsize: int,
         ancillary_data_unused: Callable[[Any, Address], object] | None = None,
@@ -309,9 +305,7 @@ class SelectorDatagramServer[Request, Response, Address: Hashable](_transports.B
 
     def __serve_impl(
         self,
-        datagram_received_cb: Callable[
-            [DatagramClientContext[Response, Address]], Generator[RecvParams | None, Request]
-        ],
+        datagram_received_cb: Callable[[DatagramClientContext[Response, Address]], Generator[RecvParams | None, Request]],
         executor: concurrent.futures.Executor,
         server_ancillary_data_params: _ServerAncillaryDataParams[Address] | None = None,
     ) -> None:
@@ -345,9 +339,7 @@ class SelectorDatagramServer[Request, Response, Address: Hashable](_transports.B
         self,
         *,
         selector: selectors.BaseSelector,
-        datagram_received_cb: Callable[
-            [DatagramClientContext[Response, Address]], Generator[RecvParams | None, Request]
-        ],
+        datagram_received_cb: Callable[[DatagramClientContext[Response, Address]], Generator[RecvParams | None, Request]],
         executor: concurrent.futures.Executor,
         server_ancillary_data_params: _ServerAncillaryDataParams[Address] | None,
     ) -> None:
@@ -405,22 +397,23 @@ class SelectorDatagramServer[Request, Response, Address: Hashable](_transports.B
         executor: concurrent.futures.Executor,
         server_ancillary_data_params: _ServerAncillaryDataParams[Address] | None,
     ) -> None:
-        client_data.mark_pending()
-        try:
-            client_task_future = executor.submit(
-                self.__serve_requests__handle_new_client,
-                client_ctx,
-                client_data,
-                client_handler_token=client_handler_token,
-                executor=executor,
-                server_ancillary_data_params=server_ancillary_data_params,
-            )
-        except RuntimeError:
-            client_task_future = concurrent.futures.Future()
-            _cancel_future_and_notify(client_task_future)
+        with client_data.state_lock:
+            client_data.mark_pending()
+            try:
+                client_task_future = executor.submit(
+                    self.__serve_requests__handle_new_client,
+                    client_ctx,
+                    client_data,
+                    client_handler_token=client_handler_token,
+                    executor=executor,
+                    server_ancillary_data_params=server_ancillary_data_params,
+                )
+            except RuntimeError:
+                client_task_future = concurrent.futures.Future()
+                _cancel_future_and_notify(client_task_future)
 
-        client_task_future.add_done_callback(self.__shutdown_on_handler_exception)
-        client_data.register_new_client_task(client_task_future)
+            client_task_future.add_done_callback(self.__shutdown_on_handler_exception)
+            client_data.register_new_client_task(client_task_future)
 
     def __serve_requests__handle_new_client(
         self,
@@ -459,13 +452,15 @@ class SelectorDatagramServer[Request, Response, Address: Hashable](_transports.B
                 if client_data.datagram_queue.empty():
                     raise client_data.inconsistent_state_error()  # pragma: no cover
 
-                recv_params: RecvParams
+                request: Request | None
+                recv_params: RecvParams | None
                 try:
+                    datagram: bytes
+                    ancillary_data: Any | None = None
                     try:
-                        recv_params = _rcv(request_handler_context.run(next, request_handler_generator))
+                        datagram, ancillary_data = client_data.datagram_queue.get_nowait()
+                        recv_params = request_handler_context.run(next, request_handler_generator)
                     except BaseException:
-                        # Drop received datagram
-                        _, ancillary_data = client_data.datagram_queue.get_nowait()
                         self.__handle_ancillary_data(
                             ancillary_data=ancillary_data,
                             recv_with_ancillary=None,
@@ -473,18 +468,43 @@ class SelectorDatagramServer[Request, Response, Address: Hashable](_transports.B
                             client_address=client_ctx.address,
                         )
                         raise
+
+                    try:
+                        try:
+                            recv_params = _rcv(recv_params)
+                        except BaseException:
+                            self.__handle_ancillary_data(
+                                ancillary_data=ancillary_data,
+                                recv_with_ancillary=None,
+                                server_ancillary_data_params=server_ancillary_data_params,
+                                client_address=client_ctx.address,
+                            )
+                            raise
+                        try:
+                            _utils.validate_optional_timeout_delay(recv_params.timeout, positive_check=True)
+                            # Ignore sent timeout here, we already have the datagram.
+                        finally:
+                            # Handle ancillary data in finally block for stack manipulation.
+                            # The original error (invalid timeout) will appear even if the callback fails too.
+                            self.__handle_ancillary_data(
+                                ancillary_data=ancillary_data,
+                                recv_with_ancillary=recv_params.recv_with_ancillary,
+                                server_ancillary_data_params=server_ancillary_data_params,
+                                client_address=client_ctx.address,
+                            )
+                        request = self.__parse_datagram(datagram, self.__protocol)
+                    except BaseException as exc:
+                        del recv_params
+                        recv_params = request_handler_context.run(request_handler_generator.throw, exc)
+                    else:
+                        del recv_params, datagram  # Drop datagram reference before proceeding.
+                        recv_params = request_handler_context.run(request_handler_generator.send, request)
+                    finally:
+                        request = ancillary_data = None
                 except StopIteration:
                     return
 
-                waiter_future: concurrent.futures.Future[None] | None = None
-                try:
-                    _utils.validate_optional_timeout_delay(recv_params.timeout, positive_check=True)
-                except BaseException as exc:
-                    waiter_future = concurrent.futures.Future()
-                    waiter_future.set_exception(exc)
-
-                # Ignore sent timeout here, we already have the datagram.
-                return self.__serve_requests__handle_client_request(
+                return self.__serve_requests__schedule_client_handler(
                     None,
                     recv_params=recv_params,
                     client_ctx=client_ctx,
@@ -492,14 +512,13 @@ class SelectorDatagramServer[Request, Response, Address: Hashable](_transports.B
                     request_handler_context=request_handler_context,
                     request_handler_generator=request_handler_generator,
                     client_handler_token=client_handler_token,
-                    task_exit_stack=task_exit_stack,
+                    task_exit_stack=task_exit_stack.pop_all(),
                     executor=executor,
                     server_ancillary_data_params=server_ancillary_data_params,
                     should_restart_handle=should_restart_handle,
                 )
 
         finally:
-            waiter_future = None  # Break reference cycle with request future on error.
             self.__detach_server()
 
     def __serve_requests__on_client_task_done(
@@ -534,10 +553,10 @@ class SelectorDatagramServer[Request, Response, Address: Hashable](_transports.B
 
     def __serve_requests__handle_client_request(
         self,
-        waiter_future: concurrent.futures.Future[None] | None,
+        waiter_future: concurrent.futures.Future[None],
         /,
         *,
-        recv_params: RecvParams,
+        recv_params: RecvParams | None,
         client_ctx: DatagramClientContext[Response, Address],
         client_data: _ClientData,
         request_handler_context: contextvars.Context,
@@ -551,97 +570,58 @@ class SelectorDatagramServer[Request, Response, Address: Hashable](_transports.B
         self.__attach_server()
         try:
             with task_exit_stack.pop_all() as task_exit_stack:
-                timeout: float
                 request: Request | None
                 try:
                     try:
-                        if waiter_future is not None:
-                            assert waiter_future.done()  # nosec assert_used
-                            if waiter_future.cancelled():
-                                should_restart_handle.clear()
-                                return
-                            # Raises error to throw in generator if needed.
-                            try:
-                                waiter_future.result(timeout=0)
-                            except concurrent.futures.CancelledError:
-                                return
+                        assert waiter_future.done()  # nosec assert_used
+                        # Raises error to throw in generator if needed.
+                        try:
+                            waiter_future.result(timeout=0)
+                        except concurrent.futures.CancelledError:
+                            should_restart_handle.clear()
+                            return
 
                         try:
                             datagram, ancillary_data = client_data.datagram_queue.get_nowait()
                         except _QueueEmpty as exc:  # pragma: no cover
                             raise client_data.inconsistent_state_error() from exc
-                        self.__handle_ancillary_data(
-                            ancillary_data=ancillary_data,
-                            recv_with_ancillary=recv_params.recv_with_ancillary,
-                            server_ancillary_data_params=server_ancillary_data_params,
-                            client_address=client_ctx.address,
-                        )
                         try:
-                            request = self.__protocol.build_packet_from_datagram(datagram)
-                        except DatagramProtocolParseError:
-                            raise
-                        except Exception as exc:
-                            raise RuntimeError("protocol.build_packet_from_datagram() crashed") from exc
+                            self.__handle_ancillary_data(
+                                ancillary_data=ancillary_data,
+                                recv_with_ancillary=recv_params.recv_with_ancillary if recv_params else None,
+                                server_ancillary_data_params=server_ancillary_data_params,
+                                client_address=client_ctx.address,
+                            )
+                            request = self.__parse_datagram(datagram, self.__protocol)
                         finally:
                             del datagram
                     except BaseException as exc:
                         del recv_params
-                        recv_params = _rcv(request_handler_context.run(request_handler_generator.throw, exc))
+                        recv_params = request_handler_context.run(request_handler_generator.throw, exc)
                     else:
                         del recv_params
-                        recv_params = _rcv(request_handler_context.run(request_handler_generator.send, request))
+                        recv_params = request_handler_context.run(request_handler_generator.send, request)
                     finally:
                         request = None
                 except StopIteration:
                     return
 
-                try:
-                    timeout = _utils.validate_optional_timeout_delay(recv_params.timeout, positive_check=True)
-                except BaseException as exc:
-                    waiter_future = concurrent.futures.Future()
-                    waiter_future.set_exception(exc)
-                else:
-                    with client_data.state_lock:
-                        if client_data.datagram_queue.empty():
-                            waiter_future = client_handler_token.register_waiter(
-                                address=client_ctx.address,
-                                deadline=_get_current_time() + timeout,
-                            )
-                        else:
-                            waiter_future = None
-
-                if waiter_future is None:
-                    return self.__serve_requests__schedule_client_handler(
-                        None,
-                        recv_params=recv_params,
-                        client_ctx=client_ctx,
-                        client_data=client_data,
-                        request_handler_context=request_handler_context,
-                        request_handler_generator=request_handler_generator,
-                        client_handler_token=client_handler_token,
-                        task_exit_stack=task_exit_stack.pop_all(),
-                        executor=executor,
-                        server_ancillary_data_params=server_ancillary_data_params,
-                        should_restart_handle=should_restart_handle,
-                    )
-
-                waiter_future.add_done_callback(
-                    functools.partial(
-                        self.__serve_requests__schedule_client_handler,
-                        recv_params=recv_params,
-                        client_ctx=client_ctx,
-                        client_data=client_data,
-                        request_handler_context=request_handler_context,
-                        request_handler_generator=request_handler_generator,
-                        client_handler_token=client_handler_token,
-                        task_exit_stack=task_exit_stack.pop_all(),
-                        executor=executor,
-                        server_ancillary_data_params=server_ancillary_data_params,
-                        should_restart_handle=should_restart_handle,
-                    )
+                return self.__serve_requests__schedule_client_handler(
+                    None,
+                    recv_params=recv_params,
+                    client_ctx=client_ctx,
+                    client_data=client_data,
+                    request_handler_context=request_handler_context,
+                    request_handler_generator=request_handler_generator,
+                    client_handler_token=client_handler_token,
+                    task_exit_stack=task_exit_stack.pop_all(),
+                    executor=executor,
+                    server_ancillary_data_params=server_ancillary_data_params,
+                    should_restart_handle=should_restart_handle,
                 )
+
         finally:
-            waiter_future = None  # Break reference cycle with request future on error.
+            del waiter_future  # Break reference cycle with request future on error.
             self.__detach_server()
 
     def __serve_requests__schedule_client_handler(
@@ -649,7 +629,7 @@ class SelectorDatagramServer[Request, Response, Address: Hashable](_transports.B
         waiter_future: concurrent.futures.Future[None] | None,
         /,
         *,
-        recv_params: RecvParams,
+        recv_params: RecvParams | None,
         client_ctx: DatagramClientContext[Response, Address],
         client_data: _ClientData,
         request_handler_context: contextvars.Context,
@@ -660,6 +640,43 @@ class SelectorDatagramServer[Request, Response, Address: Hashable](_transports.B
         server_ancillary_data_params: _ServerAncillaryDataParams[Address] | None,
         should_restart_handle: _utils.Flag,
     ) -> None:
+        if waiter_future is None:
+            try:
+                try:
+                    recv_params = _rcv(recv_params)
+                except BaseException:
+                    recv_params = None
+                    raise
+                timeout = _utils.validate_optional_timeout_delay(recv_params.timeout, positive_check=True)
+            except BaseException as exc:
+                waiter_future = concurrent.futures.Future()
+                waiter_future.set_exception(exc)
+            else:
+                with client_data.state_lock:
+                    if client_data.datagram_queue.empty():
+                        waiter_future = client_handler_token.register_waiter(
+                            address=client_ctx.address,
+                            deadline=_get_current_time() + timeout,
+                        )
+                        waiter_future.add_done_callback(
+                            functools.partial(
+                                self.__serve_requests__schedule_client_handler,
+                                recv_params=recv_params,
+                                client_ctx=client_ctx,
+                                client_data=client_data,
+                                request_handler_context=request_handler_context,
+                                request_handler_generator=request_handler_generator,
+                                client_handler_token=client_handler_token,
+                                task_exit_stack=task_exit_stack,
+                                executor=executor,
+                                server_ancillary_data_params=server_ancillary_data_params,
+                                should_restart_handle=should_restart_handle,
+                            )
+                        )
+                        return
+            waiter_future = concurrent.futures.Future()
+            waiter_future.set_result(None)
+
         try:
             handler_future = executor.submit(
                 self.__serve_requests__handle_client_request,
@@ -800,6 +817,18 @@ class SelectorDatagramServer[Request, Response, Address: Hashable](_transports.B
             logger.error("Unhandled exception: %s", exc_val, exc_info=(exc_type, exc_val or exc_type(), exc_tb))
             return True
         return False
+
+    @staticmethod
+    def __parse_datagram(
+        datagram: bytes,
+        protocol: DatagramProtocol[Response, Request],
+    ) -> Request:
+        try:
+            return protocol.build_packet_from_datagram(datagram)
+        except DatagramProtocolParseError:
+            raise
+        except Exception as exc:
+            raise RuntimeError("protocol.build_packet_from_datagram() crashed") from exc
 
     @staticmethod
     def __handle_ancillary_data(
@@ -1209,6 +1238,8 @@ class _ClientData:
             waiter = self.__waiter_data
             self.__waiter_data = None
             if waiter is not None:
+                if self.__datagram_queue.empty():
+                    raise self.inconsistent_state_error()
                 _set_future_result_unless_cancelled(waiter.future, None)
 
     def cancel_pending_task(self) -> None:
@@ -1261,4 +1292,4 @@ def _rcv(param: RecvParams | None, /) -> RecvParams:
         case RecvParams():
             return param
         case _:
-            raise TypeError("Expected a RecvParams object or None")
+            raise TypeError(f"Expected a 'RecvParams' object, got {param!r} instead.")
