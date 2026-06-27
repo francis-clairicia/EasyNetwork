@@ -195,25 +195,6 @@ if sys.platform != "win32":
                 self.bad_request_received[fetch_client_address(client)].append(exc)
                 await client.send_packet("wrong encoding man.")
 
-    class TimeoutYieldedDeprecatedWayRequestHandler(AsyncDatagramRequestHandler[str, str]):
-        request_timeout: float = 1.0
-        timeout_on_third_yield: bool = False
-
-        async def handle(self, client: AsyncDatagramClient[str]) -> AsyncGenerator[float | None, str]:
-            assert (yield None) == "something"
-            if self.timeout_on_third_yield:
-                request = yield None
-                await client.send_packet(request)
-            try:
-                with pytest.raises(TimeoutError):
-                    yield self.request_timeout
-                await client.send_packet("successfully timed out")
-            except BaseException:
-                await client.send_packet("error occurred")
-                raise
-            finally:
-                self.request_timeout = 1.0  # Force reset to 1 second in order not to overload the server
-
     class TimeoutYieldedRequestHandler(AsyncDatagramRequestHandler[str, str]):
         request_timeout: float = 1.0
         timeout_on_third_yield: bool = False
@@ -994,10 +975,6 @@ if sys.platform != "win32":
                     TimeoutYieldedRequestHandler,
                     marks=[pytest.mark.parametrize("server_recv_method", ["RECV", "RECVMSG"], indirect=True)],
                 ),
-                pytest.param(
-                    TimeoutYieldedDeprecatedWayRequestHandler,
-                    marks=pytest.mark.filterwarnings("ignore::DeprecationWarning:easynetwork"),
-                ),
                 TimeoutContextRequestHandler,
             ],
             indirect=True,
@@ -1008,9 +985,7 @@ if sys.platform != "win32":
             self,
             request_timeout: float,
             timeout_on_third_yield: bool,
-            request_handler: (
-                TimeoutYieldedRequestHandler | TimeoutYieldedDeprecatedWayRequestHandler | TimeoutContextRequestHandler
-            ),
+            request_handler: TimeoutYieldedRequestHandler | TimeoutContextRequestHandler,
             client_factory: Callable[[], Awaitable[AsyncDatagramSocket]],
         ) -> None:
             request_handler.request_timeout = request_timeout

@@ -172,11 +172,14 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
             mock_backend.create_task_group.assert_called_once_with()
             mock_task_group.__aenter__.assert_awaited_once()
 
+    @pytest.mark.parametrize("after_first_yield", [False, True], ids=lambda p: f"after_first_yield=={p}")
     @pytest.mark.parametrize("recv_with_ancillary", [False, True], ids=lambda p: f"recv_with_ancillary=={p}")
-    async def test____serve____timeout____old_method_is_deprecated(
+    async def test____serve____timeout____old_method_is_forbidden(
         self,
+        after_first_yield: bool,
         recv_with_ancillary: bool,
         server: AsyncDatagramServer[Any, Any, Any],
+        ancillary_data_unused: MagicMock,
         mock_datagram_listener: MagicMock,
         caplog: pytest.LogCaptureFixture,
         mocker: MockerFixture,
@@ -186,6 +189,8 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
 
         async def serve_side_effect(handler: Callable[[bytes, Any], Coroutine[Any, Any, None]], task_group: Any) -> NoReturn:
             packet = b"packet"
+            if after_first_yield:
+                task_group.start_soon(handler, packet, mocker.sentinel.address)
             await handler(packet, mocker.sentinel.address)
             raise asyncio.CancelledError("serve_side_effect")
 
@@ -195,6 +200,8 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
             task_group: Any,
         ) -> NoReturn:
             packet = b"packet"
+            if after_first_yield:
+                task_group.start_soon(handler, packet, mocker.sentinel.ancdata, mocker.sentinel.address)
             await handler(packet, mocker.sentinel.ancdata, mocker.sentinel.address)
             raise asyncio.CancelledError("serve_side_effect")
 
@@ -202,27 +209,36 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
         mock_datagram_listener.serve_with_ancillary.side_effect = serve_with_ancillary_side_effect
 
         @stub_decorator(mocker)
-        async def datagram_received_cb(_: Any) -> AsyncGenerator[float, Any]:
-            yield 1234.0
+        async def datagram_received_cb(_: Any) -> AsyncGenerator[float | RecvParams | None, Any]:
+            ancillary_data_received = mocker.stub("ancillary_data_received")
+            if after_first_yield:
+                if recv_with_ancillary:
+                    yield RecvParams(timeout=1.0, recv_with_ancillary=RecvAncillaryDataParams(ancillary_data_received))
+                    ancillary_data_received.assert_called_once_with(mocker.sentinel.ancdata)
+                else:
+                    yield RecvParams(timeout=1.0)
+            with pytest.raises(TypeError, match=r"^Expected a 'RecvParams' object, got 1234.0 instead\.$"):
+                yield 1234.0
 
         # Act & Assert
-        with pytest.warns(DeprecationWarning, match=r"^Yielding a flat number is deprecated"):
-            async with TaskGroup() as tg:
-                with pytest.raises(asyncio.CancelledError, match=r"^serve_side_effect$"):
-                    if recv_with_ancillary:
-                        await server.serve_with_ancillary(datagram_received_cb, 1024, None, tg)
-                    else:
-                        await server.serve(datagram_received_cb, tg)
+        async with TaskGroup() as tg:
+            with pytest.raises(asyncio.CancelledError, match=r"^serve_side_effect$"):
+                if recv_with_ancillary:
+                    await server.serve_with_ancillary(datagram_received_cb, 1024, ancillary_data_unused, tg)
+                else:
+                    await server.serve(datagram_received_cb, tg)
 
-        assert len(caplog.records) == 0
+        assert not caplog.records
+        if recv_with_ancillary and not after_first_yield:
+            ancillary_data_unused.assert_called_once_with(mocker.sentinel.ancdata, mocker.sentinel.address)
 
     @pytest.mark.parametrize("invalid_timeout", [-1.0, math.nan])
     @pytest.mark.parametrize("invalid_timeout_after_first_yield", [False, True], ids=lambda p: f"after_first_yield=={p}")
     @pytest.mark.parametrize("recv_with_ancillary", [False, True], ids=lambda p: f"recv_with_ancillary=={p}")
     async def test____serve____invalid_timeout(
         self,
-        invalid_timeout_after_first_yield: bool,
         invalid_timeout: float,
+        invalid_timeout_after_first_yield: bool,
         recv_with_ancillary: bool,
         server: AsyncDatagramServer[Any, Any, Any],
         mock_datagram_listener: MagicMock,

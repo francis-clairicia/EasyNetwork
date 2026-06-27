@@ -4,6 +4,7 @@ import contextlib
 from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING, Any
 
+from easynetwork.lowlevel.request_handler import RecvParams
 from easynetwork.servers.handlers import (
     AsyncDatagramClient,
     AsyncDatagramRequestHandler,
@@ -22,9 +23,9 @@ class _DummyStreamRequestHandler(AsyncStreamRequestHandler[Any, Any]):
     def __init__(self, max_nb_yields: int) -> None:
         self.max_nb_yields: int = max_nb_yields
 
-    async def handle(self, client: AsyncStreamClient[Any]) -> AsyncGenerator[float, Any]:
+    async def handle(self, client: AsyncStreamClient[Any]) -> AsyncGenerator[RecvParams, Any]:
         for _ in range(self.max_nb_yields):
-            data = yield 1234567.89
+            data = yield RecvParams(timeout=1234567.89)
             await client.send_packet(data)
 
 
@@ -32,9 +33,9 @@ class _DummyDatagramRequestHandler(AsyncDatagramRequestHandler[Any, Any]):
     def __init__(self, max_nb_yields: int) -> None:
         self.max_nb_yields: int = max_nb_yields
 
-    async def handle(self, client: AsyncDatagramClient[Any]) -> AsyncGenerator[float, Any]:
+    async def handle(self, client: AsyncDatagramClient[Any]) -> AsyncGenerator[RecvParams, Any]:
         for _ in range(self.max_nb_yields):
-            data = yield 1234567.89
+            data = yield RecvParams(timeout=1234567.89)
             await client.send_packet(data)
 
 

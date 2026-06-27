@@ -219,20 +219,6 @@ class TimeoutContextRequestHandlerWithClientBackend(AsyncStreamRequestHandler[Re
             await client.send_packet(Response())
 
 
-class TimeoutYieldedDeprecatedWayRequestHandler(AsyncStreamRequestHandler[Request, Response]):
-    async def handle(
-        self,
-        client: AsyncStreamClient[Response],
-    ) -> AsyncGenerator[float | None, Request]:
-        try:
-            # The client has 30 seconds to send the request to the server.
-            request: Request = yield 30.0
-        except TimeoutError:
-            await client.send_packet(TimedOut())
-        else:
-            await client.send_packet(Response())
-
-
 class TimeoutYieldedRequestHandler(AsyncStreamRequestHandler[Request, Response]):
     async def handle(
         self,
