@@ -154,9 +154,7 @@ class AsyncDatagramServer[Request, Response, Address: Hashable](_transports.Asyn
 
     async def serve(
         self,
-        datagram_received_cb: Callable[
-            [DatagramClientContext[Response, Address]], AsyncGenerator[float | RecvParams | None, Request]
-        ],
+        datagram_received_cb: Callable[[DatagramClientContext[Response, Address]], AsyncGenerator[RecvParams | None, Request]],
         task_group: TaskGroup | None = None,
     ) -> NoReturn:
         """
@@ -167,6 +165,10 @@ class AsyncDatagramServer[Request, Response, Address: Hashable](_transports.Asyn
 
         .. deprecated:: 1.2
             If the async generator returned by `datagram_received_cb` yields a number, a :exc:`DeprecationWarning` will be emitted.
+            Use :class:`.RecvParams` instead.
+
+        .. versionremoved:: NEXT_VERSION
+            Yielding a number from `datagram_received_cb` generator will now raise a :exc:`TypeError`.
             Use :class:`.RecvParams` instead.
 
         Important:
@@ -189,9 +191,7 @@ class AsyncDatagramServer[Request, Response, Address: Hashable](_transports.Asyn
 
     async def serve_with_ancillary(
         self,
-        datagram_received_cb: Callable[
-            [DatagramClientContext[Response, Address]], AsyncGenerator[float | RecvParams | None, Request]
-        ],
+        datagram_received_cb: Callable[[DatagramClientContext[Response, Address]], AsyncGenerator[RecvParams | None, Request]],
         ancillary_bufsize: int,
         ancillary_data_unused: Callable[[Any, Address], object] | None = None,
         task_group: TaskGroup | None = None,
@@ -205,6 +205,10 @@ class AsyncDatagramServer[Request, Response, Address: Hashable](_transports.Asyn
 
         .. deprecated:: 1.2
             If the async generator returned by `datagram_received_cb` yields a number, a :exc:`DeprecationWarning` will be emitted.
+            Use :class:`.RecvParams` instead.
+
+        .. versionremoved:: NEXT_VERSION
+            Yielding a number from `datagram_received_cb` generator will now raise a :exc:`TypeError`.
             Use :class:`.RecvParams` instead.
 
         Parameters:
@@ -227,9 +231,7 @@ class AsyncDatagramServer[Request, Response, Address: Hashable](_transports.Asyn
 
     async def __serve_impl(
         self,
-        datagram_received_cb: Callable[
-            [DatagramClientContext[Response, Address]], AsyncGenerator[float | RecvParams | None, Request]
-        ],
+        datagram_received_cb: Callable[[DatagramClientContext[Response, Address]], AsyncGenerator[RecvParams | None, Request]],
         task_group: TaskGroup | None,
         *,
         server_ancillary_data_params: _ServerAncillaryDataParams[Address] | None = None,
@@ -284,9 +286,7 @@ class AsyncDatagramServer[Request, Response, Address: Hashable](_transports.Asyn
 
     async def __client_coroutine(
         self,
-        datagram_received_cb: Callable[
-            [DatagramClientContext[Response, Address]], AsyncGenerator[float | RecvParams | None, Request]
-        ],
+        datagram_received_cb: Callable[[DatagramClientContext[Response, Address]], AsyncGenerator[RecvParams | None, Request]],
         client_ctx: DatagramClientContext[Response, Address],
         client_data: _ClientData,
         task_group: TaskGroup,
@@ -327,18 +327,18 @@ class AsyncDatagramServer[Request, Response, Address: Hashable](_transports.Asyn
     async def __client_coroutine_inner_loop(
         self,
         *,
-        request_handler_generator: AsyncGenerator[float | RecvParams | None, Request],
+        request_handler_generator: AsyncGenerator[RecvParams | None, Request],
         client_data: _ClientData,
         client_address: Address,
         server_ancillary_data_params: _ServerAncillaryDataParams[Address] | None,
     ) -> None:
         timeout: float
-        recv_params: RecvParams
+        recv_params: RecvParams | None
         datagram: bytes
         ancillary_data: Any | None = None
         try:
             datagram, ancillary_data = client_data.pop_datagram_no_wait()
-            recv_params = _rcv(await anext(request_handler_generator))
+            recv_params = await anext(request_handler_generator)
         except StopAsyncIteration:
             self.__handle_ancillary_data(
                 ancillary_data=ancillary_data,
@@ -352,6 +352,7 @@ class AsyncDatagramServer[Request, Response, Address: Hashable](_transports.Asyn
             try:
                 try:
                     try:
+                        recv_params = _rcv(recv_params)
                         _utils.validate_optional_timeout_delay(recv_params.timeout, positive_check=True)
                         # Ignore sent timeout here, we already have the datagram.
                     finally:
@@ -359,17 +360,17 @@ class AsyncDatagramServer[Request, Response, Address: Hashable](_transports.Asyn
                         # The original error (invalid timeout) will appear even if the callback fails too.
                         self.__handle_ancillary_data(
                             ancillary_data=ancillary_data,
-                            recv_with_ancillary=recv_params.recv_with_ancillary,
+                            recv_with_ancillary=recv_params.recv_with_ancillary if isinstance(recv_params, RecvParams) else None,
                             server_ancillary_data_params=server_ancillary_data_params,
                             client_address=client_address,
                         )
                     request = self.__parse_datagram(datagram, self.__protocol)
                 except BaseException as exc:
                     del recv_params
-                    recv_params = _rcv(await request_handler_generator.athrow(exc))
+                    recv_params = await request_handler_generator.athrow(exc)
                 else:
                     del recv_params, datagram  # Drop datagram reference before proceeding.
-                    recv_params = _rcv(await request_handler_generator.asend(request))
+                    recv_params = await request_handler_generator.asend(request)
                 finally:
                     request = ancillary_data = None
             except StopAsyncIteration:
@@ -380,6 +381,7 @@ class AsyncDatagramServer[Request, Response, Address: Hashable](_transports.Asyn
             while True:
                 try:
                     try:
+                        recv_params = _rcv(recv_params)
                         match _utils.validate_optional_timeout_delay(recv_params.timeout, positive_check=True):
                             case math.inf:
                                 timeout_scope = _no_timeout_scope
@@ -396,10 +398,10 @@ class AsyncDatagramServer[Request, Response, Address: Hashable](_transports.Asyn
                         request = self.__parse_datagram(datagram, self.__protocol)
                     except BaseException as exc:
                         del recv_params
-                        recv_params = _rcv(await request_handler_generator.athrow(exc))
+                        recv_params = await request_handler_generator.athrow(exc)
                     else:
                         del recv_params, datagram
-                        recv_params = _rcv(await request_handler_generator.asend(request))
+                        recv_params = await request_handler_generator.asend(request)
                     finally:
                         request = ancillary_data = None
                 except StopAsyncIteration:
@@ -410,9 +412,7 @@ class AsyncDatagramServer[Request, Response, Address: Hashable](_transports.Asyn
     def __on_client_coroutine_task_done(
         self,
         *,
-        datagram_received_cb: Callable[
-            [DatagramClientContext[Response, Address]], AsyncGenerator[float | RecvParams | None, Request]
-        ],
+        datagram_received_cb: Callable[[DatagramClientContext[Response, Address]], AsyncGenerator[RecvParams | None, Request]],
         client_ctx: DatagramClientContext[Response, Address],
         client_data: _ClientData,
         task_group: TaskGroup,
@@ -566,12 +566,11 @@ class _ClientData:
         raise _utils.exception_with_notes(RuntimeError(msg), note)
 
 
-def _rcv(param: float | RecvParams | None, /) -> RecvParams:
+def _rcv(param: RecvParams | None, /) -> RecvParams:
     match param:
         case RecvParams():
             return param
         case None:
             return RecvParams()
         case _:
-            warnings.warn("Yielding a flat number is deprecated. Use RecvParams instead.", DeprecationWarning, stacklevel=2)
-            return RecvParams(timeout=param)
+            raise TypeError(f"Expected a 'RecvParams' object, got {param!r} instead.")

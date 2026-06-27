@@ -432,7 +432,7 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
 
         exception_caught.assert_called_once_with(False)
 
-    async def test____serve____timeout____old_method_is_deprecated(
+    async def test____serve____timeout____old_method_is_forbidden(
         self,
         server: AsyncStreamServer[Any, Any],
         mock_stream_transport: MagicMock,
@@ -453,15 +453,15 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
 
         @stub_decorator(mocker)
         async def client_connected_cb(_: Any) -> AsyncGenerator[float, Any]:
-            yield 1234.0
+            with pytest.raises(TypeError, match=r"^Expected a 'RecvParams' object, got 1234.0 instead\.$"):
+                yield 1234.0
 
         # Act & Assert
-        with pytest.warns(DeprecationWarning, match=r"^Yielding a flat number is deprecated"):
-            async with TaskGroup() as tg:
-                with pytest.raises(asyncio.CancelledError, match=r"^serve_side_effect$"):
-                    await server.serve(client_connected_cb, tg)
+        async with TaskGroup() as tg:
+            with pytest.raises(asyncio.CancelledError, match=r"^serve_side_effect$"):
+                await server.serve(client_connected_cb, tg)
 
-        assert len(caplog.records) == 0
+        assert not caplog.records
 
     @pytest.mark.parametrize("invalid_timeout", [-1.0, math.nan])
     @pytest.mark.parametrize("recv_with_ancillary", [False, True], ids=lambda p: f"recv_with_ancillary=={p}")

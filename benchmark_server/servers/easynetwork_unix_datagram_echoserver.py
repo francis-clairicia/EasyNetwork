@@ -9,6 +9,7 @@ from collections.abc import AsyncGenerator
 from contextlib import AsyncExitStack
 from typing import Any, Literal
 
+from easynetwork.lowlevel.request_handler import RecvParams
 from easynetwork.protocol import DatagramProtocol
 from easynetwork.serializers.abc import AbstractPacketSerializer
 from easynetwork.servers.handlers import AsyncDatagramClient, AsyncDatagramRequestHandler, UNIXClientAttribute
@@ -53,11 +54,11 @@ class EchoRequestHandlerWithTTL(_BaseRequestHandler):
         super().__init__(eager_tasks=eager_tasks)
         self._client_ttl: float = client_ttl
 
-    async def handle(self, client: AsyncDatagramClient[Any]) -> AsyncGenerator[float | None, Any]:
+    async def handle(self, client: AsyncDatagramClient[Any]) -> AsyncGenerator[RecvParams | None, Any]:
         client_ttl = self._client_ttl
         while True:
             try:
-                request = yield client_ttl
+                request = yield RecvParams(timeout=client_ttl)
             except TimeoutError:
                 print(f"{client.extra(UNIXClientAttribute.peer_name)}: timed out")
                 return

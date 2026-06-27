@@ -218,7 +218,7 @@ class AsyncStreamRequestHandler[Request, Response](metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    def handle(self, client: AsyncStreamClient[Response], /) -> AsyncGenerator[float | RecvParams | None, Request]:
+    def handle(self, client: AsyncStreamClient[Response], /) -> AsyncGenerator[RecvParams | None, Request]:
         """
         This function must do all the work required to service a request.
 
@@ -249,6 +249,9 @@ class AsyncStreamRequestHandler[Request, Response](metaclass=ABCMeta):
         .. deprecated:: 1.2
             If the async generator yields a number, a :exc:`DeprecationWarning` will be emitted. Use :class:`.RecvParams` instead.
 
+        .. versionremoved:: NEXT_VERSION
+            Yielding a number will now raise a :exc:`TypeError`. Use :class:`.RecvParams` instead.
+
         Parameters:
             client: An interface to communicate with the remote endpoint.
 
@@ -261,7 +264,7 @@ class AsyncStreamRequestHandler[Request, Response](metaclass=ABCMeta):
         self,
         client: AsyncStreamClient[Response],
         /,
-    ) -> Coroutine[Any, Any, None] | AsyncGenerator[float | RecvParams | None, Request]:
+    ) -> Coroutine[Any, Any, None] | AsyncGenerator[RecvParams | None, Request]:
         """
         Called once the client is connected to perform any initialization actions required.
         The default implementation does nothing.
@@ -291,6 +294,9 @@ class AsyncStreamRequestHandler[Request, Response](metaclass=ABCMeta):
 
         .. deprecated:: 1.2
             If the async generator yields a number, a :exc:`DeprecationWarning` will be emitted. Use :class:`.RecvParams` instead.
+
+        .. versionremoved:: NEXT_VERSION
+            Yielding a number will now raise a :exc:`TypeError`. Use :class:`.RecvParams` instead.
 
         Parameters:
             client: An interface to communicate with the remote endpoint.
@@ -345,7 +351,7 @@ class AsyncDatagramRequestHandler[Request, Response](metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    def handle(self, client: AsyncDatagramClient[Response], /) -> AsyncGenerator[float | RecvParams | None, Request]:
+    def handle(self, client: AsyncDatagramClient[Response], /) -> AsyncGenerator[RecvParams | None, Request]:
         """
         This function must do all the work required to service a request.
 
@@ -385,6 +391,9 @@ class AsyncDatagramRequestHandler[Request, Response](metaclass=ABCMeta):
 
         .. deprecated:: 1.2
             If the async generator yields a number, a :exc:`DeprecationWarning` will be emitted. Use :class:`.RecvParams` instead.
+
+        .. versionremoved:: NEXT_VERSION
+            Yielding a number will now raise a :exc:`TypeError`. Use :class:`.RecvParams` instead.
 
         Parameters:
             client: An interface to communicate with the remote endpoint.

@@ -194,7 +194,7 @@ class AsyncStreamServer[Request, Response](_transports.AsyncBaseTransport):
 
     async def serve(
         self,
-        client_connected_cb: Callable[[ConnectedStreamClient[Response]], AsyncGenerator[float | RecvParams | None, Request]],
+        client_connected_cb: Callable[[ConnectedStreamClient[Response]], AsyncGenerator[RecvParams | None, Request]],
         task_group: TaskGroup | None = None,
         *,
         disconnect_error_filter: Callable[[Exception], bool] | None = None,
@@ -211,6 +211,10 @@ class AsyncStreamServer[Request, Response](_transports.AsyncBaseTransport):
 
         .. deprecated:: 1.2
             If the async generator returned by `client_connected_cb` yields a number, a :exc:`DeprecationWarning` will be emitted.
+            Use :class:`.RecvParams` instead.
+
+        .. versionremoved:: NEXT_VERSION
+            Yielding a number from `client_connected_cb` generator will now raise a :exc:`TypeError`.
             Use :class:`.RecvParams` instead.
 
         Parameters:
@@ -230,7 +234,7 @@ class AsyncStreamServer[Request, Response](_transports.AsyncBaseTransport):
 
     async def __client_coroutine(
         self,
-        client_connected_cb: Callable[[ConnectedStreamClient[Response]], AsyncGenerator[float | RecvParams | None, Request]],
+        client_connected_cb: Callable[[ConnectedStreamClient[Response]], AsyncGenerator[RecvParams | None, Request]],
         disconnect_error_filter: Callable[[Exception], bool] | None,
         ancillary_bufsize: int | None,
         transport: _transports.AsyncStreamTransport,
@@ -286,9 +290,9 @@ class AsyncStreamServer[Request, Response](_transports.AsyncBaseTransport):
             del producer, consumer
 
             timeout: float
-            recv_params: RecvParams
+            recv_params: RecvParams | None
             try:
-                recv_params = _rcv(await anext(request_handler_generator))
+                recv_params = await anext(request_handler_generator)
             except StopAsyncIteration:
                 return
             else:
@@ -303,6 +307,7 @@ class AsyncStreamServer[Request, Response](_transports.AsyncBaseTransport):
                     _request_handler_generator_asend = request_handler_generator.asend
                     while not _transport_is_closing():
                         try:
+                            recv_params = _rcv(recv_params)
                             match _validate_timeout_delay(recv_params.timeout, positive_check=True):
                                 case math.inf:
                                     timeout_scope = _no_timeout_scope
@@ -317,10 +322,10 @@ class AsyncStreamServer[Request, Response](_transports.AsyncBaseTransport):
                             raise
                         except BaseException as exc:
                             del recv_params
-                            recv_params = _rcv(await request_handler_generator.athrow(exc))
+                            recv_params = await request_handler_generator.athrow(exc)
                         else:
                             del recv_params
-                            recv_params = _rcv(await _request_handler_generator_asend(request))
+                            recv_params = await _request_handler_generator_asend(request)
                         finally:
                             request = None
                 except StopAsyncIteration:
@@ -511,12 +516,11 @@ class _BufferedRequestReceiver[Request]:
             raise EOFError("Received partial packet data") from None
 
 
-def _rcv(param: float | RecvParams | None, /) -> RecvParams:
+def _rcv(param: RecvParams | None, /) -> RecvParams:
     match param:
         case RecvParams():
             return param
         case None:
             return RecvParams()
         case _:
-            warnings.warn("Yielding a flat number is deprecated. Use RecvParams instead.", DeprecationWarning, stacklevel=2)
-            return RecvParams(timeout=param)
+            raise TypeError(f"Expected a 'RecvParams' object, got {param!r} instead.")
