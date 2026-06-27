@@ -57,6 +57,7 @@ def _build_docker_image(client: docker.DockerClient, sdist_path: Path, tag: str,
     docker_build_command_line = [
         "docker",
         "build",
+        "--pull",
         "--rm=true",
         "--force-rm",
         "--progress=plain",
