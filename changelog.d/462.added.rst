@@ -1,0 +1,1 @@
+Added ``SelectorBaseTransport.read_fileno()`` and ``SelectorBaseTransport.write_fileno()`` methods.

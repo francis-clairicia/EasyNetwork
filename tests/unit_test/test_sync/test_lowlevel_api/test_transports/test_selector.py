@@ -25,6 +25,24 @@ if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
 
+class _MockSelectorTransport(SelectorBaseTransport):
+    _internal_read_fd = 123
+    _internal_write_fd = 456
+
+    def close(self) -> None:
+        self._internal_read_fd = -1
+        self._internal_write_fd = -1
+
+    def is_closed(self) -> bool:
+        return self._internal_write_fd < 0 or self._internal_read_fd < 0
+
+    def read_fileno(self) -> int:
+        return self._internal_read_fd
+
+    def write_fileno(self) -> int:
+        return self._internal_write_fd
+
+
 class TestSelectorBaseTransport:
     @pytest.fixture(autouse=True)
     @staticmethod
@@ -57,23 +75,19 @@ class TestSelectorBaseTransport:
 
     @pytest.fixture
     @staticmethod
-    def mock_transport(retry_interval: float, mock_selector: MagicMock, mocker: MockerFixture) -> MagicMock:
-        mock_transport = mocker.NonCallableMagicMock(spec=SelectorBaseTransport)
-        SelectorBaseTransport.__init__(mock_transport, retry_interval, lambda: mock_selector)
-        return mock_transport
+    def mock_transport(retry_interval: float, mock_selector: MagicMock) -> _MockSelectorTransport:
+        return _MockSelectorTransport(retry_interval, lambda: mock_selector)
 
     @pytest.mark.parametrize("retry_interval", [math.nan, -4, 0], ids=repr)
     def test____dunder_init____invalid_retry_interval(
         self,
         retry_interval: float,
-        mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_transport = mocker.NonCallableMagicMock(spec=SelectorBaseTransport)
 
         # Act & Assert
         with pytest.raises(ValueError):
-            SelectorBaseTransport.__init__(mock_transport, retry_interval)
+            _MockSelectorTransport(retry_interval)
 
     def test____dunder_init____selector_factory____default_to_PollSelector(
         self,
@@ -81,10 +95,9 @@ class TestSelectorBaseTransport:
     ) -> None:
         # Arrange
         mock_selector_cls = mocker.patch("selectors.PollSelector", create=True)
-        mock_transport = mocker.NonCallableMagicMock(spec=SelectorBaseTransport)
 
         # Act
-        SelectorBaseTransport.__init__(mock_transport, math.inf)
+        mock_transport = _MockSelectorTransport(math.inf)
 
         # Assert
         assert mock_transport._selector_factory is mock_selector_cls
@@ -96,11 +109,10 @@ class TestSelectorBaseTransport:
     ) -> None:
         # Arrange
         mock_selector_cls = mocker.patch("selectors.SelectSelector")
-        mock_transport = mocker.NonCallableMagicMock(spec=SelectorBaseTransport)
         monkeypatch.delattr("selectors.PollSelector", raising=False)
 
         # Act
-        SelectorBaseTransport.__init__(mock_transport, math.inf)
+        mock_transport = _MockSelectorTransport(math.inf)
 
         # Assert
         assert mock_transport._selector_factory is mock_selector_cls
@@ -109,7 +121,7 @@ class TestSelectorBaseTransport:
     def test____retry____invalid_timeout_value(
         self,
         timeout: float,
-        mock_transport: MagicMock,
+        mock_transport: _MockSelectorTransport,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -117,7 +129,7 @@ class TestSelectorBaseTransport:
 
         # Act & Assert
         with pytest.raises(ValueError):
-            SelectorBaseTransport._retry(mock_transport, callback, timeout)
+            mock_transport._retry(callback, timeout)
 
         callback.assert_not_called()
 
@@ -132,21 +144,24 @@ class TestSelectorBaseTransport:
         self,
         blocking_error: type[WouldBlockOnRead] | type[WouldBlockOnWrite],
         selector_event: int,
-        mock_transport: MagicMock,
+        mock_transport: _MockSelectorTransport,
         mock_selector_register: MagicMock,
         mock_selector_select: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
         callback = mocker.stub()
-        callback.side_effect = [blocking_error(mocker.sentinel.fd), mocker.sentinel.result]
+        callback.side_effect = [blocking_error, mocker.sentinel.result]
 
         # Act
-        result, timeout = SelectorBaseTransport._retry(mock_transport, callback, math.inf)
+        result, timeout = mock_transport._retry(callback, math.inf)
 
         # Assert
         assert callback.call_args_list == [mocker.call() for _ in range(2)]
-        mock_selector_register.assert_called_once_with(mocker.sentinel.fd, selector_event)
+        if selector_event == EVENT_READ:
+            mock_selector_register.assert_called_once_with(mock_transport._internal_read_fd, selector_event)
+        else:
+            mock_selector_register.assert_called_once_with(mock_transport._internal_write_fd, selector_event)
         mock_selector_select.assert_called_once_with()
         assert result is mocker.sentinel.result
         assert timeout == math.inf
@@ -162,94 +177,81 @@ class TestSelectorBaseTransport:
         self,
         blocking_error: type[WouldBlockOnRead] | type[WouldBlockOnWrite],
         selector_event: int,
-        mock_transport: MagicMock,
+        mock_transport: _MockSelectorTransport,
         mock_selector_register: MagicMock,
         mock_selector_select: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
+        mock_transport.close()
         callback = mocker.stub()
-        callback.side_effect = [blocking_error(mocker.sentinel.fd), mocker.sentinel.result]
+        callback.side_effect = [blocking_error, mocker.sentinel.result]
         mock_selector_register.side_effect = ValueError
 
         # Act & Assert
         with pytest.raises(OSError) as exc_info:
-            SelectorBaseTransport._retry(mock_transport, callback, math.inf)
+            mock_transport._retry(callback, math.inf)
 
         # Assert
         callback.assert_called_once_with()
-        mock_selector_register.assert_called_once_with(mocker.sentinel.fd, selector_event)
+        mock_selector_register.assert_called_once_with(-1, selector_event)
         mock_selector_select.assert_not_called()
         assert exc_info.value.errno == errno.EBADF
         assert isinstance(exc_info.value.__cause__, ValueError)
 
-    @pytest.mark.parametrize(
-        ["blocking_error", "selector_event"],
-        [
-            pytest.param(WouldBlockOnRead, EVENT_READ),
-            pytest.param(WouldBlockOnWrite, EVENT_WRITE),
-        ],
-    )
+    @pytest.mark.parametrize("blocking_error", [WouldBlockOnRead, WouldBlockOnWrite])
     def test____retry____runtime_error_fd_not_available(
         self,
         blocking_error: type[WouldBlockOnRead] | type[WouldBlockOnWrite],
-        selector_event: int,
-        mock_transport: MagicMock,
+        mock_transport: _MockSelectorTransport,
         mock_selector_register: MagicMock,
         mock_selector_select: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
         callback = mocker.stub()
-        callback.side_effect = [blocking_error(mocker.sentinel.fd), mocker.sentinel.result]
+        callback.side_effect = [blocking_error, mocker.sentinel.result]
         mock_selector_select.side_effect = [[]]
 
         # Act & Assert
         with pytest.raises(RuntimeError, match=r"^timeout error with infinite timeout$"):
-            SelectorBaseTransport._retry(mock_transport, callback, math.inf)
+            mock_transport._retry(callback, math.inf)
 
         # Assert
         callback.assert_called_once_with()
-        mock_selector_register.assert_called_once_with(mocker.sentinel.fd, selector_event)
+        mock_selector_register.assert_called_once()
         mock_selector_select.assert_called_once_with()
 
     @pytest.mark.parametrize("blocking_error", [WouldBlockOnRead, WouldBlockOnWrite])
     def test____retry____null_timeout(
         self,
         blocking_error: type[WouldBlockOnRead] | type[WouldBlockOnWrite],
-        mock_transport: MagicMock,
+        mock_transport: _MockSelectorTransport,
         mock_selector_register: MagicMock,
         mock_selector_select: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
         callback = mocker.stub()
-        callback.side_effect = [blocking_error(mocker.sentinel.fd), mocker.sentinel.result]
+        callback.side_effect = [blocking_error, mocker.sentinel.result]
 
         # Act & Assert
         with pytest.raises(TimeoutError):
-            SelectorBaseTransport._retry(mock_transport, callback, 0.0)
+            mock_transport._retry(callback, 0.0)
 
         # Assert
         callback.assert_called_once_with()
         mock_selector_register.assert_not_called()
         mock_selector_select.assert_not_called()
 
-    @pytest.mark.parametrize(
-        ["blocking_error", "selector_event"],
-        [
-            pytest.param(WouldBlockOnRead, EVENT_READ),
-            pytest.param(WouldBlockOnWrite, EVENT_WRITE),
-        ],
-    )
+    @pytest.mark.parametrize("blocking_error", [WouldBlockOnRead, WouldBlockOnWrite])
     @pytest.mark.parametrize("available", [False, True], ids=lambda p: f"available=={p}")
     @pytest.mark.parametrize("retry_interval", [math.inf, 5], ids=lambda p: f"retry_interval=={p}", indirect=True)
     def test____retry____timeout(
         self,
         blocking_error: type[WouldBlockOnRead] | type[WouldBlockOnWrite],
-        selector_event: int,
         available: bool,
-        mock_transport: MagicMock,
+        mock_transport: _MockSelectorTransport,
         mock_selector_register: MagicMock,
         mock_selector_select: MagicMock,
         mock_time_perfcounter: MagicMock,
@@ -257,7 +259,7 @@ class TestSelectorBaseTransport:
     ) -> None:
         # Arrange
         callback = mocker.stub()
-        callback.side_effect = [blocking_error(mocker.sentinel.fd), mocker.sentinel.result]
+        callback.side_effect = [blocking_error, mocker.sentinel.result]
         if not available:
             mock_selector_select.return_value = []
         now = 12345
@@ -271,10 +273,10 @@ class TestSelectorBaseTransport:
         result = None
         reduced_timeout = None
         with pytest.raises(TimeoutError) if not available else contextlib.nullcontext():
-            result, reduced_timeout = SelectorBaseTransport._retry(mock_transport, callback, timeout)
+            result, reduced_timeout = mock_transport._retry(callback, timeout)
 
         # Assert
-        mock_selector_register.assert_called_once_with(mocker.sentinel.fd, selector_event)
+        mock_selector_register.assert_called_once()
         mock_selector_select.assert_called_once_with(timeout)
         if available:
             assert callback.call_args_list == [mocker.call() for _ in range(2)]
@@ -300,7 +302,7 @@ class TestSelectorBaseTransport:
         selector_event: int,
         available: bool,
         retry_interval: float,
-        mock_transport: MagicMock,
+        mock_transport: _MockSelectorTransport,
         mock_selector_register: MagicMock,
         mock_selector_select: MagicMock,
         mock_time_perfcounter: MagicMock,
@@ -309,9 +311,9 @@ class TestSelectorBaseTransport:
         # Arrange
         callback = mocker.stub()
         callback.side_effect = [
-            blocking_error(mocker.sentinel.fd),
-            blocking_error(mocker.sentinel.fd),
-            blocking_error(mocker.sentinel.fd),
+            blocking_error,
+            blocking_error,
+            blocking_error,
             mocker.sentinel.result,
         ]
         if not available:
@@ -332,10 +334,17 @@ class TestSelectorBaseTransport:
         result = None
         reduced_timeout = None
         with pytest.raises(TimeoutError) if not available else contextlib.nullcontext():
-            result, reduced_timeout = SelectorBaseTransport._retry(mock_transport, callback, timeout)
+            result, reduced_timeout = mock_transport._retry(callback, timeout)
 
         # Assert
-        assert mock_selector_register.call_args_list == [mocker.call(mocker.sentinel.fd, selector_event) for _ in range(3)]
+        if selector_event == EVENT_READ:
+            assert mock_selector_register.call_args_list == [
+                mocker.call(mock_transport._internal_read_fd, selector_event) for _ in range(3)
+            ]
+        else:
+            assert mock_selector_register.call_args_list == [
+                mocker.call(mock_transport._internal_write_fd, selector_event) for _ in range(3)
+            ]
         assert mock_selector_select.call_args_list == [mocker.call(retry_interval) for _ in range(2)] + [mocker.call(0.5)]
         if available:
             assert callback.call_args_list == [mocker.call() for _ in range(4)]
@@ -368,8 +377,8 @@ class TestSelectorStreamTransport:
     ) -> None:
         # Arrange
         mock_transport.recv_noblock.side_effect = [
-            WouldBlockOnRead(mocker.sentinel.fd),
-            WouldBlockOnWrite(mocker.sentinel.fd),
+            WouldBlockOnRead,
+            WouldBlockOnWrite,
             (mocker.sentinel.bytes, mocker.sentinel.timeout),
         ]
 
@@ -388,8 +397,8 @@ class TestSelectorStreamTransport:
     ) -> None:
         # Arrange
         mock_transport.recv_noblock_into.side_effect = [
-            WouldBlockOnRead(mocker.sentinel.fd),
-            WouldBlockOnWrite(mocker.sentinel.fd),
+            WouldBlockOnRead,
+            WouldBlockOnWrite,
             (mocker.sentinel.nb_bytes_written, mocker.sentinel.timeout),
         ]
 
@@ -408,8 +417,8 @@ class TestSelectorStreamTransport:
     ) -> None:
         # Arrange
         mock_transport.recv_noblock_with_ancillary.side_effect = [
-            WouldBlockOnRead(mocker.sentinel.fd),
-            WouldBlockOnWrite(mocker.sentinel.fd),
+            WouldBlockOnRead,
+            WouldBlockOnWrite,
             ((mocker.sentinel.bytes, mocker.sentinel.ancillary_data), mocker.sentinel.timeout),
         ]
 
@@ -436,8 +445,8 @@ class TestSelectorStreamTransport:
     ) -> None:
         # Arrange
         mock_transport.recv_noblock_with_ancillary_into.side_effect = [
-            WouldBlockOnRead(mocker.sentinel.fd),
-            WouldBlockOnWrite(mocker.sentinel.fd),
+            WouldBlockOnRead,
+            WouldBlockOnWrite,
             ((mocker.sentinel.nb_bytes_written, mocker.sentinel.ancillary_data), mocker.sentinel.timeout),
         ]
 
@@ -528,8 +537,8 @@ class TestSelectorStreamTransport:
     ) -> None:
         # Arrange
         mock_transport.send_noblock.side_effect = [
-            WouldBlockOnRead(mocker.sentinel.fd),
-            WouldBlockOnWrite(mocker.sentinel.fd),
+            WouldBlockOnRead,
+            WouldBlockOnWrite,
             (mocker.sentinel.nb_sent_bytes, mocker.sentinel.timeout),
         ]
 
@@ -548,8 +557,8 @@ class TestSelectorStreamTransport:
     ) -> None:
         # Arrange
         mock_transport.send_all_noblock_with_ancillary.side_effect = [
-            WouldBlockOnRead(mocker.sentinel.fd),
-            WouldBlockOnWrite(mocker.sentinel.fd),
+            WouldBlockOnRead,
+            WouldBlockOnWrite,
             (None, mocker.sentinel.timeout),
         ]
 
@@ -574,8 +583,8 @@ class TestSelectorStreamTransport:
     ) -> None:
         # Arrange
         mock_transport.send_all_noblock_with_ancillary.side_effect = [
-            WouldBlockOnRead(mocker.sentinel.fd),
-            WouldBlockOnWrite(mocker.sentinel.fd),
+            WouldBlockOnRead,
+            WouldBlockOnWrite,
             (None, mocker.sentinel.timeout),
         ]
 
@@ -607,8 +616,8 @@ class TestSelectorDatagramTransport:
     ) -> None:
         # Arrange
         mock_transport.recv_noblock.side_effect = [
-            WouldBlockOnRead(mocker.sentinel.fd),
-            WouldBlockOnWrite(mocker.sentinel.fd),
+            WouldBlockOnRead,
+            WouldBlockOnWrite,
             (mocker.sentinel.bytes, mocker.sentinel.timeout),
         ]
 
@@ -627,8 +636,8 @@ class TestSelectorDatagramTransport:
     ) -> None:
         # Arrange
         mock_transport.recv_noblock_with_ancillary.side_effect = [
-            WouldBlockOnRead(mocker.sentinel.fd),
-            WouldBlockOnWrite(mocker.sentinel.fd),
+            WouldBlockOnRead,
+            WouldBlockOnWrite,
             ((mocker.sentinel.bytes, mocker.sentinel.ancillary_data), mocker.sentinel.timeout),
         ]
 
@@ -654,8 +663,8 @@ class TestSelectorDatagramTransport:
     ) -> None:
         # Arrange
         mock_transport.send_noblock.side_effect = [
-            WouldBlockOnRead(mocker.sentinel.fd),
-            WouldBlockOnWrite(mocker.sentinel.fd),
+            WouldBlockOnRead,
+            WouldBlockOnWrite,
             (None, mocker.sentinel.timeout),
         ]
 
@@ -673,8 +682,8 @@ class TestSelectorDatagramTransport:
     ) -> None:
         # Arrange
         mock_transport.send_noblock_with_ancillary.side_effect = [
-            WouldBlockOnRead(mocker.sentinel.fd),
-            WouldBlockOnWrite(mocker.sentinel.fd),
+            WouldBlockOnRead,
+            WouldBlockOnWrite,
             (None, mocker.sentinel.timeout),
         ]
 

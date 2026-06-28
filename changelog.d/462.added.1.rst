@@ -1,0 +1,1 @@
+Added ``SelectorStreamReadTransport.read_fileno()`` and ``SelectorStreamWriteTransport.write_fileno()`` **abstract** methods.
