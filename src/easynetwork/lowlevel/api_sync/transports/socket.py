@@ -107,18 +107,26 @@ class SocketStreamTransport(base_selector.SelectorStreamTransport):
         _close_stream_socket(self.__socket)
 
     @_utils.inherit_doc(base_selector.SelectorStreamTransport)
+    def read_fileno(self) -> int:
+        return self.__socket.fileno()
+
+    @_utils.inherit_doc(base_selector.SelectorStreamTransport)
+    def write_fileno(self) -> int:
+        return self.__socket.fileno()
+
+    @_utils.inherit_doc(base_selector.SelectorStreamTransport)
     def recv_noblock(self, bufsize: int) -> bytes:
         try:
             return self.__socket.recv(bufsize)
         except (BlockingIOError, InterruptedError):
-            raise base_selector.WouldBlockOnRead(self.__socket.fileno()) from None
+            raise base_selector.WouldBlockOnRead from None
 
     @_utils.inherit_doc(base_selector.SelectorStreamTransport)
     def recv_noblock_into(self, buffer: Buffer) -> int:
         try:
             return self.__socket.recv_into(buffer)
         except (BlockingIOError, InterruptedError):
-            raise base_selector.WouldBlockOnRead(self.__socket.fileno()) from None
+            raise base_selector.WouldBlockOnRead from None
 
     if sys.platform != "win32" and hasattr(socket.socket, "recvmsg"):
 
@@ -129,7 +137,7 @@ class SocketStreamTransport(base_selector.SelectorStreamTransport):
             try:
                 msg, ancdata, _, _ = self.__socket.recvmsg(bufsize, ancillary_bufsize)
             except (BlockingIOError, InterruptedError):
-                raise base_selector.WouldBlockOnRead(self.__socket.fileno()) from None
+                raise base_selector.WouldBlockOnRead from None
             else:
                 return msg, ancdata
 
@@ -146,7 +154,7 @@ class SocketStreamTransport(base_selector.SelectorStreamTransport):
             try:
                 nbytes, ancdata, _, _ = self.__socket.recvmsg_into([buffer], ancillary_bufsize)
             except (BlockingIOError, InterruptedError):
-                raise base_selector.WouldBlockOnRead(self.__socket.fileno()) from None
+                raise base_selector.WouldBlockOnRead from None
             else:
                 return nbytes, ancdata
 
@@ -155,7 +163,7 @@ class SocketStreamTransport(base_selector.SelectorStreamTransport):
         try:
             return self.__socket.send(data)
         except (BlockingIOError, InterruptedError):
-            raise base_selector.WouldBlockOnWrite(self.__socket.fileno()) from None
+            raise base_selector.WouldBlockOnWrite from None
 
     if sys.platform != "win32" and hasattr(socket.socket, "sendmsg"):
 
@@ -174,7 +182,7 @@ class SocketStreamTransport(base_selector.SelectorStreamTransport):
                 try:
                     sent = self.__socket.sendmsg(itertools.islice(buffers, constants.SC_IOV_MAX), ancillary_data)
                 except (BlockingIOError, InterruptedError):
-                    raise base_selector.WouldBlockOnWrite(self.__socket.fileno()) from None
+                    raise base_selector.WouldBlockOnWrite from None
                 _utils.adjust_leftover_buffer(buffers, sent)
                 if buffers:
                     raise _utils.error_from_errno(errno.EMSGSIZE)
@@ -203,7 +211,7 @@ class SocketStreamTransport(base_selector.SelectorStreamTransport):
                     try:
                         return socket_sendmsg(itertools.islice(buffers, constants.SC_IOV_MAX))
                     except (BlockingIOError, InterruptedError):
-                        raise base_selector.WouldBlockOnWrite(self.__socket.fileno()) from None
+                        raise base_selector.WouldBlockOnWrite from None
 
                 while True:
                     sent, timeout = self._retry(try_sendmsg, timeout)
@@ -338,6 +346,14 @@ class SSLStreamTransport(base_selector.SelectorStreamTransport):
             _close_stream_socket(self.__socket)
 
     @_utils.inherit_doc(base_selector.SelectorStreamTransport)
+    def read_fileno(self) -> int:
+        return self.__socket.fileno()
+
+    @_utils.inherit_doc(base_selector.SelectorStreamTransport)
+    def write_fileno(self) -> int:
+        return self.__socket.fileno()
+
+    @_utils.inherit_doc(base_selector.SelectorStreamTransport)
     def recv_noblock(self, bufsize: int) -> bytes:
         try:
             return self._try_ssl_method(self.__socket.recv, bufsize)
@@ -376,9 +392,9 @@ class SSLStreamTransport(base_selector.SelectorStreamTransport):
         try:
             return socket_method(*args, **kwargs)
         except (_ssl_module.SSLWantReadError, _ssl_module.SSLSyscallError):
-            raise base_selector.WouldBlockOnRead(self.__socket.fileno()) from None
+            raise base_selector.WouldBlockOnRead from None
         except _ssl_module.SSLWantWriteError:
-            raise base_selector.WouldBlockOnWrite(self.__socket.fileno()) from None
+            raise base_selector.WouldBlockOnWrite from None
 
     @property
     @_utils.inherit_doc(base_selector.SelectorStreamTransport)
@@ -443,12 +459,20 @@ class SocketDatagramTransport(base_selector.SelectorDatagramTransport):
         self.__socket.close()
 
     @_utils.inherit_doc(base_selector.SelectorDatagramTransport)
+    def read_fileno(self) -> int:
+        return self.__socket.fileno()
+
+    @_utils.inherit_doc(base_selector.SelectorDatagramTransport)
+    def write_fileno(self) -> int:
+        return self.__socket.fileno()
+
+    @_utils.inherit_doc(base_selector.SelectorDatagramTransport)
     def recv_noblock(self) -> bytes:
         max_datagram_size: int = self.__max_datagram_size
         try:
             return self.__socket.recv(max_datagram_size)
         except (BlockingIOError, InterruptedError):
-            raise base_selector.WouldBlockOnRead(self.__socket.fileno()) from None
+            raise base_selector.WouldBlockOnRead from None
 
     if sys.platform != "win32" and hasattr(socket.socket, "recvmsg"):
 
@@ -460,7 +484,7 @@ class SocketDatagramTransport(base_selector.SelectorDatagramTransport):
             try:
                 msg, ancdata, _, _ = self.__socket.recvmsg(max_datagram_size, ancillary_bufsize)
             except (BlockingIOError, InterruptedError):
-                raise base_selector.WouldBlockOnRead(self.__socket.fileno()) from None
+                raise base_selector.WouldBlockOnRead from None
             else:
                 return msg, ancdata
 
@@ -469,7 +493,7 @@ class SocketDatagramTransport(base_selector.SelectorDatagramTransport):
         try:
             self.__socket.send(data)
         except (BlockingIOError, InterruptedError):
-            raise base_selector.WouldBlockOnWrite(self.__socket.fileno()) from None
+            raise base_selector.WouldBlockOnWrite from None
 
     if sys.platform != "win32" and hasattr(socket.socket, "sendmsg"):
 
@@ -484,7 +508,7 @@ class SocketDatagramTransport(base_selector.SelectorDatagramTransport):
             try:
                 self.__socket.sendmsg([data], ancillary_data)
             except (BlockingIOError, InterruptedError):
-                raise base_selector.WouldBlockOnWrite(self.__socket.fileno()) from None
+                raise base_selector.WouldBlockOnWrite from None
 
         @_utils.inherit_doc(base_selector.SelectorDatagramTransport)
         def send_with_ancillary(

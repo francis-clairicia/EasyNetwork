@@ -11,7 +11,7 @@ from socket import AF_INET, SHUT_RDWR, SHUT_WR
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.exceptions import TypedAttributeLookupError, UnsupportedOperation
-from easynetwork.lowlevel.api_sync.transports.base_selector import WouldBlockOnRead, WouldBlockOnWrite
+from easynetwork.lowlevel.api_sync.transports.base_selector import SelectorBaseTransport, WouldBlockOnRead, WouldBlockOnWrite
 from easynetwork.lowlevel.api_sync.transports.socket import SocketDatagramTransport, SocketStreamTransport, SSLStreamTransport
 from easynetwork.lowlevel.constants import (
     CLOSED_SOCKET_ERRNOS,
@@ -32,12 +32,14 @@ if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
 
-def _retry_side_effect(self: Any, callback: Callable[[], Any], timeout: float) -> tuple[Any, float]:
+def _retry_side_effect(self: SelectorBaseTransport, callback: Callable[[], Any], timeout: float) -> tuple[Any, float]:
     while True:
         try:
             return callback(), timeout
-        except (WouldBlockOnRead, WouldBlockOnWrite):
-            pass
+        except WouldBlockOnRead:
+            self.read_fileno()
+        except WouldBlockOnWrite:
+            self.write_fileno()
 
 
 _SUPPORTS_ANCILLARY = ("AF_UNIX",)
@@ -202,6 +204,34 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
         # Assert
         assert mock_stream_socket.mock_calls == [mocker.call.shutdown(SHUT_RDWR), mocker.call.close()]
 
+    @pytest.mark.parametrize("socket_fileno", [0, 12345, -1, -42], indirect=True)
+    def test____read_fileno____socket_fileno(
+        self,
+        socket_fileno: int,
+        transport: SocketStreamTransport,
+    ) -> None:
+        # Arrange
+
+        # Act
+        fd = transport.read_fileno()
+
+        # Assert
+        assert fd == socket_fileno
+
+    @pytest.mark.parametrize("socket_fileno", [0, 12345, -1, -42], indirect=True)
+    def test____write_fileno____socket_fileno(
+        self,
+        socket_fileno: int,
+        transport: SocketStreamTransport,
+    ) -> None:
+        # Arrange
+
+        # Act
+        fd = transport.write_fileno()
+
+        # Assert
+        assert fd == socket_fileno
+
     def test____recv_noblock____default(
         self,
         transport: SocketStreamTransport,
@@ -231,13 +261,12 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
         mock_stream_socket.recv.side_effect = error
 
         # Act
-        with pytest.raises(WouldBlockOnRead) as exc_info:
+        with pytest.raises(WouldBlockOnRead):
             transport.recv_noblock(mocker.sentinel.bufsize)
 
         # Assert
         mock_stream_socket.recv.assert_called_once_with(mocker.sentinel.bufsize)
-        mock_stream_socket.fileno.assert_called_once()
-        assert exc_info.value.fileno is mock_stream_socket.fileno.return_value
+        mock_stream_socket.fileno.assert_not_called()
 
     def test____recv_noblock_into____default(
         self,
@@ -268,13 +297,12 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
         mock_stream_socket.recv_into.side_effect = error
 
         # Act
-        with pytest.raises(WouldBlockOnRead) as exc_info:
+        with pytest.raises(WouldBlockOnRead):
             transport.recv_noblock_into(mocker.sentinel.buffer)
 
         # Assert
         mock_stream_socket.recv_into.assert_called_once_with(mocker.sentinel.buffer)
-        mock_stream_socket.fileno.assert_called_once()
-        assert exc_info.value.fileno is mock_stream_socket.fileno.return_value
+        mock_stream_socket.fileno.assert_not_called()
 
     @PlatformMarkers.supports_socket_recvmsg
     @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
@@ -329,13 +357,12 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
         mock_stream_socket.recvmsg.side_effect = error
 
         # Act
-        with pytest.raises(WouldBlockOnRead) as exc_info:
+        with pytest.raises(WouldBlockOnRead):
             transport.recv_noblock_with_ancillary(mocker.sentinel.bufsize, mocker.sentinel.ancbufsize)
 
         # Assert
         mock_stream_socket.recvmsg.assert_called_once_with(mocker.sentinel.bufsize, mocker.sentinel.ancbufsize)
-        mock_stream_socket.fileno.assert_called_once()
-        assert exc_info.value.fileno is mock_stream_socket.fileno.return_value
+        mock_stream_socket.fileno.assert_not_called()
 
     @PlatformMarkers.supports_socket_recvmsg_into
     @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
@@ -400,13 +427,12 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
         mock_stream_socket.recvmsg_into.side_effect = error
 
         # Act
-        with pytest.raises(WouldBlockOnRead) as exc_info:
+        with pytest.raises(WouldBlockOnRead):
             transport.recv_noblock_with_ancillary_into(mocker.sentinel.buffer, mocker.sentinel.ancbufsize)
 
         # Assert
         mock_stream_socket.recvmsg_into.assert_called_once_with([mocker.sentinel.buffer], mocker.sentinel.ancbufsize)
-        mock_stream_socket.fileno.assert_called_once()
-        assert exc_info.value.fileno is mock_stream_socket.fileno.return_value
+        mock_stream_socket.fileno.assert_not_called()
 
     def test____send_noblock____default(
         self,
@@ -437,13 +463,12 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
         mock_stream_socket.send.side_effect = error
 
         # Act
-        with pytest.raises(WouldBlockOnWrite) as exc_info:
+        with pytest.raises(WouldBlockOnWrite):
             transport.send_noblock(mocker.sentinel.data)
 
         # Assert
         mock_stream_socket.send.assert_called_once_with(mocker.sentinel.data)
-        mock_stream_socket.fileno.assert_called_once()
-        assert exc_info.value.fileno is mock_stream_socket.fileno.return_value
+        mock_stream_socket.fileno.assert_not_called()
 
     @PlatformMarkers.supports_socket_sendmsg
     @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
@@ -568,13 +593,12 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
         mock_stream_socket.sendmsg.side_effect = error
 
         # Act
-        with pytest.raises(WouldBlockOnWrite) as exc_info:
+        with pytest.raises(WouldBlockOnWrite):
             transport.send_all_noblock_with_ancillary(iter([b"data", b"to", b"send"]), mocker.sentinel.ancdata)
 
         # Assert
         mock_stream_socket.sendmsg.assert_called_once_with(mocker.ANY, mocker.sentinel.ancdata)
-        mock_stream_socket.fileno.assert_called_once()
-        assert exc_info.value.fileno is mock_stream_socket.fileno.return_value
+        mock_stream_socket.fileno.assert_not_called()
 
     @PlatformMarkers.supports_socket_sendmsg
     @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
@@ -1197,6 +1221,34 @@ class TestSSLStreamTransport:
             ]
             mock_transport_retry.assert_not_called()
 
+    @pytest.mark.parametrize("socket_fileno", [0, 12345, -1, -42], indirect=True)
+    def test____read_fileno____socket_fileno(
+        self,
+        socket_fileno: int,
+        transport: SSLStreamTransport,
+    ) -> None:
+        # Arrange
+
+        # Act
+        fd = transport.read_fileno()
+
+        # Assert
+        assert fd == socket_fileno
+
+    @pytest.mark.parametrize("socket_fileno", [0, 12345, -1, -42], indirect=True)
+    def test____write_fileno____socket_fileno(
+        self,
+        socket_fileno: int,
+        transport: SSLStreamTransport,
+    ) -> None:
+        # Arrange
+
+        # Act
+        fd = transport.write_fileno()
+
+        # Assert
+        assert fd == socket_fileno
+
     def test____recv_noblock____default(
         self,
         transport: SSLStreamTransport,
@@ -1234,14 +1286,12 @@ class TestSSLStreamTransport:
         mock_ssl_socket.recv.side_effect = error
 
         # Act
-        with pytest.raises(expected_blocking_error) as exc_info:
+        with pytest.raises(expected_blocking_error):
             transport.recv_noblock(mocker.sentinel.bufsize)
 
         # Assert
         mock_ssl_socket.recv.assert_called_once_with(mocker.sentinel.bufsize)
-        mock_ssl_socket.fileno.assert_called_once()
-        assert isinstance(exc_info.value, (WouldBlockOnRead, WouldBlockOnWrite))
-        assert exc_info.value.fileno is mock_ssl_socket.fileno.return_value
+        mock_ssl_socket.fileno.assert_not_called()
 
     def test____recv_noblock____SSLZeroReturnError(
         self,
@@ -1297,14 +1347,12 @@ class TestSSLStreamTransport:
         mock_ssl_socket.recv_into.side_effect = error
 
         # Act
-        with pytest.raises(expected_blocking_error) as exc_info:
+        with pytest.raises(expected_blocking_error):
             transport.recv_noblock_into(mocker.sentinel.buffer)
 
         # Assert
         mock_ssl_socket.recv_into.assert_called_once_with(mocker.sentinel.buffer)
-        mock_ssl_socket.fileno.assert_called_once()
-        assert isinstance(exc_info.value, (WouldBlockOnRead, WouldBlockOnWrite))
-        assert exc_info.value.fileno is mock_ssl_socket.fileno.return_value
+        mock_ssl_socket.fileno.assert_not_called()
 
     def test____recv_noblock_into____SSLZeroReturnError(
         self,
@@ -1360,14 +1408,12 @@ class TestSSLStreamTransport:
         mock_ssl_socket.send.side_effect = error
 
         # Act
-        with pytest.raises(expected_blocking_error) as exc_info:
+        with pytest.raises(expected_blocking_error):
             transport.send_noblock(mocker.sentinel.data)
 
         # Assert
         mock_ssl_socket.send.assert_called_once_with(mocker.sentinel.data)
-        mock_ssl_socket.fileno.assert_called_once()
-        assert isinstance(exc_info.value, (WouldBlockOnRead, WouldBlockOnWrite))
-        assert exc_info.value.fileno is mock_ssl_socket.fileno.return_value
+        mock_ssl_socket.fileno.assert_not_called()
 
     def test____send_noblock____SSLZeroReturnError(
         self,
@@ -1655,6 +1701,34 @@ class TestSocketDatagramTransport(BaseTestSocketTransport):
         # Assert
         assert mock_datagram_socket.mock_calls == [mocker.call.close()]
 
+    @pytest.mark.parametrize("socket_fileno", [0, 12345, -1, -42], indirect=True)
+    def test____read_fileno____socket_fileno(
+        self,
+        socket_fileno: int,
+        transport: SocketDatagramTransport,
+    ) -> None:
+        # Arrange
+
+        # Act
+        fd = transport.read_fileno()
+
+        # Assert
+        assert fd == socket_fileno
+
+    @pytest.mark.parametrize("socket_fileno", [0, 12345, -1, -42], indirect=True)
+    def test____write_fileno____socket_fileno(
+        self,
+        socket_fileno: int,
+        transport: SocketDatagramTransport,
+    ) -> None:
+        # Arrange
+
+        # Act
+        fd = transport.write_fileno()
+
+        # Assert
+        assert fd == socket_fileno
+
     @pytest.mark.parametrize("max_datagram_size", [None, 1024], ids=lambda p: f"max_datagram_size=={p}", indirect=True)
     def test____recv_noblock____default(
         self,
@@ -1690,7 +1764,7 @@ class TestSocketDatagramTransport(BaseTestSocketTransport):
         mock_datagram_socket.recv.side_effect = error
 
         # Act
-        with pytest.raises(WouldBlockOnRead) as exc_info:
+        with pytest.raises(WouldBlockOnRead):
             transport.recv_noblock()
 
         # Assert
@@ -1698,8 +1772,7 @@ class TestSocketDatagramTransport(BaseTestSocketTransport):
             mock_datagram_socket.recv.assert_called_once_with(MAX_DATAGRAM_BUFSIZE)
         else:
             mock_datagram_socket.recv.assert_called_once_with(max_datagram_size)
-        mock_datagram_socket.fileno.assert_called_once()
-        assert exc_info.value.fileno is mock_datagram_socket.fileno.return_value
+        mock_datagram_socket.fileno.assert_not_called()
 
     @PlatformMarkers.supports_socket_recvmsg
     @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
@@ -1761,7 +1834,7 @@ class TestSocketDatagramTransport(BaseTestSocketTransport):
         mock_datagram_socket.recvmsg.side_effect = error
 
         # Act
-        with pytest.raises(WouldBlockOnRead) as exc_info:
+        with pytest.raises(WouldBlockOnRead):
             transport.recv_noblock_with_ancillary(mocker.sentinel.ancbufsize)
 
         # Assert
@@ -1769,8 +1842,7 @@ class TestSocketDatagramTransport(BaseTestSocketTransport):
             mock_datagram_socket.recvmsg.assert_called_once_with(MAX_DATAGRAM_BUFSIZE, mocker.sentinel.ancbufsize)
         else:
             mock_datagram_socket.recvmsg.assert_called_once_with(max_datagram_size, mocker.sentinel.ancbufsize)
-        mock_datagram_socket.fileno.assert_called_once()
-        assert exc_info.value.fileno is mock_datagram_socket.fileno.return_value
+        mock_datagram_socket.fileno.assert_not_called()
 
     def test____send_noblock____default(
         self,
@@ -1801,13 +1873,12 @@ class TestSocketDatagramTransport(BaseTestSocketTransport):
         mock_datagram_socket.send.side_effect = error
 
         # Act
-        with pytest.raises(WouldBlockOnWrite) as exc_info:
+        with pytest.raises(WouldBlockOnWrite):
             transport.send_noblock(mocker.sentinel.data)
 
         # Assert
         mock_datagram_socket.send.assert_called_once_with(mocker.sentinel.data)
-        mock_datagram_socket.fileno.assert_called_once()
-        assert exc_info.value.fileno is mock_datagram_socket.fileno.return_value
+        mock_datagram_socket.fileno.assert_not_called()
 
     @PlatformMarkers.supports_socket_sendmsg
     @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
@@ -1861,13 +1932,12 @@ class TestSocketDatagramTransport(BaseTestSocketTransport):
         mock_datagram_socket.sendmsg.side_effect = error
 
         # Act
-        with pytest.raises(WouldBlockOnWrite) as exc_info:
+        with pytest.raises(WouldBlockOnWrite):
             transport.send_noblock_with_ancillary(mocker.sentinel.data, mocker.sentinel.ancdata)
 
         # Assert
         mock_datagram_socket.sendmsg.assert_called_once_with([mocker.sentinel.data], mocker.sentinel.ancdata)
-        mock_datagram_socket.fileno.assert_called_once()
-        assert exc_info.value.fileno is mock_datagram_socket.fileno.return_value
+        mock_datagram_socket.fileno.assert_not_called()
 
     @PlatformMarkers.supports_socket_sendmsg
     @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)

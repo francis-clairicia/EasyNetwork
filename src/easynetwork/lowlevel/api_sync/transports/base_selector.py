@@ -50,21 +50,9 @@ from . import abc as transports
 class WouldBlockOnRead(Exception):
     """The operation would block when reading the pipe."""
 
-    def __init__(self, fileno: int) -> None:
-        super().__init__(fileno)
-
-        self.fileno: int = fileno
-        """The file descriptor to wait for."""
-
 
 class WouldBlockOnWrite(Exception):
     """The operation would block when writing on the pipe."""
-
-    def __init__(self, fileno: int) -> None:
-        super().__init__(fileno)
-
-        self.fileno: int = fileno
-        """The file descriptor to wait for."""
 
 
 class SelectorBaseTransport(transports.BaseTransport):
@@ -73,8 +61,8 @@ class SelectorBaseTransport(transports.BaseTransport):
     """
 
     __slots__ = (
-        "_retry_interval",
-        "_selector_factory",
+        "__retry_interval",
+        "__selector_factory",
     )
 
     def __init__(self, retry_interval: float, selector_factory: Callable[[], selectors.BaseSelector] | None = None) -> None:
@@ -93,25 +81,44 @@ class SelectorBaseTransport(transports.BaseTransport):
 
         if selector_factory is None:
             selector_factory = getattr(selectors, "PollSelector", selectors.SelectSelector)
-        self._selector_factory: Callable[[], selectors.BaseSelector] = selector_factory
+        self.__selector_factory: Callable[[], selectors.BaseSelector] = selector_factory
 
-        self._retry_interval: float = _utils.validate_timeout_delay(retry_interval, positive_check=False)
-        if self._retry_interval <= 0:
+        self.__retry_interval: float = _utils.validate_timeout_delay(retry_interval, positive_check=False)
+        if self.__retry_interval <= 0:
             raise ValueError("retry_interval must be a strictly positive float")
+
+    def read_fileno(self) -> int:  # pragma: no cover
+        """
+        .. versionadded:: NEXT_VERSION
+
+        Returns:
+            The file descriptor used for I/O reading. May return a negative value if the transport is closed.
+        """
+        raise NotImplementedError
+
+    def write_fileno(self) -> int:  # pragma: no cover
+        """
+        .. versionadded:: NEXT_VERSION
+
+        Returns:
+            The file descriptor used for I/O writing. May return a negative value if the transport is closed.
+        """
+        raise NotImplementedError
 
     def _retry[R](self, callback: Callable[[], R], timeout: float) -> tuple[R, float]:
         """
         Calls `callback` without argument and returns the output.
 
-        If the callable raises :class:`WouldBlockOnRead` or :class:`WouldBlockOnWrite`, waits for
-        :attr:`~.WouldBlockOnRead.fileno` to be available for reading or writing respectively, and retries to call the callback.
+        If the callable raises :class:`WouldBlockOnRead` or :class:`WouldBlockOnWrite`, waits for the corresponding
+        ``fileno`` to be available for reading or writing respectively, and retries to call the callback.
 
         Parameters:
             callback: the function to call.
             timeout: the maximum amount of seconds to wait for the file descriptor to be available.
 
         Raises:
-            TimeoutError: timed out
+            TimeoutError: timed out.
+            OSError: The selector failed to poll the file descriptor.
 
         Returns:
             a tuple with the result of the callback and the timeout which is deduced from the waited time.
@@ -119,18 +126,18 @@ class SelectorBaseTransport(transports.BaseTransport):
         :meta public:
         """
         timeout = _utils.validate_timeout_delay(timeout, positive_check=True)
-        retry_interval = self._retry_interval
+        retry_interval = self.__retry_interval
         event: int
         fileno: int
         while True:
             try:
                 return callback(), timeout
-            except WouldBlockOnRead as exc:
+            except WouldBlockOnRead:
                 event = selectors.EVENT_READ
-                fileno = exc.fileno
-            except WouldBlockOnWrite as exc:
+                fileno = self.read_fileno()
+            except WouldBlockOnWrite:
                 event = selectors.EVENT_WRITE
-                fileno = exc.fileno
+                fileno = self.write_fileno()
             if timeout <= 0:
                 break
             is_retry_interval: bool
@@ -141,7 +148,7 @@ class SelectorBaseTransport(transports.BaseTransport):
             else:
                 is_retry_interval = True
                 wait_time = retry_interval
-            with self._selector_factory() as selector:
+            with self.__selector_factory() as selector:
                 try:
                     selector.register(fileno, event)
                 except ValueError as exc:
@@ -154,10 +161,17 @@ class SelectorBaseTransport(transports.BaseTransport):
                     with _utils.ElapsedTime() as elapsed:
                         available = bool(selector.select(wait_time))
                     timeout = elapsed.recompute_timeout(timeout)
-                    if not available:
-                        if not is_retry_interval:
-                            break
+                    if not available and not is_retry_interval:
+                        break
         raise _utils.error_from_errno(_errno.ETIMEDOUT)
+
+    @property
+    def _retry_interval(self) -> float:
+        return self.__retry_interval
+
+    @property
+    def _selector_factory(self) -> Callable[[], selectors.BaseSelector]:
+        return self.__selector_factory
 
 
 class SelectorStreamReadTransport(SelectorBaseTransport, transports.StreamReadTransport):
@@ -166,6 +180,11 @@ class SelectorStreamReadTransport(SelectorBaseTransport, transports.StreamReadTr
     """
 
     __slots__ = ()
+
+    @abstractmethod
+    @_utils.inherit_doc(SelectorBaseTransport)
+    def read_fileno(self) -> int:
+        raise NotImplementedError
 
     def recv_noblock(self, bufsize: int) -> bytes:
         """
@@ -316,6 +335,11 @@ class SelectorStreamWriteTransport(SelectorBaseTransport, transports.StreamWrite
     __slots__ = ()
 
     @abstractmethod
+    @_utils.inherit_doc(SelectorBaseTransport)
+    def write_fileno(self) -> int:
+        raise NotImplementedError
+
+    @abstractmethod
     def send_noblock(self, data: bytes | bytearray | memoryview) -> int:
         """
         Send the `data` bytes to the remote peer.
@@ -398,6 +422,11 @@ class SelectorDatagramReadTransport(SelectorBaseTransport, transports.DatagramRe
     __slots__ = ()
 
     @abstractmethod
+    @_utils.inherit_doc(SelectorBaseTransport)
+    def read_fileno(self) -> int:
+        raise NotImplementedError
+
+    @abstractmethod
     def recv_noblock(self) -> bytes:
         """
         Read and return the next available packet.
@@ -459,6 +488,11 @@ class SelectorDatagramWriteTransport(SelectorBaseTransport, transports.DatagramW
     """
 
     __slots__ = ()
+
+    @abstractmethod
+    @_utils.inherit_doc(SelectorBaseTransport)
+    def write_fileno(self) -> int:
+        raise NotImplementedError
 
     @abstractmethod
     def send_noblock(self, data: bytes | bytearray | memoryview) -> None:
