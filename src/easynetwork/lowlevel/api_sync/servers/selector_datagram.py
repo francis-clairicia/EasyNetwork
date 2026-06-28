@@ -32,12 +32,12 @@ import math
 import operator
 import selectors
 import threading
-import time
 import types
 import warnings
 import weakref
 from collections.abc import Callable, Generator, Hashable, Mapping
 from queue import Empty as _QueueEmpty, SimpleQueue as _Queue
+from time import perf_counter as _get_current_time
 from typing import Any, NamedTuple, Self
 
 from ....exceptions import DatagramProtocolParseError, UnsupportedOperation
@@ -553,7 +553,7 @@ class SelectorDatagramServer[Request, Response, Address: Hashable](_transports.B
 
     def __serve_requests__handle_client_request(
         self,
-        waiter_future: concurrent.futures.Future[None],
+        waiter_future: concurrent.futures.Future[None] | None,
         /,
         *,
         recv_params: RecvParams | None,
@@ -573,13 +573,14 @@ class SelectorDatagramServer[Request, Response, Address: Hashable](_transports.B
                 request: Request | None
                 try:
                     try:
-                        assert waiter_future.done()  # nosec assert_used
-                        # Raises error to throw in generator if needed.
-                        try:
-                            waiter_future.result(timeout=0)
-                        except concurrent.futures.CancelledError:
-                            should_restart_handle.clear()
-                            return
+                        if waiter_future is not None:
+                            assert waiter_future.done()  # nosec assert_used
+                            # Raises error to throw in generator if needed.
+                            try:
+                                waiter_future.result(timeout=0)
+                            except concurrent.futures.CancelledError:
+                                should_restart_handle.clear()
+                                return
 
                         try:
                             datagram, ancillary_data = client_data.datagram_queue.get_nowait()
@@ -588,7 +589,7 @@ class SelectorDatagramServer[Request, Response, Address: Hashable](_transports.B
                         try:
                             self.__handle_ancillary_data(
                                 ancillary_data=ancillary_data,
-                                recv_with_ancillary=recv_params.recv_with_ancillary if recv_params else None,
+                                recv_with_ancillary=None if recv_params is None else recv_params.recv_with_ancillary,
                                 server_ancillary_data_params=server_ancillary_data_params,
                                 client_address=client_ctx.address,
                             )
@@ -674,8 +675,6 @@ class SelectorDatagramServer[Request, Response, Address: Hashable](_transports.B
                             )
                         )
                         return
-            waiter_future = concurrent.futures.Future()
-            waiter_future.set_result(None)
 
         try:
             handler_future = executor.submit(
@@ -881,6 +880,7 @@ class _ThreadSafeListener[Address](_transports.BaseTransport):
         self.__send_lock = _lock.RWLock()
         self.__closing_event = threading.Event()
         self.__ready_for_reading = threading.Event()
+        self.__ready_for_reading.set()
         self.__reader_condvar = threading.Condition()
         self.__reader_done = _utils.Flag()
         self.__reader_done.set()
@@ -994,7 +994,7 @@ class _SelectorServerKeyData(NamedTuple):
         with self.reader_condvar:
             self.reader_done.set()
             self.reader_condvar.notify_all()
-            self.ready_for_reading.clear()
+            self.ready_for_reading.set()
 
 
 @dataclasses.dataclass(kw_only=True, frozen=True, eq=False, slots=True)
@@ -1089,11 +1089,6 @@ class _ClientHandlerToken[Request, Response, Address: Hashable]:
         self.__current_deadline.value = new_deadline
 
 
-class _ClientHandlerKeyData(NamedTuple):
-    future: concurrent.futures.Future[None]
-    deadline: float
-
-
 @enum.unique
 class _ClientState(enum.Enum):
     TASK_PENDING = enum.auto()
@@ -1109,11 +1104,15 @@ class _ClientData:
         "__weakref__",
     )
 
+    class WaiterData(NamedTuple):
+        future: concurrent.futures.Future[None]
+        deadline: float
+
     def __init__(self) -> None:
         self.__state_lock: threading.RLock = threading.RLock()
         self.__state: _ClientState | None = None
         self.__datagram_queue: _Queue[tuple[bytes, Any | None]] = _Queue()
-        self.__waiter_data: _ClientHandlerKeyData | None = None
+        self.__waiter_data: _ClientData.WaiterData | None = None
 
     @property
     def datagram_queue(self) -> _Queue[tuple[bytes, Any | None]]:
@@ -1165,7 +1164,7 @@ class _ClientData:
         with self.__state_lock:
             if self.__waiter_data is not None or self.__state is not _ClientState.TASK_RUNNING:
                 raise self.inconsistent_state_error()
-            self.__waiter_data = _ClientHandlerKeyData(client_task_future, deadline)
+            self.__waiter_data = self.WaiterData(client_task_future, deadline)
 
     def check_pending_task_timeout(self, now: float) -> float:
         with self.__state_lock:
@@ -1196,10 +1195,6 @@ class _ClientData:
         msg = "The server has created too many tasks and ends up in an inconsistent state."
         note = "Please fill an issue (https://github.com/francis-clairicia/EasyNetwork/issues)"
         return _utils.exception_with_notes(RuntimeError(msg), note)
-
-
-def _get_current_time() -> float:
-    return time.perf_counter()
 
 
 def _cancel_future_and_notify(f: concurrent.futures.Future[Any]) -> None:
