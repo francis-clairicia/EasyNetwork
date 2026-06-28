@@ -588,7 +588,6 @@ class SelectorListener[T](SelectorBaseTransport, transports.Listener[T]):
 
         Raises:
             WouldBlockOnRead: the operation would block when reading the pipe.
-            WouldBlockOnWrite: the operation would block when writing on the pipe.
 
         Returns:
             a :class:`~concurrent.futures.Future` for the spawned task.
