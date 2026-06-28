@@ -508,10 +508,19 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
                                 )
                         except (_selector_transports.WouldBlockOnRead, _selector_transports.WouldBlockOnWrite) as exc:
                             recv_params = dataclasses.replace(recv_params, timeout=timeout)
+                            match exc:
+                                case _selector_transports.WouldBlockOnRead():
+                                    fileno = client_data.request_receiver.transport.read_fileno()
+                                    event = selectors.EVENT_READ
+                                case _selector_transports.WouldBlockOnWrite():
+                                    fileno = client_data.request_receiver.transport.write_fileno()
+                                    event = selectors.EVENT_WRITE
+                                case _:
+                                    assert_never(exc)
                             reader_future = client_handler_token.register(
                                 transport=client,
-                                fileno=exc.fileno,
-                                events=_selector_event_from_exc(exc),
+                                fileno=fileno,
+                                events=event,
                                 deadline=_get_current_time() + timeout,
                                 reader_condvar=client_data.request_receiver.reader_condvar,
                                 reader_done=client_data.request_receiver.reader_done,
@@ -712,9 +721,12 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
                                             recv_params.recv_with_ancillary,
                                             first_try=first_recv_try,
                                         )
-                                except (_selector_transports.WouldBlockOnRead, _selector_transports.WouldBlockOnWrite) as exc:
-                                    fileno = exc.fileno
-                                    event = _selector_event_from_exc(exc)
+                                except _selector_transports.WouldBlockOnRead:
+                                    fileno = transport.read_fileno()
+                                    event = selectors.EVENT_READ
+                                except _selector_transports.WouldBlockOnWrite:
+                                    fileno = transport.write_fileno()
+                                    event = selectors.EVENT_WRITE
                                 else:
                                     break
                                 finally:
@@ -975,11 +987,11 @@ class _ThreadSafeListener(_transports.BaseTransport):
                     return None
                 handler = functools.partial(self.__in_executor, handler)
                 accept_future = self.__listener.accept_noblock(handler, executor)
-            except (_selector_transports.WouldBlockOnRead, _selector_transports.WouldBlockOnWrite) as exc:
+            except _selector_transports.WouldBlockOnRead:
                 listener_wait_future = client_handler_token.register(
                     transport=self,
-                    fileno=exc.fileno,
-                    events=_selector_event_from_exc(exc),
+                    fileno=self.__listener.read_fileno(),
+                    events=selectors.EVENT_READ,
                     deadline=math.inf,
                     reader_condvar=self.__reader_condvar,
                     reader_done=self.__reader_done,
@@ -1360,16 +1372,6 @@ type _AnyRequestReceiver[Request] = _RequestReceiver[Request] | _BufferedRequest
 
 def _get_current_time() -> float:
     return time.perf_counter()
-
-
-def _selector_event_from_exc(exc: _selector_transports.WouldBlockOnRead | _selector_transports.WouldBlockOnWrite) -> int:
-    match exc:
-        case _selector_transports.WouldBlockOnRead():
-            return selectors.EVENT_READ
-        case _selector_transports.WouldBlockOnWrite():
-            return selectors.EVENT_WRITE
-        case _:
-            assert_never(exc)
 
 
 def _cancel_future_and_notify(f: concurrent.futures.Future[Any]) -> None:

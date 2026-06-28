@@ -601,7 +601,7 @@ class SocketStreamListener(base_selector.SelectorListener[SocketStreamTransport]
         try:
             client_sock, _ = self.__socket.accept()
         except (BlockingIOError, InterruptedError):
-            raise base_selector.WouldBlockOnRead(self.__socket.fileno()) from None
+            raise base_selector.WouldBlockOnRead from None
         except OSError as exc:
             if exc.errno not in constants.IGNORABLE_ACCEPT_ERRNOS:
                 raise
@@ -735,7 +735,7 @@ class SSLStreamListener(base_selector.SelectorListener[SSLStreamTransport]):
         try:
             client_sock, _ = self.__socket.accept()
         except (BlockingIOError, InterruptedError):
-            raise base_selector.WouldBlockOnRead(self.__socket.fileno()) from None
+            raise base_selector.WouldBlockOnRead from None
         except OSError as exc:
             if exc.errno not in constants.IGNORABLE_ACCEPT_ERRNOS:
                 raise
@@ -918,7 +918,7 @@ class SocketDatagramListener(base_selector.SelectorDatagramListener["_RetAddress
         try:
             return self.__socket.recvfrom(constants.MAX_DATAGRAM_BUFSIZE)
         except (BlockingIOError, InterruptedError):
-            raise base_selector.WouldBlockOnRead(self.__socket.fileno()) from None
+            raise base_selector.WouldBlockOnRead from None
 
     if sys.platform != "win32" and hasattr(socket.socket, "recvmsg"):
 
@@ -932,7 +932,7 @@ class SocketDatagramListener(base_selector.SelectorDatagramListener["_RetAddress
             try:
                 msg, ancdata, _, address = self.__socket.recvmsg(constants.MAX_DATAGRAM_BUFSIZE, ancillary_bufsize)
             except (BlockingIOError, InterruptedError):
-                raise base_selector.WouldBlockOnRead(self.__socket.fileno()) from None
+                raise base_selector.WouldBlockOnRead from None
             else:
                 return msg, ancdata, address
 
@@ -941,7 +941,7 @@ class SocketDatagramListener(base_selector.SelectorDatagramListener["_RetAddress
         try:
             self.__socket.sendto(data, address)
         except (BlockingIOError, InterruptedError):
-            raise base_selector.WouldBlockOnWrite(self.__socket.fileno()) from None
+            raise base_selector.WouldBlockOnWrite from None
 
     if sys.platform != "win32" and hasattr(socket.socket, "sendmsg"):
 
@@ -957,7 +957,7 @@ class SocketDatagramListener(base_selector.SelectorDatagramListener["_RetAddress
             try:
                 self.__socket.sendmsg([data], ancillary_data, 0, address)
             except (BlockingIOError, InterruptedError):
-                raise base_selector.WouldBlockOnWrite(self.__socket.fileno()) from None
+                raise base_selector.WouldBlockOnWrite from None
 
     @property
     @_utils.inherit_doc(base_selector.SelectorDatagramListener)
