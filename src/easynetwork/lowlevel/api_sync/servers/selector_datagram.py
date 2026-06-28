@@ -38,7 +38,7 @@ import warnings
 import weakref
 from collections.abc import Callable, Generator, Hashable, Mapping
 from queue import Empty as _QueueEmpty, SimpleQueue as _Queue
-from typing import Any, NamedTuple, Self, assert_never
+from typing import Any, NamedTuple, Self
 
 from ....exceptions import DatagramProtocolParseError, UnsupportedOperation
 from ....protocol import DatagramProtocol
@@ -954,11 +954,21 @@ class _ThreadSafeListener[Address](_transports.BaseTransport):
             for _ in range(100):
                 try:
                     datagram = listener_recv_noblock_from(self.__listener)
-                except (_selector_transports.WouldBlockOnRead, _selector_transports.WouldBlockOnWrite) as exc:
+                except _selector_transports.WouldBlockOnRead:
                     listener_wait_future = selector_token.register(
                         transport=self,
-                        fileno=exc.fileno,
-                        events=_selector_event_from_exc(exc),
+                        fileno=self.__listener.read_fileno(),
+                        events=selectors.EVENT_READ,
+                        reader_condvar=self.__reader_condvar,
+                        reader_done=self.__reader_done,
+                    )
+                    listener_wait_future.add_done_callback(self.__on_listener_wait_future_done)
+                    return
+                except _selector_transports.WouldBlockOnWrite:
+                    listener_wait_future = selector_token.register(
+                        transport=self,
+                        fileno=self.__listener.write_fileno(),
+                        events=selectors.EVENT_WRITE,
                         reader_condvar=self.__reader_condvar,
                         reader_done=self.__reader_done,
                     )
@@ -1258,16 +1268,6 @@ class _ClientData:
 
 def _get_current_time() -> float:
     return time.perf_counter()
-
-
-def _selector_event_from_exc(exc: _selector_transports.WouldBlockOnRead | _selector_transports.WouldBlockOnWrite) -> int:
-    match exc:
-        case _selector_transports.WouldBlockOnRead():
-            return selectors.EVENT_READ
-        case _selector_transports.WouldBlockOnWrite():
-            return selectors.EVENT_WRITE
-        case _:
-            assert_never(exc)
 
 
 def _cancel_future_and_notify(f: concurrent.futures.Future[Any]) -> None:
