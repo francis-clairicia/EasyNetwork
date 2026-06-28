@@ -1181,7 +1181,7 @@ class _PendingSelectRegister(NamedTuple):
 
 
 @dataclasses.dataclass(kw_only=True, eq=False, slots=True)
-class _BaseRequestReceiver[Request]:
+class _BaseRequestReceiver:
     transport: _selector_transports.SelectorStreamTransport
     ancillary_bufsize: int | None
     server_is_shutting_down: Callable[[], bool]
@@ -1200,7 +1200,7 @@ class _BaseRequestReceiver[Request]:
 
 
 @dataclasses.dataclass(kw_only=True, eq=False, slots=True)
-class _RequestReceiver[Request](_BaseRequestReceiver[Request]):
+class _RequestReceiver[Request](_BaseRequestReceiver):
     consumer: _stream.StreamDataConsumer[Request]
     max_recv_size: int
     disconnect_error_filter: Callable[[Exception], bool] | None
@@ -1285,7 +1285,7 @@ class _RequestReceiver[Request](_BaseRequestReceiver[Request]):
 
 
 @dataclasses.dataclass(kw_only=True, eq=False, slots=True)
-class _BufferedRequestReceiver[Request](_BaseRequestReceiver[Request]):
+class _BufferedRequestReceiver[Request](_BaseRequestReceiver):
     consumer: _stream.BufferedStreamDataConsumer[Request]
     disconnect_error_filter: Callable[[Exception], bool] | None
 
