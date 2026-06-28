@@ -46,7 +46,11 @@ def request_handler_context_reuse(
     client_ttl: float,
 ) -> Generator[RecvParams, bytes]:
     while True:
-        request: bytes = yield RecvParams(timeout=client_ttl)
+        try:
+            request: bytes = yield RecvParams(timeout=client_ttl)
+        except TimeoutError:
+            print(f"{client.address!r}: timed out")
+            return
         client.server.send_packet_to(request, client.address)
 
 
