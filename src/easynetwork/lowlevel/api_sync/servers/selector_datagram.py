@@ -735,13 +735,12 @@ class SelectorDatagramServer[Request, Response, Address: Hashable](_transports.B
         listener = self.__thread_safe_listener
         shutdown_requested = self.__shutdown_request.is_set
 
+        listener.register(selector)
         while not shutdown_requested():
-            listener.receive_datagrams(selector_token, listener_recv_noblock_from, handler)
+            listener.receive_datagrams(listener_recv_noblock_from, handler)
 
             selector_wait_timeout: float
-            if listener.is_ready_for_reading():
-                selector_wait_timeout = 0.0
-            elif (selector_wait_timeout := client_handler_token.get_min_deadline() - _get_current_time()) < 0:
+            if (selector_wait_timeout := client_handler_token.get_min_deadline() - _get_current_time()) < 0:
                 selector_wait_timeout = 0.0
             else:
                 # Do not wait more than 24h.
@@ -752,8 +751,6 @@ class SelectorDatagramServer[Request, Response, Address: Hashable](_transports.B
             # shutdown() called during select(), exit immediately.
             if shutdown_requested():
                 break
-
-            del selector_wait_timeout
 
             # Notify threads for ready file descriptors
             self.__handle_events(selector, ready)
@@ -772,20 +769,15 @@ class SelectorDatagramServer[Request, Response, Address: Hashable](_transports.B
                 wakeup_socketpair.drain()
                 continue
 
-            selector_key_data: _SelectorKeyData = key.data
-            try:
-                selector.unregister(key.fileobj)
-            except KeyError:
-                pass
-            finally:
-                _set_future_result_unless_cancelled(selector_key_data.future, None)
+            selector_key_data: _SelectorServerKeyData = key.data
+            selector_key_data.ready_for_reading.set()
 
         # Cancel pending futures if transport has been closed asynchronously
         for key in list(selector.get_map().values()):
             match key.data:
-                case _SelectorKeyData(transport=transport, future=task_future) if transport.is_closing():
+                case _SelectorServerKeyData(is_closing=is_closing) if is_closing():
                     selector.unregister(key.fileobj)
-                    _cancel_future_and_notify(task_future)
+                    key.data.notify_reader_done()
 
     def __attach_server(self) -> None:
         self.__active_tasks.increment()
@@ -886,10 +878,9 @@ class _ThreadSafeListener[Address](_transports.BaseTransport):
     ) -> None:
         self.__listener: _selector_transports.SelectorDatagramListener[Address] = listener
         self.__close_lock = threading.Lock()
-        self.__send_lock = threading.Lock()
+        self.__send_lock = _lock.RWLock()
         self.__closing_event = threading.Event()
         self.__ready_for_reading = threading.Event()
-        self.__ready_for_reading.set()
         self.__reader_condvar = threading.Condition()
         self.__reader_done = _utils.Flag()
         self.__reader_done.set()
@@ -904,7 +895,7 @@ class _ThreadSafeListener[Address](_transports.BaseTransport):
         return self.__closing_event.is_set()
 
     def close(self) -> None:
-        with self.__close_lock, self.__send_lock:
+        with self.__close_lock, self.__send_lock.write_lock():
             self.__closing_event.set()
             with self.__reader_condvar:
                 reader_is_done = self.__reader_done.is_set
@@ -917,7 +908,7 @@ class _ThreadSafeListener[Address](_transports.BaseTransport):
                 self.__finalizer()
 
     def send_to(self, data: bytes | bytearray | memoryview, address: Address, timeout: float) -> None:
-        with _utils.lock_with_timeout(self.__send_lock, timeout) as timeout:
+        with self.__send_lock.read_lock():
             return self.__listener.send_to(data, address, timeout)
 
     def send_with_ancillary_to(
@@ -927,21 +918,27 @@ class _ThreadSafeListener[Address](_transports.BaseTransport):
         address: Address,
         timeout: float,
     ) -> None:
-        with _utils.lock_with_timeout(self.__send_lock, timeout) as timeout:
+        with self.__send_lock.read_lock():
             return self.__listener.send_with_ancillary_to(data, ancillary_data, address, timeout)
 
-    def is_ready_for_reading(self) -> bool:
-        return self.__ready_for_reading.is_set()
+    def register(self, selector: selectors.BaseSelector) -> None:
+        with self.__reader_condvar:
+            if not self.__reader_done.is_set():
+                raise AssertionError(f"{self.__class__.__name__}.register() called twice")
+            key_data = _SelectorServerKeyData(
+                is_closing=self.is_closing,
+                reader_condvar=self.__reader_condvar,
+                reader_done=self.__reader_done,
+                ready_for_reading=self.__ready_for_reading,
+            )
+            selector.register(self.__listener.read_fileno(), selectors.EVENT_READ, key_data)
+            self.__reader_done.clear()
 
     def receive_datagrams[*P](
         self,
-        selector_token: _SelectorToken,
         listener_recv_noblock_from: Callable[[_selector_transports.SelectorDatagramListener[Address]], tuple[*P]],
         handler: Callable[[*P], None],
     ) -> None:
-        if not self.__ready_for_reading.is_set():
-            return
-
         with self.__close_lock:
             self.__ready_for_reading.clear()
             if self.__listener.is_closed():
@@ -955,31 +952,9 @@ class _ThreadSafeListener[Address](_transports.BaseTransport):
                 try:
                     datagram = listener_recv_noblock_from(self.__listener)
                 except _selector_transports.WouldBlockOnRead:
-                    listener_wait_future = selector_token.register(
-                        transport=self,
-                        fileno=self.__listener.read_fileno(),
-                        events=selectors.EVENT_READ,
-                        reader_condvar=self.__reader_condvar,
-                        reader_done=self.__reader_done,
-                    )
-                    listener_wait_future.add_done_callback(self.__on_listener_wait_future_done)
-                    return
-                except _selector_transports.WouldBlockOnWrite:
-                    listener_wait_future = selector_token.register(
-                        transport=self,
-                        fileno=self.__listener.write_fileno(),
-                        events=selectors.EVENT_WRITE,
-                        reader_condvar=self.__reader_condvar,
-                        reader_done=self.__reader_done,
-                    )
-                    listener_wait_future.add_done_callback(self.__on_listener_wait_future_done)
                     return
                 else:
                     handler(*datagram)
-            self.__ready_for_reading.set()
-
-    def __on_listener_wait_future_done(self, future: concurrent.futures.Future[Any]) -> None:
-        if future.done() and not future.cancelled():
             self.__ready_for_reading.set()
 
     @property
@@ -1002,66 +977,24 @@ class _SelectorToken:
         # Cancel pending futures
         for key in selector_keys:
             match key.data:
-                case _SelectorKeyData(future=client_task_future):
+                case _SelectorServerKeyData():
                     self.selector.unregister(key.fileobj)
-                    _cancel_future_and_notify(client_task_future)
+                    key.data.notify_reader_done()
                 case _:
                     continue
 
-    def register(
-        self,
-        *,
-        transport: _ThreadSafeListener[Any],
-        fileno: int,
-        events: selectors._EventMask,
-        reader_condvar: threading.Condition,
-        reader_done: _utils.Flag,
-        _future_factory: Callable[[], concurrent.futures.Future[Any]] = concurrent.futures.Future,
-    ) -> concurrent.futures.Future[None]:
-        assert reader_done.is_set()  # nosec assert_used
 
-        future: concurrent.futures.Future[None] = _future_factory()
+class _SelectorServerKeyData(NamedTuple):
+    is_closing: Callable[[], bool]
+    reader_condvar: threading.Condition
+    reader_done: _utils.Flag
+    ready_for_reading: threading.Event
 
-        with reader_condvar:
-            if self.__closed.is_set() or transport.is_closing():
-                _cancel_future_and_notify(future)
-                return future
-            reader_done.clear()
-            future.add_done_callback(
-                functools.partial(
-                    self.__wakeup_waiter_on_future_done,
-                    reader_condvar=reader_condvar,
-                    reader_done=reader_done,
-                )
-            )
-
-        try:
-            self.selector.register(
-                fileno,
-                events,
-                data=_SelectorKeyData(transport=transport, future=future),
-            )
-        except BaseException:
-            _cancel_future_and_notify(future)
-            raise
-        return future
-
-    @staticmethod
-    def __wakeup_waiter_on_future_done(
-        _: concurrent.futures.Future[Any],
-        /,
-        *,
-        reader_condvar: threading.Condition,
-        reader_done: _utils.Flag,
-    ) -> None:
-        with reader_condvar:
-            reader_done.set()
-            reader_condvar.notify_all()
-
-
-class _SelectorKeyData(NamedTuple):
-    transport: _ThreadSafeListener[Any]
-    future: concurrent.futures.Future[None]
+    def notify_reader_done(self) -> None:
+        with self.reader_condvar:
+            self.reader_done.set()
+            self.reader_condvar.notify_all()
+            self.ready_for_reading.clear()
 
 
 @dataclasses.dataclass(kw_only=True, frozen=True, eq=False, slots=True)
@@ -1074,7 +1007,6 @@ class _ClientHandlerToken[Request, Response, Address: Hashable]:
 
     __client_data_cache: dict[Address, _ClientData] = dataclasses.field(init=False, default_factory=dict)
     __current_deadline: _utils.AtomicFloat = dataclasses.field(init=False, default_factory=_utils.AtomicFloat)
-    __deadline_computation_lock: threading.Lock = dataclasses.field(init=False, default_factory=threading.Lock)
     __client_ctx_cache: weakref.WeakValueDictionary[Address, DatagramClientContext[Response, Address]] = dataclasses.field(
         init=False, default_factory=weakref.WeakValueDictionary
     )
@@ -1086,7 +1018,7 @@ class _ClientHandlerToken[Request, Response, Address: Hashable]:
         return self
 
     def __exit__(self, *args: Any) -> None:
-        with self.__deadline_computation_lock, self.__state_lock.write_lock():
+        with self.__state_lock.write_lock():
             self.__closed.set()
 
             clients = self.__client_data_cache.copy()
@@ -1097,11 +1029,11 @@ class _ClientHandlerToken[Request, Response, Address: Hashable]:
                 client.cancel_pending_task()
 
     def get_client_data(self, address: Address) -> _ClientData:
-        with self.__deadline_computation_lock:
-            try:
-                client_data = self.__client_data_cache[address]
-            except KeyError:
-                self.__client_data_cache[address] = client_data = _ClientData()
+        assert threading.get_ident() == self.tid, "call from other thread."  # nosec assert_used
+        try:
+            client_data = self.__client_data_cache[address]
+        except KeyError:
+            self.__client_data_cache[address] = client_data = _ClientData()
         return client_data
 
     def get_client_ref(self, address: Address) -> DatagramClientContext[Response, Address]:
@@ -1140,21 +1072,21 @@ class _ClientHandlerToken[Request, Response, Address: Hashable]:
         return future
 
     def handle_pending_waiters(self) -> None:
+        assert threading.get_ident() == self.tid, "call from other thread."  # nosec assert_used
         # Set timeout error if deadline has been reached
-        with self.__deadline_computation_lock:
-            now = _get_current_time()
-            new_deadline: float = math.inf
-            for address in list(self.__client_data_cache):
-                client = self.__client_data_cache[address]
-                with client.state_lock:
-                    if client.state is None:
-                        del self.__client_data_cache[address]
-                        continue
-                    client_deadline = client.check_pending_task_timeout(now)
-                    if client_deadline < new_deadline:
-                        new_deadline = client_deadline
+        now = _get_current_time()
+        new_deadline: float = math.inf
+        for address in list(self.__client_data_cache):
+            client = self.__client_data_cache[address]
+            with client.state_lock:
+                if client.state is None:
+                    del self.__client_data_cache[address]
+                    continue
+                client_deadline = client.check_pending_task_timeout(now)
+                if client_deadline < new_deadline:
+                    new_deadline = client_deadline
 
-            self.__current_deadline.value = new_deadline
+        self.__current_deadline.value = new_deadline
 
 
 class _ClientHandlerKeyData(NamedTuple):

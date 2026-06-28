@@ -1498,7 +1498,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             *_python_cmd,
             "/usr/src/servers/test_selector_datagram_server.py",
             f"--path={UNIX_SOCKET_PATH}",
-            "--client-ttl=10",
+            "--client-ttl=2",
             "--disable-gc",
         ),
         "ping": {
@@ -1571,12 +1571,10 @@ def _get_python_version_used_in_docker_image(client: docker.DockerClient, image_
 
 def _get_container_logs(container: Container) -> str:
     try:
-        logs: bytes | str = container.logs()
+        logs: bytes = container.logs()
     except docker.errors.NotFound:
-        logs = ""
-    if not isinstance(logs, str):
-        logs = str(logs, "utf-8", "replace")
-    return logs
+        logs = b""
+    return str(logs, "utf-8", "replace")
 
 
 def _start_docker_instance(
