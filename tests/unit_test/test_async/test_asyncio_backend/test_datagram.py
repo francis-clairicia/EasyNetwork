@@ -1803,11 +1803,11 @@ if sys.platform != "win32":
         @pytest.mark.parametrize(
             ["sender_address_1", "sender_address_2", "sender_address_3"],
             [
-                pytest.param("/path/to/unix.sock", "/path/to/other.sock", "/path/to/third.sock"),
-                pytest.param(b"\x00abstract_address", b"\x00abstract_other_address", b"\x00abstract_third_address"),
-                pytest.param(None, None, None),
-                pytest.param(b"", b"", b""),
-                pytest.param("", "", ""),
+                pytest.param("/path/to/unix.sock", "/path/to/other.sock", "/path/to/third.sock", id="paths"),
+                pytest.param(b"\x00abstract_addr", b"\x00abstract_other_addr", b"\x00abstract_third_addr", id="abstract"),
+                pytest.param(None, None, None, id="unnamed-01"),
+                pytest.param(b"", b"", b"", id="unnamed-02"),
+                pytest.param("", "", "", id="unnamed-03"),
             ],
         )
         async def test____serve____default(
@@ -1884,11 +1884,11 @@ if sys.platform != "win32":
         @pytest.mark.parametrize(
             ["sender_address_1", "sender_address_2", "sender_address_3"],
             [
-                pytest.param("/path/to/unix.sock", "/path/to/other.sock", "/path/to/third.sock"),
-                pytest.param(b"\x00abstract_address", b"\x00abstract_other_address", b"\x00abstract_third_address"),
-                pytest.param(None, None, None),
-                pytest.param(b"", b"", b""),
-                pytest.param("", "", ""),
+                pytest.param("/path/to/unix.sock", "/path/to/other.sock", "/path/to/third.sock", id="paths"),
+                pytest.param(b"\x00abstract_addr", b"\x00abstract_other_addr", b"\x00abstract_third_addr", id="abstract"),
+                pytest.param(None, None, None, id="unnamed-01"),
+                pytest.param(b"", b"", b"", id="unnamed-02"),
+                pytest.param("", "", "", id="unnamed-03"),
             ],
         )
         async def test____serve_with_ancillary____default(

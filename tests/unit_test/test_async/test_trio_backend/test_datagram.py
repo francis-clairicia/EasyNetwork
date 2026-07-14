@@ -493,12 +493,12 @@ class TestTrioDatagramListenerSocketAdapter(BaseTestSocketTransport):
     @pytest.mark.parametrize(
         ["socket_family_name", "sender_address_1", "sender_address_2", "sender_address_3"],
         [
-            pytest.param("AF_INET", ("127.0.0.1", 12345), ("127.0.0.1", 54321), ("127.0.0.1", 11111)),
-            pytest.param("AF_UNIX", "/path/to/unix.sock", "/path/to/other.sock", "/path/to/third.sock"),
-            pytest.param("AF_UNIX", b"\x00abstract_address", b"\x00abstract_other_address", b"\x00abstract_third_address"),
-            pytest.param("AF_UNIX", None, None, None),
-            pytest.param("AF_UNIX", b"", b"", b""),
-            pytest.param("AF_UNIX", "", "", ""),
+            pytest.param("AF_INET", ("127.0.0.1", 12345), ("127.0.0.1", 54321), ("127.0.0.1", 11111), id="inet"),
+            pytest.param("AF_UNIX", "/path/to/unix.sock", "/path/to/other.sock", "/path/to/third.sock", id="unix-paths"),
+            pytest.param("AF_UNIX", b"\x00abstract_addr", b"\x00abstract_other_addr", b"\x00abstract_third_addr", id="unix-abs"),
+            pytest.param("AF_UNIX", None, None, None, id="unix-unnamed-01"),
+            pytest.param("AF_UNIX", b"", b"", b"", id="unix-unnamed-02"),
+            pytest.param("AF_UNIX", "", "", "", id="unix-unnamed-03"),
         ],
         indirect=["socket_family_name"],
     )
@@ -576,11 +576,11 @@ class TestTrioDatagramListenerSocketAdapter(BaseTestSocketTransport):
     @pytest.mark.parametrize(
         ["socket_family_name", "sender_address_1", "sender_address_2", "sender_address_3"],
         [
-            pytest.param("AF_UNIX", "/path/to/unix.sock", "/path/to/other.sock", "/path/to/third.sock"),
-            pytest.param("AF_UNIX", b"\x00abstract_address", b"\x00abstract_other_address", b"\x00abstract_third_address"),
-            pytest.param("AF_UNIX", None, None, None),
-            pytest.param("AF_UNIX", b"", b"", b""),
-            pytest.param("AF_UNIX", "", "", ""),
+            pytest.param("AF_UNIX", "/path/to/unix.sock", "/path/to/other.sock", "/path/to/third.sock", id="unix-paths"),
+            pytest.param("AF_UNIX", b"\x00abstract_addr", b"\x00abstract_other_addr", b"\x00abstract_third_addr", id="unix-abs"),
+            pytest.param("AF_UNIX", None, None, None, id="unix-unnamed-01"),
+            pytest.param("AF_UNIX", b"", b"", b"", id="unix-unnamed-02"),
+            pytest.param("AF_UNIX", "", "", "", id="unix-unnamed-03"),
         ],
         indirect=["socket_family_name"],
     )
