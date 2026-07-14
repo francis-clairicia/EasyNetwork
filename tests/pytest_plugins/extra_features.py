@@ -29,13 +29,29 @@ def __has_marker(item: pytest.Item, name: str) -> bool:
     return item.get_closest_marker(name) is not None
 
 
+def __should_add_trio_marker(item: pytest.Function) -> bool:
+    if not inspect.iscoroutinefunction(item.obj):
+        return False
+    if not item.config.pluginmanager.has_plugin("trio"):
+        return False
+    all_markers = list(item.iter_markers_with_node("feature_trio"))
+    if not all_markers:
+        return False
+    auto_mark_flag_per_node: dict[str, bool] = {}
+    closest_node_with_marker = all_markers[0][0]
+    for node, marker in all_markers:
+        auto_mark_flag_per_node.setdefault(node.nodeid, False)
+        auto_mark_flag_per_node[node.nodeid] |= marker.kwargs.get("async_test_auto_mark", False)
+    return auto_mark_flag_per_node[closest_node_with_marker.nodeid]
+
+
 def _ensure_trio_marker_consistency(item: pytest.Function) -> None:
-    if (feature_trio_marker := item.get_closest_marker("feature_trio")) is not None:
-        if item.config.pluginmanager.has_plugin("trio") and not __has_marker(item, "trio"):
-            auto_mark = feature_trio_marker.kwargs.get("async_test_auto_mark", False)
-            if auto_mark and inspect.iscoroutinefunction(item.obj):
-                item.add_marker(pytest.mark.trio)
-    elif __has_marker(item, "trio"):
+    has_feature_marker = __has_marker(item, "feature_trio")
+    has_trio_marker = __has_marker(item, "trio")
+    if has_feature_marker and not has_trio_marker:
+        if __should_add_trio_marker(item):
+            item.add_marker(pytest.mark.trio)
+    elif has_trio_marker and not has_feature_marker:
         item.add_marker(pytest.mark.feature_trio)
 
 

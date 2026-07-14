@@ -90,7 +90,7 @@ format = [
     "black>=22.6.0",
 ]
 mypy = [
-    "mypy~=2.0",
+    "mypy~=2.3",
 ]
 types-msgpack = [
     "msgpack-types>=0.5.0",
@@ -103,13 +103,14 @@ bandit = [
     "bandit>=1.7.5,<2",
 ]
 test = [
-    "pytest~=8.4",
+    "pytest~=9.1",
     "pytest-xdist~=3.3",
     "pytest-mock~=3.10",
     "pytest-cov~=7.0",
     "pytest-asyncio~=1.4",
     "trove-classifiers>=2023.11.9",
     "pytest-retry~=1.7",
+    {include-group = "coverage"},
 ]
 test-ssl = [
     "trustme~=1.0",
@@ -118,7 +119,7 @@ test-trio = [
     "pytest-trio~=0.8.0",
 ]
 coverage = [
-    "coverage~=7.10,<7.14",
+    "coverage~=7.15",
 ]
 doc = [
     "sphinx>=8.2,<9",
@@ -128,7 +129,7 @@ doc = [
     "sphinxcontrib-towncrier<1,>=0.5.0a0",
 ]
 micro-benchmark = [
-    "pytest~=8.3",
+    "pytest",
     "pytest-benchmark[histogram]~=5.0",
 ]
 benchmark-servers = [
@@ -212,6 +213,7 @@ target-version = ["py312", "py313", "py314"]
 
 [tool.mypy]
 python_version = "3.12"
+native_parser = true
 show_error_codes = true
 warn_unused_configs = true
 disallow_any_generics = true
@@ -238,12 +240,19 @@ enable_error_code = ["truthy-bool", "ignore-without-code", "unused-awaitable", "
 module = ["docker.*", "plotly.*", "pytest_benchmark.*", "pytest_trio.*"]
 ignore_missing_imports = true
 
-[tool.pytest.ini_options]
+[tool.pytest]
+minversion = "9.0"
+strict_config = true
+strict_markers = true
+strict_parametrization_ids = true
 asyncio_mode = "strict"  # Avoid some unwanted behaviour
 asyncio_debug = true
-addopts = "--dist=worksteal --strict-markers -p 'no:anyio' -p 'no:benchmark'"  # hatch CLI dependencies installs anyio
-doctest_optionflags = "ELLIPSIS"
-minversion = "7.1.2"
+addopts = [
+    "--dist=worksteal",
+    "-p", "no:anyio",  # hatch CLI dependencies installs anyio
+    "-p", "no:benchmark",
+]
+doctest_optionflags = ["ELLIPSIS"]
 testpaths = ["tests"]
 norecursedirs = ["scripts"]
 markers = [
