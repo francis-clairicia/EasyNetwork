@@ -22,8 +22,8 @@ ROOT_DIR = Path(__file__).parent
 
 SUPPORTED_PYTHON_VERSIONS = {
     # Free-threaded builds
-    "3.14t": "cp314",
     "3.13t": "cp313",
+    "3.14t": "cp314",
     # Normal builds
     "3.12": "3.12.13",
     "3.13": "3.13.14",
@@ -72,19 +72,9 @@ def _build_docker_image(client: docker.DockerClient, sdist_path: Path, tag: str,
         docker_build_command_line += [f"--file={ROOT_DIR / 'Dockerfile.freethreaded'}"]
     docker_build_command_line += [os.fspath(ROOT_DIR)]
 
-    with subprocess.Popen(
-        docker_build_command_line,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-    ) as process:
-        assert process.stdout is not None
-        while c := process.stdout.read(1):
-            sys.stdout.write(c)
-        sys.stdout.flush()
-
-    if (retcode := process.returncode) != 0:
-        sys.exit(retcode)
+    result = subprocess.run(docker_build_command_line)
+    if result.returncode != 0:
+        sys.exit(result.returncode)
 
     client.images.prune(filters={"dangling": True})
     print(f"-> Sucessfully built docker image {tag!r}")
