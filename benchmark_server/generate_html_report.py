@@ -82,14 +82,20 @@ def _load_benchmark_report(input_file: str) -> _BenchmarkReport:
         return json.load(fp)
 
 
-def _print_benchmark_title(title: str) -> None:
+def _print_benchmark_h1(title: str) -> None:
+    print("*" * len(title))
     print(title)
-    print("=" * len(title))
+    print("*" * len(title), end="\n\n")
 
 
-def _print_benchmark_variation_title(title: str) -> None:
+def _print_benchmark_h2(title: str) -> None:
     print(title)
-    print("-" * len(title))
+    print("=" * len(title), end="\n\n")
+
+
+def _print_benchmark_h3(title: str) -> None:
+    print(title)
+    print("-" * len(title), end="\n\n")
 
 
 def _print_report(
@@ -100,19 +106,15 @@ def _print_report(
     payload_size_levels: list[int],
     benchmarks_data_list: list[_BenchmarkData],
 ) -> None:
-    _print_benchmark_title(benchmark_title)
-    print()
+    _print_benchmark_h1(benchmark_title)
 
     for b in benchmarks_data_list:
-        print(b["name"])
-        print("=" * len(b["name"]))
-        print()
+        _print_benchmark_h2(b["name"])
 
         for msgsize, data in zip(payload_size_levels, b["variation"]):
-            _print_benchmark_variation_title(
+            _print_benchmark_h3(
                 f"BENCHMARK: {round(msgsize / 1024, 1)}KiB messages, concurrency {concurrency_level}, duration {duration}s"
             )
-            print()
             print(f"{data['messages']} in {duration} seconds")
             print("Latency:")
             print(f"- min {data['latency_min']}ms")
@@ -160,6 +162,8 @@ def main() -> None:
     quiet: bool = args.quiet
 
     output_file = _get_output_file(getattr(args, "output_file", None), args.input_file)
+    if not quiet:
+        print("Reading data...")
     report = _load_benchmark_report(args.input_file)
 
     report_date = datetime.datetime.fromisoformat(report["date"])
@@ -322,6 +326,7 @@ def main() -> None:
         for fig in figures:
             fig.update_layout(title=f"{benchmark_title}. Duration: {duration}s; Concurrency level: {concurrency}")
             fig.write_html(f, full_html=False, include_plotlyjs=False, default_width="95vw", default_height="95vh")
+            print(file=f)
 
         print("</body>", file=f)
         print("</html>", file=f)

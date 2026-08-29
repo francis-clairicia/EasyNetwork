@@ -1710,6 +1710,16 @@ def _add_date_to_filepath(source: Path, date: datetime.datetime) -> Path:
     return source.with_stem(f"{source.stem}_{date.isoformat(timespec='seconds')}")
 
 
+def _print_benchmark_h1(title: str) -> None:
+    print(title)
+    print("=" * len(title), end="\n\n")
+
+
+def _print_benchmark_h2(title: str) -> None:
+    print(title)
+    print("-" * len(title), end="\n\n")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument(
@@ -1803,8 +1813,7 @@ def main() -> None:
 
     shutil.rmtree(UNIX_SOCKET_PATH.parent, ignore_errors=True)
 
-    print("Metadata")
-    print("========")
+    _print_benchmark_h1("Metadata")
 
     used_python_version: str = _get_python_version_used_in_docker_image(client, image_tag)
 
@@ -1826,9 +1835,7 @@ def main() -> None:
     benchmarks_data_list: list[_BenchmarkData] = []
 
     for benchmark in [b for b in BENCHMARKS_DEF if any(re.match(pattern, b["name"]) for pattern in args.benchmark)]:
-        print(benchmark["title"])
-        print("=" * len(benchmark["title"]))
-        print()
+        _print_benchmark_h1(benchmark["title"])
 
         with contextlib.ExitStack() as stack:
             UNIX_SOCKET_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -1862,9 +1869,11 @@ def main() -> None:
             print(shlex.join(warmup_cmd))
             try:
                 subprocess.check_output(warmup_cmd)
-            except BaseException:
-                print("Output from server:")
-                print(_get_container_logs(container))
+            except KeyboardInterrupt:
+                raise
+            except BaseException as exc:
+                exc.add_note("Output from server:")
+                exc.__notes__.extend(_get_container_logs(container).splitlines())
                 raise
             print("-> Warm up done.")
             print()
@@ -1879,9 +1888,8 @@ def main() -> None:
                 # Pause time between benchmarks run
                 time.sleep(1)
 
-                benchmark_title = f"BENCHMARK: {variation['title']}"
-                print(benchmark_title)
-                print("-" * len(benchmark_title))
+                _print_benchmark_h2(f"BENCHMARK: {variation['title']}")
+
                 client_cmd: _CommandLine = (
                     *benchmark["client"],
                     *variation["args"],
@@ -1891,13 +1899,16 @@ def main() -> None:
                 print(shlex.join(client_cmd))
                 try:
                     output = subprocess.check_output(client_cmd, text=True)
-                except BaseException:
-                    print("Output from server:")
-                    print(_get_container_logs(container))
+                except KeyboardInterrupt:
+                    raise
+                except BaseException as exc:
+                    exc.add_note("Output from server:")
+                    exc.__notes__.extend(_get_container_logs(container).splitlines())
                     raise
                 print("=> Done. Reading data...")
                 data: _BenchmarkVariationData = json.loads(output)
                 _round_all_values(data)
+                del output
 
                 print()
                 print(f"{data['messages']} in {duration} seconds")
