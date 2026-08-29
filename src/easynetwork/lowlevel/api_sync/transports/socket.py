@@ -609,7 +609,11 @@ class SocketStreamListener(base_selector.SelectorListener[SocketStreamTransport]
             future.cancel()
             future.set_running_or_notify_cancel()
         else:
-            future = executor.submit(self.__in_executor, client_sock, handler)
+            try:
+                future = executor.submit(self.__in_executor, client_sock, handler)
+            except BaseException:
+                client_sock.close()
+                raise
             future.add_done_callback(functools.partial(self.__on_task_done, client_sock=client_sock))
         return future
 
@@ -744,7 +748,11 @@ class SSLStreamListener(base_selector.SelectorListener[SSLStreamTransport]):
             client_task_future.set_running_or_notify_cancel()
         else:
             client_task_future = concurrent.futures.Future()
-            whole_task_future = executor.submit(self.__in_executor, client_sock, handler, client_task_future)
+            try:
+                whole_task_future = executor.submit(self.__in_executor, client_sock, handler, client_task_future)
+            except BaseException:
+                client_sock.close()
+                raise
             whole_task_future.add_done_callback(
                 functools.partial(self.__on_executor_task_done, client_sock=client_sock, client_task_future=client_task_future)
             )
@@ -779,19 +787,18 @@ class SSLStreamListener(base_selector.SelectorListener[SSLStreamTransport]):
             )
         except Exception as exc:
             try:
-                if client_task_future.cancel():  # pragma: no branch
-                    client_task_future.set_running_or_notify_cancel()
+                client_task_future.cancel()
+                client_task_future.set_running_or_notify_cancel()
+                handshake_error_handler = self.__handshake_error_handler
+                if handshake_error_handler is None:
+                    self.__default_handshake_error_handler(exc)
+                else:
+                    try:
+                        handshake_error_handler(exc)
+                    except BaseException as error_handler_exc:
+                        self.__default_handshake_error_handler(error_handler_exc)
             finally:
                 client_sock.close()
-
-            handshake_error_handler = self.__handshake_error_handler
-            if handshake_error_handler is None:
-                self.__default_handshake_error_handler(exc)
-            else:
-                try:
-                    handshake_error_handler(exc)
-                except Exception as error_handler_exc:
-                    self.__default_handshake_error_handler(error_handler_exc)
         except BaseException as exc:
             try:
                 if client_task_future.set_running_or_notify_cancel():
