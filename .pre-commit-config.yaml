@@ -17,7 +17,7 @@ repos:
       - id: pyupgrade
         args: ['--py312-plus']
   - repo: https://github.com/PyCQA/isort
-    rev: '8.0.1'
+    rev: '9.0.1'
     hooks:
       - id: isort
         args: ['--filter-files', '--settings-file', 'pyproject.toml']
@@ -46,7 +46,7 @@ repos:
         types: []  # Overwrite with empty in order to fallback to types_or
         types_or: [python, pyi]
   - repo: https://github.com/pdm-project/pdm
-    rev: '2.27.0'
+    rev: '2.28.2'
     hooks:
       - id: pdm-lock-check
       - id: pdm-export

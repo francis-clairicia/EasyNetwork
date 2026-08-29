@@ -83,7 +83,7 @@ uvloop = [
     "uvloop<1,>=0.21.0; os_name=='posix'",
 ]
 tox = [
-    "tox<5,>=4.55",
+    "tox<5,>=4.61",
 ]
 format = [
     "isort>=7.0",
@@ -135,7 +135,7 @@ micro-benchmark = [
 benchmark-servers = [
     "build~=1.0",
     "docker~=7.0",
-    "plotly~=6.0",
+    "plotly~=7.0",
 ]
 benchmark-servers-deps = [
     {include-group = "uvloop"},
