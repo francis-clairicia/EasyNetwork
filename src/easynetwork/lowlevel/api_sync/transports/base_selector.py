@@ -638,7 +638,6 @@ class SelectorDatagramListener[Address](SelectorBaseTransport, transports.Datagr
 
         Raises:
             WouldBlockOnRead: the operation would block when reading the pipe.
-            WouldBlockOnWrite: the operation would block when writing on the pipe.
 
         Returns:
             a tuple with some :class:`bytes` and the sender's address.
@@ -666,7 +665,6 @@ class SelectorDatagramListener[Address](SelectorBaseTransport, transports.Datagr
         Raises:
             ValueError: Negative `ancillary_bufsize`.
             WouldBlockOnRead: the operation would block when reading the pipe.
-            WouldBlockOnWrite: the operation would block when writing on the pipe.
             UnsupportedOperation: This transport does not have ancillary data support.
 
         Returns:

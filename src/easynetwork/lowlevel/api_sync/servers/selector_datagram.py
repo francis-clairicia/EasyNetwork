@@ -895,17 +895,18 @@ class _ThreadSafeListener[Address](_transports.BaseTransport):
         return self.__closing_event.is_set()
 
     def close(self) -> None:
-        with self.__close_lock, self.__send_lock.write_lock():
+        with self.__close_lock:
             self.__closing_event.set()
             with self.__reader_condvar:
                 reader_is_done = self.__reader_done.is_set
                 while not reader_is_done():
                     self.__wakeup_socketpair.wakeup_thread_and_signal_safe()
                     self.__reader_condvar.wait_for(reader_is_done, timeout=1.0)
-            try:
-                self.__listener.close()
-            finally:
-                self.__finalizer()
+            with self.__send_lock.write_lock():
+                try:
+                    self.__listener.close()
+                finally:
+                    self.__finalizer()
 
     def send_to(self, data: bytes | bytearray | memoryview, address: Address, timeout: float) -> None:
         with self.__send_lock.read_lock():
