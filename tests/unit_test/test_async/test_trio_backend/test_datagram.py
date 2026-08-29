@@ -279,7 +279,7 @@ class TestTrioDatagramSocketAdapter(BaseTestSocketTransport):
 
     @PlatformMarkers.supports_socket_sendmsg
     @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
-    @pytest.mark.parametrize("ancillary_data_is_iterator", [False, True], ids=lambda p: f"ancillary_data_is_iterator=={p}")
+    @pytest.mark.parametrize("ancillary_data_is_iterator", [False, True], ids=lambda p: f"ancillary_data_is_iterator__{p}")
     async def test____send_with_ancillary____correctly_handle_iterables(
         self,
         ancillary_data_is_iterator: bool,
@@ -489,7 +489,7 @@ class TestTrioDatagramListenerSocketAdapter(BaseTestSocketTransport):
         mock_trio_lowlevel_notify_closing.assert_called_once_with(mock_datagram_listener_socket)
         mock_datagram_listener_socket.close.assert_called_once_with()
 
-    @pytest.mark.parametrize("external_group", [True, False], ids=lambda p: f"external_group=={p}")
+    @pytest.mark.parametrize("external_group", [True, False], ids=lambda p: f"external_group__{p}")
     @pytest.mark.parametrize(
         ["socket_family_name", "sender_address_1", "sender_address_2", "sender_address_3"],
         [
@@ -572,7 +572,7 @@ class TestTrioDatagramListenerSocketAdapter(BaseTestSocketTransport):
         handler.assert_not_awaited()
 
     @PlatformMarkers.supports_socket_recvmsg
-    @pytest.mark.parametrize("external_group", [True, False], ids=lambda p: f"external_group=={p}")
+    @pytest.mark.parametrize("external_group", [True, False], ids=lambda p: f"external_group__{p}")
     @pytest.mark.parametrize(
         ["socket_family_name", "sender_address_1", "sender_address_2", "sender_address_3"],
         [
@@ -678,7 +678,7 @@ class TestTrioDatagramListenerSocketAdapter(BaseTestSocketTransport):
 
         handler.assert_not_awaited()
 
-    @pytest.mark.parametrize("block_count", [2, 1, 0], ids=lambda count: f"block_count=={count}")
+    @pytest.mark.parametrize("block_count", [2, 1, 0], ids=lambda count: f"block_count__{count}")
     @pytest.mark.parametrize(
         ["socket_family_name", "destination_address"],
         [
@@ -745,7 +745,7 @@ class TestTrioDatagramListenerSocketAdapter(BaseTestSocketTransport):
         with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EBADF):
             await listener.send_to(b"data to send", destination_address)
 
-    @pytest.mark.parametrize("block_count", [2, 1, 0], ids=lambda count: f"block_count=={count}")
+    @pytest.mark.parametrize("block_count", [2, 1, 0], ids=lambda count: f"block_count__{count}")
     @pytest.mark.parametrize(
         ["socket_family_name", "destination_address"],
         [
@@ -846,7 +846,7 @@ class TestTrioDatagramListenerSocketAdapter(BaseTestSocketTransport):
         ],
         indirect=["socket_family_name"],
     )
-    @pytest.mark.parametrize("ancillary_data_is_iterator", [False, True], ids=lambda p: f"ancillary_data_is_iterator=={p}")
+    @pytest.mark.parametrize("ancillary_data_is_iterator", [False, True], ids=lambda p: f"ancillary_data_is_iterator__{p}")
     async def test____send_with_ancillary____correctly_handle_iterables(
         self,
         ancillary_data_is_iterator: bool,

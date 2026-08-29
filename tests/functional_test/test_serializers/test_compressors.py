@@ -28,7 +28,7 @@ class BaseTestCompressorSerializer(BaseTestBufferedIncrementalSerializer, BaseTe
 
     #### Packets to test
 
-    @pytest.fixture(scope="class", params=[pytest.param(p, id=f"packet: {id}") for p, id in SAMPLES])
+    @pytest.fixture(scope="class", params=[pytest.param(p, id=f"packet__{id}") for p, id in SAMPLES])
     @staticmethod
     def packet_to_serialize(request: Any) -> Any:
         return request.param
@@ -71,7 +71,7 @@ class BaseTestCompressorSerializer(BaseTestBufferedIncrementalSerializer, BaseTe
 
 @final
 class TestBZ2CompressorSerializer(BaseTestCompressorSerializer):
-    @pytest.fixture(scope="class", params=list(range(1, 10)), ids=lambda level: f"level=={level}")
+    @pytest.fixture(scope="class", params=list(range(1, 10)), ids=lambda level: f"level__{level}")
     @staticmethod
     def compress_level(request: Any) -> Any:
         return request.param
@@ -107,7 +107,7 @@ class TestBZ2CompressorSerializer(BaseTestCompressorSerializer):
 
 @final
 class TestZlibCompressorSerializer(BaseTestCompressorSerializer):
-    @pytest.fixture(scope="class", params=list(range(1, 10)), ids=lambda level: f"level=={level}")
+    @pytest.fixture(scope="class", params=list(range(1, 10)), ids=lambda level: f"level__{level}")
     @staticmethod
     def compress_level(request: Any) -> Any:
         return request.param

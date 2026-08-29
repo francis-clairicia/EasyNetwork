@@ -250,9 +250,9 @@ class TestAsyncIOBackend:
         assert resolved_addr is mocker.sentinel.resolved_addr
         mock_loop_getnameinfo.assert_awaited_once_with(mocker.sentinel.sockaddr, mocker.sentinel.flags)
 
-    @pytest.mark.parametrize("happy_eyeballs_delay", [None, 42], ids=lambda p: f"happy_eyeballs_delay=={p}")
-    @pytest.mark.parametrize("local_address", [("local_address", 12345), None], ids=lambda addr: f"local_address=={addr}")
-    @pytest.mark.parametrize("remote_address", [("remote_address", 5000)], ids=lambda addr: f"remote_address=={addr}")
+    @pytest.mark.parametrize("happy_eyeballs_delay", [None, 42], ids=lambda p: f"happy_eyeballs_delay__{p}")
+    @pytest.mark.parametrize("local_address", [("local_address", 12345), None], ids=lambda addr: f"local_address__{addr}")
+    @pytest.mark.parametrize("remote_address", [("remote_address", 5000)], ids=lambda addr: f"remote_address__{addr}")
     async def test____create_tcp_connection____use_loop_create_connection(
         self,
         happy_eyeballs_delay: float | None,
@@ -321,7 +321,7 @@ class TestAsyncIOBackend:
                 "",  # <- Arbitrary abstract Unix address given by kernel
                 b"",  # <- Arbitrary abstract Unix address given by kernel
             ],
-            ids=lambda addr: f"local_address=={addr!r}",
+            ids=lambda addr: f"local_address__{addr!r}",
         )
         @pytest.mark.parametrize(
             "remote_address",
@@ -331,7 +331,7 @@ class TestAsyncIOBackend:
                 "\0unix_sock",
                 b"\x00unix_sock",
             ],
-            ids=lambda addr: f"remote_address=={addr!r}",
+            ids=lambda addr: f"remote_address__{addr!r}",
         )
         async def test____create_unix_stream_connection____use_loop_create_unix_connection(
             self,
@@ -385,7 +385,7 @@ class TestAsyncIOBackend:
                 "\0local_sock",
                 b"\x00local_sock",
             ],
-            ids=lambda addr: f"local_address=={addr!r}",
+            ids=lambda addr: f"local_address__{addr!r}",
         )
         @pytest.mark.parametrize(
             "remote_address",
@@ -395,7 +395,7 @@ class TestAsyncIOBackend:
                 "\0unix_sock",
                 b"\x00unix_sock",
             ],
-            ids=lambda addr: f"remote_address=={addr!r}",
+            ids=lambda addr: f"remote_address__{addr!r}",
         )
         @pytest.mark.parametrize(
             "bind_error",
@@ -403,7 +403,7 @@ class TestAsyncIOBackend:
                 OSError(errno.EPERM, os.strerror(errno.EPERM)),
                 OSError("AF_UNIX path too long."),
             ],
-            ids=lambda exc: f"bind_error=={exc!r}",
+            ids=lambda exc: f"bind_error__{exc!r}",
         )
         async def test____create_unix_stream_connection____bind_error(
             self,
@@ -456,7 +456,7 @@ class TestAsyncIOBackend:
                 "\0unix_sock",
                 b"\x00unix_sock",
             ],
-            ids=lambda addr: f"remote_address=={addr!r}",
+            ids=lambda addr: f"remote_address__{addr!r}",
         )
         @pytest.mark.parametrize(
             "connect_error",
@@ -464,7 +464,7 @@ class TestAsyncIOBackend:
                 OSError(errno.ECONNREFUSED, os.strerror(errno.ECONNREFUSED)),
                 OSError(errno.EPERM, os.strerror(errno.EPERM)),
             ],
-            ids=lambda exc: f"connect_error=={exc!r}",
+            ids=lambda exc: f"connect_error__{exc!r}",
         )
         async def test____create_unix_stream_connection____connect_error(
             self,
@@ -744,9 +744,9 @@ class TestAsyncIOBackend:
                 "",  # <- Arbitrary abstract Unix address given by kernel
                 b"",  # <- Arbitrary abstract Unix address given by kernel
             ],
-            ids=lambda addr: f"local_address=={addr!r}",
+            ids=lambda addr: f"local_address__{addr!r}",
         )
-        @pytest.mark.parametrize("mode", [None, 0o640], ids=lambda mode: f"mode=={mode!r}")
+        @pytest.mark.parametrize("mode", [None, 0o640], ids=lambda mode: f"mode__{mode!r}")
         async def test____create_unix_stream_listener____open_listener_socket(
             self,
             backend: AsyncIOBackend,
@@ -801,7 +801,7 @@ class TestAsyncIOBackend:
                 "",  # <- Arbitrary abstract Unix address given by kernel
                 b"",  # <- Arbitrary abstract Unix address given by kernel
             ],
-            ids=lambda addr: f"local_address=={addr!r}",
+            ids=lambda addr: f"local_address__{addr!r}",
         )
         @pytest.mark.parametrize(
             "bind_error",
@@ -809,9 +809,9 @@ class TestAsyncIOBackend:
                 OSError(errno.EPERM, os.strerror(errno.EPERM)),
                 OSError("AF_UNIX path too long."),
             ],
-            ids=lambda exc: f"bind_error=={exc!r}",
+            ids=lambda exc: f"bind_error__{exc!r}",
         )
-        @pytest.mark.parametrize("mode", [None, 0o640], ids=lambda mode: f"mode=={mode!r}")
+        @pytest.mark.parametrize("mode", [None, 0o640], ids=lambda mode: f"mode__{mode!r}")
         async def test____create_unix_stream_listener____bind_failed(
             self,
             backend: AsyncIOBackend,
@@ -858,7 +858,7 @@ class TestAsyncIOBackend:
                 "/path/to/local.sock",
                 b"/path/to/local.sock",
             ],
-            ids=lambda addr: f"local_address=={addr!r}",
+            ids=lambda addr: f"local_address__{addr!r}",
         )
         async def test____create_unix_stream_listener____chmod_failed(
             self,
@@ -895,9 +895,9 @@ class TestAsyncIOBackend:
             mock_os_chmod.assert_called_once()
             mock_ListenerSocketAdapter.assert_not_called()
 
-    @pytest.mark.parametrize("socket_family", [None, AF_INET, AF_INET6], ids=lambda p: f"family=={p}")
-    @pytest.mark.parametrize("local_address", [("local_address", 12345), None], ids=lambda addr: f"local_address=={addr}")
-    @pytest.mark.parametrize("remote_address", [("remote_address", 5000)], ids=lambda addr: f"remote_address=={addr}")
+    @pytest.mark.parametrize("socket_family", [None, AF_INET, AF_INET6], ids=lambda p: f"family__{p}")
+    @pytest.mark.parametrize("local_address", [("local_address", 12345), None], ids=lambda addr: f"local_address__{addr}")
+    @pytest.mark.parametrize("remote_address", [("remote_address", 5000)], ids=lambda addr: f"remote_address__{addr}")
     async def test____create_udp_endpoint____use_loop_create_datagram_endpoint(
         self,
         local_address: tuple[str, int] | None,
@@ -957,7 +957,7 @@ class TestAsyncIOBackend:
                 "",  # <- Arbitrary abstract Unix address given by kernel
                 b"",  # <- Arbitrary abstract Unix address given by kernel
             ],
-            ids=lambda addr: f"local_address=={addr!r}",
+            ids=lambda addr: f"local_address__{addr!r}",
         )
         @pytest.mark.parametrize(
             "remote_address",
@@ -967,7 +967,7 @@ class TestAsyncIOBackend:
                 "\0unix_sock",
                 b"\x00unix_sock",
             ],
-            ids=lambda addr: f"remote_address=={addr!r}",
+            ids=lambda addr: f"remote_address__{addr!r}",
         )
         async def test____create_unix_datagram_endpoint____use_loop_create_datagram_endpoint(
             self,
@@ -1024,7 +1024,7 @@ class TestAsyncIOBackend:
                 "\0local_sock",
                 b"\x00local_sock",
             ],
-            ids=lambda addr: f"local_address=={addr!r}",
+            ids=lambda addr: f"local_address__{addr!r}",
         )
         @pytest.mark.parametrize(
             "remote_address",
@@ -1034,7 +1034,7 @@ class TestAsyncIOBackend:
                 "\0unix_sock",
                 b"\x00unix_sock",
             ],
-            ids=lambda addr: f"remote_address=={addr!r}",
+            ids=lambda addr: f"remote_address__{addr!r}",
         )
         @pytest.mark.parametrize(
             "bind_error",
@@ -1042,7 +1042,7 @@ class TestAsyncIOBackend:
                 OSError(errno.EPERM, os.strerror(errno.EPERM)),
                 OSError("AF_UNIX path too long."),
             ],
-            ids=lambda exc: f"bind_error=={exc!r}",
+            ids=lambda exc: f"bind_error__{exc!r}",
         )
         async def test____create_unix_datagram_endpoint____bind_error(
             self,
@@ -1098,7 +1098,7 @@ class TestAsyncIOBackend:
                 "\0local_sock",
                 b"\x00local_sock",
             ],
-            ids=lambda addr: f"local_address=={addr!r}",
+            ids=lambda addr: f"local_address__{addr!r}",
         )
         @pytest.mark.parametrize(
             "remote_address",
@@ -1108,14 +1108,14 @@ class TestAsyncIOBackend:
                 "\0unix_sock",
                 b"\x00unix_sock",
             ],
-            ids=lambda addr: f"remote_address=={addr!r}",
+            ids=lambda addr: f"remote_address__{addr!r}",
         )
         @pytest.mark.parametrize(
             "connect_error",
             [
                 OSError(errno.EPERM, os.strerror(errno.EPERM)),
             ],
-            ids=lambda exc: f"connect_error=={exc!r}",
+            ids=lambda exc: f"connect_error__{exc!r}",
         )
         async def test____create_unix_datagram_endpoint____connect_error(
             self,
@@ -1403,9 +1403,9 @@ class TestAsyncIOBackend:
                 "",  # <- Arbitrary abstract Unix address given by kernel
                 b"",  # <- Arbitrary abstract Unix address given by kernel
             ],
-            ids=lambda addr: f"local_address=={addr!r}",
+            ids=lambda addr: f"local_address__{addr!r}",
         )
-        @pytest.mark.parametrize("mode", [None, 0o640], ids=lambda mode: f"mode=={mode!r}")
+        @pytest.mark.parametrize("mode", [None, 0o640], ids=lambda mode: f"mode__{mode!r}")
         async def test____create_unix_datagram_listener____open_listener_socket(
             self,
             backend: AsyncIOBackend,
@@ -1452,7 +1452,7 @@ class TestAsyncIOBackend:
                 "",  # <- Arbitrary abstract Unix address given by kernel
                 b"",  # <- Arbitrary abstract Unix address given by kernel
             ],
-            ids=lambda addr: f"local_address=={addr!r}",
+            ids=lambda addr: f"local_address__{addr!r}",
         )
         @pytest.mark.parametrize(
             "bind_error",
@@ -1460,9 +1460,9 @@ class TestAsyncIOBackend:
                 OSError(errno.EPERM, os.strerror(errno.EPERM)),
                 OSError("AF_UNIX path too long."),
             ],
-            ids=lambda exc: f"bind_error=={exc!r}",
+            ids=lambda exc: f"bind_error__{exc!r}",
         )
-        @pytest.mark.parametrize("mode", [None, 0o640], ids=lambda mode: f"mode=={mode!r}")
+        @pytest.mark.parametrize("mode", [None, 0o640], ids=lambda mode: f"mode__{mode!r}")
         async def test____create_unix_datagram_listener____bind_failed(
             self,
             backend: AsyncIOBackend,
@@ -1508,7 +1508,7 @@ class TestAsyncIOBackend:
                 "/path/to/local.sock",
                 b"/path/to/local.sock",
             ],
-            ids=lambda addr: f"local_address=={addr!r}",
+            ids=lambda addr: f"local_address__{addr!r}",
         )
         async def test____create_unix_datagram_listener____chmod_failed(
             self,
@@ -1543,7 +1543,7 @@ class TestAsyncIOBackend:
             mock_os_chmod.assert_called_once()
             mock_RawUnixDatagramListenerAdapter.assert_not_called()
 
-    @pytest.mark.parametrize("fair_lock", [False, True], ids=lambda p: f"fair_lock=={p}")
+    @pytest.mark.parametrize("fair_lock", [False, True], ids=lambda p: f"fair_lock__{p}")
     async def test____create_lock____use_asyncio_Lock_class(
         self,
         fair_lock: bool,
@@ -1615,7 +1615,7 @@ class TestAsyncIOBackend:
         # Assert
         mock_Condition.assert_not_called()
 
-    @pytest.mark.parametrize("abandon_on_cancel", [False, True], ids=lambda p: f"abandon_on_cancel=={p}")
+    @pytest.mark.parametrize("abandon_on_cancel", [False, True], ids=lambda p: f"abandon_on_cancel__{p}")
     async def test____run_in_thread____use_loop_run_in_executor(
         self,
         abandon_on_cancel: bool,

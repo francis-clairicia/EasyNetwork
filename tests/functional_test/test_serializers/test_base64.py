@@ -59,7 +59,7 @@ class BaseTestBase64EncoderSerializer(BaseTestBufferedIncrementalSerializer):
 
     #### Packets to test
 
-    @pytest.fixture(scope="class", params=[pytest.param(p, id=f"packet: {id}") for p, id in SAMPLES])
+    @pytest.fixture(scope="class", params=[pytest.param(p, id=f"packet__{id}") for p, id in SAMPLES])
     @staticmethod
     def packet_to_serialize(request: Any) -> Any:
         return request.param
@@ -139,7 +139,7 @@ class BaseTestBase64EncoderSerializer(BaseTestBufferedIncrementalSerializer):
 
 @final
 class TestBase64EncoderSerializerChecksum(BaseTestBase64EncoderSerializer):
-    @pytest.fixture(scope="class", params=[False, True], ids=lambda boolean: f"checksum=={boolean}")
+    @pytest.fixture(scope="class", params=[False, True], ids=lambda boolean: f"checksum__{boolean}")
     @staticmethod
     def checksum(request: pytest.FixtureRequest) -> bool:
         return request.param

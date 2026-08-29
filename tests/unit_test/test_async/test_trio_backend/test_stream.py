@@ -534,7 +534,7 @@ class TestTrioStreamSocketAdapter(BaseTestTrioSocketStream, MixinTestSocketSendM
     @PlatformMarkers.supports_socket_sendmsg
     @pytest.mark.usefixtures("SC_IOV_MAX")
     @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
-    @pytest.mark.parametrize("SC_IOV_MAX", [2], ids=lambda p: f"SC_IOV_MAX=={p}", indirect=True)
+    @pytest.mark.parametrize("SC_IOV_MAX", [2], ids=lambda p: f"SC_IOV_MAX__{p}", indirect=True)
     async def test____send_all_with_ancillary____message_too_long____nb_buffers_greather_than_SC_IOV_MAX(
         self,
         transport: TrioStreamSocketAdapter,
@@ -576,8 +576,8 @@ class TestTrioStreamSocketAdapter(BaseTestTrioSocketStream, MixinTestSocketSendM
 
     @PlatformMarkers.supports_socket_sendmsg
     @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
-    @pytest.mark.parametrize("data_is_iterator", [False, True], ids=lambda p: f"data_is_iterator=={p}")
-    @pytest.mark.parametrize("ancillary_data_is_iterator", [False, True], ids=lambda p: f"ancillary_data_is_iterator=={p}")
+    @pytest.mark.parametrize("data_is_iterator", [False, True], ids=lambda p: f"data_is_iterator__{p}")
+    @pytest.mark.parametrize("ancillary_data_is_iterator", [False, True], ids=lambda p: f"ancillary_data_is_iterator__{p}")
     async def test____send_all_with_ancillary____correctly_handle_iterables(
         self,
         data_is_iterator: bool,
@@ -642,7 +642,7 @@ class TestTrioStreamSocketAdapter(BaseTestTrioSocketStream, MixinTestSocketSendM
 
     @PlatformMarkers.supports_socket_sendmsg
     @pytest.mark.usefixtures("SC_IOV_MAX")
-    @pytest.mark.parametrize("SC_IOV_MAX", [2], ids=lambda p: f"SC_IOV_MAX=={p}", indirect=True)
+    @pytest.mark.parametrize("SC_IOV_MAX", [2], ids=lambda p: f"SC_IOV_MAX__{p}", indirect=True)
     async def test____send_all_from_iterable____use_socket_sendmsg____nb_buffers_greather_than_SC_IOV_MAX(
         self,
         transport: TrioStreamSocketAdapter,
@@ -998,7 +998,7 @@ class TestTrioListenerSocketAdapter(BaseTestTrioSocketStream):
         assert listener.is_closing()
         mock_trio_socket_listener.aclose.assert_awaited_once_with()
 
-    @pytest.mark.parametrize("external_group", [True, False], ids=lambda p: f"external_group=={p}")
+    @pytest.mark.parametrize("external_group", [True, False], ids=lambda p: f"external_group__{p}")
     async def test____serve____default(
         self,
         trio_backend: TrioBackend,

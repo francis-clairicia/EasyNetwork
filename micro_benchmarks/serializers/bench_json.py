@@ -39,7 +39,7 @@ def bench_JSONSerializer_deserialize(
 
 
 @pytest.mark.benchmark(group=SerializerGroup.JSON_INCREMENTAL_SERIALIZE)
-@pytest.mark.parametrize("use_lines", [False, True], ids=lambda p: f"use_lines=={p}")
+@pytest.mark.parametrize("use_lines", [False, True], ids=lambda p: f"use_lines__{p}")
 def bench_JSONSerializer_incremental_serialize(
     use_lines: bool,
     benchmark: BenchmarkFixture,
@@ -51,8 +51,8 @@ def bench_JSONSerializer_incremental_serialize(
 
 
 @pytest.mark.benchmark(group=SerializerGroup.JSON_INCREMENTAL_DESERIALIZE)
-@pytest.mark.parametrize("use_lines", [False, True], ids=lambda p: f"use_lines=={p}")
-@pytest.mark.parametrize("buffered", [False, True], ids=lambda p: f"buffered=={p}")
+@pytest.mark.parametrize("use_lines", [False, True], ids=lambda p: f"use_lines__{p}")
+@pytest.mark.parametrize("buffered", [False, True], ids=lambda p: f"buffered__{p}")
 def bench_JSONSerializer_incremental_deserialize(
     use_lines: bool,
     buffered: bool,

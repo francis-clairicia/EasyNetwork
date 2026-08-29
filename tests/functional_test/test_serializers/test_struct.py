@@ -42,7 +42,7 @@ class TestStructSerializer(BaseTestBufferedIncrementalSerializer, BaseTestSerial
     @pytest.fixture(
         scope="class",
         params=[
-            pytest.param(p, id=f"packet: {p!r}")
+            pytest.param(p, id=f"packet__{p!r}")
             for p in [
                 (b"".ljust(10), 0, b"\0"),
                 (b"string".ljust(10), -4, b"y"),

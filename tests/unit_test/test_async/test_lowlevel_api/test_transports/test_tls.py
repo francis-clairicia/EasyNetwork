@@ -153,12 +153,12 @@ class TestAsyncTLSStreamTransport:
         assert tls_transport.extra(TLSAttribute.tls_version) is mocker.sentinel.tls_version
         assert tls_transport.extra(TLSAttribute.standard_compatible) is True
 
-    @pytest.mark.parametrize("server_hostname", [None, "server_hostname"], ids=lambda p: f"server_hostname=={p}")
-    @pytest.mark.parametrize("server_side", [True, False], ids=lambda p: f"server_side=={p}")
-    @pytest.mark.parametrize("session", [None, "session"], ids=lambda p: f"session=={p}")
-    @pytest.mark.parametrize("standard_compatible", [True, False], ids=lambda p: f"standard_compatible=={p}")
-    @pytest.mark.parametrize("handshake_timeout", [123465789], ids=lambda p: f"handshake_timeout=={p}")
-    @pytest.mark.parametrize("shutdown_timeout", [987654321], ids=lambda p: f"shutdown_timeout=={p}")
+    @pytest.mark.parametrize("server_hostname", [None, "server_hostname"], ids=lambda p: f"server_hostname__{p}")
+    @pytest.mark.parametrize("server_side", [True, False], ids=lambda p: f"server_side__{p}")
+    @pytest.mark.parametrize("session", [None, "session"], ids=lambda p: f"session__{p}")
+    @pytest.mark.parametrize("standard_compatible", [True, False], ids=lambda p: f"standard_compatible__{p}")
+    @pytest.mark.parametrize("handshake_timeout", [123465789], ids=lambda p: f"handshake_timeout__{p}")
+    @pytest.mark.parametrize("shutdown_timeout", [987654321], ids=lambda p: f"shutdown_timeout__{p}")
     async def test____wrap____with_parameters(
         self,
         async_finalizer: AsyncFinalizer,
@@ -221,8 +221,8 @@ class TestAsyncTLSStreamTransport:
     @pytest.mark.parametrize(
         ["server_hostname", "expected_server_side"],
         [
-            pytest.param(None, True, id="server_hostname==None"),
-            pytest.param("hostname", False, id="server_hostname=='hostname'"),
+            pytest.param(None, True, id="None"),
+            pytest.param("hostname", False, id="hostname"),
         ],
     )
     @pytest.mark.usefixtures("mock_tls_transport_retry")
@@ -326,7 +326,7 @@ class TestAsyncTLSStreamTransport:
 
         mock_wrapped_transport.aclose.assert_not_called()
 
-    @pytest.mark.parametrize("standard_compatible", [False, True], indirect=True, ids=lambda p: f"standard_compatible=={p}")
+    @pytest.mark.parametrize("standard_compatible", [False, True], indirect=True, ids=lambda p: f"standard_compatible__{p}")
     async def test____aclose____close_transport(
         self,
         tls_transport: AsyncTLSStreamTransport,
@@ -354,7 +354,7 @@ class TestAsyncTLSStreamTransport:
             assert not write_bio.eof
         mock_wrapped_transport.aclose.assert_awaited_once_with()
 
-    @pytest.mark.parametrize("standard_compatible", [False, True], indirect=True, ids=lambda p: f"standard_compatible=={p}")
+    @pytest.mark.parametrize("standard_compatible", [False, True], indirect=True, ids=lambda p: f"standard_compatible__{p}")
     async def test____aclose____idempotent(
         self,
         tls_transport: AsyncTLSStreamTransport,
@@ -383,8 +383,8 @@ class TestAsyncTLSStreamTransport:
             assert not write_bio.eof
         mock_wrapped_transport.aclose.assert_awaited_once()
 
-    @pytest.mark.parametrize("standard_compatible", [True], indirect=True, ids=lambda p: f"standard_compatible=={p}")
-    @pytest.mark.parametrize("shutdown_timeout", [1], indirect=True, ids=lambda p: f"shutdown_timeout=={p}")
+    @pytest.mark.parametrize("standard_compatible", [True], indirect=True, ids=lambda p: f"standard_compatible__{p}")
+    @pytest.mark.parametrize("shutdown_timeout", [1], indirect=True, ids=lambda p: f"shutdown_timeout__{p}")
     async def test____aclose____shutdown_timeout(
         self,
         tls_transport: AsyncTLSStreamTransport,
@@ -410,7 +410,7 @@ class TestAsyncTLSStreamTransport:
         assert not write_bio.eof
         mock_wrapped_transport.aclose.assert_awaited_once_with()
 
-    @pytest.mark.parametrize("standard_compatible", [True], indirect=True, ids=lambda p: f"standard_compatible=={p}")
+    @pytest.mark.parametrize("standard_compatible", [True], indirect=True, ids=lambda p: f"standard_compatible__{p}")
     async def test____aclose____mask_unwrap_error(
         self,
         tls_transport: AsyncTLSStreamTransport,
@@ -475,7 +475,7 @@ class TestAsyncTLSStreamTransport:
         mock_tls_transport_retry.assert_awaited_once_with(tls_transport, mock_ssl_object.read, 0)
         mock_ssl_object.read.assert_called_once_with(0)
 
-    @pytest.mark.parametrize("standard_compatible", [False, True], indirect=True, ids=lambda p: f"standard_compatible=={p}")
+    @pytest.mark.parametrize("standard_compatible", [False, True], indirect=True, ids=lambda p: f"standard_compatible__{p}")
     @pytest.mark.usefixtures("mock_tls_transport_retry")
     async def test____recv____SSLZeroReturnError(
         self,
@@ -491,7 +491,7 @@ class TestAsyncTLSStreamTransport:
         # Assert
         assert data == b""
 
-    @pytest.mark.parametrize("standard_compatible", [False, True], indirect=True, ids=lambda p: f"standard_compatible=={p}")
+    @pytest.mark.parametrize("standard_compatible", [False, True], indirect=True, ids=lambda p: f"standard_compatible__{p}")
     @pytest.mark.usefixtures("mock_tls_transport_retry")
     async def test____recv____ragged_eof(
         self,
@@ -510,7 +510,7 @@ class TestAsyncTLSStreamTransport:
             data = await tls_transport.recv(123456)
             assert data == b""
 
-    @pytest.mark.parametrize("standard_compatible", [False, True], indirect=True, ids=lambda p: f"standard_compatible=={p}")
+    @pytest.mark.parametrize("standard_compatible", [False, True], indirect=True, ids=lambda p: f"standard_compatible__{p}")
     @pytest.mark.usefixtures("mock_tls_transport_retry")
     async def test____recv____unrelated_ssl_error(
         self,
@@ -560,7 +560,7 @@ class TestAsyncTLSStreamTransport:
         mock_tls_transport_retry.assert_awaited_once_with(tls_transport, mock_ssl_object.read, 1024, buffer)
         mock_ssl_object.read.assert_called_once_with(1024, buffer)
 
-    @pytest.mark.parametrize("standard_compatible", [False, True], indirect=True, ids=lambda p: f"standard_compatible=={p}")
+    @pytest.mark.parametrize("standard_compatible", [False, True], indirect=True, ids=lambda p: f"standard_compatible__{p}")
     @pytest.mark.usefixtures("mock_tls_transport_retry")
     async def test____recv_into____SSLZeroReturnError(
         self,
@@ -577,7 +577,7 @@ class TestAsyncTLSStreamTransport:
         # Assert
         assert nbytes == 0
 
-    @pytest.mark.parametrize("standard_compatible", [False, True], indirect=True, ids=lambda p: f"standard_compatible=={p}")
+    @pytest.mark.parametrize("standard_compatible", [False, True], indirect=True, ids=lambda p: f"standard_compatible__{p}")
     @pytest.mark.usefixtures("mock_tls_transport_retry")
     async def test____recv_into____ragged_eof(
         self,
@@ -597,7 +597,7 @@ class TestAsyncTLSStreamTransport:
             nbytes = await tls_transport.recv_into(buffer)
             assert nbytes == 0
 
-    @pytest.mark.parametrize("standard_compatible", [False, True], indirect=True, ids=lambda p: f"standard_compatible=={p}")
+    @pytest.mark.parametrize("standard_compatible", [False, True], indirect=True, ids=lambda p: f"standard_compatible__{p}")
     @pytest.mark.usefixtures("mock_tls_transport_retry")
     async def test____recv_into____unrelated_ssl_error(
         self,
@@ -681,7 +681,7 @@ class TestAsyncTLSStreamTransport:
         # Assert
         mock_ssl_object.write.assert_called_once_with(b"")
 
-    @pytest.mark.parametrize("standard_compatible", [False, True], indirect=True, ids=lambda p: f"standard_compatible=={p}")
+    @pytest.mark.parametrize("standard_compatible", [False, True], indirect=True, ids=lambda p: f"standard_compatible__{p}")
     @pytest.mark.usefixtures("mock_tls_transport_retry")
     async def test____send_all____SSLZeroReturnError(
         self,
@@ -695,7 +695,7 @@ class TestAsyncTLSStreamTransport:
         with pytest.raises(ConnectionResetError):
             await tls_transport.send_all(b"decrypted-data")
 
-    @pytest.mark.parametrize("standard_compatible", [False, True], indirect=True, ids=lambda p: f"standard_compatible=={p}")
+    @pytest.mark.parametrize("standard_compatible", [False, True], indirect=True, ids=lambda p: f"standard_compatible__{p}")
     @pytest.mark.usefixtures("mock_tls_transport_retry")
     async def test____send_all____ragged_eof(
         self,
@@ -709,7 +709,7 @@ class TestAsyncTLSStreamTransport:
         with pytest.raises(ssl.SSLEOFError):
             await tls_transport.send_all(b"decrypted-data")
 
-    @pytest.mark.parametrize("standard_compatible", [False, True], indirect=True, ids=lambda p: f"standard_compatible=={p}")
+    @pytest.mark.parametrize("standard_compatible", [False, True], indirect=True, ids=lambda p: f"standard_compatible__{p}")
     @pytest.mark.usefixtures("mock_tls_transport_retry")
     async def test____send_all____unrelated_ssl_error(
         self,
@@ -723,7 +723,7 @@ class TestAsyncTLSStreamTransport:
         with pytest.raises(ssl.SSLError):
             await tls_transport.send_all(b"decrypted-data")
 
-    @pytest.mark.parametrize("standard_compatible", [False, True], indirect=True, ids=lambda p: f"standard_compatible=={p}")
+    @pytest.mark.parametrize("standard_compatible", [False, True], indirect=True, ids=lambda p: f"standard_compatible__{p}")
     async def test____send_all____closed_transport(
         self,
         tls_transport: AsyncTLSStreamTransport,
@@ -784,7 +784,7 @@ class TestAsyncTLSStreamTransport:
             mocker.call(b"data-2"),
         ]
 
-    @pytest.mark.parametrize("standard_compatible", [False, True], indirect=True, ids=lambda p: f"standard_compatible=={p}")
+    @pytest.mark.parametrize("standard_compatible", [False, True], indirect=True, ids=lambda p: f"standard_compatible__{p}")
     async def test____send_all_from_iterable____closed_transport(
         self,
         tls_transport: AsyncTLSStreamTransport,
@@ -826,7 +826,7 @@ class TestAsyncTLSStreamTransport:
         assert not read_bio.eof
         assert not write_bio.eof
 
-    @pytest.mark.parametrize("pending_write", [b"", b"encrypted-data\n"], ids=lambda p: f"pending_write=={p!r}")
+    @pytest.mark.parametrize("pending_write", [b"", b"encrypted-data\n"], ids=lambda p: f"pending_write__{p!r}")
     async def test____retry____default(
         self,
         tls_transport: AsyncTLSStreamTransport,
@@ -883,7 +883,7 @@ class TestAsyncTLSStreamTransport:
         mock_wrapped_transport.send_all.assert_awaited_once_with(b"encrypted-data\n")
         assert result is mocker.sentinel.result
 
-    @pytest.mark.parametrize("pending_write", [b"", b"encrypted-data\n"], ids=lambda p: f"pending_write=={p!r}")
+    @pytest.mark.parametrize("pending_write", [b"", b"encrypted-data\n"], ids=lambda p: f"pending_write__{p!r}")
     async def test____retry____SSLWantReadError(
         self,
         pending_write: bytes,
@@ -1118,7 +1118,7 @@ class TestAsyncTLSListener:
 
         mock_wrapped_listener.aclose.assert_not_called()
 
-    @pytest.mark.parametrize("standard_compatible", [False, True], indirect=True, ids=lambda p: f"standard_compatible=={p}")
+    @pytest.mark.parametrize("standard_compatible", [False, True], indirect=True, ids=lambda p: f"standard_compatible__{p}")
     async def test____extra_attributes____default(
         self,
         tls_listener: AsyncTLSListener,
@@ -1137,7 +1137,7 @@ class TestAsyncTLSListener:
         assert tls_listener.extra(TLSAttribute.sslcontext) is mock_ssl_context
         assert tls_listener.extra(TLSAttribute.standard_compatible) is standard_compatible
 
-    @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing=={p}")
+    @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing__{p}")
     async def test____is_closing____returns_wrapped_listener_state(
         self,
         transport_is_closing: bool,
@@ -1176,7 +1176,7 @@ class TestAsyncTLSListener:
         # Act & Assert
         assert tls_listener.backend() is mock_wrapped_listener.backend()
 
-    @pytest.mark.parametrize("external_group", [True, False], ids=lambda p: f"external_group=={p}")
+    @pytest.mark.parametrize("external_group", [True, False], ids=lambda p: f"external_group__{p}")
     async def test____serve____wrap_client_stream(
         self,
         external_group: bool,
@@ -1230,7 +1230,7 @@ class TestAsyncTLSListener:
         "hanshake_error_handler",
         ["default", "custom"],
         indirect=True,
-        ids=lambda p: f"hanshake_error_handler=={p}",
+        ids=lambda p: f"hanshake_error_handler__{p}",
     )
     async def test____serve____handshake_error(
         self,
@@ -1276,7 +1276,7 @@ class TestAsyncTLSListener:
         "hanshake_error_handler",
         ["custom"],
         indirect=True,
-        ids=lambda p: f"hanshake_error_handler=={p}",
+        ids=lambda p: f"hanshake_error_handler__{p}",
     )
     async def test____serve____handshake_error____error_handler_crashed_too(
         self,

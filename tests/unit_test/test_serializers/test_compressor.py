@@ -171,7 +171,7 @@ class TestAbstractCompressorSerializer:
         mock_serializer.deserialize.assert_called_once_with(mocker.sentinel.decompressed_data)
         assert packet is mocker.sentinel.packet
 
-    @pytest.mark.parametrize("give_as_tuple", [False, True], ids=lambda boolean: f"give_as_tuple=={boolean}")
+    @pytest.mark.parametrize("give_as_tuple", [False, True], ids=lambda boolean: f"give_as_tuple__{boolean}")
     def test____deserialize____translates_given_exceptions(
         self,
         give_as_tuple: bool,
@@ -339,7 +339,7 @@ class TestAbstractCompressorSerializer:
         assert packet is mocker.sentinel.packet
         assert remaining_data == b"some extra data"
 
-    @pytest.mark.parametrize("give_as_tuple", [False, True], ids=lambda boolean: f"give_as_tuple=={boolean}")
+    @pytest.mark.parametrize("give_as_tuple", [False, True], ids=lambda boolean: f"give_as_tuple__{boolean}")
     def test____incremental_deserialize____translate_given_exceptions(
         self,
         give_as_tuple: bool,

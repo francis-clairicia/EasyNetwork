@@ -6,7 +6,7 @@ import pytest
 import pytest_asyncio
 
 
-@pytest_asyncio.fixture(params=[True, False], ids=lambda p: f"enable_eager_tasks=={p}")
+@pytest_asyncio.fixture(params=[True, False], ids=lambda p: f"enable_eager_tasks__{p}")
 async def enable_eager_tasks(request: pytest.FixtureRequest) -> bool:
     enable_eager_tasks = bool(request.param)
     if enable_eager_tasks:

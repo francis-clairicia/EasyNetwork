@@ -22,7 +22,7 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
             "line_str",
             list(metafunc.config.getoption(PAYLOAD_SIZE_LEVEL)),
             indirect=True,
-            ids=lambda p: f"size=={p}kb",
+            ids=lambda p: f"size__{p}kb",
         )
 
 
@@ -51,7 +51,7 @@ def bench_StringLineSerializer_serialize(
 
 
 @pytest.mark.benchmark(group=SerializerGroup.LINE_DESERIALIZE)
-@pytest.mark.parametrize("keep_end", [False, True], ids=lambda p: f"keep_end=={p}")
+@pytest.mark.parametrize("keep_end", [False, True], ids=lambda p: f"keep_end__{p}")
 def bench_StringLineSerializer_deserialize(
     keep_end: bool,
     benchmark: BenchmarkFixture,
@@ -82,8 +82,8 @@ def bench_StringLineSerializer_incremental_serialize(
 
 
 @pytest.mark.benchmark(group=SerializerGroup.LINE_INCREMENTAL_DESERIALIZE)
-@pytest.mark.parametrize("keep_end", [False, True], ids=lambda p: f"keep_end=={p}")
-@pytest.mark.parametrize("buffered", [False, True], ids=lambda p: f"buffered=={p}")
+@pytest.mark.parametrize("keep_end", [False, True], ids=lambda p: f"keep_end__{p}")
+@pytest.mark.parametrize("buffered", [False, True], ids=lambda p: f"buffered__{p}")
 def bench_StringLineSerializer_incremental_deserialize(
     keep_end: bool,
     buffered: bool,

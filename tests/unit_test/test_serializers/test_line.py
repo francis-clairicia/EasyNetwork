@@ -34,12 +34,12 @@ class TestStringLineSerializer:
     def unicode_errors(request: pytest.FixtureRequest) -> str:
         return request.param
 
-    @pytest.fixture(params=[False, True], ids=lambda p: f"keep_end=={p}")
+    @pytest.fixture(params=[False, True], ids=lambda p: f"keep_end__{p}")
     @staticmethod
     def keep_end(request: pytest.FixtureRequest) -> bool:
         return bool(request.param)
 
-    @pytest.fixture(params=[DEFAULT_SERIALIZER_LIMIT], ids=lambda p: f"limit=={p}")
+    @pytest.fixture(params=[DEFAULT_SERIALIZER_LIMIT], ids=lambda p: f"limit__{p}")
     @staticmethod
     def buffer_limit(request: pytest.FixtureRequest) -> int:
         return int(request.param)
@@ -85,7 +85,7 @@ class TestStringLineSerializer:
 
     @pytest.mark.parametrize("encoding", ["ascii", "utf-8"], indirect=True)
     @pytest.mark.parametrize("unicode_errors", ["strict", "ignore", "replace"], indirect=True)
-    @pytest.mark.parametrize("keep_end", [False, True], ids=lambda p: f"keep_end=={p}", indirect=True)
+    @pytest.mark.parametrize("keep_end", [False, True], ids=lambda p: f"keep_end__{p}", indirect=True)
     def test____dunder_init____with_parameters(
         self,
         newline: Literal["LF", "CR", "CRLF"],
@@ -123,7 +123,7 @@ class TestStringLineSerializer:
         with pytest.raises(AssertionError):
             StringLineSerializer("something else")  # type: ignore[arg-type]
 
-    @pytest.mark.parametrize("limit", [0, -42], ids=lambda p: f"limit=={p}")
+    @pytest.mark.parametrize("limit", [0, -42], ids=lambda p: f"limit__{p}")
     def test____dunder_init____invalid_limit(self, limit: int) -> None:
         # Arrange
 
@@ -167,7 +167,7 @@ class TestStringLineSerializer:
         assert isinstance(data, bytes)
         assert data == b""
 
-    @pytest.mark.parametrize("with_newlines", [False, True], ids=lambda boolean: f"with_newlines=={boolean}")
+    @pytest.mark.parametrize("with_newlines", [False, True], ids=lambda boolean: f"with_newlines__{boolean}")
     def test____deserialize____decode_string(
         self,
         with_newlines: bool,
@@ -187,7 +187,7 @@ class TestStringLineSerializer:
         else:
             assert line == "abc"
 
-    @pytest.mark.parametrize("with_newlines", [False, True], ids=lambda boolean: f"with_newlines=={boolean}")
+    @pytest.mark.parametrize("with_newlines", [False, True], ids=lambda boolean: f"with_newlines__{boolean}")
     @pytest.mark.parametrize("encoding", ["ascii", "utf-8"], indirect=True)
     def test____deserialize____decode_string_error(
         self,
@@ -396,9 +396,9 @@ class TestStringLineSerializer:
         else:
             assert exception.error_info is None
 
-    @pytest.mark.parametrize("separator_found", [False, True], ids=lambda p: f"separator_found=={p}")
+    @pytest.mark.parametrize("separator_found", [False, True], ids=lambda p: f"separator_found__{p}")
     @pytest.mark.parametrize("newline", ["CRLF"], indirect=True)
-    @pytest.mark.parametrize("buffer_limit", [1], indirect=True, ids=lambda p: f"limit=={p}")
+    @pytest.mark.parametrize("buffer_limit", [1], indirect=True, ids=lambda p: f"limit__{p}")
     def test____incremental_deserialize____reached_limit(
         self,
         separator_found: bool,
@@ -423,9 +423,9 @@ class TestStringLineSerializer:
         assert bytes(exc_info.value.remaining_data) == b""
         assert exc_info.value.error_info is None
 
-    @pytest.mark.parametrize("separator_found", [False, True], ids=lambda p: f"separator_found=={p}")
+    @pytest.mark.parametrize("separator_found", [False, True], ids=lambda p: f"separator_found__{p}")
     @pytest.mark.parametrize("newline", ["CRLF"], indirect=True)
-    @pytest.mark.parametrize("buffer_limit", [1], indirect=True, ids=lambda p: f"limit=={p}")
+    @pytest.mark.parametrize("buffer_limit", [1], indirect=True, ids=lambda p: f"limit__{p}")
     def test____incremental_deserialize____reached_limit____separator_partially_received(
         self,
         separator_found: bool,
@@ -452,7 +452,7 @@ class TestStringLineSerializer:
         assert exc_info.value.error_info is None
 
     @pytest.mark.parametrize("newline", ["CRLF"], indirect=True)
-    @pytest.mark.parametrize("buffer_limit", [1024], indirect=True, ids=lambda p: f"limit=={p}")
+    @pytest.mark.parametrize("buffer_limit", [1024], indirect=True, ids=lambda p: f"limit__{p}")
     def test____buffered_incremental_deserialize____reached_limit(
         self,
         serializer: StringLineSerializer,
@@ -473,7 +473,7 @@ class TestStringLineSerializer:
         assert exc_info.value.error_info is None
 
     @pytest.mark.parametrize("newline", ["CRLF"], indirect=True)
-    @pytest.mark.parametrize("buffer_limit", [1024], indirect=True, ids=lambda p: f"limit=={p}")
+    @pytest.mark.parametrize("buffer_limit", [1024], indirect=True, ids=lambda p: f"limit__{p}")
     def test____buffered_incremental_deserialize____reached_limit____separator_partially_received(
         self,
         serializer: StringLineSerializer,

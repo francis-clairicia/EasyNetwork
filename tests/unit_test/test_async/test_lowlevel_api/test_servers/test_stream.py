@@ -214,7 +214,7 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
         with pytest.raises(TypeError, match=r"^Expected a StreamProtocol or a BufferedStreamProtocol object, got .*$"):
             _ = AsyncStreamServer(mock_listener, mock_invalid_protocol, max_recv_size)
 
-    @pytest.mark.parametrize("max_recv_size", [0, -1, 10.4], ids=lambda p: f"max_recv_size=={p}", indirect=True)
+    @pytest.mark.parametrize("max_recv_size", [0, -1, 10.4], ids=lambda p: f"max_recv_size__{p}", indirect=True)
     async def test____dunder_init____max_recv_size____invalid_value(
         self,
         mock_listener: MagicMock,
@@ -329,8 +329,8 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
                 await server.serve(client_connected_cb, tg)
         client_connected_cb.assert_not_called()
 
-    @pytest.mark.parametrize("give_filter", [False, True], ids=lambda p: f"give_filter=={p}")
-    @pytest.mark.parametrize("recv_with_ancillary", [False, True], ids=lambda p: f"recv_with_ancillary=={p}")
+    @pytest.mark.parametrize("give_filter", [False, True], ids=lambda p: f"give_filter__{p}")
+    @pytest.mark.parametrize("recv_with_ancillary", [False, True], ids=lambda p: f"recv_with_ancillary__{p}")
     async def test____serve____disconnect_error_filter____mask_connection_error_on_receive(
         self,
         give_filter: bool,
@@ -384,7 +384,7 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
 
         exception_caught.assert_called_once_with(True if give_filter else False)
 
-    @pytest.mark.parametrize("recv_with_ancillary", [False, True], ids=lambda p: f"recv_with_ancillary=={p}")
+    @pytest.mark.parametrize("recv_with_ancillary", [False, True], ids=lambda p: f"recv_with_ancillary__{p}")
     async def test____serve____disconnect_error_filter____reraise_non_filtered_errors(
         self,
         recv_with_ancillary: bool,
@@ -464,7 +464,7 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
         assert not caplog.records
 
     @pytest.mark.parametrize("invalid_timeout", [-1.0, math.nan])
-    @pytest.mark.parametrize("recv_with_ancillary", [False, True], ids=lambda p: f"recv_with_ancillary=={p}")
+    @pytest.mark.parametrize("recv_with_ancillary", [False, True], ids=lambda p: f"recv_with_ancillary__{p}")
     async def test____serve____invalid_timeout(
         self,
         invalid_timeout: float,
@@ -507,7 +507,7 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
 
         assert not caplog.records
 
-    @pytest.mark.parametrize("recv_with_ancillary", [False, True], ids=lambda p: f"recv_with_ancillary=={p}")
+    @pytest.mark.parametrize("recv_with_ancillary", [False, True], ids=lambda p: f"recv_with_ancillary__{p}")
     async def test____serve____unhandled_exception____from_system(
         self,
         recv_with_ancillary: bool,
@@ -547,7 +547,7 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
         assert isinstance(caplog.records[0].exc_info[1], OSError)
         assert caplog.records[0].getMessage() == "Unhandled exception: recv() error"
 
-    @pytest.mark.parametrize("recv_with_ancillary", [False, True], ids=lambda p: f"recv_with_ancillary=={p}")
+    @pytest.mark.parametrize("recv_with_ancillary", [False, True], ids=lambda p: f"recv_with_ancillary__{p}")
     async def test____serve____unhandled_exception____from_request_handler(
         self,
         recv_with_ancillary: bool,

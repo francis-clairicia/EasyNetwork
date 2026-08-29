@@ -445,12 +445,12 @@ class TestNamedTupleStructSerializer(BaseTestStructBasedSerializer):
     @pytest.mark.parametrize(
         "strip_string_trailing_nul_bytes",
         [True, False],
-        ids=lambda boolean: f"strip_string_trailing_nul_bytes=={boolean}",
+        ids=lambda boolean: f"strip_string_trailing_nul_bytes__{boolean}",
     )
     @pytest.mark.parametrize(
         "encoding",
         [None, "utf-8"],
-        ids=lambda value: f"encoding=={value}",
+        ids=lambda value: f"encoding__{value}",
     )
     def test____from_tuple____construct_namedtuple____string_padding(
         self,

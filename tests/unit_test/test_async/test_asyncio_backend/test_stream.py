@@ -155,7 +155,7 @@ class BaseTestTransportWithSSL(BaseTestTransportStreamSocket):
 
 @pytest.mark.asyncio
 class TestListenerSocketAdapter(BaseTestSocketTransport, BaseTestAsyncSocket):
-    @pytest.fixture(params=[False, True], ids=lambda p: f"add_reader=={p}", autouse=True)
+    @pytest.fixture(params=[False, True], ids=lambda p: f"add_reader__{p}", autouse=True)
     @staticmethod
     def add_reader_supported(
         request: pytest.FixtureRequest,
@@ -359,8 +359,8 @@ class TestListenerSocketAdapter(BaseTestSocketTransport, BaseTestAsyncSocket):
         # Assert
         mock_stream_listener_socket.close.assert_called_once_with()
 
-    @pytest.mark.parametrize("external_group", [True, False], ids=lambda p: f"external_group=={p}")
-    @pytest.mark.parametrize("add_reader_supported", [False], ids=lambda p: f"add_reader=={p}", indirect=True)
+    @pytest.mark.parametrize("external_group", [True, False], ids=lambda p: f"external_group__{p}")
+    @pytest.mark.parametrize("add_reader_supported", [False], ids=lambda p: f"add_reader__{p}", indirect=True)
     async def test____serve____default(
         self,
         asyncio_backend: AsyncIOBackend,
@@ -407,7 +407,7 @@ class TestListenerSocketAdapter(BaseTestSocketTransport, BaseTestAsyncSocket):
         ],
         ids=repr,
     )
-    @pytest.mark.parametrize("add_reader_supported", [False], ids=lambda p: f"add_reader=={p}", indirect=True)
+    @pytest.mark.parametrize("add_reader_supported", [False], ids=lambda p: f"add_reader__{p}", indirect=True)
     async def test____serve____connect____error_raised(
         self,
         exc: BaseException,
@@ -847,10 +847,10 @@ class TestAsyncioTransportStreamSocketAdapter(BaseTestTransportWithSSL):
 
         mock_asyncio_transport.close.assert_called()
 
-    @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing=={p}")
-    @pytest.mark.parametrize("can_write_eof", [False, True], ids=lambda p: f"can_write_eof=={p}")
-    @pytest.mark.parametrize("wait_close_raise_error", [False, True], ids=lambda p: f"wait_close_raise_error=={p}")
-    @pytest.mark.parametrize("write_eof_raise_error", [False, True], ids=lambda p: f"write_eof_raise_error=={p}")
+    @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing__{p}")
+    @pytest.mark.parametrize("can_write_eof", [False, True], ids=lambda p: f"can_write_eof__{p}")
+    @pytest.mark.parametrize("wait_close_raise_error", [False, True], ids=lambda p: f"wait_close_raise_error__{p}")
+    @pytest.mark.parametrize("write_eof_raise_error", [False, True], ids=lambda p: f"write_eof_raise_error__{p}")
     async def test____aclose____close_transport_and_wait(
         self,
         transport_is_closing: bool,
@@ -888,7 +888,7 @@ class TestAsyncioTransportStreamSocketAdapter(BaseTestTransportWithSSL):
             mock_asyncio_protocol._get_close_waiter.assert_awaited_once_with()
             mock_asyncio_transport.abort.assert_not_called()
 
-    @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing=={p}")
+    @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing__{p}")
     async def test____aclose____abort_transport_if_cancelled(
         self,
         transport_is_closing: bool,
@@ -914,7 +914,7 @@ class TestAsyncioTransportStreamSocketAdapter(BaseTestTransportWithSSL):
             mock_asyncio_protocol._get_close_waiter.assert_awaited_once_with()
         mock_asyncio_transport.abort.assert_not_called()
 
-    @pytest.mark.parametrize("transport_closed", [False, True], ids=lambda p: f"transport_closed=={p}")
+    @pytest.mark.parametrize("transport_closed", [False, True], ids=lambda p: f"transport_closed__{p}")
     async def test____is_closing____return_internal_flag(
         self,
         transport_closed: bool,
@@ -995,7 +995,7 @@ class TestAsyncioTransportStreamSocketAdapter(BaseTestTransportWithSSL):
         mock_asyncio_protocol.receive_data_into.assert_awaited_once_with(buffer)
         assert nbytes == 0
 
-    @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing=={p}")
+    @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing__{p}")
     async def test____send_all____write_and_drain(
         self,
         transport_is_closing: bool,
@@ -1014,7 +1014,7 @@ class TestAsyncioTransportStreamSocketAdapter(BaseTestTransportWithSSL):
         mock_asyncio_transport.writelines.assert_not_called()
         mock_asyncio_protocol.writer_drain.assert_awaited_once_with()
 
-    @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing=={p}")
+    @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing__{p}")
     async def test____send_all_from_iterable____writelines_and_drain(
         self,
         transport_is_closing: bool,
@@ -1036,7 +1036,7 @@ class TestAsyncioTransportStreamSocketAdapter(BaseTestTransportWithSSL):
         mock_asyncio_protocol.writer_drain.assert_awaited_once_with()
         assert written_chunks == [b"data", b"to", b"send"]
 
-    @pytest.mark.parametrize("can_write_eof", [False, True], ids=lambda p: f"can_write_eof=={p}")
+    @pytest.mark.parametrize("can_write_eof", [False, True], ids=lambda p: f"can_write_eof__{p}")
     async def test____send_eof____write_eof(
         self,
         can_write_eof: bool,
@@ -1152,7 +1152,7 @@ if sys.platform != "win32":
             # Assert
             mock_stream_socket.close.assert_called_once_with()
 
-        @pytest.mark.parametrize("transport_closed", [False, True], ids=lambda p: f"transport_closed=={p}")
+        @pytest.mark.parametrize("transport_closed", [False, True], ids=lambda p: f"transport_closed__{p}")
         async def test____is_closing____default(
             self,
             transport_closed: bool,
@@ -1652,7 +1652,7 @@ if sys.platform != "win32":
 
         @PlatformMarkers.supports_socket_sendmsg
         @pytest.mark.usefixtures("SC_IOV_MAX")
-        @pytest.mark.parametrize("SC_IOV_MAX", [2], ids=lambda p: f"SC_IOV_MAX=={p}", indirect=True)
+        @pytest.mark.parametrize("SC_IOV_MAX", [2], ids=lambda p: f"SC_IOV_MAX__{p}", indirect=True)
         async def test____send_all_with_ancillary____message_too_long____nb_buffers_greather_than_SC_IOV_MAX(
             self,
             transport: RawUnixStreamSocketAdapter,
@@ -1682,8 +1682,8 @@ if sys.platform != "win32":
             assert chunks == [[b"a", b"b"]]
 
         @PlatformMarkers.supports_socket_sendmsg
-        @pytest.mark.parametrize("data_is_iterator", [False, True], ids=lambda p: f"data_is_iterator=={p}")
-        @pytest.mark.parametrize("ancillary_data_is_iterator", [False, True], ids=lambda p: f"ancillary_data_is_iterator=={p}")
+        @pytest.mark.parametrize("data_is_iterator", [False, True], ids=lambda p: f"data_is_iterator__{p}")
+        @pytest.mark.parametrize("ancillary_data_is_iterator", [False, True], ids=lambda p: f"ancillary_data_is_iterator__{p}")
         async def test____send_all_with_ancillary____blocking_error____correctly_handle_iterables(
             self,
             data_is_iterator: bool,
@@ -1777,7 +1777,7 @@ if sys.platform != "win32":
 
         @PlatformMarkers.supports_socket_sendmsg
         @pytest.mark.usefixtures("SC_IOV_MAX")
-        @pytest.mark.parametrize("SC_IOV_MAX", [2], ids=lambda p: f"SC_IOV_MAX=={p}", indirect=True)
+        @pytest.mark.parametrize("SC_IOV_MAX", [2], ids=lambda p: f"SC_IOV_MAX__{p}", indirect=True)
         async def test____send_all_from_iterable____use_socket_sendmsg____nb_buffers_greather_than_SC_IOV_MAX(
             self,
             transport: RawUnixStreamSocketAdapter,
@@ -2054,7 +2054,7 @@ if sys.platform != "win32":
                 pytest.param("recv_with_ancillary", marks=[PlatformMarkers.supports_socket_recvmsg]),
                 pytest.param("recv_with_ancillary_into", marks=[PlatformMarkers.supports_socket_recvmsg_into]),
             ],
-            ids=lambda p: f"b:{p}",
+            ids=lambda p: f"b__{p}",
         )
         @pytest.mark.parametrize(
             "incoming_recv_method",
@@ -2064,7 +2064,7 @@ if sys.platform != "win32":
                 pytest.param("recv_with_ancillary", marks=[PlatformMarkers.supports_socket_recvmsg]),
                 pytest.param("recv_with_ancillary_into", marks=[PlatformMarkers.supports_socket_recvmsg_into]),
             ],
-            ids=lambda p: f"i:{p}",
+            ids=lambda p: f"i__{p}",
         )
         async def test____special_case____recv____busy(
             self,
@@ -2190,7 +2190,7 @@ if sys.platform != "win32":
                 pytest.param("send_all_with_ancillary", marks=[PlatformMarkers.supports_socket_sendmsg]),
                 pytest.param("send_all_from_iterable", marks=[PlatformMarkers.supports_socket_sendmsg]),
             ],
-            ids=lambda p: f"b:{p}",
+            ids=lambda p: f"b__{p}",
         )
         @pytest.mark.parametrize(
             "incoming_send_method",
@@ -2199,7 +2199,7 @@ if sys.platform != "win32":
                 pytest.param("send_all_with_ancillary", marks=[PlatformMarkers.supports_socket_sendmsg]),
                 pytest.param("send_all_from_iterable", marks=[PlatformMarkers.supports_socket_sendmsg]),
             ],
-            ids=lambda p: f"i:{p}",
+            ids=lambda p: f"i__{p}",
         )
         async def test____special_case____send____busy(
             self,
@@ -2439,7 +2439,7 @@ class TestStreamReaderBufferedProtocol(BaseTestTransportWithSSL):
         assert protocol.eof_received() is False
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("blocking", [False, True], ids=lambda p: f"blocking=={p}")
+    @pytest.mark.parametrize("blocking", [False, True], ids=lambda p: f"blocking__{p}")
     async def test____receive_data____default(
         self,
         blocking: bool,
@@ -2483,7 +2483,7 @@ class TestStreamReaderBufferedProtocol(BaseTestTransportWithSSL):
         mock_asyncio_transport.resume_reading.assert_not_called()
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("blocking", [False, True], ids=lambda p: f"blocking=={p}")
+    @pytest.mark.parametrize("blocking", [False, True], ids=lambda p: f"blocking__{p}")
     @pytest.mark.parametrize("data_receiver", ["data"], indirect=True)
     async def test____receive_data____owned_data____buffer_updated_several_times(
         self,
@@ -2511,7 +2511,7 @@ class TestStreamReaderBufferedProtocol(BaseTestTransportWithSSL):
         mock_asyncio_transport.resume_reading.assert_not_called()
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("blocking", [False, True], ids=lambda p: f"blocking=={p}")
+    @pytest.mark.parametrize("blocking", [False, True], ids=lambda p: f"blocking__{p}")
     @pytest.mark.parametrize("data_receiver", ["buffer"], indirect=True)
     async def test____receive_data____into_buffer____buffer_updated_several_times(
         self,
@@ -2562,7 +2562,7 @@ class TestStreamReaderBufferedProtocol(BaseTestTransportWithSSL):
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("eof_reason", ["eof_received", "connection_lost"])
-    @pytest.mark.parametrize("blocking", [False, True], ids=lambda p: f"blocking=={p}")
+    @pytest.mark.parametrize("blocking", [False, True], ids=lambda p: f"blocking__{p}")
     async def test____receive_data____eof(
         self,
         blocking: bool,
@@ -2598,7 +2598,7 @@ class TestStreamReaderBufferedProtocol(BaseTestTransportWithSSL):
         mock_asyncio_transport.resume_reading.assert_not_called()
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("blocking", [False, True], ids=lambda p: f"blocking=={p}")
+    @pytest.mark.parametrize("blocking", [False, True], ids=lambda p: f"blocking__{p}")
     async def test____receive_data____connection_lost_by_unrelated_error(
         self,
         blocking: bool,
@@ -2760,7 +2760,7 @@ class TestStreamReaderBufferedProtocol(BaseTestTransportWithSSL):
                     pytest.fail("Invalid param")
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing=={p}")
+    @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing__{p}")
     async def test____drain_helper____quick_exit_if_not_paused(
         self,
         transport_is_closing: bool,
@@ -2818,7 +2818,7 @@ class TestStreamReaderBufferedProtocol(BaseTestTransportWithSSL):
         assert exc_info.value is exception
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("cancel_tasks", [False, True], ids=lambda p: f"cancel_tasks_before=={p}")
+    @pytest.mark.parametrize("cancel_tasks", [False, True], ids=lambda p: f"cancel_tasks_before__{p}")
     async def test____drain_helper____wait_during_writing_pause(
         self,
         cancel_tasks: bool,
@@ -2849,7 +2849,7 @@ class TestStreamReaderBufferedProtocol(BaseTestTransportWithSSL):
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("exception", [None, OSError("Something bad happen")])
-    @pytest.mark.parametrize("cancel_tasks", [False, True], ids=lambda p: f"cancel_tasks_before=={p}")
+    @pytest.mark.parametrize("cancel_tasks", [False, True], ids=lambda p: f"cancel_tasks_before__{p}")
     async def test____drain_helper____wait_during_writing_pause____connection_lost_while_waiting(
         self,
         cancel_tasks: bool,

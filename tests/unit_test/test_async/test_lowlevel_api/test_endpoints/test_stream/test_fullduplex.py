@@ -67,7 +67,7 @@ class TestAsyncStreamEndpoint(BaseAsyncEndpointSendTests, BaseAsyncEndpointRecei
         with pytest.raises(TypeError, match=r"^Expected a StreamProtocol or a BufferedStreamProtocol object, got .*$"):
             _ = AsyncStreamEndpoint(mock_stream_transport, mock_invalid_protocol, max_recv_size)
 
-    @pytest.mark.parametrize("max_recv_size", [0, -1, 10.4], ids=lambda p: f"max_recv_size=={p}")
+    @pytest.mark.parametrize("max_recv_size", [0, -1, 10.4], ids=lambda p: f"max_recv_size__{p}")
     async def test____dunder_init____max_recv_size____invalid_value(
         self,
         mock_stream_transport: MagicMock,
@@ -102,7 +102,7 @@ class TestAsyncStreamEndpoint(BaseAsyncEndpointSendTests, BaseAsyncEndpointRecei
 
         mock_stream_transport.aclose.assert_not_called()
 
-    @pytest.mark.parametrize("transport_closed", [False, True], ids=lambda p: f"transport_closed=={p}")
+    @pytest.mark.parametrize("transport_closed", [False, True], ids=lambda p: f"transport_closed__{p}")
     async def test____send_eof____default(
         self,
         transport_closed: bool,
@@ -127,7 +127,7 @@ class TestAsyncStreamEndpoint(BaseAsyncEndpointSendTests, BaseAsyncEndpointRecei
         mock_stream_transport.send_all_from_iterable.assert_not_called()
         mock_stream_transport.send_all_with_ancillary.assert_not_called()
 
-    @pytest.mark.parametrize("transport_closed", [False, True], ids=lambda p: f"transport_closed=={p}")
+    @pytest.mark.parametrize("transport_closed", [False, True], ids=lambda p: f"transport_closed__{p}")
     async def test____send_eof____idempotent(
         self,
         transport_closed: bool,
@@ -149,7 +149,7 @@ class TestAsyncStreamEndpoint(BaseAsyncEndpointSendTests, BaseAsyncEndpointRecei
         with pytest.raises(RuntimeError, match=r"^send_eof\(\) has been called earlier$"):
             await endpoint.send_packet_with_ancillary(mocker.sentinel.packet, mocker.sentinel.ancdata)
 
-    @pytest.mark.parametrize("with_ancillary", [False, True], ids=lambda p: f"with_ancillary=={p}")
+    @pytest.mark.parametrize("with_ancillary", [False, True], ids=lambda p: f"with_ancillary__{p}")
     async def test____special_case____send_packet____eof_error____still_try_socket_send(
         self,
         stream_protocol_mode: Literal["data", "buffer"],

@@ -126,7 +126,7 @@ def test____make_callback____build_no_arg_callable(mocker: MockerFixture) -> Non
     stub.assert_called_once_with(mocker.sentinel.arg1, mocker.sentinel.arg2, kw1=mocker.sentinel.kw1, kw2=mocker.sentinel.kw2)
 
 
-@pytest.mark.parametrize("already_weak_method", [True, False], ids=lambda p: f"already_weak_method=={p}")
+@pytest.mark.parametrize("already_weak_method", [True, False], ids=lambda p: f"already_weak_method__{p}")
 def test____weak_method_proxy_____wrap_method(already_weak_method: bool, mocker: MockerFixture) -> None:
     # Arrange
     @dataclasses.dataclass
@@ -227,7 +227,7 @@ def test____prepend_argument____several_prepend(mocker: MockerFixture) -> None:
     )
 
 
-@pytest.mark.parametrize("module", ["package.module", None], ids=lambda p: f"module=={p!r}")
+@pytest.mark.parametrize("module", ["package.module", None], ids=lambda p: f"module__{p!r}")
 def test____get_callable_name____qualname(module: str | None, mocker: MockerFixture) -> None:
     # Arrange
     func = mocker.stub()
@@ -245,7 +245,7 @@ def test____get_callable_name____qualname(module: str | None, mocker: MockerFixt
         assert name == "namespace.func"
 
 
-@pytest.mark.parametrize("module", ["package.module", None], ids=lambda p: f"module=={p!r}")
+@pytest.mark.parametrize("module", ["package.module", None], ids=lambda p: f"module__{p!r}")
 def test____get_callable_name____name_without_qualname(module: str | None, mocker: MockerFixture) -> None:
     # Arrange
     func = mocker.stub()
@@ -263,7 +263,7 @@ def test____get_callable_name____name_without_qualname(module: str | None, mocke
         assert name == "func"
 
 
-@pytest.mark.parametrize("module", ["package.module", None], ids=lambda p: f"module=={p!r}")
+@pytest.mark.parametrize("module", ["package.module", None], ids=lambda p: f"module__{p!r}")
 def test____get_callable_name____neither_name_nor_qualname(module: str | None, mocker: MockerFixture) -> None:
     # Arrange
     func = mocker.stub()
@@ -523,8 +523,8 @@ class _validate_timeout_delay_func_type(Protocol):
         raise NotImplementedError
 
 
-@pytest.mark.parametrize("delay", [1, 3.14, math.inf])
-@pytest.mark.parametrize("positive_check", [False, True], ids=lambda positive_check: f"{positive_check=}")
+@pytest.mark.parametrize("delay", [1, 3.14, math.inf], ids=lambda p: f"delay__{p}")
+@pytest.mark.parametrize("positive_check", [False, True], ids=lambda p: f"positive_check__{p}")
 @pytest.mark.parametrize("validator_func", [validate_timeout_delay, validate_optional_timeout_delay])
 def test____validate_timeout_delay____positive_value(
     delay: float,
@@ -537,7 +537,7 @@ def test____validate_timeout_delay____positive_value(
     assert validator_func(delay, positive_check=positive_check) == delay
 
 
-@pytest.mark.parametrize("positive_check", [False, True], ids=lambda positive_check: f"{positive_check=}")
+@pytest.mark.parametrize("positive_check", [False, True], ids=lambda p: f"positive_check__{p}")
 @pytest.mark.parametrize("validator_func", [validate_timeout_delay, validate_optional_timeout_delay])
 def test____validate_timeout_delay____null_value(
     positive_check: bool,
@@ -550,8 +550,8 @@ def test____validate_timeout_delay____null_value(
     assert validator_func(delay, positive_check=positive_check) == delay
 
 
-@pytest.mark.parametrize("delay", [-1, -3.14, -math.inf])
-@pytest.mark.parametrize("positive_check", [False, True], ids=lambda positive_check: f"{positive_check=}")
+@pytest.mark.parametrize("delay", [-1, -3.14, -math.inf], ids=lambda p: f"delay__{p}")
+@pytest.mark.parametrize("positive_check", [False, True], ids=lambda p: f"positive_check__{p}")
 @pytest.mark.parametrize("validator_func", [validate_timeout_delay, validate_optional_timeout_delay])
 def test____validate_timeout_delay____negative_value(
     delay: float,
@@ -568,7 +568,7 @@ def test____validate_timeout_delay____negative_value(
         assert validator_func(delay, positive_check=positive_check) == delay
 
 
-@pytest.mark.parametrize("positive_check", [False, True], ids=lambda positive_check: f"{positive_check=}")
+@pytest.mark.parametrize("positive_check", [False, True], ids=lambda p: f"positive_check__{p}")
 @pytest.mark.parametrize("validator_func", [validate_timeout_delay, validate_optional_timeout_delay])
 def test____validate_timeout_delay____convert_integer_value(
     positive_check: bool,
@@ -585,7 +585,7 @@ def test____validate_timeout_delay____convert_integer_value(
     assert new_delay == 32.0
 
 
-@pytest.mark.parametrize("positive_check", [False, True], ids=lambda positive_check: f"{positive_check=}")
+@pytest.mark.parametrize("positive_check", [False, True], ids=lambda p: f"positive_check__{p}")
 @pytest.mark.parametrize("validator_func", [validate_timeout_delay, validate_optional_timeout_delay])
 def test____validate_timeout_delay____not_a_number(
     positive_check: bool,
@@ -599,7 +599,7 @@ def test____validate_timeout_delay____not_a_number(
         validator_func(delay, positive_check=positive_check)
 
 
-@pytest.mark.parametrize("positive_check", [False, True], ids=lambda positive_check: f"{positive_check=}")
+@pytest.mark.parametrize("positive_check", [False, True], ids=lambda p: f"positive_check__{p}")
 def test____validate_optional_timeout_delay____None_value(positive_check: bool) -> None:
     # Arrange
 

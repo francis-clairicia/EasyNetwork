@@ -89,7 +89,7 @@ class TestAsyncTCPNetworkServer:
                 **kwargs,
             )
 
-    @pytest.mark.parametrize("max_recv_size", [0, -1, 10.4], ids=lambda p: f"max_recv_size=={p}")
+    @pytest.mark.parametrize("max_recv_size", [0, -1, 10.4], ids=lambda p: f"max_recv_size__{p}")
     async def test____dunder_init____max_recv_size____invalid_value(
         self,
         max_recv_size: Any,

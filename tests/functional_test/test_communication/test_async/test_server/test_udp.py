@@ -465,7 +465,7 @@ class _BaseTestAsyncUDPNetworkServer(BaseTestAsyncServer):
                 assert caplog.records[1].exc_info is not None
                 assert type(caplog.records[1].exc_info[1]) is RuntimeError
 
-    @pytest.mark.parametrize("excgrp", [False, True], ids=lambda p: f"exception_group_raised=={p}")
+    @pytest.mark.parametrize("excgrp", [False, True], ids=lambda p: f"exception_group_raised__{p}")
     async def test____serve_forever____unexpected_error_during_process(
         self,
         excgrp: bool,
@@ -526,7 +526,7 @@ class _BaseTestAsyncUDPNetworkServer(BaseTestAsyncServer):
         assert caplog.records[1].exc_info is not None
         assert type(caplog.records[1].exc_info[1]) is OSError
 
-    @pytest.mark.parametrize("excgrp", [False, True], ids=lambda p: f"exception_group_raised=={p}")
+    @pytest.mark.parametrize("excgrp", [False, True], ids=lambda p: f"exception_group_raised__{p}")
     async def test____serve_forever____use_of_a_closed_client_in_request_handler(  # In a world where this thing happen
         self,
         excgrp: bool,
@@ -557,8 +557,8 @@ class _BaseTestAsyncUDPNetworkServer(BaseTestAsyncServer):
         ],
         indirect=True,
     )
-    @pytest.mark.parametrize("request_timeout", [0.0, 1.0], ids=lambda p: f"timeout=={p}")
-    @pytest.mark.parametrize("timeout_on_third_yield", [False, True], ids=lambda p: f"timeout_on_third_yield=={p}")
+    @pytest.mark.parametrize("request_timeout", [0.0, 1.0], ids=lambda p: f"timeout__{p}")
+    @pytest.mark.parametrize("timeout_on_third_yield", [False, True], ids=lambda p: f"timeout_on_third_yield__{p}")
     async def test____serve_forever____throw_cancelled_error(
         self,
         request_timeout: float,
@@ -616,7 +616,7 @@ class _BaseTestAsyncUDPNetworkServer(BaseTestAsyncServer):
         assert (await endpoint.recvfrom())[0] == b"hello world"
 
     @pytest.mark.parametrize("request_handler", [RequestRefusedHandler], indirect=True)
-    @pytest.mark.parametrize("refuse_after", [0, 5], ids=lambda p: f"refuse_after=={p}")
+    @pytest.mark.parametrize("refuse_after", [0, 5], ids=lambda p: f"refuse_after__{p}")
     async def test____serve_forever____request_handler_did_not_yield(
         self,
         refuse_after: int,
@@ -657,7 +657,7 @@ class _BaseTestAsyncUDPNetworkServer(BaseTestAsyncServer):
             assert (await endpoint.recvfrom())[0] == b"After wait: hello, world."
 
     @pytest.mark.parametrize("request_handler", [ConcurrencyTestRequestHandler], indirect=True)
-    @pytest.mark.parametrize("ignore_cancellation", [False, True], ids=lambda p: f"ignore_cancellation=={p}")
+    @pytest.mark.parametrize("ignore_cancellation", [False, True], ids=lambda p: f"ignore_cancellation__{p}")
     async def test____serve_forever____datagram_while_request_handle_is_performed____server_shutdown(
         self,
         server: MyAsyncUDPServer,
@@ -680,7 +680,7 @@ class _BaseTestAsyncUDPNetworkServer(BaseTestAsyncServer):
             await server.shutdown()
 
     @pytest.mark.parametrize("request_handler", [ConcurrencyTestRequestHandler], indirect=True)
-    @pytest.mark.parametrize("recreate_generator", [False, True], ids=lambda p: f"recreate_generator=={p}")
+    @pytest.mark.parametrize("recreate_generator", [False, True], ids=lambda p: f"recreate_generator__{p}")
     async def test____serve_forever____too_many_datagrams_while_request_handle_is_performed(
         self,
         recreate_generator: bool,

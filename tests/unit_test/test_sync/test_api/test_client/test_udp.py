@@ -174,7 +174,7 @@ class TestUDPNetworkClient(BaseTestClient):
     def send_timeout(request: pytest.FixtureRequest) -> Any:
         return request.param
 
-    @pytest.mark.parametrize("retry_interval", [1.0, float("+inf")], ids=lambda p: f"retry_interval=={p}")
+    @pytest.mark.parametrize("retry_interval", [1.0, float("+inf")], ids=lambda p: f"retry_interval__{p}")
     def test____dunder_init____with_remote_address(
         self,
         request: pytest.FixtureRequest,
@@ -209,9 +209,9 @@ class TestUDPNetworkClient(BaseTestClient):
         ]
 
     @pytest.mark.parametrize(
-        "local_address", [None, ("local_address", 12345)], ids=lambda p: f"local_address=={p}", indirect=True
+        "local_address", [None, ("local_address", 12345)], ids=lambda p: f"local_address__{p}", indirect=True
     )
-    @pytest.mark.parametrize("retry_interval", [1.0, float("+inf")], ids=lambda p: f"retry_interval=={p}")
+    @pytest.mark.parametrize("retry_interval", [1.0, float("+inf")], ids=lambda p: f"retry_interval__{p}")
     def test____dunder_init____with_remote_address____with_parameters(
         self,
         request: pytest.FixtureRequest,
@@ -259,7 +259,7 @@ class TestUDPNetworkClient(BaseTestClient):
         assert isinstance(client.socket, SocketProxy)
 
     @pytest.mark.parametrize(
-        "local_address", [None, ("local_address", 12345)], ids=lambda p: f"local_address=={p}", indirect=True
+        "local_address", [None, ("local_address", 12345)], ids=lambda p: f"local_address__{p}", indirect=True
     )
     def test____dunder_init____with_remote_address____with_parameters____explicit_AF_UNSPEC(
         self,
@@ -306,7 +306,7 @@ class TestUDPNetworkClient(BaseTestClient):
             )
         mock_create_udp_socket.assert_not_called()
 
-    @pytest.mark.parametrize("retry_interval", [1.0, float("+inf")], ids=lambda p: f"retry_interval=={p}")
+    @pytest.mark.parametrize("retry_interval", [1.0, float("+inf")], ids=lambda p: f"retry_interval__{p}")
     def test____dunder_init____use_given_socket____default(
         self,
         request: pytest.FixtureRequest,
@@ -830,7 +830,7 @@ class TestUDPSocketFactory:
         mock_socket_ipv4.setsockopt.assert_not_called()
         mock_socket_ipv4.close.assert_not_called()
 
-    @pytest.mark.parametrize("with_local_address", [False, True], ids=lambda boolean: f"with_local_address=={boolean}")
+    @pytest.mark.parametrize("with_local_address", [False, True], ids=lambda boolean: f"with_local_address__{boolean}")
     @pytest.mark.parametrize(
         ["family", "socket_families"],
         [
@@ -892,7 +892,7 @@ class TestUDPSocketFactory:
         not_used_socket.bind.assert_not_called()
         not_used_socket.connect.assert_not_called()
 
-    @pytest.mark.parametrize("fail_on", ["socket", "bind", "connect"], ids=lambda fail_on: f"fail_on=={fail_on}")
+    @pytest.mark.parametrize("fail_on", ["socket", "bind", "connect"], ids=lambda fail_on: f"fail_on__{fail_on}")
     def test____create_udp_socket____first_failed(
         self,
         fail_on: Literal["socket", "bind", "connect"],
@@ -945,7 +945,7 @@ class TestUDPSocketFactory:
         mock_socket_ipv6.connect.assert_called_once_with(("::1", 12345, 0, 0))
         mock_socket_ipv6.close.assert_not_called()
 
-    @pytest.mark.parametrize("fail_on", ["socket", "bind", "connect"], ids=lambda fail_on: f"fail_on=={fail_on}")
+    @pytest.mark.parametrize("fail_on", ["socket", "bind", "connect"], ids=lambda fail_on: f"fail_on__{fail_on}")
     def test____create_udp_socket____all_failed(
         self,
         fail_on: Literal["socket", "bind", "connect"],
@@ -1004,7 +1004,7 @@ class TestUDPSocketFactory:
             mock_socket_ipv6.connect.assert_not_called()
             mock_socket_ipv6.close.assert_not_called()
 
-    @pytest.mark.parametrize("fail_on", ["socket", "bind"], ids=lambda fail_on: f"fail_on=={fail_on}")
+    @pytest.mark.parametrize("fail_on", ["socket", "bind"], ids=lambda fail_on: f"fail_on__{fail_on}")
     def test____create_udp_socket____unrelated_exception(
         self,
         fail_on: Literal["socket", "bind"],

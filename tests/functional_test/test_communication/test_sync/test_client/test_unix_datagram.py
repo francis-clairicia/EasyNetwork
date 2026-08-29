@@ -145,7 +145,7 @@ if sys.platform != "win32":
             assert received_packet == "ABCDEF"
             assert len(list(received_ancillary.iter_fds())) == 1
 
-        @pytest.mark.parametrize("with_ancillary_data", [False, True], ids=lambda p: f"with_ancillary_data=={p}")
+        @pytest.mark.parametrize("with_ancillary_data", [False, True], ids=lambda p: f"with_ancillary_data__{p}")
         def test____recv_packet____timeout(
             self,
             with_ancillary_data: bool,

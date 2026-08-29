@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 
 @pytest.mark.benchmark(group=SerializerGroup.PICKLE_SERIALIZE)
-@pytest.mark.parametrize("pickler_optimize", [False, True], ids=lambda p: f"pickler_optimize=={p}")
+@pytest.mark.parametrize("pickler_optimize", [False, True], ids=lambda p: f"pickler_optimize__{p}")
 def bench_PickleSerializer_serialize(
     pickler_optimize: bool,
     benchmark: BenchmarkFixture,

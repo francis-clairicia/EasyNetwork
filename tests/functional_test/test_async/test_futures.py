@@ -104,7 +104,7 @@ class TestAsyncExecutor:
         await executor.shutdown()
         await executor.shutdown()
 
-    @pytest.mark.parametrize("max_workers", [1], indirect=True, ids=lambda nb: f"max_workers=={nb}")
+    @pytest.mark.parametrize("max_workers", [1], indirect=True, ids=lambda nb: f"max_workers__{nb}")
     async def test____shutdown____cancel_futures(
         self,
         executor: AsyncExecutor[concurrent.futures.Executor],
@@ -140,7 +140,7 @@ class TestUnwrapFuture:
 
         assert await unwrap_future(future, backend) == 42
 
-    @pytest.mark.parametrize("future_running", [None, "before", "after"], ids=lambda state: f"future_running=={state}")
+    @pytest.mark.parametrize("future_running", [None, "before", "after"], ids=lambda state: f"future_running__{state}")
     async def test____unwrap_future____cancel_future_if_task_is_cancelled____result(
         self,
         future_running: str | None,
@@ -173,7 +173,7 @@ class TestUnwrapFuture:
             assert future.cancelled()
             assert task.cancelled()
 
-    @pytest.mark.parametrize("future_running", [None, "before", "after"], ids=lambda state: f"future_running=={state}")
+    @pytest.mark.parametrize("future_running", [None, "before", "after"], ids=lambda state: f"future_running__{state}")
     async def test____unwrap_future____cancel_future_if_task_is_cancelled____exception(
         self,
         future_running: str | None,

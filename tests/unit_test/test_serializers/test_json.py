@@ -58,7 +58,7 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
     def mock_decoder_cls(mocker: MockerFixture, mock_decoder: MagicMock) -> MagicMock:
         return mocker.patch("json.JSONDecoder", return_value=mock_decoder)
 
-    @pytest.fixture(params=[True, False], ids=lambda boolean: f"default_encoder_config=={boolean}")
+    @pytest.fixture(params=[True, False], ids=lambda boolean: f"default_encoder_config__{boolean}")
     @staticmethod
     def encoder_config(request: Any, mocker: MockerFixture) -> JSONEncoderConfig | None:
         use_default_config: bool = request.param
@@ -72,7 +72,7 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
             default=mocker.sentinel.object_default,
         )
 
-    @pytest.fixture(params=[True, False], ids=lambda boolean: f"default_decoder_config=={boolean}")
+    @pytest.fixture(params=[True, False], ids=lambda boolean: f"default_decoder_config__{boolean}")
     @staticmethod
     def decoder_config(request: Any, mocker: MockerFixture) -> JSONDecoderConfig | None:
         use_default_config: bool = request.param
@@ -87,7 +87,7 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
             strict=mocker.sentinel.strict,
         )
 
-    @pytest.fixture(params=[True, False], ids=lambda boolean: f"use_lines=={boolean}")
+    @pytest.fixture(params=[True, False], ids=lambda boolean: f"use_lines__{boolean}")
     @staticmethod
     def use_lines(request: pytest.FixtureRequest) -> bool:
         return request.param
@@ -171,7 +171,7 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
             strict=mocker.sentinel.strict if decoder_config is not None else True,
         )
 
-    @pytest.mark.parametrize("limit", [0, -42], ids=lambda p: f"limit=={p}")
+    @pytest.mark.parametrize("limit", [0, -42], ids=lambda p: f"limit__{p}")
     def test____dunder_init____invalid_limit(self, limit: int) -> None:
         # Arrange
 
@@ -517,7 +517,7 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
 
 class TestJSONParser:
     @staticmethod
-    @pytest.fixture(params=[False, True], ids=lambda p: f"buffered=={p}")
+    @pytest.fixture(params=[False, True], ids=lambda p: f"buffered__{p}")
     def buffered(request: pytest.FixtureRequest) -> bool:
         return request.param
 
@@ -835,7 +835,7 @@ class TestJSONParser:
         assert bytes(complete) == b"true"
         assert bytes(remainder) == b"remainder"
 
-    @pytest.mark.parametrize("limit", [0, -42], ids=lambda p: f"limit=={p}")
+    @pytest.mark.parametrize("limit", [0, -42], ids=lambda p: f"limit__{p}")
     def test____raw_parse____invalid_limit(self, limit: int) -> None:
         # Arrange
         consumer = self.raw_parse(limit=limit, buffered=False)
@@ -861,7 +861,7 @@ class TestJSONParser:
             pytest.param(b"123", b"45\n", id="plain value"),
         ],
     )
-    @pytest.mark.parametrize("add_end_frame", [False, True], ids=lambda p: f"add_end_frame=={p}")
+    @pytest.mark.parametrize("add_end_frame", [False, True], ids=lambda p: f"add_end_frame__{p}")
     def test____raw_parse____reached_limit(
         self,
         start_frame: bytes,

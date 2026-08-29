@@ -261,8 +261,8 @@ class TestTCPNetworkClient(BaseTestClient):
     def send_timeout(request: pytest.FixtureRequest) -> float:
         return request.param
 
-    @pytest.mark.parametrize("max_recv_size", [None, 123456789], ids=lambda p: f"max_recv_size=={p}")
-    @pytest.mark.parametrize("retry_interval", [1.0, float("+inf")], ids=lambda p: f"retry_interval=={p}")
+    @pytest.mark.parametrize("max_recv_size", [None, 123456789], ids=lambda p: f"max_recv_size__{p}")
+    @pytest.mark.parametrize("retry_interval", [1.0, float("+inf")], ids=lambda p: f"retry_interval__{p}")
     def test____dunder_init____connect_to_remote(
         self,
         request: pytest.FixtureRequest,
@@ -319,8 +319,8 @@ class TestTCPNetworkClient(BaseTestClient):
         assert mock_ssl_socket.mock_calls == []
         assert isinstance(client.socket, SocketProxy)
 
-    @pytest.mark.parametrize("max_recv_size", [None, 123456789], ids=lambda p: f"max_recv_size=={p}")
-    @pytest.mark.parametrize("retry_interval", [1.0, float("+inf")], ids=lambda p: f"retry_interval=={p}")
+    @pytest.mark.parametrize("max_recv_size", [None, 123456789], ids=lambda p: f"max_recv_size__{p}")
+    @pytest.mark.parametrize("retry_interval", [1.0, float("+inf")], ids=lambda p: f"retry_interval__{p}")
     def test____dunder_init____use_given_socket(
         self,
         request: pytest.FixtureRequest,
@@ -475,7 +475,7 @@ class TestTCPNetworkClient(BaseTestClient):
 
         assert mock_tcp_socket.mock_calls == []
 
-    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket__{p}")
     def test____dunder_init____protocol____invalid_value(
         self,
         use_socket: bool,
@@ -498,8 +498,8 @@ class TestTCPNetworkClient(BaseTestClient):
                     protocol=mock_datagram_protocol,
                 )
 
-    @pytest.mark.parametrize("max_recv_size", [0, -1, 10.4], ids=lambda p: f"max_recv_size=={p}")
-    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+    @pytest.mark.parametrize("max_recv_size", [0, -1, 10.4], ids=lambda p: f"max_recv_size__{p}")
+    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket__{p}")
     def test____dunder_init____max_recv_size____invalid_value(
         self,
         max_recv_size: Any,
@@ -529,7 +529,7 @@ class TestTCPNetworkClient(BaseTestClient):
         mock_socket_stream_transport_cls.assert_not_called()
         mock_stream_endpoint_cls.assert_not_called()
 
-    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket__{p}")
     def test____dunder_init____unexpected_error(
         self,
         use_socket: bool,
@@ -550,9 +550,9 @@ class TestTCPNetworkClient(BaseTestClient):
                 _ = TCPNetworkClient(remote_address, protocol=mock_stream_protocol)
         mock_socket_stream_transport.close.assert_called_once()
 
-    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
-    @pytest.mark.parametrize("max_recv_size", [None, 123456789], ids=lambda p: f"max_recv_size=={p}")
-    @pytest.mark.parametrize("retry_interval", [1.0, float("+inf")], ids=lambda p: f"retry_interval=={p}")
+    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket__{p}")
+    @pytest.mark.parametrize("max_recv_size", [None, 123456789], ids=lambda p: f"max_recv_size__{p}")
+    @pytest.mark.parametrize("retry_interval", [1.0, float("+inf")], ids=lambda p: f"retry_interval__{p}")
     def test____dunder_init____ssl(
         self,
         request: pytest.FixtureRequest,
@@ -648,9 +648,9 @@ class TestTCPNetworkClient(BaseTestClient):
         )
         assert isinstance(client.socket, SocketProxy)
 
-    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
-    @pytest.mark.parametrize("max_recv_size", [None, 123456789], ids=lambda p: f"max_recv_size=={p}")
-    @pytest.mark.parametrize("retry_interval", [1.0, float("+inf")], ids=lambda p: f"retry_interval=={p}")
+    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket__{p}")
+    @pytest.mark.parametrize("max_recv_size", [None, 123456789], ids=lambda p: f"max_recv_size__{p}")
+    @pytest.mark.parametrize("retry_interval", [1.0, float("+inf")], ids=lambda p: f"retry_interval__{p}")
     def test____dunder_init____ssl____default_values(
         self,
         request: pytest.FixtureRequest,
@@ -703,7 +703,7 @@ class TestTCPNetworkClient(BaseTestClient):
             standard_compatible=True,
         )
 
-    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket__{p}")
     @pytest.mark.parametrize(
         "ssl_parameter",
         [
@@ -776,7 +776,7 @@ class TestTCPNetworkClient(BaseTestClient):
             standard_compatible=True,
         )
 
-    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket__{p}")
     def test____dunder_init____ssl____server_hostname____do_not_disable_hostname_check_for_external_context(
         self,
         request: pytest.FixtureRequest,
@@ -822,7 +822,7 @@ class TestTCPNetworkClient(BaseTestClient):
             standard_compatible=True,
         )
 
-    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket__{p}")
     def test____dunder_init____ssl____server_hostname____no_host_to_use(
         self,
         use_socket: bool,
@@ -851,8 +851,8 @@ class TestTCPNetworkClient(BaseTestClient):
                     server_hostname=None,
                 )
 
-    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
-    @pytest.mark.parametrize("OP_IGNORE_UNEXPECTED_EOF", [False, True], ids=lambda p: f"OP_IGNORE_UNEXPECTED_EOF=={p}")
+    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket__{p}")
+    @pytest.mark.parametrize("OP_IGNORE_UNEXPECTED_EOF", [False, True], ids=lambda p: f"OP_IGNORE_UNEXPECTED_EOF__{p}")
     def test____dunder_init____ssl____create_default_context(
         self,
         request: pytest.FixtureRequest,
@@ -904,7 +904,7 @@ class TestTCPNetworkClient(BaseTestClient):
             standard_compatible=True,
         )
 
-    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket__{p}")
     def test____dunder_init____ssl____create_default_context____disable_hostname_check(
         self,
         request: pytest.FixtureRequest,

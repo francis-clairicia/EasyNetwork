@@ -17,7 +17,7 @@ ALL_PROTOCOLS: tuple[int, ...] = tuple(range(0, pickle.HIGHEST_PROTOCOL + 1))
 
 @final
 class TestPickleSerializer(BaseTestSerializerExtraData):
-    @pytest.fixture(scope="class", params=ALL_PROTOCOLS, ids=lambda p: f"pickle_data_protocol=={p}")
+    @pytest.fixture(scope="class", params=ALL_PROTOCOLS, ids=lambda p: f"pickle_data_protocol__{p}")
     @staticmethod
     def pickle_data_protocol(request: Any) -> int:
         return request.param
@@ -29,7 +29,7 @@ class TestPickleSerializer(BaseTestSerializerExtraData):
     def pickler_config(pickle_data_protocol: int) -> PicklerConfig:
         return PicklerConfig(protocol=pickle_data_protocol)
 
-    @pytest.fixture(scope="class", params=[False, True], ids=lambda boolean: f"optimize=={boolean}")
+    @pytest.fixture(scope="class", params=[False, True], ids=lambda boolean: f"optimize__{boolean}")
     @staticmethod
     def pickler_optimize(request: Any) -> bool:
         return request.param
@@ -55,7 +55,7 @@ class TestPickleSerializer(BaseTestSerializerExtraData):
 
     #### Packets to test
 
-    @pytest.fixture(scope="class", params=[pytest.param(p, id=f"packet: {id}") for p, id in SAMPLES])
+    @pytest.fixture(scope="class", params=[pytest.param(p, id=f"packet__{id}") for p, id in SAMPLES])
     @staticmethod
     def packet_to_serialize(request: Any) -> Any:
         return request.param

@@ -32,7 +32,7 @@ class TestJSONSerializer(BaseTestBufferedIncrementalSerializer, BaseTestSerializ
     def encoder_config() -> JSONEncoderConfig:
         return JSONEncoderConfig(ensure_ascii=False)
 
-    @pytest.fixture(scope="class", params=[False, True], ids=lambda p: f"use_lines=={p}")
+    @pytest.fixture(scope="class", params=[False, True], ids=lambda p: f"use_lines__{p}")
     @staticmethod
     def use_lines(request: Any) -> bool:
         return request.param
@@ -49,7 +49,7 @@ class TestJSONSerializer(BaseTestBufferedIncrementalSerializer, BaseTestSerializ
 
     #### Packets to test
 
-    @pytest.fixture(scope="class", params=[pytest.param(p, id=f"packet: {id}") for p, id in SAMPLES])
+    @pytest.fixture(scope="class", params=[pytest.param(p, id=f"packet__{id}") for p, id in SAMPLES])
     @staticmethod
     def packet_to_serialize(request: Any) -> Any:
         return request.param

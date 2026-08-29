@@ -114,7 +114,7 @@ class BaseTestAsyncServer:
 
             await server.shutdown()
 
-    @pytest.mark.parametrize("server_is_up", [False, True], ids=lambda p: f"server_is_up=={p}")
+    @pytest.mark.parametrize("server_is_up", [False, True], ids=lambda p: f"server_is_up__{p}")
     async def test____serve_forever____concurrent_shutdown(
         self,
         server_is_up: bool,

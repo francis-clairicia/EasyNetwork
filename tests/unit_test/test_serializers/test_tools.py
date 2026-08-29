@@ -69,7 +69,7 @@ class TestGeneratorStreamReader:
         # Assert
         assert data is value
 
-    @pytest.mark.parametrize("initial", [False, True], ids=lambda p: f"initial=={p}")
+    @pytest.mark.parametrize("initial", [False, True], ids=lambda p: f"initial__{p}")
     def test____read____shrink_too_big_buffer(self, initial: bool) -> None:
         # Arrange
         value = b"data"
@@ -122,7 +122,7 @@ class TestGeneratorStreamReader:
         # Assert
         assert data == b"data"
 
-    @pytest.mark.parametrize("initial", [False, True], ids=lambda p: f"initial=={p}")
+    @pytest.mark.parametrize("initial", [False, True], ids=lambda p: f"initial__{p}")
     def test____read_exactly____size_already_fit(self, initial: bool) -> None:
         # Arrange
         value = b"data"
@@ -139,7 +139,7 @@ class TestGeneratorStreamReader:
         # Assert
         assert data is value
 
-    @pytest.mark.parametrize("initial", [False, True], ids=lambda p: f"initial=={p}")
+    @pytest.mark.parametrize("initial", [False, True], ids=lambda p: f"initial__{p}")
     def test____read_exactly____shrink_too_big_buffer(self, initial: bool) -> None:
         # Arrange
         prefix = b"dat"
@@ -184,7 +184,7 @@ class TestGeneratorStreamReader:
             pytest.param(b"remaining\r\nother", id="with remaining data including separator"),
         ],
     )
-    @pytest.mark.parametrize("keep_end", [False, True], ids=lambda p: f"keep_end=={p}")
+    @pytest.mark.parametrize("keep_end", [False, True], ids=lambda p: f"keep_end__{p}")
     def test____read_until____one_shot_chunk(self, expected_remaining_data: bytes, keep_end: bool) -> None:
         # Arrange
         reader = GeneratorStreamReader()
@@ -210,7 +210,7 @@ class TestGeneratorStreamReader:
             pytest.param(b"remaining\r\nother", id="with remaining data including separator"),
         ],
     )
-    @pytest.mark.parametrize("keep_end", [False, True], ids=lambda p: f"keep_end=={p}")
+    @pytest.mark.parametrize("keep_end", [False, True], ids=lambda p: f"keep_end__{p}")
     def test____read_until____several_chunks(self, expected_remaining_data: bytes, keep_end: bool) -> None:
         # Arrange
         reader = GeneratorStreamReader(b"d")
@@ -228,7 +228,7 @@ class TestGeneratorStreamReader:
             assert data == b"data"
         assert reader.read_all() == expected_remaining_data
 
-    @pytest.mark.parametrize("separator_found", [False, True], ids=lambda p: f"separator_found=={p}")
+    @pytest.mark.parametrize("separator_found", [False, True], ids=lambda p: f"separator_found__{p}")
     def test____read_until____reached_limit(self, separator_found: bytes) -> None:
         # Arrange
         reader = GeneratorStreamReader()
@@ -259,7 +259,7 @@ class TestGeneratorStreamReader:
         with pytest.raises(ValueError, match=r"^Empty separator$"):
             next_return(consumer)
 
-    @pytest.mark.parametrize("limit", [0, -42], ids=lambda p: f"limit=={p}")
+    @pytest.mark.parametrize("limit", [0, -42], ids=lambda p: f"limit__{p}")
     def test____read_until____invalid_limit(self, limit: int) -> None:
         # Arrange
         reader = GeneratorStreamReader()

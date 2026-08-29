@@ -166,7 +166,7 @@ class TestAutoSeparatedPacketSerializer:
     def mock_deserialize_func(mocker: MockerFixture) -> MagicMock:
         return mocker.patch.object(_AutoSeparatedPacketSerializerForTest, "deserialize")
 
-    @pytest.fixture(params=[False, True], ids=lambda p: f"check_separator=={p}")
+    @pytest.fixture(params=[False, True], ids=lambda p: f"check_separator__{p}")
     @staticmethod
     def check_separator(request: pytest.FixtureRequest) -> bool:
         return request.param
@@ -177,7 +177,7 @@ class TestAutoSeparatedPacketSerializer:
         assert request.param in ("data", "buffer")
         return request.param
 
-    @pytest.mark.parametrize("separator", [b"\n", b".", b"\r\n", b"--"], ids=lambda p: f"separator=={p}")
+    @pytest.mark.parametrize("separator", [b"\n", b".", b"\r\n", b"--"], ids=lambda p: f"separator__{p}")
     def test____properties____right_values(self, separator: bytes, debug_mode: bool) -> None:
         # Arrange
 
@@ -196,7 +196,7 @@ class TestAutoSeparatedPacketSerializer:
         with pytest.raises(ValueError, match=r"^Empty separator$"):
             _ = _AutoSeparatedPacketSerializerForTest(b"")
 
-    @pytest.mark.parametrize("limit", [0, -42], ids=lambda p: f"limit=={p}")
+    @pytest.mark.parametrize("limit", [0, -42], ids=lambda p: f"limit__{p}")
     def test____dunder_init____invalid_limit(self, limit: int) -> None:
         # Arrange
 
@@ -462,7 +462,7 @@ class TestAutoSeparatedPacketSerializer:
         assert bytes(exception.remaining_data) == expected_remaining_data
         assert exception.error_info is mocker.sentinel.error_info
 
-    @pytest.mark.parametrize("separator_found", [False, True], ids=lambda p: f"separator_found=={p}")
+    @pytest.mark.parametrize("separator_found", [False, True], ids=lambda p: f"separator_found__{p}")
     def test____incremental_deserialize____reached_limit(
         self,
         separator_found: bool,
@@ -492,7 +492,7 @@ class TestAutoSeparatedPacketSerializer:
         assert bytes(exc_info.value.remaining_data) == b""
         assert exc_info.value.error_info is None
 
-    @pytest.mark.parametrize("separator_found", [False, True], ids=lambda p: f"separator_found=={p}")
+    @pytest.mark.parametrize("separator_found", [False, True], ids=lambda p: f"separator_found__{p}")
     def test____incremental_deserialize____reached_limit____separator_partially_received(
         self,
         separator_found: bool,
@@ -581,7 +581,7 @@ class _FixedSizePacketSerializerForTest(FixedSizePacketSerializer[Any, Any]):
 
 
 class TestFixedSizePacketSerializer:
-    @pytest.fixture(params=[1, 10, 65536], ids=lambda p: f"packet_size=={p}")
+    @pytest.fixture(params=[1, 10, 65536], ids=lambda p: f"packet_size__{p}")
     @staticmethod
     def packet_size(request: Any) -> int:
         return request.param
@@ -921,7 +921,7 @@ class TestFileBasedPacketSerializer:
         assert serializer.debug is debug_mode
         assert serializer.buffer_limit == 123456789
 
-    @pytest.mark.parametrize("limit", [0, -42], ids=lambda p: f"limit=={p}")
+    @pytest.mark.parametrize("limit", [0, -42], ids=lambda p: f"limit__{p}")
     def test____dunder_init____invalid_limit(self, limit: int) -> None:
         # Arrange
 
@@ -991,7 +991,7 @@ class TestFileBasedPacketSerializer:
         else:
             assert exception.error_info is None
 
-    @pytest.mark.parametrize("give_as_tuple", [False, True], ids=lambda boolean: f"give_as_tuple=={boolean}")
+    @pytest.mark.parametrize("give_as_tuple", [False, True], ids=lambda boolean: f"give_as_tuple__{boolean}")
     def test____deserialize____translate_given_exceptions(
         self,
         give_as_tuple: bool,
@@ -1221,7 +1221,7 @@ class TestFileBasedPacketSerializer:
         assert packet is mocker.sentinel.packet
         assert remaining_data == b""
 
-    @pytest.mark.parametrize("give_as_tuple", [False, True], ids=lambda boolean: f"give_as_tuple=={boolean}")
+    @pytest.mark.parametrize("give_as_tuple", [False, True], ids=lambda boolean: f"give_as_tuple__{boolean}")
     def test____incremental_deserialize____load_from_file____translate_given_exceptions(
         self,
         give_as_tuple: bool,
@@ -1284,7 +1284,7 @@ class TestFileBasedPacketSerializer:
         else:
             assert exception.error_info is None
 
-    @pytest.mark.parametrize("at_first_chunk", [False, True], ids=lambda p: f"at_first_chunk=={p}")
+    @pytest.mark.parametrize("at_first_chunk", [False, True], ids=lambda p: f"at_first_chunk__{p}")
     def test____incremental_deserialize____load_from_file____buffer_limit_overrun(
         self,
         at_first_chunk: bool,

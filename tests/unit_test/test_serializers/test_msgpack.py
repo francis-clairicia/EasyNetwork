@@ -66,7 +66,7 @@ class TestMessagePackSerializer(BaseSerializerConfigInstanceCheck):
     def mock_unpacker_cls(mock_unpacker: MagicMock, mocker: MockerFixture) -> MagicMock:
         return mocker.patch("msgpack.Unpacker", return_value=mock_unpacker)
 
-    @pytest.fixture(params=[True, False], ids=lambda boolean: f"default_packer_config=={boolean}")
+    @pytest.fixture(params=[True, False], ids=lambda boolean: f"default_packer_config__{boolean}")
     @staticmethod
     def packer_config(request: Any, mocker: MockerFixture) -> MessagePackerConfig | None:
         use_default_config: bool = request.param
@@ -81,7 +81,7 @@ class TestMessagePackSerializer(BaseSerializerConfigInstanceCheck):
             unicode_errors=mocker.sentinel.unicode_errors,
         )
 
-    @pytest.fixture(params=[True, False], ids=lambda boolean: f"default_unpacker_config=={boolean}")
+    @pytest.fixture(params=[True, False], ids=lambda boolean: f"default_unpacker_config__{boolean}")
     @staticmethod
     def unpacker_config(request: Any, mocker: MockerFixture) -> MessageUnpackerConfig | None:
         use_default_config: bool = request.param
@@ -114,7 +114,7 @@ class TestMessagePackSerializer(BaseSerializerConfigInstanceCheck):
         # Act & Assert
         assert getattr(MessagePackSerializer, method) is getattr(FileBasedPacketSerializer, method)
 
-    @pytest.mark.parametrize("limit", [147258369, None], ids=lambda p: f"limit=={p}")
+    @pytest.mark.parametrize("limit", [147258369, None], ids=lambda p: f"limit__{p}")
     def test____properties____right_values(self, debug_mode: bool, limit: int | None) -> None:
         # Arrange
 
@@ -286,7 +286,7 @@ class TestMessagePackSerializer(BaseSerializerConfigInstanceCheck):
         mock_packer.pack.assert_called_once_with(mocker.sentinel.packet)
         mock_packb.assert_not_called()
 
-    @pytest.mark.parametrize("limit", [147258369, DEFAULT_SERIALIZER_LIMIT], ids=lambda p: f"limit=={p}")
+    @pytest.mark.parametrize("limit", [147258369, DEFAULT_SERIALIZER_LIMIT], ids=lambda p: f"limit__{p}")
     def test____load_from_file____with_config(
         self,
         limit: int,

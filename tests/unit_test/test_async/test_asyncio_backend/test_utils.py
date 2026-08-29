@@ -25,7 +25,7 @@ if TYPE_CHECKING:
         pytest.param(wait_until_writable, "add_writer", "remove_writer", id="write"),
     ],
 )
-@pytest.mark.parametrize("future_cancelled", [False, True], ids=lambda p: f"future_cancelled=={p}")
+@pytest.mark.parametrize("future_cancelled", [False, True], ids=lambda p: f"future_cancelled__{p}")
 async def test____wait_until___event_wakeup(
     waiter: Callable[[SocketType, asyncio.AbstractEventLoop], asyncio.Future[None]],
     event_loop_add_event_func_name: str,

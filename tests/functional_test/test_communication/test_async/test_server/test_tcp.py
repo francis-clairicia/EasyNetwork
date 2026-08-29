@@ -451,7 +451,7 @@ class _BaseTestAsyncTCPNetworkServer(BaseTestAsyncServer):
     @pytest.mark.parametrize(
         "log_client_connection",
         [True, False, None],
-        ids=lambda p: f"log_client_connection=={p}",
+        ids=lambda p: f"log_client_connection__{p}",
         indirect=True,
     )
     async def test____serve_forever____accept_client(
@@ -685,8 +685,8 @@ class _BaseTestAsyncTCPNetworkServer(BaseTestAsyncServer):
         # ECONNRESET not logged
         assert len(caplog.records) == 0
 
-    @pytest.mark.parametrize("mute_thrown_exception", [False, True], ids=lambda p: f"mute_thrown_exception=={p}")
-    @pytest.mark.parametrize("read_on_connection", [False, True], ids=lambda p: f"read_on_connection=={p}")
+    @pytest.mark.parametrize("mute_thrown_exception", [False, True], ids=lambda p: f"mute_thrown_exception__{p}")
+    @pytest.mark.parametrize("read_on_connection", [False, True], ids=lambda p: f"read_on_connection__{p}")
     @pytest.mark.parametrize("request_handler", [ErrorInRequestHandler], indirect=True)
     @pytest.mark.parametrize(
         "stream_protocol",
@@ -734,7 +734,7 @@ class _BaseTestAsyncTCPNetworkServer(BaseTestAsyncServer):
             assert caplog.records[1].exc_info is not None
             assert type(caplog.records[1].exc_info[1]) is RuntimeError
 
-    @pytest.mark.parametrize("excgrp", [False, True], ids=lambda p: f"exception_group_raised=={p}")
+    @pytest.mark.parametrize("excgrp", [False, True], ids=lambda p: f"exception_group_raised__{p}")
     async def test____serve_forever____unexpected_error_during_process(
         self,
         excgrp: bool,
@@ -802,7 +802,7 @@ class _BaseTestAsyncTCPNetworkServer(BaseTestAsyncServer):
         assert caplog.records[1].exc_info is not None
         assert type(caplog.records[1].exc_info[1]) is OSError
 
-    @pytest.mark.parametrize("excgrp", [False, True], ids=lambda p: f"exception_group_raised=={p}")
+    @pytest.mark.parametrize("excgrp", [False, True], ids=lambda p: f"exception_group_raised__{p}")
     async def test____serve_forever____use_of_a_closed_client_in_request_handler(
         self,
         excgrp: bool,
@@ -856,7 +856,7 @@ class _BaseTestAsyncTCPNetworkServer(BaseTestAsyncServer):
         assert caplog.records[0].getMessage() == "ConnectionError raised in request_handler.on_disconnection()"
         assert caplog.records[0].levelno == logging.WARNING
 
-    @pytest.mark.parametrize("forcefully_closed", [False, True], ids=lambda p: f"forcefully_closed=={p}")
+    @pytest.mark.parametrize("forcefully_closed", [False, True], ids=lambda p: f"forcefully_closed__{p}")
     async def test____serve_forever____explicitly_closed_by_request_handler(
         self,
         forcefully_closed: bool,
@@ -908,8 +908,8 @@ class _BaseTestAsyncTCPNetworkServer(BaseTestAsyncServer):
         ],
         indirect=True,
     )
-    @pytest.mark.parametrize("request_timeout", [0.0, 1.0], ids=lambda p: f"timeout=={p}")
-    @pytest.mark.parametrize("timeout_on_second_yield", [False, True], ids=lambda p: f"timeout_on_second_yield=={p}")
+    @pytest.mark.parametrize("request_timeout", [0.0, 1.0], ids=lambda p: f"timeout__{p}")
+    @pytest.mark.parametrize("timeout_on_second_yield", [False, True], ids=lambda p: f"timeout_on_second_yield__{p}")
     async def test____serve_forever____throw_cancelled_error(
         self,
         request_timeout: float,
@@ -964,7 +964,7 @@ class _BaseTestAsyncTCPNetworkServer(BaseTestAsyncServer):
         assert type(caplog.records[1].exc_info[1]) is RandomError
 
     @pytest.mark.parametrize("request_handler", [RequestRefusedHandler], indirect=True)
-    @pytest.mark.parametrize("refuse_after", [0, 5], ids=lambda p: f"refuse_after=={p}")
+    @pytest.mark.parametrize("refuse_after", [0, 5], ids=lambda p: f"refuse_after__{p}")
     async def test____serve_forever____request_handler_did_not_yield(
         self,
         refuse_after: int,
@@ -990,7 +990,7 @@ class _BaseTestAsyncTCPNetworkServer(BaseTestAsyncServer):
         assert len(caplog.records) == 0
 
     @pytest.mark.parametrize("request_handler", [InitialHandshakeRequestHandler], indirect=True)
-    @pytest.mark.parametrize("handshake_2fa", [True, False], ids=lambda p: f"handshake_2fa=={p}")
+    @pytest.mark.parametrize("handshake_2fa", [True, False], ids=lambda p: f"handshake_2fa__{p}")
     async def test____serve_forever____request_handler_on_connection_is_async_gen(
         self,
         client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
@@ -1010,7 +1010,7 @@ class _BaseTestAsyncTCPNetworkServer(BaseTestAsyncServer):
         assert await client.readline() == b"something\n"
 
     @pytest.mark.parametrize("request_handler", [InitialHandshakeRequestHandler], indirect=True)
-    @pytest.mark.parametrize("handshake_2fa", [True, False], ids=lambda p: f"handshake_2fa=={p}")
+    @pytest.mark.parametrize("handshake_2fa", [True, False], ids=lambda p: f"handshake_2fa__{p}")
     async def test____serve_forever____request_handler_on_connection_is_async_gen____close_connection(
         self,
         client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
@@ -1031,7 +1031,7 @@ class _BaseTestAsyncTCPNetworkServer(BaseTestAsyncServer):
         assert await client.recv(1024) == b""
 
     @pytest.mark.parametrize("request_handler", [InitialHandshakeRequestHandler], indirect=True)
-    @pytest.mark.parametrize("handshake_2fa", [True, False], ids=lambda p: f"handshake_2fa=={p}")
+    @pytest.mark.parametrize("handshake_2fa", [True, False], ids=lambda p: f"handshake_2fa__{p}")
     async def test____serve_forever____request_handler_on_connection_is_async_gen____throw_cancel_error_within_generator(
         self,
         client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
@@ -1060,7 +1060,7 @@ class _BaseTestAsyncTCPNetworkServer(BaseTestAsyncServer):
         assert await client.readline() == b"something_else\n"
 
     @pytest.mark.parametrize("use_ssl", ["USE_SSL"], indirect=True)
-    @pytest.mark.parametrize("ssl_handshake_timeout", [pytest.param(1, id="timeout==1sec")], indirect=True)
+    @pytest.mark.parametrize("ssl_handshake_timeout", [pytest.param(1, id="timeout__1sec")], indirect=True)
     async def test____serve_forever____ssl_handshake_timeout_error(
         self,
         server: MyAsyncTCPServer,
@@ -1082,8 +1082,8 @@ class _BaseTestAsyncTCPNetworkServer(BaseTestAsyncServer):
         assert len(caplog.records) == 0
 
     @pytest.mark.parametrize("use_ssl", ["USE_SSL"], indirect=True)
-    @pytest.mark.parametrize("ssl_handshake_timeout", [pytest.param(1, id="timeout==1sec")], indirect=True)
-    @pytest.mark.parametrize("ssl_standard_compatible", [False, True], indirect=True, ids=lambda p: f"standard_compatible=={p}")
+    @pytest.mark.parametrize("ssl_handshake_timeout", [pytest.param(1, id="timeout__1sec")], indirect=True)
+    @pytest.mark.parametrize("ssl_standard_compatible", [False, True], indirect=True, ids=lambda p: f"standard_compatible__{p}")
     @pytest.mark.parametrize(
         "request_handler",
         [
