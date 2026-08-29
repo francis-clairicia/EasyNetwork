@@ -27,6 +27,7 @@ import inspect
 import logging
 from collections.abc import AsyncGenerator, Callable, Generator, Hashable
 from contextlib import AbstractAsyncContextManager, AbstractContextManager, AsyncExitStack, ExitStack
+from typing import assert_never
 
 from ..lowlevel import _utils
 from ..lowlevel.api_async.servers import datagram as _async_datagram_server, stream as _async_stream_server
@@ -288,6 +289,8 @@ def build_lowlevel_blocking_stream_server_handler[*VarArgs, Request, Response](
                     pass
                 case Generator() as request_handler_generator:
                     yield from request_handler_generator
+                case _handler:
+                    assert_never(_handler)
 
             def disconnect_client() -> None:
                 try:
@@ -370,9 +373,8 @@ def build_lowlevel_blocking_datagram_server_handler[*VarArgs, Request, Response,
                 # Initialization failed, but must not raise an exception.
                 return
 
-            request_handler_generator: Generator[RecvParams | None, Request] = request_handler.handle(client)
             try:
-                yield from request_handler_generator
+                yield from request_handler.handle(client)
             except BaseException as exc:
                 # Remove "yield from" frame
                 _utils.remove_traceback_frames_in_place(exc, 1)
