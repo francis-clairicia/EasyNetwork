@@ -1,4 +1,5 @@
-FROM quay.io/pypa/manylinux_2_34_x86_64
+ARG PYPA_BUILD_VERSION=latest
+FROM quay.io/pypa/manylinux_2_34_x86_64:$PYPA_BUILD_VERSION
 
 ARG PYTHON_VERSION=cp314
 ENV PATH="/opt/python/${PYTHON_VERSION}-${PYTHON_VERSION}t/bin:$PATH"
