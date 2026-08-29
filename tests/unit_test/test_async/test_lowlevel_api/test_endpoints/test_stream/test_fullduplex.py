@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING, Any, Literal
 
 from easynetwork.lowlevel.api_async.backend._asyncio.backend import AsyncIOBackend
@@ -35,7 +35,7 @@ class TestAsyncStreamEndpoint(BaseAsyncEndpointSendTests, BaseAsyncEndpointRecei
         mock_stream_transport: MagicMock,
         mock_stream_protocol: MagicMock,
         max_recv_size: int,
-    ) -> AsyncIterator[AsyncStreamEndpoint[Any, Any]]:
+    ) -> AsyncGenerator[AsyncStreamEndpoint[Any, Any]]:
         endpoint: AsyncStreamEndpoint[Any, Any]
         endpoint = AsyncStreamEndpoint(mock_stream_transport, mock_stream_protocol, max_recv_size)
         async with endpoint:

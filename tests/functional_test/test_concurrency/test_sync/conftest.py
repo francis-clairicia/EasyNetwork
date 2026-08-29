@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sys
-from collections.abc import Iterator
+from collections.abc import Generator
 from typing import TYPE_CHECKING, Any, Literal
 
 from easynetwork.clients.abc import AbstractNetworkClient
@@ -59,6 +59,6 @@ def client(
     request: pytest.FixtureRequest,
     ipproto: Literal["TCP", "UDP", "UNIX_STREAM", "UNIX_DGRAM"],
     server: Any,
-) -> Iterator[AbstractNetworkClient[str, str]]:
+) -> Generator[AbstractNetworkClient[str, str]]:
     with _build_client(request, ipproto, server) as client:
         yield client

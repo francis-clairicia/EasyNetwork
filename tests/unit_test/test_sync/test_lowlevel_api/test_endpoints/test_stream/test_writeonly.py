@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Generator
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.lowlevel.api_sync.endpoints.stream import StreamSenderEndpoint
@@ -28,7 +28,7 @@ class TestStreamSenderEndpoint(BaseEndpointSendTests):
     def endpoint(
         mock_stream_transport: MagicMock,
         mock_stream_protocol: MagicMock,
-    ) -> Iterator[StreamSenderEndpoint[Any]]:
+    ) -> Generator[StreamSenderEndpoint[Any]]:
         with StreamSenderEndpoint[Any](mock_stream_transport, mock_stream_protocol) as endpoint:
             yield endpoint
 

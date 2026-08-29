@@ -4,7 +4,7 @@ import asyncio
 import contextlib
 import time
 import warnings
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from concurrent.futures import CancelledError as FutureCancelledError, wait as wait_concurrent_futures
 from contextlib import ExitStack
 from typing import TYPE_CHECKING, Any, Literal, Required, TypedDict
@@ -60,7 +60,7 @@ class TestAsyncioBackendBootstrap:
 class TestAsyncioBackend:
     @pytest_asyncio.fixture
     @staticmethod
-    async def event_loop_exceptions_caught(mocker: MockerFixture) -> AsyncIterator[list[ExceptionCaughtDict]]:
+    async def event_loop_exceptions_caught(mocker: MockerFixture) -> AsyncGenerator[list[ExceptionCaughtDict]]:
         event_loop = asyncio.get_running_loop()
         event_loop_exceptions_caught: list[ExceptionCaughtDict] = []
         handler_stub = mocker.MagicMock(

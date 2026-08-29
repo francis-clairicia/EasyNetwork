@@ -4,7 +4,7 @@ import asyncio
 import logging
 import os
 import ssl
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, Callable
 from typing import TYPE_CHECKING, Any, NoReturn
 
 from easynetwork.exceptions import UnsupportedOperation
@@ -87,7 +87,7 @@ class TestAsyncTLSStreamTransport:
         shutdown_timeout: float,
         read_bio: ssl.MemoryBIO,
         write_bio: ssl.MemoryBIO,
-    ) -> AsyncIterator[AsyncTLSStreamTransport]:
+    ) -> AsyncGenerator[AsyncTLSStreamTransport]:
         transport = AsyncTLSStreamTransport(
             _transport=mock_wrapped_transport,
             _standard_compatible=standard_compatible,
@@ -1089,7 +1089,7 @@ class TestAsyncTLSListener:
         handshake_timeout: float | None,
         shutdown_timeout: float | None,
         hanshake_error_handler: MagicMock | None,
-    ) -> AsyncIterator[AsyncTLSListener]:
+    ) -> AsyncGenerator[AsyncTLSListener]:
         listener = AsyncTLSListener(
             mock_wrapped_listener,
             mock_ssl_context,

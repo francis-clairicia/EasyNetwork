@@ -3,7 +3,7 @@ from __future__ import annotations
 import sys
 import threading
 import time
-from collections.abc import AsyncGenerator, Iterator
+from collections.abc import AsyncGenerator, Generator
 from typing import TYPE_CHECKING
 
 from easynetwork.exceptions import ServerAlreadyRunning, ServerClosedError
@@ -40,7 +40,7 @@ class BaseTestStandaloneNetworkServer:
     @staticmethod
     def start_server(
         server: AbstractNetworkServer,
-    ) -> Iterator[NetworkServerThread]:
+    ) -> Generator[NetworkServerThread]:
         with server:
             server_thread = NetworkServerThread(server, daemon=True)
             server_thread.start()

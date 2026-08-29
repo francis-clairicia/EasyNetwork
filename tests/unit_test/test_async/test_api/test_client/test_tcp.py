@@ -4,7 +4,7 @@ import contextlib
 import errno
 import os
 import ssl
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from socket import AF_INET, AF_INET6, IPPROTO_TCP, SO_ERROR, SO_KEEPALIVE, SOL_SOCKET, TCP_NODELAY
 from typing import TYPE_CHECKING, Any
 
@@ -172,7 +172,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         mock_backend: MagicMock,
         mock_tcp_socket: MagicMock,
         mock_stream_protocol: MagicMock,
-    ) -> AsyncIterator[AsyncTCPNetworkClient[Any, Any]]:
+    ) -> AsyncGenerator[AsyncTCPNetworkClient[Any, Any]]:
         client: AsyncTCPNetworkClient[Any, Any] = AsyncTCPNetworkClient(
             mock_tcp_socket,
             mock_stream_protocol,
@@ -191,7 +191,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         mock_backend: MagicMock,
         mock_tcp_socket: MagicMock,
         mock_stream_protocol: MagicMock,
-    ) -> AsyncIterator[AsyncTCPNetworkClient[Any, Any]]:
+    ) -> AsyncGenerator[AsyncTCPNetworkClient[Any, Any]]:
         client: AsyncTCPNetworkClient[Any, Any] = AsyncTCPNetworkClient(
             mock_tcp_socket,
             mock_stream_protocol,
@@ -212,7 +212,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         mock_backend: MagicMock,
         mock_tcp_socket: MagicMock,
         mock_stream_protocol: MagicMock,
-    ) -> AsyncIterator[AsyncTCPNetworkClient[Any, Any]]:
+    ) -> AsyncGenerator[AsyncTCPNetworkClient[Any, Any]]:
         assert request.param in (True, False)
         client: AsyncTCPNetworkClient[Any, Any] = AsyncTCPNetworkClient(
             mock_tcp_socket,

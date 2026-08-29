@@ -6,7 +6,7 @@ import os
 import pathlib
 import secrets
 import threading
-from collections.abc import Iterator
+from collections.abc import Generator
 
 import pytest
 
@@ -26,7 +26,7 @@ class UnixSocketPathFactory:
 
 
 @pytest.fixture(scope="session")
-def unix_socket_path_factory(tmp_path_factory: pytest.TempPathFactory) -> Iterator[UnixSocketPathFactory]:
+def unix_socket_path_factory(tmp_path_factory: pytest.TempPathFactory) -> Generator[UnixSocketPathFactory]:
     # NOTE: Do not use tmp_path fixture
     # Unix sockets have a maximum length of 108 characters, therefore pytest's tmp folder could be too big for some test names.
 

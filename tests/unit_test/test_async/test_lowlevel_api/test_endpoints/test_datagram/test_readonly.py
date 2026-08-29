@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.lowlevel.api_async.backend._asyncio.backend import AsyncIOBackend
@@ -33,7 +33,7 @@ class TestAsyncDatagramReceiverEndpoint(BaseAsyncEndpointReceiverTests):
     async def endpoint(
         mock_datagram_transport: MagicMock,
         mock_datagram_protocol: MagicMock,
-    ) -> AsyncIterator[AsyncDatagramReceiverEndpoint[Any]]:
+    ) -> AsyncGenerator[AsyncDatagramReceiverEndpoint[Any]]:
         endpoint: AsyncDatagramReceiverEndpoint[Any]
         endpoint = AsyncDatagramReceiverEndpoint(mock_datagram_transport, mock_datagram_protocol)
         async with endpoint:

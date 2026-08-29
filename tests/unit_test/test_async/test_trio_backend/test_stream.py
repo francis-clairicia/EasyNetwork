@@ -4,7 +4,7 @@ import contextlib
 import errno
 import logging
 import os
-from collections.abc import AsyncIterator, Buffer, Callable, Coroutine, Iterable, Iterator
+from collections.abc import AsyncGenerator, Buffer, Callable, Coroutine, Generator, Iterable
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.exceptions import UnsupportedOperation
@@ -106,7 +106,7 @@ class TestTrioStreamSocketAdapter(BaseTestTrioSocketStream, MixinTestSocketSendM
     async def transport(
         trio_backend: TrioBackend,
         mock_trio_socket_stream: MagicMock,
-    ) -> AsyncIterator[TrioStreamSocketAdapter]:
+    ) -> AsyncGenerator[TrioStreamSocketAdapter]:
         from easynetwork.lowlevel.api_async.backend._trio.stream.socket import TrioStreamSocketAdapter
 
         transport = TrioStreamSocketAdapter(trio_backend, mock_trio_socket_stream)
@@ -624,7 +624,7 @@ class TestTrioStreamSocketAdapter(BaseTestTrioSocketStream, MixinTestSocketSendM
 
         def sendmsg_side_effect(buffers: Iterable[Buffer]) -> int:
             # Ensure we are not giving the islice directly.
-            assert not isinstance(buffers, Iterator)
+            assert not isinstance(buffers, Generator)
 
             buffers = list(buffers)
             chunks.append(list(map(bytes, buffers)))
@@ -933,7 +933,7 @@ class TestTrioListenerSocketAdapter(BaseTestTrioSocketStream):
     async def listener(
         trio_backend: TrioBackend,
         mock_trio_socket_listener: MagicMock,
-    ) -> AsyncIterator[TrioListenerSocketAdapter]:
+    ) -> AsyncGenerator[TrioListenerSocketAdapter]:
         from easynetwork.lowlevel.api_async.backend._trio.stream.listener import TrioListenerSocketAdapter
 
         listener = TrioListenerSocketAdapter(trio_backend, mock_trio_socket_listener)

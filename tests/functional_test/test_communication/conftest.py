@@ -4,7 +4,7 @@ import io
 import pathlib
 import ssl
 import sys
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from contextlib import ExitStack
 from functools import partial
 from socket import AF_INET, AF_INET6, SOCK_DGRAM, SOCK_STREAM, has_ipv6 as HAS_IPV6, socket as Socket
@@ -44,7 +44,7 @@ def localhost_ip(socket_family: int) -> str:
 
 
 @pytest.fixture
-def inet_socket_factory(socket_family: int) -> Iterator[Callable[[int], Socket]]:
+def inet_socket_factory(socket_family: int) -> Generator[Callable[[int], Socket]]:
     if not HAS_IPV6 and socket_family == AF_INET6:
         pytest.skip("socket.has_ipv6 is False")
 
@@ -71,7 +71,7 @@ if sys.platform != "win32":
     from socket import AF_UNIX
 
     @pytest.fixture
-    def unix_socket_factory() -> Iterator[Callable[[int], Socket]]:
+    def unix_socket_factory() -> Generator[Callable[[int], Socket]]:
         socket_stack = ExitStack()
 
         def unix_socket_factory(type: int) -> Socket:
@@ -122,7 +122,7 @@ def stream_protocol(request: pytest.FixtureRequest) -> AnyStreamProtocolType[str
 # Origin: https://gist.github.com/4325783, by Geert Jansen.  Public domain.
 # Cannot use socket.socketpair() vendored with Python on unix since it is required to use AF_UNIX family :)
 @pytest.fixture
-def inet_socket_pair(localhost_ip: str, tcp_socket_factory: Callable[[], Socket]) -> Iterator[tuple[Socket, Socket]]:
+def inet_socket_pair(localhost_ip: str, tcp_socket_factory: Callable[[], Socket]) -> Generator[tuple[Socket, Socket]]:
     # We create a connected TCP socket. Note the trick with
     # setblocking(False) that prevents us from having to create a thread.
     lsock = tcp_socket_factory()
@@ -152,7 +152,7 @@ def inet_socket_pair(localhost_ip: str, tcp_socket_factory: Callable[[], Socket]
 if sys.platform != "win32":
 
     @pytest.fixture
-    def unix_socket_pair() -> Iterator[tuple[Socket, Socket]]:
+    def unix_socket_pair() -> Generator[tuple[Socket, Socket]]:
         from socket import socketpair
 
         from easynetwork.lowlevel import _unix_utils
@@ -167,7 +167,7 @@ if sys.platform != "win32":
 
 
 @pytest.fixture
-def tmp_file(tmp_path: pathlib.Path) -> Iterator[io.FileIO]:
+def tmp_file(tmp_path: pathlib.Path) -> Generator[io.FileIO]:
     tmp_file_path = tmp_path / "file.txt"
     with tmp_file_path.open("wb", buffering=0) as tmp_file:
         yield tmp_file

@@ -4,7 +4,7 @@ import io
 import pathlib
 import socketserver
 import sys
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from socket import socket as Socket
 from typing import TYPE_CHECKING, Any, cast
 
@@ -65,7 +65,7 @@ if sys.platform != "win32":
             server: Socket,
             bound_unix_datagram_socket_factory: Callable[[], Socket],
             datagram_protocol: DatagramProtocol[str, str],
-        ) -> Iterator[UnixDatagramClient[str, str]]:
+        ) -> Generator[UnixDatagramClient[str, str]]:
             address: str | bytes = server.getsockname()
             socket = bound_unix_datagram_socket_factory()
             socket.connect(address)
@@ -209,7 +209,7 @@ if sys.platform != "win32":
     class TestUnixDatagramClientConnection:
         @pytest.fixture(autouse=True)
         @classmethod
-        def server(cls, unix_socket_path_factory: UnixSocketPathFactory) -> Iterator[socketserver.UnixDatagramServer]:
+        def server(cls, unix_socket_path_factory: UnixSocketPathFactory) -> Generator[socketserver.UnixDatagramServer]:
             from threading import Thread
 
             with socketserver.UnixDatagramServer(unix_socket_path_factory(), EchoRequestHandler) as server:

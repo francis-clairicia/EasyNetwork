@@ -3,7 +3,7 @@ from __future__ import annotations
 import errno
 import pathlib
 import sys
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from errno import EBADF, EINVAL, ENOTCONN
 from socket import SOL_SOCKET
 from struct import Struct
@@ -238,7 +238,7 @@ if sys.platform != "win32":
 
         @pytest.fixture(scope="class", autouse=True)
         @staticmethod
-        def clear_cache_at_end() -> Iterator[None]:
+        def clear_cache_at_end() -> Generator[None]:
             yield
             _get_peer_credentials_impl_from_platform.cache_clear()
 

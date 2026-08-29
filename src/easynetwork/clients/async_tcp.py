@@ -22,7 +22,7 @@ import contextlib
 import errno as _errno
 import socket as _socket
 import warnings
-from collections.abc import Awaitable, Callable, Iterator
+from collections.abc import Awaitable, Callable, Generator
 from typing import TYPE_CHECKING, Any, final, overload
 
 try:
@@ -510,7 +510,7 @@ class AsyncTCPNetworkClient[SentPacket, ReceivedPacket](AbstractAsyncNetworkClie
 
     @classmethod
     @contextlib.contextmanager
-    def __convert_socket_error(cls, *, endpoint: AsyncStreamEndpoint[Any, Any] | None) -> Iterator[None]:
+    def __convert_socket_error(cls, *, endpoint: AsyncStreamEndpoint[Any, Any] | None) -> Generator[None]:
         try:
             yield
         except ConnectionError as exc:

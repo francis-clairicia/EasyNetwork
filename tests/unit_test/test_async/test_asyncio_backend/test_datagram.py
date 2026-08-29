@@ -5,7 +5,7 @@ import contextlib
 import errno
 import logging
 import sys
-from collections.abc import AsyncIterator, Buffer, Callable, Iterable, Iterator
+from collections.abc import AsyncGenerator, Buffer, Callable, Generator, Iterable
 from errno import EBADF
 from socket import AI_PASSIVE
 from typing import TYPE_CHECKING, Any, Literal, NoReturn, cast
@@ -159,7 +159,7 @@ class TestDatagramEndpoint:
         mock_asyncio_protocol: MagicMock,
         mock_asyncio_recv_queue: MagicMock,
         mock_asyncio_exception_queue: MagicMock,
-    ) -> Iterator[DatagramEndpoint]:
+    ) -> Generator[DatagramEndpoint]:
         endpoint = DatagramEndpoint(
             mock_asyncio_transport,
             mock_asyncio_protocol,
@@ -787,7 +787,7 @@ class TestAsyncioTransportDatagramSocketAdapter(BaseTestAsyncioDatagramTransport
         cls,
         asyncio_backend: AsyncIOBackend,
         mock_endpoint: MagicMock,
-    ) -> AsyncIterator[AsyncioTransportDatagramSocketAdapter]:
+    ) -> AsyncGenerator[AsyncioTransportDatagramSocketAdapter]:
         transport = AsyncioTransportDatagramSocketAdapter(asyncio_backend, mock_endpoint)
         try:
             async with transport:
@@ -908,7 +908,7 @@ if sys.platform != "win32":
         async def transport(
             asyncio_backend: AsyncIOBackend,
             mock_datagram_socket: MagicMock,
-        ) -> AsyncIterator[RawUnixDatagramSocketAdapter]:
+        ) -> AsyncGenerator[RawUnixDatagramSocketAdapter]:
             transport = RawUnixDatagramSocketAdapter(asyncio_backend, mock_datagram_socket)
             async with transport:
                 yield transport
@@ -1559,7 +1559,7 @@ class TestDatagramListenerSocketAdapter(BaseTestAsyncioDatagramTransport):
         asyncio_backend: AsyncIOBackend,
         mock_asyncio_transport: MagicMock,
         mock_asyncio_protocol: MagicMock,
-    ) -> AsyncIterator[DatagramListenerSocketAdapter]:
+    ) -> AsyncGenerator[DatagramListenerSocketAdapter]:
         listener = DatagramListenerSocketAdapter(asyncio_backend, mock_asyncio_transport, mock_asyncio_protocol)
         try:
             async with listener:
@@ -1728,7 +1728,7 @@ if sys.platform != "win32":
         async def listener(
             asyncio_backend: AsyncIOBackend,
             mock_datagram_socket: MagicMock,
-        ) -> AsyncIterator[RawUnixDatagramListenerAdapter]:
+        ) -> AsyncGenerator[RawUnixDatagramListenerAdapter]:
             listener = RawUnixDatagramListenerAdapter(asyncio_backend, mock_datagram_socket)
             async with listener:
                 yield listener

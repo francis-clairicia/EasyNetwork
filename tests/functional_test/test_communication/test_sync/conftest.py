@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any
 
@@ -11,7 +11,7 @@ import pytest
 @pytest.fixture
 def schedule_call_in_thread_with_future(
     request: pytest.FixtureRequest,
-) -> Iterator[Callable[[float, Callable[[], Any]], Future[Any]]]:
+) -> Generator[Callable[[float, Callable[[], Any]], Future[Any]]]:
     with ThreadPoolExecutor(thread_name_prefix=f"pytest-easynetwork_{request.node.name}") as executor:
         perf_counter = time.perf_counter
 

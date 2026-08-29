@@ -9,7 +9,7 @@ import logging
 import os
 import stat
 import sys
-from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from typing import TYPE_CHECKING, Any, Literal
 from weakref import WeakValueDictionary
 
@@ -218,7 +218,7 @@ if sys.platform != "win32":
                 await client.send_packet(response)
 
         @contextlib.asynccontextmanager
-        async def handle_bad_requests(self, client: AsyncStreamClient[str]) -> AsyncIterator[None]:
+        async def handle_bad_requests(self, client: AsyncStreamClient[str]) -> AsyncGenerator[None]:
             try:
                 yield
             except StreamProtocolParseError as exc:
@@ -1397,7 +1397,7 @@ if sys.platform != "win32":
             request_handler: MyStreamRequestHandler,
             unix_socket_path_factory: UnixSocketPathFactory,
             stream_protocol: AnyStreamProtocolType[str, str],
-        ) -> AsyncIterator[MyAsyncUnixStreamServer]:
+        ) -> AsyncGenerator[MyAsyncUnixStreamServer]:
             server = MyAsyncUnixStreamServer(
                 unix_socket_path_factory(),
                 stream_protocol,
@@ -1422,7 +1422,7 @@ if sys.platform != "win32":
             unix_socket_path_factory: UnixSocketPathFactory,
             stream_protocol: AnyStreamProtocolType[str, str],
             log_client_connection: bool | None,
-        ) -> AsyncIterator[MyAsyncUnixStreamServer]:
+        ) -> AsyncGenerator[MyAsyncUnixStreamServer]:
             if use_unix_address_type == "ABSTRACT":
                 # Let the kernel assign us an abstract socket address.
                 path = ""
@@ -1458,7 +1458,7 @@ if sys.platform != "win32":
             use_unix_address_type: _UnixAddressTypeLiteral,
             unix_socket_path_factory: UnixSocketPathFactory,
             server_address: UnixSocketAddress,
-        ) -> AsyncIterator[Callable[[], Awaitable[AsyncStreamSocket]]]:
+        ) -> AsyncGenerator[Callable[[], Awaitable[AsyncStreamSocket]]]:
             import asyncio
 
             async with contextlib.AsyncExitStack() as stack:
@@ -1488,7 +1488,7 @@ if sys.platform != "win32":
             request_handler: MyStreamRequestHandler,
             unix_socket_path_factory: UnixSocketPathFactory,
             stream_protocol: AnyStreamProtocolType[str, str],
-        ) -> AsyncIterator[MyAsyncUnixStreamServer]:
+        ) -> AsyncGenerator[MyAsyncUnixStreamServer]:
             server = MyAsyncUnixStreamServer(
                 unix_socket_path_factory(),
                 stream_protocol,
@@ -1513,7 +1513,7 @@ if sys.platform != "win32":
             unix_socket_path_factory: UnixSocketPathFactory,
             stream_protocol: AnyStreamProtocolType[str, str],
             log_client_connection: bool | None,
-        ) -> AsyncIterator[MyAsyncUnixStreamServer]:
+        ) -> AsyncGenerator[MyAsyncUnixStreamServer]:
             if use_unix_address_type == "ABSTRACT":
                 # Let the kernel assign us an abstract socket address.
                 path = ""
@@ -1549,7 +1549,7 @@ if sys.platform != "win32":
             use_unix_address_type: _UnixAddressTypeLiteral,
             unix_socket_path_factory: UnixSocketPathFactory,
             server_address: UnixSocketAddress,
-        ) -> AsyncIterator[Callable[[], Awaitable[AsyncStreamSocket]]]:
+        ) -> AsyncGenerator[Callable[[], Awaitable[AsyncStreamSocket]]]:
             import trio
 
             async with contextlib.AsyncExitStack() as stack:

@@ -21,7 +21,7 @@ __all__ = ["AsyncUDPNetworkClient"]
 import contextlib
 import socket as _socket
 import warnings
-from collections.abc import Awaitable, Callable, Iterator
+from collections.abc import Awaitable, Callable, Generator
 from typing import Any, final, overload
 
 from ..exceptions import ClientClosedError
@@ -313,7 +313,7 @@ class AsyncUDPNetworkClient[SentPacket, ReceivedPacket](AbstractAsyncNetworkClie
 
     @classmethod
     @contextlib.contextmanager
-    def __convert_socket_error(cls, *, endpoint: AsyncDatagramEndpoint[Any, Any] | None) -> Iterator[None]:
+    def __convert_socket_error(cls, *, endpoint: AsyncDatagramEndpoint[Any, Any] | None) -> Generator[None]:
         try:
             yield
         except OSError as exc:

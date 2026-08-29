@@ -3,7 +3,7 @@ from __future__ import annotations
 import errno
 import os
 import ssl
-from collections.abc import Iterator
+from collections.abc import Generator
 from socket import AF_INET, AF_INET6, IPPROTO_TCP, SO_ERROR, SO_KEEPALIVE, SOL_SOCKET, TCP_NODELAY
 from ssl import SSLEOFError, SSLError, SSLErrorNumber
 from typing import TYPE_CHECKING, Any
@@ -226,7 +226,7 @@ class TestTCPNetworkClient(BaseTestClient):
         use_ssl: bool,
         mock_tcp_socket: MagicMock,
         mock_stream_protocol: MagicMock,
-    ) -> Iterator[TCPNetworkClient[Any, Any]]:
+    ) -> Generator[TCPNetworkClient[Any, Any]]:
         client: TCPNetworkClient[Any, Any] = TCPNetworkClient(
             mock_tcp_socket,
             mock_stream_protocol,

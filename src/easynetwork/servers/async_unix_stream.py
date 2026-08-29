@@ -38,7 +38,7 @@ else:
     import os
     import pathlib
     import weakref
-    from collections.abc import AsyncIterator, Callable, Coroutine, Mapping, Sequence
+    from collections.abc import AsyncGenerator, Callable, Coroutine, Mapping, Sequence
     from types import MappingProxyType
     from typing import Any, NoReturn, final
 
@@ -230,7 +230,7 @@ else:
         async def __client_initializer(
             self,
             lowlevel_client: _stream_server.ConnectedStreamClient[Response],
-        ) -> AsyncIterator[AsyncStreamClient[Response] | None]:
+        ) -> AsyncGenerator[AsyncStreamClient[Response] | None]:
             async with contextlib.AsyncExitStack() as client_exit_stack:
                 client_exit_stack.enter_context(self._bind_server())
 

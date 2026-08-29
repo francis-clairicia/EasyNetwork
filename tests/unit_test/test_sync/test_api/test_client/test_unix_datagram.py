@@ -5,7 +5,7 @@ import errno
 import os
 import pathlib
 import sys
-from collections.abc import Iterator
+from collections.abc import Generator
 from socket import SO_ERROR, SOCK_DGRAM, SOL_SOCKET
 from typing import TYPE_CHECKING, Any
 
@@ -188,7 +188,7 @@ if sys.platform != "win32":
         def client(
             mock_unix_datagram_socket: MagicMock,
             mock_datagram_protocol: MagicMock,
-        ) -> Iterator[UnixDatagramClient[Any, Any]]:
+        ) -> Generator[UnixDatagramClient[Any, Any]]:
             client: UnixDatagramClient[Any, Any] = UnixDatagramClient(mock_unix_datagram_socket, protocol=mock_datagram_protocol)
             with client:
                 yield client

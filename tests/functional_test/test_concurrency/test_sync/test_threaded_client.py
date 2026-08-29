@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Iterator
+from collections.abc import Generator
 from concurrent.futures import ThreadPoolExecutor
 
 from easynetwork.clients.abc import AbstractNetworkClient
@@ -21,7 +21,7 @@ pytestmark = [
 
 
 @pytest.fixture
-def executor(client: ClientType) -> Iterator[ThreadPoolExecutor]:
+def executor(client: ClientType) -> Generator[ThreadPoolExecutor]:
     with ThreadPoolExecutor(max_workers=1) as executor:
         try:
             yield executor

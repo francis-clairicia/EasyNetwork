@@ -5,7 +5,7 @@ import contextlib
 import io
 import os
 import sys
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, Callable
 from socket import socket as Socket
 from typing import TYPE_CHECKING, Literal, assert_never
 
@@ -338,7 +338,7 @@ if sys.platform != "win32":
     class TestAsyncUnixStreamClientWithAsyncIO(_BaseTestAsyncUnixStreamClient):
         @pytest_asyncio.fixture
         @staticmethod
-        async def server(unix_socket_pair: tuple[Socket, Socket]) -> AsyncIterator[AsyncStreamSocket]:
+        async def server(unix_socket_pair: tuple[Socket, Socket]) -> AsyncGenerator[AsyncStreamSocket]:
             async with await AsyncStreamSocket.from_connected_stdlib_socket(unix_socket_pair[0]) as server:
                 yield server
 
@@ -347,7 +347,7 @@ if sys.platform != "win32":
         async def client(
             unix_socket_pair: tuple[Socket, Socket],
             stream_protocol: AnyStreamProtocolType[str, str],
-        ) -> AsyncIterator[AsyncUnixStreamClient[str, str]]:
+        ) -> AsyncGenerator[AsyncUnixStreamClient[str, str]]:
             async with AsyncUnixStreamClient(unix_socket_pair[1], stream_protocol, "asyncio") as client:
                 assert client.is_connected()
                 yield client
@@ -356,7 +356,7 @@ if sys.platform != "win32":
     class TestAsyncUnixStreamClientWithTrio(_BaseTestAsyncUnixStreamClient):
         @trio_fixture
         @staticmethod
-        async def server(unix_socket_pair: tuple[Socket, Socket]) -> AsyncIterator[AsyncStreamSocket]:
+        async def server(unix_socket_pair: tuple[Socket, Socket]) -> AsyncGenerator[AsyncStreamSocket]:
             async with await AsyncStreamSocket.from_connected_stdlib_socket(unix_socket_pair[0]) as server:
                 yield server
 
@@ -365,7 +365,7 @@ if sys.platform != "win32":
         async def client(
             unix_socket_pair: tuple[Socket, Socket],
             stream_protocol: AnyStreamProtocolType[str, str],
-        ) -> AsyncIterator[AsyncUnixStreamClient[str, str]]:
+        ) -> AsyncGenerator[AsyncUnixStreamClient[str, str]]:
             async with AsyncUnixStreamClient(unix_socket_pair[1], stream_protocol, "trio") as client:
                 assert client.is_connected()
                 yield client
@@ -534,7 +534,7 @@ if sys.platform != "win32":
             unix_socket_address_type: Literal["PATHNAME", "ABSTRACT"],
             unix_socket_path_factory: UnixSocketPathFactory,
             unix_stream_socket_factory: Callable[[], Socket],
-        ) -> AsyncIterator[asyncio.Server]:
+        ) -> AsyncGenerator[asyncio.Server]:
             async def client_connected_cb(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
                 with contextlib.closing(writer):
                     data: bytes = await reader.readline()
@@ -575,7 +575,7 @@ if sys.platform != "win32":
             unix_socket_path_factory: UnixSocketPathFactory,
             unix_stream_socket_factory: Callable[[], Socket],
             nursery: trio.Nursery,
-        ) -> AsyncIterator[trio.SocketListener]:
+        ) -> AsyncGenerator[trio.SocketListener]:
             import trio
 
             from ..socket import _TrioStream

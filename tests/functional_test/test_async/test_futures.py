@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from typing import Any
 
 from easynetwork.lowlevel.api_async.backend.abc import AsyncBackend
@@ -24,7 +24,7 @@ class TestAsyncExecutor:
 
     @pytest_asyncio.fixture
     @staticmethod
-    async def executor(max_workers: int | None) -> AsyncIterator[AsyncExecutor[concurrent.futures.Executor]]:
+    async def executor(max_workers: int | None) -> AsyncGenerator[AsyncExecutor[concurrent.futures.Executor]]:
         async with AsyncExecutor(concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)) as executor:
             yield executor
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sys
-from collections.abc import AsyncGenerator, Iterator
+from collections.abc import AsyncGenerator, Generator
 from typing import TYPE_CHECKING, Any, Literal
 
 from easynetwork.lowlevel.socket import IPv4SocketAddress
@@ -118,7 +118,7 @@ def _retrieve_server_address(server: AbstractNetworkServer) -> Any:
 def server(
     ipproto: Literal["TCP", "UDP", "UNIX_STREAM", "UNIX_DGRAM"],
     unix_socket_path_factory: UnixSocketPathFactory,
-) -> Iterator[Any]:
+) -> Generator[Any]:
     with _build_server(ipproto, unix_socket_path_factory) as server:
         server_thread = _run_server(server)
         try:

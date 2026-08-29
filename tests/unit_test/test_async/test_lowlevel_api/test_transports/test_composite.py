@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from asyncio.exceptions import CancelledError
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING, Literal, assert_never
 
 from easynetwork.exceptions import UnsupportedOperation
@@ -162,7 +162,7 @@ class TestAsyncStapledStreamTransport(BaseAsyncStapledTransportTests):
     async def stapled_transport(
         mock_send_transport: MagicMock,
         mock_receive_transport: MagicMock,
-    ) -> AsyncIterator[AsyncStapledStreamTransport[MagicMock, MagicMock]]:
+    ) -> AsyncGenerator[AsyncStapledStreamTransport[MagicMock, MagicMock]]:
         transport = AsyncStapledStreamTransport(mock_send_transport, mock_receive_transport)
         mock_send_transport.reset_mock()
         mock_receive_transport.reset_mock()
@@ -383,7 +383,7 @@ class TestAsyncStapledDatagramTransport(BaseAsyncStapledTransportTests):
     async def stapled_transport(
         mock_send_transport: MagicMock,
         mock_receive_transport: MagicMock,
-    ) -> AsyncIterator[AsyncStapledDatagramTransport[MagicMock, MagicMock]]:
+    ) -> AsyncGenerator[AsyncStapledDatagramTransport[MagicMock, MagicMock]]:
         transport = AsyncStapledDatagramTransport(mock_send_transport, mock_receive_transport)
         mock_send_transport.reset_mock()
         mock_receive_transport.reset_mock()

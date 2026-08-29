@@ -10,7 +10,7 @@ import logging
 import os
 import ssl
 import sys
-from collections.abc import AsyncIterator, Buffer, Callable, Coroutine, Iterable
+from collections.abc import AsyncGenerator, Buffer, Callable, Coroutine, Iterable
 from errno import EBADF, errorcode as errno_errorcode
 from socket import SHUT_WR
 from typing import TYPE_CHECKING, Any, Literal, NoReturn
@@ -237,7 +237,7 @@ class TestListenerSocketAdapter(BaseTestSocketTransport, BaseTestAsyncSocket):
         asyncio_backend: AsyncIOBackend,
         mock_stream_listener_socket: MagicMock,
         accepted_socket_factory: MagicMock,
-    ) -> AsyncIterator[ListenerSocketAdapter[Any]]:
+    ) -> AsyncGenerator[ListenerSocketAdapter[Any]]:
         listener: ListenerSocketAdapter[Any] = ListenerSocketAdapter(
             asyncio_backend,
             mock_stream_listener_socket,
@@ -814,7 +814,7 @@ class TestAsyncioTransportStreamSocketAdapter(BaseTestTransportWithSSL):
         asyncio_backend: AsyncIOBackend,
         mock_asyncio_transport: MagicMock,
         mock_asyncio_protocol: MagicMock,
-    ) -> AsyncIterator[AsyncioTransportStreamSocketAdapter]:
+    ) -> AsyncGenerator[AsyncioTransportStreamSocketAdapter]:
         transport = AsyncioTransportStreamSocketAdapter(asyncio_backend, mock_asyncio_transport, mock_asyncio_protocol)
         async with transport:
             yield transport
@@ -1096,7 +1096,7 @@ if sys.platform != "win32":
         async def transport(
             asyncio_backend: AsyncIOBackend,
             mock_stream_socket: MagicMock,
-        ) -> AsyncIterator[RawUnixStreamSocketAdapter]:
+        ) -> AsyncGenerator[RawUnixStreamSocketAdapter]:
             transport = RawUnixStreamSocketAdapter(asyncio_backend, mock_stream_socket)
             async with transport:
                 yield transport
