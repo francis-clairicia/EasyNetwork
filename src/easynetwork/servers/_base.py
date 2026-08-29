@@ -527,10 +527,10 @@ class ClientErrorHandler[Address]:
         self.__logger.error("-" * 40)
 
     def __compute_client_address(self) -> Address | Literal["<unknown>"]:
-        client_address: Address | Literal["<unknown>"] = "<unknown>"
-        with contextlib.suppress(Exception):
-            client_address = self.__client_address_cb()
-        return client_address
+        try:
+            return self.__client_address_cb()
+        except Exception:
+            return "<unknown>"
 
 
 def validate_max_recv_size(max_recv_size: int | None) -> int:
