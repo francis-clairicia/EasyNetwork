@@ -1118,7 +1118,7 @@ class _ClientHandlerToken:
         *,
         client: ConnectedStreamClient[Any],
         fileno: int,
-        events: selectors._EventMask,
+        events: int,
         deadline: float,
         reader_condvar: threading.Condition,
         reader_done: _utils.Flag,
@@ -1195,7 +1195,7 @@ class _SelectorClientKeyData(NamedTuple):
 
 class _PendingSelectRegister(NamedTuple):
     fileno: int
-    events: selectors._EventMask
+    events: int
     data: _SelectorClientKeyData
 
 
