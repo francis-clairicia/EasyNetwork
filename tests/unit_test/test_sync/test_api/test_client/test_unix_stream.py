@@ -228,8 +228,8 @@ if sys.platform != "win32":
                 case _:
                     pytest.fail(f"Invalid ancillary_data param: {request.param}")
 
-        @pytest.mark.parametrize("max_recv_size", [None, 123456789], ids=lambda p: f"max_recv_size=={p}")
-        @pytest.mark.parametrize("retry_interval", [1.0, float("+inf")], ids=lambda p: f"retry_interval=={p}")
+        @pytest.mark.parametrize("max_recv_size", [None, 123456789], ids=lambda p: f"max_recv_size__{p}")
+        @pytest.mark.parametrize("retry_interval", [1.0, float("+inf")], ids=lambda p: f"retry_interval__{p}")
         def test____dunder_init____connect_to_remote(
             self,
             request: pytest.FixtureRequest,
@@ -366,8 +366,8 @@ if sys.platform != "win32":
             # Assert
             mock_socket_create_connection.assert_called_once_with(remote_address, local_path="")
 
-        @pytest.mark.parametrize("max_recv_size", [None, 123456789], ids=lambda p: f"max_recv_size=={p}")
-        @pytest.mark.parametrize("retry_interval", [1.0, float("+inf")], ids=lambda p: f"retry_interval=={p}")
+        @pytest.mark.parametrize("max_recv_size", [None, 123456789], ids=lambda p: f"max_recv_size__{p}")
+        @pytest.mark.parametrize("retry_interval", [1.0, float("+inf")], ids=lambda p: f"retry_interval__{p}")
         def test____dunder_init____use_given_socket(
             self,
             request: pytest.FixtureRequest,
@@ -479,7 +479,7 @@ if sys.platform != "win32":
 
             assert mock_unix_stream_socket.mock_calls == []
 
-        @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+        @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket__{p}")
         def test____dunder_init____protocol____invalid_value(
             self,
             use_socket: bool,
@@ -502,8 +502,8 @@ if sys.platform != "win32":
                         protocol=mock_datagram_protocol,
                     )
 
-        @pytest.mark.parametrize("max_recv_size", [0, -1, 10.4], ids=lambda p: f"max_recv_size=={p}")
-        @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+        @pytest.mark.parametrize("max_recv_size", [0, -1, 10.4], ids=lambda p: f"max_recv_size__{p}")
+        @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket__{p}")
         def test____dunder_init____max_recv_size____invalid_value(
             self,
             max_recv_size: Any,
@@ -533,7 +533,7 @@ if sys.platform != "win32":
             mock_socket_stream_transport_cls.assert_not_called()
             mock_stream_endpoint_cls.assert_not_called()
 
-        @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+        @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket__{p}")
         def test____dunder_init____unexpected_error(
             self,
             use_socket: bool,
@@ -1120,7 +1120,7 @@ if sys.platform != "win32":
                 "",  # <- Arbitrary abstract Unix address given by kernel
                 b"",  # <- Arbitrary abstract Unix address given by kernel
             ],
-            ids=lambda addr: f"local_address=={addr!r}",
+            ids=lambda addr: f"local_address__{addr!r}",
         )
         @pytest.mark.parametrize(
             "remote_address",
@@ -1130,9 +1130,9 @@ if sys.platform != "win32":
                 "\0unix_sock",
                 b"\x00unix_sock",
             ],
-            ids=lambda addr: f"remote_address=={addr!r}",
+            ids=lambda addr: f"remote_address__{addr!r}",
         )
-        @pytest.mark.parametrize("connect_timeout", [None, 10.4], ids=lambda p: f"connect_timeout=={p}")
+        @pytest.mark.parametrize("connect_timeout", [None, 10.4], ids=lambda p: f"connect_timeout__{p}")
         def test____create_unix_stream_connection____default(
             self,
             local_address: str | bytes | None,
@@ -1176,7 +1176,7 @@ if sys.platform != "win32":
                 "\0local_sock",
                 b"\x00local_sock",
             ],
-            ids=lambda addr: f"local_address=={addr!r}",
+            ids=lambda addr: f"local_address__{addr!r}",
         )
         @pytest.mark.parametrize(
             "remote_address",
@@ -1186,16 +1186,16 @@ if sys.platform != "win32":
                 "\0unix_sock",
                 b"\x00unix_sock",
             ],
-            ids=lambda addr: f"remote_address=={addr!r}",
+            ids=lambda addr: f"remote_address__{addr!r}",
         )
-        @pytest.mark.parametrize("connect_timeout", [None, 10.4], ids=lambda p: f"connect_timeout=={p}")
+        @pytest.mark.parametrize("connect_timeout", [None, 10.4], ids=lambda p: f"connect_timeout__{p}")
         @pytest.mark.parametrize(
             "bind_error",
             [
                 OSError(errno.EPERM, os.strerror(errno.EPERM)),
                 OSError("AF_UNIX path too long."),
             ],
-            ids=lambda exc: f"bind_error=={exc!r}",
+            ids=lambda exc: f"bind_error__{exc!r}",
         )
         def test____create_unix_stream_connection____bind_error(
             self,
@@ -1234,16 +1234,16 @@ if sys.platform != "win32":
                 "\0unix_sock",
                 b"\x00unix_sock",
             ],
-            ids=lambda addr: f"remote_address=={addr!r}",
+            ids=lambda addr: f"remote_address__{addr!r}",
         )
-        @pytest.mark.parametrize("connect_timeout", [None, 10.4], ids=lambda p: f"connect_timeout=={p}")
+        @pytest.mark.parametrize("connect_timeout", [None, 10.4], ids=lambda p: f"connect_timeout__{p}")
         @pytest.mark.parametrize(
             "connect_error",
             [
                 OSError(errno.ECONNREFUSED, os.strerror(errno.ECONNREFUSED)),
                 OSError(errno.EPERM, os.strerror(errno.EPERM)),
             ],
-            ids=lambda exc: f"connect_error=={exc!r}",
+            ids=lambda exc: f"connect_error__{exc!r}",
         )
         def test____create_unix_stream_connection____connect_error(
             self,

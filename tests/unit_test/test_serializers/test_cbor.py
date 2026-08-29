@@ -61,7 +61,7 @@ class TestCBORSerializer(BaseSerializerConfigInstanceCheck):
 
         return mocker.NonCallableMagicMock(spec=BytesIO)
 
-    @pytest.fixture(params=[True, False], ids=lambda boolean: f"default_encoder_config=={boolean}")
+    @pytest.fixture(params=[True, False], ids=lambda boolean: f"default_encoder_config__{boolean}")
     @staticmethod
     def encoder_config(request: Any, mocker: MockerFixture) -> CBOREncoderConfig | None:
         use_default_config: bool = request.param
@@ -78,7 +78,7 @@ class TestCBORSerializer(BaseSerializerConfigInstanceCheck):
             indefinite_containers=mocker.sentinel.indefinite_containers,
         )
 
-    @pytest.fixture(params=[True, False], ids=lambda boolean: f"default_decoder_config=={boolean}")
+    @pytest.fixture(params=[True, False], ids=lambda boolean: f"default_decoder_config__{boolean}")
     @staticmethod
     def decoder_config(request: Any, mocker: MockerFixture) -> CBORDecoderConfig | None:
         use_default_config: bool = request.param
@@ -113,7 +113,7 @@ class TestCBORSerializer(BaseSerializerConfigInstanceCheck):
         # Act & Assert
         assert getattr(CBORSerializer, method) is getattr(FileBasedPacketSerializer, method)
 
-    @pytest.mark.parametrize("limit", [147258369, None], ids=lambda p: f"limit=={p}")
+    @pytest.mark.parametrize("limit", [147258369, None], ids=lambda p: f"limit__{p}")
     def test____properties____right_values(self, debug_mode: bool, limit: int | None) -> None:
         # Arrange
 
@@ -130,7 +130,7 @@ class TestCBORSerializer(BaseSerializerConfigInstanceCheck):
         else:
             assert serializer.buffer_limit == limit
 
-    @pytest.mark.parametrize("limit", [0, -42], ids=lambda p: f"limit=={p}")
+    @pytest.mark.parametrize("limit", [0, -42], ids=lambda p: f"limit__{p}")
     def test____dunder_init____invalid_limit(self, limit: int) -> None:
         # Arrange
 

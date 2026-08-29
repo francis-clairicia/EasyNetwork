@@ -337,9 +337,9 @@ if sys.platform != "win32":
             mock_unix_stream_socket.getsockopt.assert_not_called()
 
         @PlatformMarkers.runs_only_on_platform(LINUX + OPENBSD + NETBSD, "ucred_impl")
-        @pytest.mark.parametrize("invalid_pid", [None, 0], ids=lambda p: f"invalid_pid=={p}")
-        @pytest.mark.parametrize("invalid_gid", [None, -1], ids=lambda p: f"invalid_gid=={p}")
-        @pytest.mark.parametrize("invalid_uid", [None, -1], ids=lambda p: f"invalid_uid=={p}")
+        @pytest.mark.parametrize("invalid_pid", [None, 0], ids=lambda p: f"invalid_pid__{p}")
+        @pytest.mark.parametrize("invalid_gid", [None, -1], ids=lambda p: f"invalid_gid__{p}")
+        @pytest.mark.parametrize("invalid_uid", [None, -1], ids=lambda p: f"invalid_uid__{p}")
         def test____get_peer_credentials_impl_from_platform____ucred_impl____corrupted_result(
             self,
             invalid_pid: int | None,

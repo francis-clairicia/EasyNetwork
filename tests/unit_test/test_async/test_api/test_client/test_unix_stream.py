@@ -187,7 +187,7 @@ if sys.platform != "win32":
                 assert client.is_connected()
                 yield client
 
-        @pytest_asyncio.fixture(params=[False, True], ids=lambda boolean: f"client_connected=={boolean}")
+        @pytest_asyncio.fixture(params=[False, True], ids=lambda boolean: f"client_connected__{boolean}")
         @staticmethod
         async def client_connected_or_not(
             request: pytest.FixtureRequest,
@@ -220,7 +220,7 @@ if sys.platform != "win32":
                 case _:
                     pytest.fail(f"Invalid ancillary_data param: {request.param}")
 
-        @pytest.mark.parametrize("max_recv_size", [None, 123456789], ids=lambda p: f"max_recv_size=={p}")
+        @pytest.mark.parametrize("max_recv_size", [None, 123456789], ids=lambda p: f"max_recv_size__{p}")
         async def test____dunder_init____connect_to_remote(
             self,
             max_recv_size: int | None,
@@ -348,7 +348,7 @@ if sys.platform != "win32":
             # Assert
             mock_backend.create_unix_stream_connection.assert_awaited_once_with(remote_address, local_path="")
 
-        @pytest.mark.parametrize("max_recv_size", [None, 123456789], ids=lambda p: f"max_recv_size=={p}")
+        @pytest.mark.parametrize("max_recv_size", [None, 123456789], ids=lambda p: f"max_recv_size__{p}")
         async def test____dunder_init____use_given_socket(
             self,
             max_recv_size: int | None,
@@ -448,7 +448,7 @@ if sys.platform != "win32":
                     backend=mock_backend,
                 )
 
-        @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+        @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket__{p}")
         async def test____dunder_init____protocol____invalid_value(
             self,
             request: pytest.FixtureRequest,
@@ -473,7 +473,7 @@ if sys.platform != "win32":
                         mock_backend,
                     )
 
-        @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+        @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket__{p}")
         async def test____dunder_init____backend____invalid_value(
             self,
             request: pytest.FixtureRequest,
@@ -499,8 +499,8 @@ if sys.platform != "win32":
                         invalid_backend,
                     )
 
-        @pytest.mark.parametrize("max_recv_size", [0, -1, 10.4], ids=lambda p: f"max_recv_size=={p}")
-        @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+        @pytest.mark.parametrize("max_recv_size", [0, -1, 10.4], ids=lambda p: f"max_recv_size__{p}")
+        @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket__{p}")
         async def test____dunder_init____max_recv_size____invalid_value(
             self,
             request: pytest.FixtureRequest,

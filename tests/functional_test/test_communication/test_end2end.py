@@ -43,7 +43,7 @@ class BaseTestNetworkServer:
             pytest.param("asyncio"),
             pytest.param("trio", marks=pytest.mark.feature_trio(async_test_auto_mark=False)),
         ],
-        ids=lambda p: f"server_backend=={p!r}",
+        ids=lambda p: f"server_backend__{p!r}",
     )
     @staticmethod
     def server_backend(request: pytest.FixtureRequest) -> BuiltinAsyncBackendLiteral:
@@ -54,7 +54,7 @@ class BaseTestNetworkServer:
             pytest.param("asyncio", marks=pytest.mark.asyncio),
             pytest.param("trio", marks=pytest.mark.feature_trio(async_test_auto_mark=True)),
         ],
-        ids=lambda p: f"async_client_backend=={p!r}",
+        ids=lambda p: f"async_client_backend__{p!r}",
     )
     @staticmethod
     def async_client_backend(request: pytest.FixtureRequest) -> BuiltinAsyncBackendLiteral:

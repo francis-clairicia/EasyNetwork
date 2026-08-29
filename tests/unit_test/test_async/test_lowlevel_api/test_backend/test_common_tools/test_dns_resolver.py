@@ -405,7 +405,7 @@ class _AddrInfoListFactory(TypingProtocol):
     ) -> Sequence[tuple[int, int, int, str, tuple[Any, ...]]]: ...
 
 
-@pytest.fixture(params=[SOCK_STREAM, SOCK_DGRAM], ids=lambda sock_type: f"sock_type=={sock_type!r}")
+@pytest.fixture(params=[SOCK_STREAM, SOCK_DGRAM], ids=lambda sock_type: f"{sock_type.name}")
 def connection_socktype(request: pytest.FixtureRequest) -> int:
     return request.param
 
@@ -428,7 +428,7 @@ def create_connection_of_socktype(dns_resolver: MockedDNSResolver, connection_so
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("with_local_address", [False, True], ids=lambda boolean: f"with_local_address=={boolean}")
+@pytest.mark.parametrize("with_local_address", [False, True], ids=lambda boolean: f"with_local_address__{boolean}")
 async def test____create_connection____default(
     asyncio_backend: AsyncBackend,
     dns_resolver: MockedDNSResolver,
@@ -488,7 +488,7 @@ async def test____create_connection____default(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("fail_on", ["socket", "bind", "connect"], ids=lambda fail_on: f"fail_on=={fail_on}")
+@pytest.mark.parametrize("fail_on", ["socket", "bind", "connect"], ids=lambda fail_on: f"fail_on__{fail_on}")
 async def test____create_connection____first_failed(
     fail_on: Literal["socket", "bind", "connect"],
     asyncio_backend: AsyncBackend,
@@ -569,7 +569,7 @@ async def test____create_connection____first_failed(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("fail_on", ["socket", "bind", "connect"], ids=lambda fail_on: f"fail_on=={fail_on}")
+@pytest.mark.parametrize("fail_on", ["socket", "bind", "connect"], ids=lambda fail_on: f"fail_on__{fail_on}")
 async def test____create_connection____all_failed(
     fail_on: Literal["socket", "bind", "connect"],
     asyncio_backend: AsyncBackend,
@@ -649,7 +649,7 @@ async def test____create_connection____all_failed(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("fail_on", ["socket", "connect"], ids=lambda fail_on: f"fail_on=={fail_on}")
+@pytest.mark.parametrize("fail_on", ["socket", "connect"], ids=lambda fail_on: f"fail_on__{fail_on}")
 async def test____create_connection____unrelated_exception(
     fail_on: Literal["socket", "connect"],
     connection_socktype: int,
@@ -689,7 +689,7 @@ async def test____create_connection____unrelated_exception(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("fail_on", ["remote_address", "local_address"], ids=lambda fail_on: f"fail_on=={fail_on}")
+@pytest.mark.parametrize("fail_on", ["remote_address", "local_address"], ids=lambda fail_on: f"fail_on__{fail_on}")
 async def test____create_connection____getaddrinfo_returned_empty_list(
     fail_on: Literal["remote_address", "local_address"],
     connection_socktype: int,
@@ -763,7 +763,7 @@ async def test____create_connection____getaddrinfo_return_mismatch(
 
 @PlatformMarkers.skipif_platform_bsd_because("test failures are all too frequent on CI", skip_only_on_ci=True)
 @pytest.mark.asyncio
-@pytest.mark.parametrize("connection_socktype", [SOCK_STREAM], indirect=True, ids=repr)
+@pytest.mark.parametrize("connection_socktype", [pytest.param(SOCK_STREAM, id=pytest.HIDDEN_PARAM)], indirect=True)
 @pytest.mark.flaky(retries=3)
 async def test____create_stream_connection____happy_eyeballs_delay____connect_cancellation(
     asyncio_backend: AsyncBackend,
@@ -807,7 +807,7 @@ async def test____create_stream_connection____happy_eyeballs_delay____connect_ca
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("connection_socktype", [SOCK_STREAM], indirect=True, ids=repr)
+@pytest.mark.parametrize("connection_socktype", [pytest.param(SOCK_STREAM, id=pytest.HIDDEN_PARAM)], indirect=True)
 async def test____create_stream_connection____happy_eyeballs_delay____connect_too_late(
     asyncio_backend: AsyncBackend,
     dns_resolver: MockedDNSResolver,
@@ -845,7 +845,7 @@ async def test____create_stream_connection____happy_eyeballs_delay____connect_to
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("connection_socktype", [SOCK_STREAM], indirect=True, ids=repr)
+@pytest.mark.parametrize("connection_socktype", [pytest.param(SOCK_STREAM, id=pytest.HIDDEN_PARAM)], indirect=True)
 async def test____create_stream_connection____happy_eyeballs_delay____winner_closed_because_of_exception_in_another_task(
     asyncio_backend: AsyncBackend,
     dns_resolver: MockedDNSResolver,
@@ -886,7 +886,7 @@ async def test____create_stream_connection____happy_eyeballs_delay____winner_clo
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("connection_socktype", [SOCK_STREAM], indirect=True, ids=repr)
+@pytest.mark.parametrize("connection_socktype", [pytest.param(SOCK_STREAM, id=pytest.HIDDEN_PARAM)], indirect=True)
 async def test____create_stream_connection____happy_eyeballs_delay____addrinfo_reordering____prioritize_ipv6_over_ipv4(
     asyncio_backend: AsyncBackend,
     dns_resolver: MockedDNSResolver,
@@ -916,7 +916,7 @@ async def test____create_stream_connection____happy_eyeballs_delay____addrinfo_r
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("connection_socktype", [SOCK_STREAM], indirect=True, ids=repr)
+@pytest.mark.parametrize("connection_socktype", [pytest.param(SOCK_STREAM, id=pytest.HIDDEN_PARAM)], indirect=True)
 async def test____create_stream_connection____happy_eyeballs_delay____addrinfo_reordering____interleave_families(
     asyncio_backend: AsyncBackend,
     dns_resolver: MockedDNSResolver,

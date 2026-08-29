@@ -466,7 +466,7 @@ if sys.platform != "win32":
             mock_datagram_server.send_packet_to.assert_not_called()
 
         @pytest.mark.parametrize("method", ["server_close", "service_shutdown"])
-        @pytest.mark.parametrize("with_ancillary_data", [False, True], ids=lambda p: f"with_ancillary_data=={p}")
+        @pytest.mark.parametrize("with_ancillary_data", [False, True], ids=lambda p: f"with_ancillary_data__{p}")
         async def test____send_packet____closed_client(
             self,
             method: Literal["server_close", "service_shutdown"],

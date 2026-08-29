@@ -141,7 +141,7 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
             assert client.is_connected()
             yield client
 
-    @pytest_asyncio.fixture(params=[False, True], ids=lambda boolean: f"client_connected=={boolean}")
+    @pytest_asyncio.fixture(params=[False, True], ids=lambda boolean: f"client_connected__{boolean}")
     @staticmethod
     async def client_connected_or_not(
         request: pytest.FixtureRequest,
@@ -412,7 +412,7 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
                 backend=mock_backend,
             )
 
-    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket__{p}")
     async def test____dunder_init____protocol____invalid_value(
         self,
         use_socket: bool,
@@ -438,7 +438,7 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
                     backend=mock_backend,
                 )
 
-    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket__{p}")
     async def test____dunder_init____backend____invalid_value(
         self,
         request: pytest.FixtureRequest,

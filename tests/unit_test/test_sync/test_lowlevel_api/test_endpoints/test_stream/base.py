@@ -418,7 +418,7 @@ class BaseEndpointReceiveTests(BaseEndpointTests):
         # Assert
         assert exc_info.value is expected_error
 
-    @pytest.mark.parametrize("before_transport_reading", [False, True], ids=lambda p: f"before_transport_reading=={p}")
+    @pytest.mark.parametrize("before_transport_reading", [False, True], ids=lambda p: f"before_transport_reading__{p}")
     def test____recv_packet____blocking_or_not____protocol_crashed(
         self,
         before_transport_reading: bool,
@@ -628,7 +628,7 @@ class BaseEndpointReceiveTests(BaseEndpointTests):
         assert exc_info.value is expected_error
         ancillary_data_received.assert_called_once_with(mocker.sentinel.ancdata)
 
-    @pytest.mark.parametrize("before_transport_reading", [False, True], ids=lambda p: f"before_transport_reading=={p}")
+    @pytest.mark.parametrize("before_transport_reading", [False, True], ids=lambda p: f"before_transport_reading__{p}")
     def test____recv_packet_with_ancillary____blocking_or_not____protocol_crashed(
         self,
         before_transport_reading: bool,

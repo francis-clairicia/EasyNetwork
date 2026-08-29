@@ -168,7 +168,7 @@ if sys.platform != "win32":
             with pytest.raises(TypeError, match=r"^Expected an AsyncStreamRequestHandler object, got .*$"):
                 _ = AsyncUnixStreamServer("/path/to/sock", mock_stream_protocol, mock_datagram_request_handler, mock_backend)
 
-        @pytest.mark.parametrize("max_recv_size", [0, -1, 10.4], ids=lambda p: f"max_recv_size=={p}")
+        @pytest.mark.parametrize("max_recv_size", [0, -1, 10.4], ids=lambda p: f"max_recv_size__{p}")
         async def test____dunder_init____max_recv_size____invalid_value(
             self,
             max_recv_size: Any,
@@ -510,7 +510,7 @@ if sys.platform != "win32":
             mock_unix_stream_socket.getsockopt.assert_not_called()
 
         @pytest.mark.parametrize("method", ["close", "force_disconnect"])
-        @pytest.mark.parametrize("with_ancillary_data", [False, True], ids=lambda p: f"with_ancillary_data=={p}")
+        @pytest.mark.parametrize("with_ancillary_data", [False, True], ids=lambda p: f"with_ancillary_data__{p}")
         async def test____send_packet____closed_client(
             self,
             method: Literal["close", "force_disconnect"],

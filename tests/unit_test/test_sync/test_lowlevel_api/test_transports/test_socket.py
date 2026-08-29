@@ -553,7 +553,7 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
     @PlatformMarkers.supports_socket_sendmsg
     @pytest.mark.usefixtures("SC_IOV_MAX")
     @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
-    @pytest.mark.parametrize("SC_IOV_MAX", [2], ids=lambda p: f"SC_IOV_MAX=={p}", indirect=True)
+    @pytest.mark.parametrize("SC_IOV_MAX", [2], ids=lambda p: f"SC_IOV_MAX__{p}", indirect=True)
     def test____send_all_noblock_with_ancillary____message_too_long____nb_buffers_greather_than_SC_IOV_MAX(
         self,
         transport: SocketStreamTransport,
@@ -602,8 +602,8 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
 
     @PlatformMarkers.supports_socket_sendmsg
     @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
-    @pytest.mark.parametrize("data_is_iterator", [False, True], ids=lambda p: f"data_is_iterator=={p}")
-    @pytest.mark.parametrize("ancillary_data_is_iterator", [False, True], ids=lambda p: f"ancillary_data_is_iterator=={p}")
+    @pytest.mark.parametrize("data_is_iterator", [False, True], ids=lambda p: f"data_is_iterator__{p}")
+    @pytest.mark.parametrize("ancillary_data_is_iterator", [False, True], ids=lambda p: f"ancillary_data_is_iterator__{p}")
     @pytest.mark.parametrize("error", [BlockingIOError, InterruptedError])
     def test____send_all_with_ancillary____correctly_handle_iterables(
         self,
@@ -677,7 +677,7 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
 
     @PlatformMarkers.supports_socket_sendmsg
     @pytest.mark.usefixtures("SC_IOV_MAX")
-    @pytest.mark.parametrize("SC_IOV_MAX", [2], ids=lambda p: f"SC_IOV_MAX=={p}", indirect=True)
+    @pytest.mark.parametrize("SC_IOV_MAX", [2], ids=lambda p: f"SC_IOV_MAX__{p}", indirect=True)
     def test____send_all_from_iterable____use_socket_sendmsg____nb_buffers_greather_than_SC_IOV_MAX(
         self,
         transport: SocketStreamTransport,
@@ -1034,7 +1034,7 @@ class TestSSLStreamTransport:
         mock_transport_retry.assert_called_once_with(transport, mocker.ANY, SSL_HANDSHAKE_TIMEOUT)
         assert mock_ssl_socket.do_handshake.call_args_list == [mocker.call() for _ in range(3)]
 
-    @pytest.mark.parametrize("standard_compatible", [False, True], ids=lambda p: f"standard_compatible=={p}", indirect=True)
+    @pytest.mark.parametrize("standard_compatible", [False, True], ids=lambda p: f"standard_compatible__{p}", indirect=True)
     def test____dunder_init____ssl_context_parameters(
         self,
         request: pytest.FixtureRequest,
@@ -1180,7 +1180,7 @@ class TestSSLStreamTransport:
 
     @pytest.mark.parametrize("unwrap_error", [None, OSError])
     @pytest.mark.parametrize("shutdown_error", [None, OSError])
-    @pytest.mark.parametrize("standard_compatible", [False, True], ids=lambda p: f"standard_compatible=={p}", indirect=True)
+    @pytest.mark.parametrize("standard_compatible", [False, True], ids=lambda p: f"standard_compatible__{p}", indirect=True)
     def test____close____default(
         self,
         standard_compatible: bool,
@@ -1639,7 +1639,7 @@ class TestSocketDatagramTransport(BaseTestSocketTransport):
         with pytest.raises(ValueError, match=r"^A 'SOCK_DGRAM' socket is expected$"):
             _ = SocketDatagramTransport(mock_tcp_socket, math.inf)
 
-    @pytest.mark.parametrize("max_datagram_size", [0, -42], ids=lambda p: f"max_datagram_size=={p}")
+    @pytest.mark.parametrize("max_datagram_size", [0, -42], ids=lambda p: f"max_datagram_size__{p}")
     def test____dunder_init____invalid_datagram_size(
         self,
         max_datagram_size: int,
@@ -1729,7 +1729,7 @@ class TestSocketDatagramTransport(BaseTestSocketTransport):
         # Assert
         assert fd == socket_fileno
 
-    @pytest.mark.parametrize("max_datagram_size", [None, 1024], ids=lambda p: f"max_datagram_size=={p}", indirect=True)
+    @pytest.mark.parametrize("max_datagram_size", [None, 1024], ids=lambda p: f"max_datagram_size__{p}", indirect=True)
     def test____recv_noblock____default(
         self,
         max_datagram_size: int | None,
@@ -1752,7 +1752,7 @@ class TestSocketDatagramTransport(BaseTestSocketTransport):
         assert result is mocker.sentinel.bytes
 
     @pytest.mark.parametrize("error", [BlockingIOError, InterruptedError])
-    @pytest.mark.parametrize("max_datagram_size", [None, 1024], ids=lambda p: f"max_datagram_size=={p}", indirect=True)
+    @pytest.mark.parametrize("max_datagram_size", [None, 1024], ids=lambda p: f"max_datagram_size__{p}", indirect=True)
     def test____recv_noblock____blocking_error(
         self,
         max_datagram_size: int | None,
@@ -1776,7 +1776,7 @@ class TestSocketDatagramTransport(BaseTestSocketTransport):
 
     @PlatformMarkers.supports_socket_recvmsg
     @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
-    @pytest.mark.parametrize("max_datagram_size", [None, 1024], ids=lambda p: f"max_datagram_size=={p}", indirect=True)
+    @pytest.mark.parametrize("max_datagram_size", [None, 1024], ids=lambda p: f"max_datagram_size__{p}", indirect=True)
     def test____recv_noblock_with_ancillary____default(
         self,
         max_datagram_size: int | None,
@@ -1821,7 +1821,7 @@ class TestSocketDatagramTransport(BaseTestSocketTransport):
     @PlatformMarkers.supports_socket_recvmsg
     @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
     @pytest.mark.parametrize("error", [BlockingIOError, InterruptedError])
-    @pytest.mark.parametrize("max_datagram_size", [None, 1024], ids=lambda p: f"max_datagram_size=={p}", indirect=True)
+    @pytest.mark.parametrize("max_datagram_size", [None, 1024], ids=lambda p: f"max_datagram_size__{p}", indirect=True)
     def test____recv_noblock_with_ancillary____blocking_error(
         self,
         max_datagram_size: int | None,
@@ -1941,7 +1941,7 @@ class TestSocketDatagramTransport(BaseTestSocketTransport):
 
     @PlatformMarkers.supports_socket_sendmsg
     @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
-    @pytest.mark.parametrize("ancillary_data_is_iterator", [False, True], ids=lambda p: f"ancillary_data_is_iterator=={p}")
+    @pytest.mark.parametrize("ancillary_data_is_iterator", [False, True], ids=lambda p: f"ancillary_data_is_iterator__{p}")
     @pytest.mark.parametrize("error", [BlockingIOError, InterruptedError])
     def test____send_with_ancillary____correctly_handle_iterables(
         self,

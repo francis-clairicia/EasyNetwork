@@ -78,7 +78,7 @@ class TestPickleSerializer(BaseSerializerConfigInstanceCheck):
     def mock_unpickler_cls(mocker: MockerFixture, mock_unpickler: MagicMock) -> MagicMock:
         return mocker.patch("pickle.Unpickler", return_value=mock_unpickler)
 
-    @pytest.fixture(params=[True, False], ids=lambda boolean: f"default_pickler_config=={boolean}")
+    @pytest.fixture(params=[True, False], ids=lambda boolean: f"default_pickler_config__{boolean}")
     @staticmethod
     def pickler_config(request: Any, mocker: MockerFixture) -> PicklerConfig | None:
         use_default_config: bool = request.param
@@ -89,7 +89,7 @@ class TestPickleSerializer(BaseSerializerConfigInstanceCheck):
             fix_imports=mocker.sentinel.fix_imports,
         )
 
-    @pytest.fixture(params=[True, False], ids=lambda boolean: f"default_unpickler_config=={boolean}")
+    @pytest.fixture(params=[True, False], ids=lambda boolean: f"default_unpickler_config__{boolean}")
     @staticmethod
     def unpickler_config(request: Any, mocker: MockerFixture) -> UnpicklerConfig | None:
         use_default_config: bool = request.param
@@ -101,7 +101,7 @@ class TestPickleSerializer(BaseSerializerConfigInstanceCheck):
             errors=mocker.sentinel.errors,
         )
 
-    @pytest.fixture(params=[False, True], ids=lambda boolean: f"optimize=={boolean}")
+    @pytest.fixture(params=[False, True], ids=lambda boolean: f"optimize__{boolean}")
     @staticmethod
     def pickler_optimize(request: Any) -> bool:
         return request.param

@@ -51,11 +51,11 @@ def addrinfo_list() -> Sequence[tuple[int, int, int, str, tuple[Any, ...]]]:
     )
 
 
-@pytest.mark.parametrize("reuse_address", [False, True], ids=lambda boolean: f"reuse_address=={boolean}")
-@pytest.mark.parametrize("SO_REUSEADDR_available", [False, True], ids=lambda boolean: f"SO_REUSEADDR_available=={boolean}")
-@pytest.mark.parametrize("SO_REUSEADDR_raise_error", [False, True], ids=lambda boolean: f"SO_REUSEADDR_raise_error=={boolean}")
-@pytest.mark.parametrize("IPPROTO_IPV6_available", [False, True], ids=lambda boolean: f"IPPROTO_IPV6_available=={boolean}")
-@pytest.mark.parametrize("reuse_port", [False, True], ids=lambda boolean: f"reuse_port=={boolean}")
+@pytest.mark.parametrize("reuse_address", [False, True], ids=lambda boolean: f"reuse_address__{boolean}")
+@pytest.mark.parametrize("SO_REUSEADDR_available", [False, True], ids=lambda boolean: f"SO_REUSEADDR_available__{boolean}")
+@pytest.mark.parametrize("SO_REUSEADDR_raise_error", [False, True], ids=lambda boolean: f"SO_REUSEADDR_raise_error__{boolean}")
+@pytest.mark.parametrize("IPPROTO_IPV6_available", [False, True], ids=lambda boolean: f"IPPROTO_IPV6_available__{boolean}")
+@pytest.mark.parametrize("reuse_port", [False, True], ids=lambda boolean: f"reuse_port__{boolean}")
 def test____open_listener_sockets_from_getaddrinfo_result____create_listener_sockets(
     reuse_address: bool,
     SO_REUSEADDR_available: bool,

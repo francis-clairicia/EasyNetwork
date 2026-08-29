@@ -128,8 +128,8 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
         # Assert
         mock_datagram_listener.aclose.assert_awaited_once_with()
 
-    @pytest.mark.parametrize("external_group", [True, False], ids=lambda p: f"external_group=={p}")
-    @pytest.mark.parametrize("recv_with_ancillary", [False, True], ids=lambda p: f"recv_with_ancillary=={p}")
+    @pytest.mark.parametrize("external_group", [True, False], ids=lambda p: f"external_group__{p}")
+    @pytest.mark.parametrize("recv_with_ancillary", [False, True], ids=lambda p: f"recv_with_ancillary__{p}")
     async def test____serve____task_group(
         self,
         external_group: bool,
@@ -172,8 +172,8 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
             mock_backend.create_task_group.assert_called_once_with()
             mock_task_group.__aenter__.assert_awaited_once()
 
-    @pytest.mark.parametrize("after_first_yield", [False, True], ids=lambda p: f"after_first_yield=={p}")
-    @pytest.mark.parametrize("recv_with_ancillary", [False, True], ids=lambda p: f"recv_with_ancillary=={p}")
+    @pytest.mark.parametrize("after_first_yield", [False, True], ids=lambda p: f"after_first_yield__{p}")
+    @pytest.mark.parametrize("recv_with_ancillary", [False, True], ids=lambda p: f"recv_with_ancillary__{p}")
     async def test____serve____timeout____old_method_is_forbidden(
         self,
         after_first_yield: bool,
@@ -233,8 +233,8 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
             ancillary_data_unused.assert_called_once_with(mocker.sentinel.ancdata, mocker.sentinel.address)
 
     @pytest.mark.parametrize("invalid_timeout", [-1.0, math.nan])
-    @pytest.mark.parametrize("invalid_timeout_after_first_yield", [False, True], ids=lambda p: f"after_first_yield=={p}")
-    @pytest.mark.parametrize("recv_with_ancillary", [False, True], ids=lambda p: f"recv_with_ancillary=={p}")
+    @pytest.mark.parametrize("invalid_timeout_after_first_yield", [False, True], ids=lambda p: f"after_first_yield__{p}")
+    @pytest.mark.parametrize("recv_with_ancillary", [False, True], ids=lambda p: f"recv_with_ancillary__{p}")
     async def test____serve____invalid_timeout(
         self,
         invalid_timeout: float,
@@ -308,7 +308,7 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
 
         assert not caplog.records
 
-    @pytest.mark.parametrize("recv_with_ancillary", [False, True], ids=lambda p: f"recv_with_ancillary=={p}")
+    @pytest.mark.parametrize("recv_with_ancillary", [False, True], ids=lambda p: f"recv_with_ancillary__{p}")
     async def test____serve____unhandled_exception____from_system(
         self,
         recv_with_ancillary: bool,
@@ -362,7 +362,7 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
         assert isinstance(caplog.records[0].exc_info[1], DatagramProtocolParseError)
         assert caplog.records[0].getMessage().startswith("Unhandled exception:")
 
-    @pytest.mark.parametrize("recv_with_ancillary", [False, True], ids=lambda p: f"recv_with_ancillary=={p}")
+    @pytest.mark.parametrize("recv_with_ancillary", [False, True], ids=lambda p: f"recv_with_ancillary__{p}")
     async def test____serve____unhandled_exception____from_request_handler(
         self,
         recv_with_ancillary: bool,
@@ -408,7 +408,7 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
         assert isinstance(caplog.records[0].exc_info[1], ValueError)
         assert caplog.records[0].getMessage() == "Unhandled exception: something bad happened"
 
-    @pytest.mark.parametrize("after_first_yield", [False, True], ids=lambda p: f"after_first_yield=={p}")
+    @pytest.mark.parametrize("after_first_yield", [False, True], ids=lambda p: f"after_first_yield__{p}")
     async def test____serve____ancillary_data_asked_while_unsupported(
         self,
         after_first_yield: bool,
@@ -452,7 +452,7 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
 
         assert not caplog.records
 
-    @pytest.mark.parametrize("after_first_yield", [False, True], ids=lambda p: f"after_first_yield=={p}")
+    @pytest.mark.parametrize("after_first_yield", [False, True], ids=lambda p: f"after_first_yield__{p}")
     async def test____serve____recv_with_ancillary____ancillary_data_received_callback_crashed(
         self,
         after_first_yield: bool,
@@ -500,11 +500,11 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
 
         assert not caplog.records
 
-    @pytest.mark.parametrize("ancillary_data_unused", [False, True], ids=lambda p: f"ancillary_data_unused=={p}", indirect=True)
+    @pytest.mark.parametrize("ancillary_data_unused", [False, True], ids=lambda p: f"ancillary_data_unused__{p}", indirect=True)
     @pytest.mark.parametrize(
-        "ancillary_data_unused_callback_crash", [False, True], ids=lambda p: f"ancillary_data_unused_callback_crash=={p}"
+        "ancillary_data_unused_callback_crash", [False, True], ids=lambda p: f"ancillary_data_unused_callback_crash__{p}"
     )
-    @pytest.mark.parametrize("after_first_yield", [None, False, True], ids=lambda p: f"after_first_yield=={p}")
+    @pytest.mark.parametrize("after_first_yield", [None, False, True], ids=lambda p: f"after_first_yield__{p}")
     async def test____serve____recv_with_ancillary____ancillary_data_unused(
         self,
         after_first_yield: bool | None,
@@ -573,8 +573,8 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
                             mocker.call(mocker.sentinel.ancdata_2, mocker.sentinel.address),
                         ]
 
-    @pytest.mark.parametrize("after_first_yield", [None, False, True], ids=lambda p: f"after_first_yield=={p}")
-    @pytest.mark.parametrize("try_to_handle_ancillary_data", [False, True], ids=lambda p: f"try_to_handle_ancillary_data=={p}")
+    @pytest.mark.parametrize("after_first_yield", [None, False, True], ids=lambda p: f"after_first_yield__{p}")
+    @pytest.mark.parametrize("try_to_handle_ancillary_data", [False, True], ids=lambda p: f"try_to_handle_ancillary_data__{p}")
     async def test____serve____recv_with_ancillary____no_ancillary_data(
         self,
         after_first_yield: bool | None,
@@ -847,7 +847,7 @@ class TestClientData:
         assert self.get_client_state(client_data) is _ClientState.TASK_RUNNING
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("notify", [True, False], ids=lambda p: f"notify=={p}")
+    @pytest.mark.parametrize("notify", [True, False], ids=lambda p: f"notify__{p}")
     async def test____datagram_queue____push_datagram(
         self,
         notify: bool,
@@ -889,7 +889,7 @@ class TestClientData:
             queue_condition.notify.assert_not_called()
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("no_wait", [False, True], ids=lambda p: f"no_wait=={p}")
+    @pytest.mark.parametrize("no_wait", [False, True], ids=lambda p: f"no_wait__{p}")
     async def test____datagram_queue____pop_datagram(
         self,
         no_wait: bool,

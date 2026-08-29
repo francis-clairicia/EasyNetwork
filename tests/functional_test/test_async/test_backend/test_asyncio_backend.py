@@ -90,7 +90,7 @@ class TestAsyncioBackend:
         await task
         assert not task.cancelled()
 
-    @pytest.mark.parametrize("cancel_message", ["something", None], ids=lambda p: f"cancel_message=={p!r}")
+    @pytest.mark.parametrize("cancel_message", ["something", None], ids=lambda p: f"cancel_message__{p!r}")
     async def test____cancel_shielded_coro_yield____cancel_at_the_next_checkpoint(
         self,
         cancel_message: str | None,
@@ -146,7 +146,7 @@ class TestAsyncioBackend:
         assert task.cancelling() > 0
         assert checkpoints == [0, 1]
 
-    @pytest.mark.parametrize("direct_raise", [False, True], ids=lambda p: f"direct_raise=={p}")
+    @pytest.mark.parametrize("direct_raise", [False, True], ids=lambda p: f"direct_raise__{p}")
     async def test____ignore_cancellation____exception_raised_in_task(
         self,
         direct_raise: bool,
@@ -212,8 +212,8 @@ class TestAsyncioBackend:
         with pytest.raises(RuntimeError, match=r"^Task cannot await on itself: .+$"):
             await backend.ignore_cancellation(coroutine())
 
-    @pytest.mark.parametrize("with_delay", [False, True], ids=lambda p: f"with_delay=={p}")
-    @pytest.mark.parametrize("cancel_method", ["fut_cancel", "raise"], ids=lambda p: f"cancel_method=={p}")
+    @pytest.mark.parametrize("with_delay", [False, True], ids=lambda p: f"with_delay__{p}")
+    @pytest.mark.parametrize("cancel_method", ["fut_cancel", "raise"], ids=lambda p: f"cancel_method__{p}")
     async def test____ignore_cancellation____coroutine_cancelled_itself(
         self,
         cancel_method: Literal["fut_cancel", "raise"],

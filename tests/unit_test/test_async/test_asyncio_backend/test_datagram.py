@@ -51,9 +51,9 @@ class CustomException(Exception):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("local_address", ["local_address", None], ids=lambda p: f"local_address=={p}")
-@pytest.mark.parametrize("remote_address", ["remote_address", None], ids=lambda p: f"remote_address=={p}")
-@pytest.mark.parametrize("reuse_port", [False, True], ids=lambda p: f"reuse_port=={p}")
+@pytest.mark.parametrize("local_address", ["local_address", None], ids=lambda p: f"local_address__{p}")
+@pytest.mark.parametrize("remote_address", ["remote_address", None], ids=lambda p: f"remote_address__{p}")
+@pytest.mark.parametrize("reuse_port", [False, True], ids=lambda p: f"reuse_port__{p}")
 async def test____create_datagram_endpoint____return_DatagramEndpoint_instance(
     local_address: Any | None,
     remote_address: Any | None,
@@ -194,7 +194,7 @@ class TestDatagramEndpoint:
 
         mock_asyncio_transport.close.assert_called()
 
-    @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing=={p}")
+    @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing__{p}")
     async def test____aclose____close_transport_and_wait(
         self,
         transport_is_closing: bool,
@@ -217,7 +217,7 @@ class TestDatagramEndpoint:
             mock_asyncio_protocol._get_close_waiter.assert_awaited_once_with()
         mock_asyncio_transport.abort.assert_not_called()
 
-    @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing=={p}")
+    @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing__{p}")
     async def test____aclose____abort_transport_if_cancelled(
         self,
         transport_is_closing: bool,
@@ -391,7 +391,7 @@ class TestDatagramEndpoint:
         mock_asyncio_recv_queue.get.assert_awaited_once_with()
 
     @pytest.mark.parametrize("address", [("127.0.0.1", 12345), "/path/to/unix.sock", b"\x00abstract_sock", None], ids=repr)
-    @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing=={p}")
+    @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing__{p}")
     async def test____sendto____send_and_await_drain(
         self,
         transport_is_closing: bool,
@@ -647,7 +647,7 @@ class TestDatagramEndpointProtocol:
             await protocol._drain_helper()
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("cancel_tasks", [False, True], ids=lambda p: f"cancel_tasks_before=={p}")
+    @pytest.mark.parametrize("cancel_tasks", [False, True], ids=lambda p: f"cancel_tasks_before__{p}")
     async def test____drain_helper____wait_during_writing_pause(
         self,
         cancel_tasks: bool,
@@ -678,7 +678,7 @@ class TestDatagramEndpointProtocol:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("exception", [None, OSError("Something bad happen")])
-    @pytest.mark.parametrize("cancel_tasks", [False, True], ids=lambda p: f"cancel_tasks_before=={p}")
+    @pytest.mark.parametrize("cancel_tasks", [False, True], ids=lambda p: f"cancel_tasks_before__{p}")
     async def test____drain_helper____wait_during_writing_pause____connection_lost_while_waiting(
         self,
         cancel_tasks: bool,
@@ -825,7 +825,7 @@ class TestAsyncioTransportDatagramSocketAdapter(BaseTestAsyncioDatagramTransport
         mock_endpoint.aclose.assert_awaited_once_with()
         mock_endpoint.close_nowait.assert_not_called()
 
-    @pytest.mark.parametrize("transport_closed", [False, True], ids=lambda p: f"transport_closed=={p}")
+    @pytest.mark.parametrize("transport_closed", [False, True], ids=lambda p: f"transport_closed__{p}")
     async def test____is_closing____return_internal_flag(
         self,
         transport_closed: bool,
@@ -951,7 +951,7 @@ if sys.platform != "win32":
             # Assert
             mock_datagram_socket.close.assert_called_once_with()
 
-        @pytest.mark.parametrize("transport_closed", [False, True], ids=lambda p: f"transport_closed=={p}")
+        @pytest.mark.parametrize("transport_closed", [False, True], ids=lambda p: f"transport_closed__{p}")
         async def test____is_closing____default(
             self,
             transport_closed: bool,
@@ -1223,7 +1223,7 @@ if sys.platform != "win32":
             assert chunks == [[b"data"]]
 
         @PlatformMarkers.supports_socket_sendmsg
-        @pytest.mark.parametrize("ancillary_data_is_iterator", [False, True], ids=lambda p: f"ancillary_data_is_iterator=={p}")
+        @pytest.mark.parametrize("ancillary_data_is_iterator", [False, True], ids=lambda p: f"ancillary_data_is_iterator__{p}")
         async def test____send_with_ancillary____blocking_error____correctly_handle_iterables(
             self,
             ancillary_data_is_iterator: bool,
@@ -1336,7 +1336,7 @@ if sys.platform != "win32":
                 pytest.param("recv"),
                 pytest.param("recv_with_ancillary", marks=[PlatformMarkers.supports_socket_recvmsg]),
             ],
-            ids=lambda p: f"b:{p}",
+            ids=lambda p: f"b__{p}",
         )
         @pytest.mark.parametrize(
             "incoming_recv_method",
@@ -1344,7 +1344,7 @@ if sys.platform != "win32":
                 pytest.param("recv"),
                 pytest.param("recv_with_ancillary", marks=[PlatformMarkers.supports_socket_recvmsg]),
             ],
-            ids=lambda p: f"i:{p}",
+            ids=lambda p: f"i__{p}",
         )
         async def test____special_case____recv____busy(
             self,
@@ -1445,7 +1445,7 @@ if sys.platform != "win32":
                 pytest.param("send"),
                 pytest.param("send_with_ancillary", marks=[PlatformMarkers.supports_socket_sendmsg]),
             ],
-            ids=lambda p: f"b:{p}",
+            ids=lambda p: f"b__{p}",
         )
         @pytest.mark.parametrize(
             "incoming_send_method",
@@ -1453,7 +1453,7 @@ if sys.platform != "win32":
                 pytest.param("send"),
                 pytest.param("send_with_ancillary", marks=[PlatformMarkers.supports_socket_sendmsg]),
             ],
-            ids=lambda p: f"i:{p}",
+            ids=lambda p: f"i__{p}",
         )
         async def test____special_case____send____busy(
             self,
@@ -1583,7 +1583,7 @@ class TestDatagramListenerSocketAdapter(BaseTestAsyncioDatagramTransport):
 
         mock_asyncio_transport.close.assert_called()
 
-    @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing=={p}")
+    @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing__{p}")
     async def test____aclose____close_transport_and_wait(
         self,
         transport_is_closing: bool,
@@ -1606,7 +1606,7 @@ class TestDatagramListenerSocketAdapter(BaseTestAsyncioDatagramTransport):
             mock_asyncio_protocol._get_close_waiter.assert_awaited_once_with()
         mock_asyncio_transport.abort.assert_not_called()
 
-    @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing=={p}")
+    @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing__{p}")
     async def test____aclose____abort_transport_if_cancelled(
         self,
         transport_is_closing: bool,
@@ -1632,7 +1632,7 @@ class TestDatagramListenerSocketAdapter(BaseTestAsyncioDatagramTransport):
             mock_asyncio_protocol._get_close_waiter.assert_awaited_once_with()
         mock_asyncio_transport.abort.assert_not_called()
 
-    @pytest.mark.parametrize("transport_closed", [False, True], ids=lambda p: f"transport_closed=={p}")
+    @pytest.mark.parametrize("transport_closed", [False, True], ids=lambda p: f"transport_closed__{p}")
     async def test____is_closing____return_internal_flag(
         self,
         transport_closed: bool,
@@ -1651,7 +1651,7 @@ class TestDatagramListenerSocketAdapter(BaseTestAsyncioDatagramTransport):
         mock_asyncio_transport.is_closing.assert_not_called()
         assert state is transport_closed
 
-    @pytest.mark.parametrize("external_group", [True, False], ids=lambda p: f"external_group=={p}")
+    @pytest.mark.parametrize("external_group", [True, False], ids=lambda p: f"external_group__{p}")
     async def test____serve____task_group(
         self,
         external_group: bool,
@@ -1675,7 +1675,7 @@ class TestDatagramListenerSocketAdapter(BaseTestAsyncioDatagramTransport):
         else:
             mock_asyncio_protocol.serve.assert_awaited_once_with(datagram_received_cb, mocker.ANY)
 
-    @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing=={p}")
+    @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing__{p}")
     async def test____send_to____write_and_drain(
         self,
         transport_is_closing: bool,
@@ -1783,7 +1783,7 @@ if sys.platform != "win32":
             # Assert
             mock_datagram_socket.close.assert_called_once_with()
 
-        @pytest.mark.parametrize("listener_closed", [False, True], ids=lambda p: f"listener_closed=={p}")
+        @pytest.mark.parametrize("listener_closed", [False, True], ids=lambda p: f"listener_closed__{p}")
         async def test____is_closing____default(
             self,
             listener_closed: bool,
@@ -1799,7 +1799,7 @@ if sys.platform != "win32":
             # Assert
             assert state is listener_closed
 
-        @pytest.mark.parametrize("external_group", [True, False], ids=lambda p: f"external_group=={p}")
+        @pytest.mark.parametrize("external_group", [True, False], ids=lambda p: f"external_group__{p}")
         @pytest.mark.parametrize(
             ["sender_address_1", "sender_address_2", "sender_address_3"],
             [
@@ -1880,7 +1880,7 @@ if sys.platform != "win32":
             mock_event_loop_add_writer.assert_not_called()
 
         @PlatformMarkers.supports_socket_recvmsg
-        @pytest.mark.parametrize("external_group", [True, False], ids=lambda p: f"external_group=={p}")
+        @pytest.mark.parametrize("external_group", [True, False], ids=lambda p: f"external_group__{p}")
         @pytest.mark.parametrize(
             ["sender_address_1", "sender_address_2", "sender_address_3"],
             [
@@ -2089,7 +2089,7 @@ if sys.platform != "win32":
             assert chunks == [[b"data"]]
 
         @PlatformMarkers.supports_socket_sendmsg
-        @pytest.mark.parametrize("ancillary_data_is_iterator", [False, True], ids=lambda p: f"ancillary_data_is_iterator=={p}")
+        @pytest.mark.parametrize("ancillary_data_is_iterator", [False, True], ids=lambda p: f"ancillary_data_is_iterator__{p}")
         @pytest.mark.parametrize("destination_address", ["/path/to/unix.sock", b"\x00abstract_address"])
         async def test____send_with_ancillary____blocking_error____correctly_handle_iterables(
             self,
@@ -2204,7 +2204,7 @@ if sys.platform != "win32":
                 pytest.param("serve"),
                 pytest.param("serve_with_ancillary", marks=[PlatformMarkers.supports_socket_recvmsg]),
             ],
-            ids=lambda p: f"b:{p}",
+            ids=lambda p: f"b__{p}",
         )
         @pytest.mark.parametrize(
             "incoming_serve_method",
@@ -2212,7 +2212,7 @@ if sys.platform != "win32":
                 pytest.param("serve"),
                 pytest.param("serve_with_ancillary", marks=[PlatformMarkers.supports_socket_recvmsg]),
             ],
-            ids=lambda p: f"i:{p}",
+            ids=lambda p: f"i__{p}",
         )
         async def test____special_case____serve____busy(
             self,
@@ -2315,7 +2315,7 @@ if sys.platform != "win32":
                 pytest.param("send_to"),
                 pytest.param("send_with_ancillary_to", marks=[PlatformMarkers.supports_socket_sendmsg]),
             ],
-            ids=lambda p: f"b:{p}",
+            ids=lambda p: f"b__{p}",
         )
         @pytest.mark.parametrize(
             "incoming_send_method",
@@ -2323,7 +2323,7 @@ if sys.platform != "win32":
                 pytest.param("send_to"),
                 pytest.param("send_with_ancillary_to", marks=[PlatformMarkers.supports_socket_sendmsg]),
             ],
-            ids=lambda p: f"i:{p}",
+            ids=lambda p: f"i__{p}",
         )
         async def test____special_case____send____busy(
             self,
@@ -2557,7 +2557,7 @@ class TestDatagramListenerProtocol:
         ]
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("event_loop_debug", [False, True], ids=lambda p: f"event_loop_debug=={p}")
+    @pytest.mark.parametrize("event_loop_debug", [False, True], ids=lambda p: f"event_loop_debug__{p}")
     async def test____error_received____log_error(
         self,
         event_loop_debug: bool,
@@ -2584,7 +2584,7 @@ class TestDatagramListenerProtocol:
             assert caplog.records[0].exc_info is None
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("event_loop_debug", [False, True], ids=lambda p: f"event_loop_debug=={p}")
+    @pytest.mark.parametrize("event_loop_debug", [False, True], ids=lambda p: f"event_loop_debug__{p}")
     async def test____error_received____do_not_log_after_connection_lost(
         self,
         event_loop_debug: bool,
@@ -2652,7 +2652,7 @@ class TestDatagramListenerProtocol:
             await protocol.writer_drain()
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("cancel_tasks", [False, True], ids=lambda p: f"cancel_tasks_before=={p}")
+    @pytest.mark.parametrize("cancel_tasks", [False, True], ids=lambda p: f"cancel_tasks_before__{p}")
     async def test____drain_helper____wait_during_writing_pause(
         self,
         cancel_tasks: bool,
@@ -2683,7 +2683,7 @@ class TestDatagramListenerProtocol:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("exception", [None, OSError("Something bad happen")])
-    @pytest.mark.parametrize("cancel_tasks", [False, True], ids=lambda p: f"cancel_tasks_before=={p}")
+    @pytest.mark.parametrize("cancel_tasks", [False, True], ids=lambda p: f"cancel_tasks_before__{p}")
     async def test____drain_helper____wait_during_writing_pause____connection_lost_while_waiting(
         self,
         cancel_tasks: bool,

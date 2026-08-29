@@ -49,7 +49,7 @@ def bench_CBORSerializer_incremental_serialize(
 
 
 @pytest.mark.benchmark(group=SerializerGroup.JSON_INCREMENTAL_DESERIALIZE)
-@pytest.mark.parametrize("buffered", [False, True], ids=lambda p: f"buffered=={p}")
+@pytest.mark.parametrize("buffered", [False, True], ids=lambda p: f"buffered__{p}")
 def bench_CBORSerializer_incremental_deserialize(
     buffered: bool,
     benchmark: BenchmarkFixture,

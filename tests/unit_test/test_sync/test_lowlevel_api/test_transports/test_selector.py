@@ -245,8 +245,8 @@ class TestSelectorBaseTransport:
         mock_selector_select.assert_not_called()
 
     @pytest.mark.parametrize("blocking_error", [WouldBlockOnRead, WouldBlockOnWrite])
-    @pytest.mark.parametrize("available", [False, True], ids=lambda p: f"available=={p}")
-    @pytest.mark.parametrize("retry_interval", [math.inf, 5], ids=lambda p: f"retry_interval=={p}", indirect=True)
+    @pytest.mark.parametrize("available", [False, True], ids=lambda p: f"available__{p}")
+    @pytest.mark.parametrize("retry_interval", [math.inf, 5], ids=lambda p: f"retry_interval__{p}", indirect=True)
     def test____retry____timeout(
         self,
         blocking_error: type[WouldBlockOnRead] | type[WouldBlockOnWrite],
@@ -294,8 +294,8 @@ class TestSelectorBaseTransport:
             pytest.param(WouldBlockOnWrite, EVENT_WRITE),
         ],
     )
-    @pytest.mark.parametrize("available", [False, True], ids=lambda p: f"available=={p}")
-    @pytest.mark.parametrize("retry_interval", [1], ids=lambda p: f"retry_interval=={p}", indirect=True)
+    @pytest.mark.parametrize("available", [False, True], ids=lambda p: f"available__{p}")
+    @pytest.mark.parametrize("retry_interval", [1], ids=lambda p: f"retry_interval__{p}", indirect=True)
     def test____retry____timeout____retry_interval(
         self,
         blocking_error: type[WouldBlockOnRead] | type[WouldBlockOnWrite],

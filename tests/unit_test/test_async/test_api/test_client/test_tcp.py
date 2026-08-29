@@ -204,7 +204,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
             assert client.is_connected()
             yield client
 
-    @pytest_asyncio.fixture(params=[False, True], ids=lambda boolean: f"client_connected=={boolean}")
+    @pytest_asyncio.fixture(params=[False, True], ids=lambda boolean: f"client_connected__{boolean}")
     @staticmethod
     async def client_connected_or_not(
         request: pytest.FixtureRequest,
@@ -229,7 +229,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
                 assert not client.is_connected()
             yield client
 
-    @pytest.mark.parametrize("max_recv_size", [None, 123456789], ids=lambda p: f"max_recv_size=={p}")
+    @pytest.mark.parametrize("max_recv_size", [None, 123456789], ids=lambda p: f"max_recv_size__{p}")
     async def test____dunder_init____connect_to_remote(
         self,
         max_recv_size: int | None,
@@ -277,7 +277,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         ]
         assert isinstance(client.socket, SocketProxy)
 
-    @pytest.mark.parametrize("max_recv_size", [None, 123456789], ids=lambda p: f"max_recv_size=={p}")
+    @pytest.mark.parametrize("max_recv_size", [None, 123456789], ids=lambda p: f"max_recv_size__{p}")
     async def test____dunder_init____use_given_socket(
         self,
         max_recv_size: int | None,
@@ -406,7 +406,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
                 backend=mock_backend,
             )
 
-    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket__{p}")
     async def test____dunder_init____protocol____invalid_value(
         self,
         request: pytest.FixtureRequest,
@@ -431,7 +431,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
                     mock_backend,
                 )
 
-    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket__{p}")
     async def test____dunder_init____backend____invalid_value(
         self,
         request: pytest.FixtureRequest,
@@ -457,8 +457,8 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
                     invalid_backend,
                 )
 
-    @pytest.mark.parametrize("max_recv_size", [0, -1, 10.4], ids=lambda p: f"max_recv_size=={p}")
-    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+    @pytest.mark.parametrize("max_recv_size", [0, -1, 10.4], ids=lambda p: f"max_recv_size__{p}")
+    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket__{p}")
     async def test____dunder_init____max_recv_size____invalid_value(
         self,
         request: pytest.FixtureRequest,
@@ -486,7 +486,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
                     max_recv_size=max_recv_size,
                 )
 
-    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket__{p}")
     async def test____dunder_init____ssl(
         self,
         async_finalizer: AsyncFinalizer,
@@ -569,7 +569,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         )
         assert isinstance(client.socket, SocketProxy)
 
-    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket__{p}")
     async def test____dunder_init____ssl____default_values(
         self,
         async_finalizer: AsyncFinalizer,
@@ -620,7 +620,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
             standard_compatible=True,
         )
 
-    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket__{p}")
     @pytest.mark.parametrize(
         "ssl_parameter",
         [
@@ -704,7 +704,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
             standard_compatible=mocker.sentinel.ssl_standard_compatible,
         )
 
-    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket__{p}")
     async def test____dunder_init____ssl____server_hostname____do_not_disable_hostname_check_for_external_context(
         self,
         async_finalizer: AsyncFinalizer,
@@ -764,7 +764,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         )
         assert mock_ssl_context.check_hostname is True
 
-    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket__{p}")
     async def test____dunder_init____ssl____server_hostname____no_host_to_use(
         self,
         use_socket: bool,
@@ -805,8 +805,8 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
                     ssl_standard_compatible=mocker.sentinel.ssl_standard_compatible,
                 )
 
-    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
-    @pytest.mark.parametrize("OP_IGNORE_UNEXPECTED_EOF", [False, True], ids=lambda p: f"OP_IGNORE_UNEXPECTED_EOF=={p}")
+    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket__{p}")
+    @pytest.mark.parametrize("OP_IGNORE_UNEXPECTED_EOF", [False, True], ids=lambda p: f"OP_IGNORE_UNEXPECTED_EOF__{p}")
     async def test____dunder_init____ssl____create_default_context(
         self,
         async_finalizer: AsyncFinalizer,
@@ -871,7 +871,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
             standard_compatible=mocker.sentinel.ssl_standard_compatible,
         )
 
-    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket__{p}")
     async def test____dunder_init____ssl____create_default_context____disable_hostname_check(
         self,
         async_finalizer: AsyncFinalizer,

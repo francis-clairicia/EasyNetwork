@@ -228,7 +228,7 @@ if sys.platform != "win32":
                 case _:
                     pytest.fail(f"Invalid ancillary_data param: {request.param}")
 
-        @pytest.mark.parametrize("retry_interval", [1.0, float("+inf")], ids=lambda p: f"retry_interval=={p}")
+        @pytest.mark.parametrize("retry_interval", [1.0, float("+inf")], ids=lambda p: f"retry_interval__{p}")
         def test____dunder_init____with_remote_address(
             self,
             request: pytest.FixtureRequest,
@@ -413,7 +413,7 @@ if sys.platform != "win32":
                 )
             mock_create_unix_datagram_socket.assert_not_called()
 
-        @pytest.mark.parametrize("retry_interval", [1.0, float("+inf")], ids=lambda p: f"retry_interval=={p}")
+        @pytest.mark.parametrize("retry_interval", [1.0, float("+inf")], ids=lambda p: f"retry_interval__{p}")
         def test____dunder_init____use_given_socket____default(
             self,
             request: pytest.FixtureRequest,
@@ -986,7 +986,7 @@ if sys.platform != "win32":
                 "",  # <- Arbitrary abstract Unix address given by kernel
                 b"",  # <- Arbitrary abstract Unix address given by kernel
             ],
-            ids=lambda addr: f"local_address=={addr!r}",
+            ids=lambda addr: f"local_address__{addr!r}",
         )
         @pytest.mark.parametrize(
             "remote_address",
@@ -996,7 +996,7 @@ if sys.platform != "win32":
                 "\0unix_sock",
                 b"\x00unix_sock",
             ],
-            ids=lambda addr: f"remote_address=={addr!r}",
+            ids=lambda addr: f"remote_address__{addr!r}",
         )
         def test____create_unix_datagram_socket____default(
             self,
@@ -1037,7 +1037,7 @@ if sys.platform != "win32":
                 "\0local_sock",
                 b"\x00local_sock",
             ],
-            ids=lambda addr: f"local_address=={addr!r}",
+            ids=lambda addr: f"local_address__{addr!r}",
         )
         @pytest.mark.parametrize(
             "remote_address",
@@ -1047,7 +1047,7 @@ if sys.platform != "win32":
                 "\0unix_sock",
                 b"\x00unix_sock",
             ],
-            ids=lambda addr: f"remote_address=={addr!r}",
+            ids=lambda addr: f"remote_address__{addr!r}",
         )
         @pytest.mark.parametrize(
             "bind_error",
@@ -1055,7 +1055,7 @@ if sys.platform != "win32":
                 OSError(errno.EPERM, os.strerror(errno.EPERM)),
                 OSError("AF_UNIX path too long."),
             ],
-            ids=lambda exc: f"bind_error=={exc!r}",
+            ids=lambda exc: f"bind_error__{exc!r}",
         )
         def test____create_unix_datagram_socket____bind_error(
             self,
@@ -1092,7 +1092,7 @@ if sys.platform != "win32":
                 "\0unix_sock",
                 b"\x00unix_sock",
             ],
-            ids=lambda addr: f"remote_address=={addr!r}",
+            ids=lambda addr: f"remote_address__{addr!r}",
         )
         @pytest.mark.parametrize(
             "connect_error",
@@ -1100,7 +1100,7 @@ if sys.platform != "win32":
                 OSError(errno.ECONNREFUSED, os.strerror(errno.ECONNREFUSED)),
                 OSError(errno.EPERM, os.strerror(errno.EPERM)),
             ],
-            ids=lambda exc: f"connect_error=={exc!r}",
+            ids=lambda exc: f"connect_error__{exc!r}",
         )
         def test____create_unix_datagram_socket____connect_error(
             self,

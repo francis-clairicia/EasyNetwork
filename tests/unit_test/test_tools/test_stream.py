@@ -66,7 +66,7 @@ class TestStreamDataProducer:
         mock_generate_chunks_func.assert_called_once_with(mocker.sentinel.packet)
         assert chunks == [b"chunk 1", b"chunk 2"]
 
-    @pytest.mark.parametrize("before_yielding", [False, True], ids=lambda p: f"before_yielding=={p}")
+    @pytest.mark.parametrize("before_yielding", [False, True], ids=lambda p: f"before_yielding__{p}")
     def test____generate____generator_raised(
         self,
         before_yielding: bool,
@@ -294,7 +294,7 @@ class TestStreamDataConsumer:
         mock_build_packet_from_chunks_func.assert_called_once_with()
         assert consumer.get_buffer().tobytes() == b"Hello"
 
-    @pytest.mark.parametrize("before_yielding", [False, True], ids=lambda p: f"before_yielding=={p}")
+    @pytest.mark.parametrize("before_yielding", [False, True], ids=lambda p: f"before_yielding__{p}")
     def test____next____generator_raised(
         self,
         before_yielding: bool,
@@ -413,7 +413,7 @@ class TestBufferedStreamDataConsumer:
     def sizehint() -> int:
         return 1024
 
-    @pytest.fixture(params=[None, 0], ids=lambda p: f"zero_or_none=={p}")
+    @pytest.fixture(params=[None, 0], ids=lambda p: f"zero_or_none__{p}")
     @staticmethod
     def zero_or_none(request: pytest.FixtureRequest) -> int | None:
         return request.param
@@ -979,7 +979,7 @@ class TestBufferedStreamDataConsumer:
         # Assert
         assert consumer.get_value() == b""
 
-    @pytest.mark.parametrize("before_yielding", [False, True], ids=lambda p: f"before_yielding=={p}")
+    @pytest.mark.parametrize("before_yielding", [False, True], ids=lambda p: f"before_yielding__{p}")
     def test____next____generator_raised(
         self,
         before_yielding: bool,

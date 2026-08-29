@@ -66,7 +66,7 @@ class TestAsyncStreamReceiverEndpoint(BaseAsyncEndpointReceiveTests):
         with pytest.raises(TypeError, match=r"^Expected a StreamProtocol or a BufferedStreamProtocol object, got .*$"):
             _ = AsyncStreamReceiverEndpoint(mock_stream_transport, mock_invalid_protocol, max_recv_size)
 
-    @pytest.mark.parametrize("max_recv_size", [0, -1, 10.4], ids=lambda p: f"max_recv_size=={p}")
+    @pytest.mark.parametrize("max_recv_size", [0, -1, 10.4], ids=lambda p: f"max_recv_size__{p}")
     async def test____dunder_init____max_recv_size____invalid_value(
         self,
         mock_stream_transport: MagicMock,

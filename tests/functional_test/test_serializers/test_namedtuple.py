@@ -56,7 +56,7 @@ class TestNamedTupleStructSerializer(BaseTestBufferedIncrementalSerializer, Base
     @pytest.fixture(
         scope="class",
         params=[
-            pytest.param(p, id=f"packet: {p!r}")
+            pytest.param(p, id=f"packet__{p!r}")
             for p in [
                 Point("", 0, b"\0"),
                 Point("string", -4, b"y"),

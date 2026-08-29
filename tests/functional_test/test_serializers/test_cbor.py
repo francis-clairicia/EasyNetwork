@@ -35,7 +35,7 @@ class TestCBORSerializer(BaseTestBufferedIncrementalSerializer, BaseTestSerializ
 
     #### Packets to test
 
-    @pytest.fixture(scope="class", params=[pytest.param(p, id=f"packet: {id}") for p, id in SAMPLES])
+    @pytest.fixture(scope="class", params=[pytest.param(p, id=f"packet__{id}") for p, id in SAMPLES])
     @staticmethod
     def packet_to_serialize(request: Any) -> Any:
         return request.param
