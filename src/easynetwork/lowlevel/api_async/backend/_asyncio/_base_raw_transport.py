@@ -24,7 +24,7 @@ import contextlib
 import errno as _errno
 import socket as _socket
 import warnings
-from collections.abc import Awaitable, Callable, Iterator, Mapping
+from collections.abc import Awaitable, Callable, Generator, Mapping
 from types import MappingProxyType
 from typing import Any, Literal, overload
 
@@ -168,7 +168,7 @@ class BaseRawSocketTransport(AsyncBaseTransport):
             del data
 
     @contextlib.contextmanager
-    def _read_task_context(self, requester: str, /) -> Iterator[_socket.socket]:
+    def _read_task_context(self, requester: str, /) -> Generator[_socket.socket]:
         if self.__read_scope is not None:
             raise BusyResourceError(f"{requester}() called while another coroutine is already waiting for incoming data")
         sock = self.__socket
@@ -192,7 +192,7 @@ class BaseRawSocketTransport(AsyncBaseTransport):
         /,
         *,
         loop: asyncio.AbstractEventLoop | None = None,
-    ) -> Iterator[_socket.socket]: ...
+    ) -> Generator[_socket.socket]: ...
 
     @overload
     @contextlib.contextmanager
@@ -203,7 +203,7 @@ class BaseRawSocketTransport(AsyncBaseTransport):
         *,
         loop: asyncio.AbstractEventLoop | None = None,
         accept_closed_sockets: Literal[True],
-    ) -> Iterator[_socket.socket | None]: ...
+    ) -> Generator[_socket.socket | None]: ...
 
     @contextlib.contextmanager
     def _write_task_context(
@@ -213,7 +213,7 @@ class BaseRawSocketTransport(AsyncBaseTransport):
         *,
         loop: asyncio.AbstractEventLoop | None = None,
         accept_closed_sockets: bool = False,
-    ) -> Iterator[_socket.socket | None]:
+    ) -> Generator[_socket.socket | None]:
         if self.__write_scope is not None:
             raise BusyResourceError(f"{requester}() called while another coroutine is already sending data")
         sock = self.__socket

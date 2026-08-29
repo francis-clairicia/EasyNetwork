@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import functools
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from threading import Event
 from typing import NamedTuple
 
@@ -160,7 +160,7 @@ class BaseTestAsyncServerWithAsyncIO(BaseTestAsyncServer):
 
     @pytest_asyncio.fixture  # DO NOT SET autouse=True
     @staticmethod
-    async def _bootstrap_server(server: AbstractAsyncNetworkServer) -> AsyncIterator[_ServerBootstrapInfo]:
+    async def _bootstrap_server(server: AbstractAsyncNetworkServer) -> AsyncGenerator[_ServerBootstrapInfo]:
 
         async def serve_forever(server: AbstractAsyncNetworkServer, event: IEvent) -> None:
             with contextlib.suppress(ServerClosedError):
@@ -182,7 +182,7 @@ class BaseTestAsyncServerWithTrio(BaseTestAsyncServer):
 
     @trio_fixture
     @staticmethod
-    async def _bootstrap_server(server: AbstractAsyncNetworkServer) -> AsyncIterator[_ServerBootstrapInfo]:
+    async def _bootstrap_server(server: AbstractAsyncNetworkServer) -> AsyncGenerator[_ServerBootstrapInfo]:
 
         async def serve_forever(server: AbstractAsyncNetworkServer, event: IEvent) -> None:
             with contextlib.suppress(ServerClosedError):

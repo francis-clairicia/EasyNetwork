@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Generator
 from typing import TYPE_CHECKING, Literal, assert_never
 
 from easynetwork.exceptions import UnsupportedOperation
@@ -145,7 +145,7 @@ class TestStapledStreamTransport(BaseStapledTransportTests):
     def stapled_transport(
         mock_send_transport: MagicMock,
         mock_receive_transport: MagicMock,
-    ) -> Iterator[StapledStreamTransport[MagicMock, MagicMock]]:
+    ) -> Generator[StapledStreamTransport[MagicMock, MagicMock]]:
         transport = StapledStreamTransport(mock_send_transport, mock_receive_transport)
         mock_send_transport.reset_mock()
         mock_receive_transport.reset_mock()
@@ -398,7 +398,7 @@ class TestStapledDatagramTransport(BaseStapledTransportTests):
     def stapled_transport(
         mock_send_transport: MagicMock,
         mock_receive_transport: MagicMock,
-    ) -> Iterator[StapledDatagramTransport[MagicMock, MagicMock]]:
+    ) -> Generator[StapledDatagramTransport[MagicMock, MagicMock]]:
         transport = StapledDatagramTransport(mock_send_transport, mock_receive_transport)
         mock_send_transport.reset_mock()
         mock_receive_transport.reset_mock()

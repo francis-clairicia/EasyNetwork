@@ -22,7 +22,7 @@ import contextlib
 import socket as _socket
 import threading
 import warnings
-from collections.abc import Iterator
+from collections.abc import Generator
 from typing import Any, final, overload
 
 from ..exceptions import ClientClosedError
@@ -277,7 +277,7 @@ class UDPNetworkClient[SentPacket, ReceivedPacket](AbstractNetworkClient[SentPac
 
     @classmethod
     @contextlib.contextmanager
-    def __convert_socket_error(cls, *, endpoint: DatagramEndpoint[Any, Any] | None) -> Iterator[None]:
+    def __convert_socket_error(cls, *, endpoint: DatagramEndpoint[Any, Any] | None) -> Generator[None]:
         try:
             yield
         except OSError as exc:

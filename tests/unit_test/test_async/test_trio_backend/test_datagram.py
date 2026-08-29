@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import errno
 import logging
-from collections.abc import AsyncIterator, Buffer, Callable, Iterable
+from collections.abc import AsyncGenerator, Buffer, Callable, Iterable
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.exceptions import UnsupportedOperation
@@ -62,7 +62,7 @@ class TestTrioDatagramSocketAdapter(BaseTestSocketTransport):
     async def transport(
         trio_backend: TrioBackend,
         mock_trio_datagram_socket: MagicMock,
-    ) -> AsyncIterator[TrioDatagramSocketAdapter]:
+    ) -> AsyncGenerator[TrioDatagramSocketAdapter]:
         from easynetwork.lowlevel.api_async.backend._trio.datagram.socket import TrioDatagramSocketAdapter
 
         transport = TrioDatagramSocketAdapter(trio_backend, mock_trio_datagram_socket)
@@ -404,7 +404,7 @@ class TestTrioDatagramListenerSocketAdapter(BaseTestSocketTransport):
     async def listener(
         trio_backend: TrioBackend,
         mock_datagram_listener_socket: MagicMock,
-    ) -> AsyncIterator[TrioDatagramListenerSocketAdapter]:
+    ) -> AsyncGenerator[TrioDatagramListenerSocketAdapter]:
         from easynetwork.lowlevel.api_async.backend._trio.datagram.listener import TrioDatagramListenerSocketAdapter
 
         listener = TrioDatagramListenerSocketAdapter(trio_backend, mock_datagram_listener_socket)

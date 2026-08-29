@@ -3,7 +3,7 @@ from __future__ import annotations
 import socketserver
 import ssl
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from concurrent.futures import Future
 from socket import AF_INET, IPPROTO_TCP, SHUT_WR, TCP_NODELAY, socket as Socket
 from typing import Any
@@ -34,7 +34,7 @@ class TestTCPNetworkClient:
     def client(
         inet_socket_pair: tuple[Socket, Socket],
         stream_protocol: AnyStreamProtocolType[str, str],
-    ) -> Iterator[TCPNetworkClient[str, str]]:
+    ) -> Generator[TCPNetworkClient[str, str]]:
         with TCPNetworkClient(inet_socket_pair[1], stream_protocol) as client:
             yield client
 
@@ -273,7 +273,7 @@ class TCPServer(socketserver.TCPServer):
 class TestTCPNetworkClientConnection:
     @pytest.fixture(autouse=True)
     @classmethod
-    def server(cls, localhost_ip: str, socket_family: int) -> Iterator[socketserver.TCPServer]:
+    def server(cls, localhost_ip: str, socket_family: int) -> Generator[socketserver.TCPServer]:
         from threading import Thread
 
         with TCPServer((localhost_ip, 0), socket_family) as server:
@@ -316,7 +316,7 @@ class TestSSLOverTCPNetworkClient:
         localhost_ip: str,
         socket_family: int,
         server_ssl_context: ssl.SSLContext | None,
-    ) -> Iterator[socketserver.TCPServer]:
+    ) -> Generator[socketserver.TCPServer]:
         from threading import Thread
 
         if server_ssl_context is None:

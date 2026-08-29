@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from collections.abc import Callable, Coroutine, Iterator
+from collections.abc import Callable, Coroutine, Generator
 from socket import socket as Socket
 from typing import TYPE_CHECKING, Any, TypedDict
 
@@ -136,7 +136,7 @@ class BaseTestAsyncSocket:
     def _set_sock_method_in_blocking_state(
         mock_socket_method: MagicMock,
         exception: type[Exception] | Exception = BlockingIOError,
-    ) -> Iterator[None]:
+    ) -> Generator[None]:
         with restore_mock_side_effect(mock_socket_method):
             mock_socket_method.side_effect = exception
             yield

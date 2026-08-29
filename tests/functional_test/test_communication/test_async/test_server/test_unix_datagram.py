@@ -8,7 +8,7 @@ import logging
 import os
 import stat
 import sys
-from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from typing import TYPE_CHECKING, Any, Literal
 
 import pytest
@@ -187,7 +187,7 @@ if sys.platform != "win32":
                 await client.send_packet(response)
 
         @contextlib.asynccontextmanager
-        async def handle_bad_requests(self, client: AsyncDatagramClient[str]) -> AsyncIterator[None]:
+        async def handle_bad_requests(self, client: AsyncDatagramClient[str]) -> AsyncGenerator[None]:
             try:
                 yield
             except DatagramProtocolParseError as exc:
@@ -1140,7 +1140,7 @@ if sys.platform != "win32":
             request_handler: AsyncDatagramRequestHandler[str, str],
             unix_socket_path_factory: UnixSocketPathFactory,
             datagram_protocol: DatagramProtocol[str, str],
-        ) -> AsyncIterator[MyAsyncUnixDatagramServer]:
+        ) -> AsyncGenerator[MyAsyncUnixDatagramServer]:
             server = MyAsyncUnixDatagramServer(
                 unix_socket_path_factory(),
                 datagram_protocol,
@@ -1165,7 +1165,7 @@ if sys.platform != "win32":
             datagram_protocol: DatagramProtocol[str, str],
             unnamed_addresses_behavior: _UnnamedAddressesBehavior | None,
             server_mode: _ServerModeLiteral,
-        ) -> AsyncIterator[MyAsyncUnixDatagramServer]:
+        ) -> AsyncGenerator[MyAsyncUnixDatagramServer]:
             if use_unix_address_type == "ABSTRACT":
                 # Let the kernel assign us an abstract socket address.
                 path = ""
@@ -1202,7 +1202,7 @@ if sys.platform != "win32":
             use_unix_address_type: _UnixAddressTypeLiteral,
             unix_socket_path_factory: UnixSocketPathFactory,
             server_address: UnixSocketAddress,
-        ) -> AsyncIterator[Callable[[], Awaitable[AsyncDatagramSocket]]]:
+        ) -> AsyncGenerator[Callable[[], Awaitable[AsyncDatagramSocket]]]:
 
             async with contextlib.AsyncExitStack() as stack:
 
@@ -1234,7 +1234,7 @@ if sys.platform != "win32":
             request_handler: AsyncDatagramRequestHandler[str, str],
             unix_socket_path_factory: UnixSocketPathFactory,
             datagram_protocol: DatagramProtocol[str, str],
-        ) -> AsyncIterator[MyAsyncUnixDatagramServer]:
+        ) -> AsyncGenerator[MyAsyncUnixDatagramServer]:
             server = MyAsyncUnixDatagramServer(
                 unix_socket_path_factory(),
                 datagram_protocol,
@@ -1259,7 +1259,7 @@ if sys.platform != "win32":
             datagram_protocol: DatagramProtocol[str, str],
             unnamed_addresses_behavior: _UnnamedAddressesBehavior | None,
             server_mode: _ServerModeLiteral,
-        ) -> AsyncIterator[MyAsyncUnixDatagramServer]:
+        ) -> AsyncGenerator[MyAsyncUnixDatagramServer]:
             if use_unix_address_type == "ABSTRACT":
                 # Let the kernel assign us an abstract socket address.
                 path = ""
@@ -1296,7 +1296,7 @@ if sys.platform != "win32":
             use_unix_address_type: _UnixAddressTypeLiteral,
             unix_socket_path_factory: UnixSocketPathFactory,
             server_address: UnixSocketAddress,
-        ) -> AsyncIterator[Callable[[], Awaitable[AsyncDatagramSocket]]]:
+        ) -> AsyncGenerator[Callable[[], Awaitable[AsyncDatagramSocket]]]:
 
             async with contextlib.AsyncExitStack() as stack:
 

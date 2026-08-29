@@ -6,7 +6,7 @@ import errno
 import os
 import pathlib
 import sys
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from socket import SO_ERROR, SOL_SOCKET
 from typing import TYPE_CHECKING, Any
 
@@ -160,7 +160,7 @@ if sys.platform != "win32":
             mock_backend: MagicMock,
             mock_unix_stream_socket: MagicMock,
             mock_stream_protocol: MagicMock,
-        ) -> AsyncIterator[AsyncUnixStreamClient[Any, Any]]:
+        ) -> AsyncGenerator[AsyncUnixStreamClient[Any, Any]]:
             client: AsyncUnixStreamClient[Any, Any] = AsyncUnixStreamClient(
                 mock_unix_stream_socket,
                 mock_stream_protocol,
@@ -176,7 +176,7 @@ if sys.platform != "win32":
             mock_backend: MagicMock,
             mock_unix_stream_socket: MagicMock,
             mock_stream_protocol: MagicMock,
-        ) -> AsyncIterator[AsyncUnixStreamClient[Any, Any]]:
+        ) -> AsyncGenerator[AsyncUnixStreamClient[Any, Any]]:
             client: AsyncUnixStreamClient[Any, Any] = AsyncUnixStreamClient(
                 mock_unix_stream_socket,
                 mock_stream_protocol,
@@ -194,7 +194,7 @@ if sys.platform != "win32":
             mock_backend: MagicMock,
             mock_unix_stream_socket: MagicMock,
             mock_stream_protocol: MagicMock,
-        ) -> AsyncIterator[AsyncUnixStreamClient[Any, Any]]:
+        ) -> AsyncGenerator[AsyncUnixStreamClient[Any, Any]]:
             assert request.param in (True, False)
             client: AsyncUnixStreamClient[Any, Any] = AsyncUnixStreamClient(
                 mock_unix_stream_socket,

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Buffer, Iterator
+from collections.abc import Buffer, Generator
 from typing import TYPE_CHECKING, Any, Literal
 
 from easynetwork.exceptions import DeserializeError, IncrementalDeserializeError
@@ -66,7 +66,7 @@ class TestAbstractCompressorSerializer:
         mock_serializer_new_decompressor_stream: MagicMock,
         mock_decompressor_stream_eof: MagicMock,
         mock_decompressor_stream_unused_data: MagicMock,
-    ) -> Iterator[MagicMock]:
+    ) -> Generator[MagicMock]:
         mock: MagicMock = mock_serializer_new_decompressor_stream.return_value
         mock.unused_data = b""
         type(mock).eof = mock_decompressor_stream_eof

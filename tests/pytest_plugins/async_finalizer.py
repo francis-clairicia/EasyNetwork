@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -16,7 +16,7 @@ class AsyncFinalizer:
 
 
 @pytest_asyncio.fixture
-async def async_finalizer(request: Any) -> AsyncIterator[AsyncFinalizer]:
+async def async_finalizer(request: Any) -> AsyncGenerator[AsyncFinalizer]:
     import asyncio
 
     asyncio.get_running_loop()
@@ -30,7 +30,7 @@ async def async_finalizer(request: Any) -> AsyncIterator[AsyncFinalizer]:
 
 
 @trio_fixture
-async def async_finalizer_trio(request: Any) -> AsyncIterator[AsyncFinalizer]:
+async def async_finalizer_trio(request: Any) -> AsyncGenerator[AsyncFinalizer]:
     import trio
 
     trio.lowlevel.current_trio_token()

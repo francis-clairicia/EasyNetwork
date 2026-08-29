@@ -5,7 +5,7 @@ import contextlib
 import io
 import pathlib
 import sys
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, Callable
 from socket import socket as Socket
 from typing import TYPE_CHECKING, NoReturn
 
@@ -211,7 +211,7 @@ if sys.platform != "win32":
     class TestAsyncUnixDatagramClientWithAsyncIO(_BaseTestAsyncUnixDatagramClient):
         @pytest_asyncio.fixture
         @staticmethod
-        async def server(bound_unix_datagram_socket_factory: Callable[[], Socket]) -> AsyncIterator[AsyncDatagramSocket]:
+        async def server(bound_unix_datagram_socket_factory: Callable[[], Socket]) -> AsyncGenerator[AsyncDatagramSocket]:
             async with await AsyncDatagramSocket.from_stdlib_socket(bound_unix_datagram_socket_factory()) as server:
                 yield server
 
@@ -221,7 +221,7 @@ if sys.platform != "win32":
             server: AsyncDatagramSocket,
             bound_unix_datagram_socket_factory: Callable[[], Socket],
             datagram_protocol: DatagramProtocol[str, str],
-        ) -> AsyncIterator[AsyncUnixDatagramClient[str, str]]:
+        ) -> AsyncGenerator[AsyncUnixDatagramClient[str, str]]:
             remote_address: str | bytes = server.getsockname()
             socket = bound_unix_datagram_socket_factory()
             socket.connect(remote_address)
@@ -234,7 +234,7 @@ if sys.platform != "win32":
     class TestAsyncUnixDatagramClientWithTrio(_BaseTestAsyncUnixDatagramClient):
         @trio_fixture
         @staticmethod
-        async def server(bound_unix_datagram_socket_factory: Callable[[], Socket]) -> AsyncIterator[AsyncDatagramSocket]:
+        async def server(bound_unix_datagram_socket_factory: Callable[[], Socket]) -> AsyncGenerator[AsyncDatagramSocket]:
             async with await AsyncDatagramSocket.from_stdlib_socket(bound_unix_datagram_socket_factory()) as server:
                 yield server
 
@@ -244,7 +244,7 @@ if sys.platform != "win32":
             server: AsyncDatagramSocket,
             bound_unix_datagram_socket_factory: Callable[[], Socket],
             datagram_protocol: DatagramProtocol[str, str],
-        ) -> AsyncIterator[AsyncUnixDatagramClient[str, str]]:
+        ) -> AsyncGenerator[AsyncUnixDatagramClient[str, str]]:
             remote_address: str | bytes = server.getsockname()
             socket = bound_unix_datagram_socket_factory()
             socket.connect(remote_address)
@@ -487,7 +487,7 @@ if sys.platform != "win32":
         async def server(
             cls,
             bound_unix_datagram_socket_factory: Callable[[], Socket],
-        ) -> AsyncIterator[Socket]:
+        ) -> AsyncGenerator[Socket]:
             event_loop = asyncio.get_running_loop()
 
             async def echo_server_coroutine(sock: Socket) -> NoReturn:
@@ -551,7 +551,7 @@ if sys.platform != "win32":
             cls,
             bound_unix_datagram_socket_factory: Callable[[], Socket],
             nursery: trio.Nursery,
-        ) -> AsyncIterator[trio.socket.SocketType]:
+        ) -> AsyncGenerator[trio.socket.SocketType]:
             import trio
 
             async def echo_server(*, task_status: trio.TaskStatus[trio.socket.SocketType] = trio.TASK_STATUS_IGNORED) -> NoReturn:

@@ -6,7 +6,7 @@ import errno
 import math
 import os
 import ssl
-from collections.abc import Buffer, Callable, Iterable, Iterator
+from collections.abc import Buffer, Callable, Generator, Iterable
 from socket import AF_INET, SHUT_RDWR, SHUT_WR
 from typing import TYPE_CHECKING, Any
 
@@ -96,7 +96,7 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
 
     @pytest.fixture
     @staticmethod
-    def transport(mock_stream_socket: MagicMock) -> Iterator[SocketStreamTransport]:
+    def transport(mock_stream_socket: MagicMock) -> Generator[SocketStreamTransport]:
         transport = SocketStreamTransport(mock_stream_socket, math.inf)
         mock_stream_socket.reset_mock()
         with transport:
@@ -965,7 +965,7 @@ class TestSSLStreamTransport:
         mock_ssl_socket: MagicMock,
         mock_ssl_context: MagicMock,
         mock_transport_retry: MagicMock,
-    ) -> Iterator[SSLStreamTransport]:
+    ) -> Generator[SSLStreamTransport]:
         transport = SSLStreamTransport(
             mock_tcp_socket,
             mock_ssl_context,
@@ -1582,7 +1582,7 @@ class TestSocketDatagramTransport(BaseTestSocketTransport):
 
     @pytest.fixture
     @staticmethod
-    def transport(mock_datagram_socket: MagicMock, max_datagram_size: int | None) -> Iterator[SocketDatagramTransport]:
+    def transport(mock_datagram_socket: MagicMock, max_datagram_size: int | None) -> Generator[SocketDatagramTransport]:
         if max_datagram_size is None:
             transport = SocketDatagramTransport(mock_datagram_socket, math.inf)
         else:

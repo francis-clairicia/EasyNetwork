@@ -7,7 +7,7 @@ import contextlib
 import logging
 import math
 import warnings
-from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from typing import TYPE_CHECKING, Any, NoReturn
 
 from easynetwork.exceptions import UnsupportedOperation
@@ -178,7 +178,7 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
         mock_listener: MagicMock,
         mock_stream_protocol: MagicMock,
         max_recv_size: int,
-    ) -> AsyncIterator[AsyncStreamServer[Any, Any]]:
+    ) -> AsyncGenerator[AsyncStreamServer[Any, Any]]:
         server: AsyncStreamServer[Any, Any] = AsyncStreamServer(
             mock_listener,
             mock_stream_protocol,

@@ -8,7 +8,7 @@ import os
 import socket
 import sys
 import time
-from collections.abc import Buffer, Callable, Generator, Iterator
+from collections.abc import Buffer, Callable, Generator
 from typing import TYPE_CHECKING, Any, Literal, assert_never, final
 
 import pytest
@@ -223,7 +223,7 @@ def write_data_and_extra_in_buffer(
 def temporary_exception_handler(
     event_loop: asyncio.AbstractEventLoop,
     handler: asyncio.events._ExceptionHandler | None,
-) -> Iterator[None]:
+) -> Generator[None]:
     with contextlib.ExitStack() as stack:
         stack.callback(event_loop.set_exception_handler, event_loop.get_exception_handler())
         event_loop.set_exception_handler(handler)
@@ -234,7 +234,7 @@ def temporary_exception_handler(
 def temporary_task_factory(
     event_loop: asyncio.AbstractEventLoop,
     task_factory: asyncio.events._TaskFactory | None,
-) -> Iterator[None]:
+) -> Generator[None]:
     with contextlib.ExitStack() as stack:
         stack.callback(event_loop.set_task_factory, event_loop.get_task_factory())
         event_loop.set_task_factory(task_factory)

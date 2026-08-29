@@ -5,7 +5,7 @@ import contextlib
 import functools
 import logging
 import ssl
-from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from socket import IPPROTO_TCP, TCP_NODELAY
 from typing import Any
 from weakref import WeakValueDictionary
@@ -153,7 +153,7 @@ class MyStreamRequestHandler(AsyncStreamRequestHandler[str, str]):
                     await client.aclose()
 
     @contextlib.asynccontextmanager
-    async def handle_bad_requests(self, client: AsyncStreamClient[str]) -> AsyncIterator[None]:
+    async def handle_bad_requests(self, client: AsyncStreamClient[str]) -> AsyncGenerator[None]:
         try:
             yield
         except StreamProtocolParseError as exc:
@@ -1130,7 +1130,7 @@ class TestAsyncTCPNetworkServerWithAsyncIO(_BaseTestAsyncTCPNetworkServer, BaseT
         request_handler: MyStreamRequestHandler,
         localhost_ip: str,
         stream_protocol: AnyStreamProtocolType[str, str],
-    ) -> AsyncIterator[MyAsyncTCPServer]:
+    ) -> AsyncGenerator[MyAsyncTCPServer]:
         server = MyAsyncTCPServer(
             localhost_ip,
             0,
@@ -1158,7 +1158,7 @@ class TestAsyncTCPNetworkServerWithAsyncIO(_BaseTestAsyncTCPNetworkServer, BaseT
         ssl_handshake_timeout: float | None,
         ssl_standard_compatible: bool | None,
         log_client_connection: bool | None,
-    ) -> AsyncIterator[MyAsyncTCPServer]:
+    ) -> AsyncGenerator[MyAsyncTCPServer]:
         async with MyAsyncTCPServer(
             localhost_ip,
             0,
@@ -1192,7 +1192,7 @@ class TestAsyncTCPNetworkServerWithAsyncIO(_BaseTestAsyncTCPNetworkServer, BaseT
     async def client_factory_no_handshake(
         server_address: tuple[str, int],
         client_ssl_context: ssl.SSLContext | None,
-    ) -> AsyncIterator[Callable[[], Awaitable[AsyncStreamSocket]]]:
+    ) -> AsyncGenerator[Callable[[], Awaitable[AsyncStreamSocket]]]:
         import asyncio
 
         async with contextlib.AsyncExitStack() as stack:
@@ -1220,7 +1220,7 @@ class TestAsyncTCPNetworkServerWithTrio(_BaseTestAsyncTCPNetworkServer, BaseTest
         request_handler: MyStreamRequestHandler,
         localhost_ip: str,
         stream_protocol: AnyStreamProtocolType[str, str],
-    ) -> AsyncIterator[MyAsyncTCPServer]:
+    ) -> AsyncGenerator[MyAsyncTCPServer]:
         server = MyAsyncTCPServer(
             localhost_ip,
             0,
@@ -1248,7 +1248,7 @@ class TestAsyncTCPNetworkServerWithTrio(_BaseTestAsyncTCPNetworkServer, BaseTest
         ssl_handshake_timeout: float | None,
         ssl_standard_compatible: bool | None,
         log_client_connection: bool | None,
-    ) -> AsyncIterator[MyAsyncTCPServer]:
+    ) -> AsyncGenerator[MyAsyncTCPServer]:
         async with MyAsyncTCPServer(
             localhost_ip,
             0,
@@ -1282,7 +1282,7 @@ class TestAsyncTCPNetworkServerWithTrio(_BaseTestAsyncTCPNetworkServer, BaseTest
     async def client_factory_no_handshake(
         server_address: tuple[str, int],
         client_ssl_context: ssl.SSLContext | None,
-    ) -> AsyncIterator[Callable[[], Awaitable[AsyncStreamSocket]]]:
+    ) -> AsyncGenerator[Callable[[], Awaitable[AsyncStreamSocket]]]:
         import trio
 
         async with contextlib.AsyncExitStack() as stack:

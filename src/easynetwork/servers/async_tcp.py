@@ -21,7 +21,7 @@ __all__ = ["AsyncTCPNetworkServer"]
 import contextlib
 import logging
 import weakref
-from collections.abc import AsyncIterator, Callable, Coroutine, Mapping, Sequence
+from collections.abc import AsyncGenerator, Callable, Coroutine, Mapping, Sequence
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, NoReturn, final
 
@@ -268,7 +268,7 @@ class AsyncTCPNetworkServer[Request, Response](
     async def __client_initializer(
         self,
         lowlevel_client: _stream_server.ConnectedStreamClient[Response],
-    ) -> AsyncIterator[AsyncStreamClient[Response] | None]:
+    ) -> AsyncGenerator[AsyncStreamClient[Response] | None]:
         async with contextlib.AsyncExitStack() as client_exit_stack:
             client_exit_stack.enter_context(self._bind_server())
 

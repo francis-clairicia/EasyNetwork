@@ -5,7 +5,7 @@ import errno
 import os
 import pathlib
 import sys
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from socket import SO_ERROR, SOL_SOCKET
 from typing import TYPE_CHECKING, Any
 
@@ -151,7 +151,7 @@ if sys.platform != "win32":
             mock_unix_datagram_socket: MagicMock,
             mock_backend: MagicMock,
             mock_datagram_protocol: MagicMock,
-        ) -> AsyncIterator[AsyncUnixDatagramClient[Any, Any]]:
+        ) -> AsyncGenerator[AsyncUnixDatagramClient[Any, Any]]:
             client: AsyncUnixDatagramClient[Any, Any] = AsyncUnixDatagramClient(
                 mock_unix_datagram_socket,
                 mock_datagram_protocol,
@@ -167,7 +167,7 @@ if sys.platform != "win32":
             mock_unix_datagram_socket: MagicMock,
             mock_backend: MagicMock,
             mock_datagram_protocol: MagicMock,
-        ) -> AsyncIterator[AsyncUnixDatagramClient[Any, Any]]:
+        ) -> AsyncGenerator[AsyncUnixDatagramClient[Any, Any]]:
             client: AsyncUnixDatagramClient[Any, Any] = AsyncUnixDatagramClient(
                 mock_unix_datagram_socket,
                 mock_datagram_protocol,
@@ -185,7 +185,7 @@ if sys.platform != "win32":
             mock_unix_datagram_socket: MagicMock,
             mock_backend: MagicMock,
             mock_datagram_protocol: MagicMock,
-        ) -> AsyncIterator[AsyncUnixDatagramClient[Any, Any]]:
+        ) -> AsyncGenerator[AsyncUnixDatagramClient[Any, Any]]:
             assert request.param in (True, False)
             client: AsyncUnixDatagramClient[Any, Any] = AsyncUnixDatagramClient(
                 mock_unix_datagram_socket,

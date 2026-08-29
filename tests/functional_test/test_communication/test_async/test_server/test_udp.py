@@ -3,7 +3,7 @@ from __future__ import annotations
 import collections
 import contextlib
 import logging
-from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from typing import Any
 
 from easynetwork.exceptions import BaseProtocolParseError, ClientClosedError, DatagramProtocolParseError, DeserializeError
@@ -127,7 +127,7 @@ class MyDatagramRequestHandler(AsyncDatagramRequestHandler[str, str]):
                     LOGGER.error(msg, exc_info=exc)
 
     @contextlib.asynccontextmanager
-    async def handle_bad_requests(self, client: AsyncDatagramClient[str]) -> AsyncIterator[None]:
+    async def handle_bad_requests(self, client: AsyncDatagramClient[str]) -> AsyncGenerator[None]:
         try:
             yield
         except DatagramProtocolParseError as exc:
@@ -716,7 +716,7 @@ class TestAsyncUDPNetworkServerWithAsyncIO(_BaseTestAsyncUDPNetworkServer, BaseT
         request_handler: AsyncDatagramRequestHandler[str, str],
         localhost_ip: str,
         datagram_protocol: DatagramProtocol[str, str],
-    ) -> AsyncIterator[MyAsyncUDPServer]:
+    ) -> AsyncGenerator[MyAsyncUDPServer]:
         server = MyAsyncUDPServer(
             localhost_ip,
             0,
@@ -739,7 +739,7 @@ class TestAsyncUDPNetworkServerWithAsyncIO(_BaseTestAsyncUDPNetworkServer, BaseT
         request_handler: AsyncDatagramRequestHandler[str, str],
         localhost_ip: str,
         datagram_protocol: DatagramProtocol[str, str],
-    ) -> AsyncIterator[MyAsyncUDPServer]:
+    ) -> AsyncGenerator[MyAsyncUDPServer]:
         async with MyAsyncUDPServer(
             localhost_ip,
             0,
@@ -769,7 +769,7 @@ class TestAsyncUDPNetworkServerWithAsyncIO(_BaseTestAsyncUDPNetworkServer, BaseT
         server_address: tuple[str, int],
         socket_family: int,
         localhost_ip: str,
-    ) -> AsyncIterator[Callable[[], Awaitable[AsyncDatagramSocket]]]:
+    ) -> AsyncGenerator[Callable[[], Awaitable[AsyncDatagramSocket]]]:
         async with contextlib.AsyncExitStack() as stack:
 
             async def factory() -> AsyncDatagramSocket:
@@ -792,7 +792,7 @@ class TestAsyncUDPNetworkServerWithTrio(_BaseTestAsyncUDPNetworkServer, BaseTest
         request_handler: AsyncDatagramRequestHandler[str, str],
         localhost_ip: str,
         datagram_protocol: DatagramProtocol[str, str],
-    ) -> AsyncIterator[MyAsyncUDPServer]:
+    ) -> AsyncGenerator[MyAsyncUDPServer]:
         server = MyAsyncUDPServer(
             localhost_ip,
             0,
@@ -815,7 +815,7 @@ class TestAsyncUDPNetworkServerWithTrio(_BaseTestAsyncUDPNetworkServer, BaseTest
         request_handler: AsyncDatagramRequestHandler[str, str],
         localhost_ip: str,
         datagram_protocol: DatagramProtocol[str, str],
-    ) -> AsyncIterator[MyAsyncUDPServer]:
+    ) -> AsyncGenerator[MyAsyncUDPServer]:
         async with MyAsyncUDPServer(
             localhost_ip,
             0,
@@ -845,7 +845,7 @@ class TestAsyncUDPNetworkServerWithTrio(_BaseTestAsyncUDPNetworkServer, BaseTest
         server_address: tuple[str, int],
         socket_family: int,
         localhost_ip: str,
-    ) -> AsyncIterator[Callable[[], Awaitable[AsyncDatagramSocket]]]:
+    ) -> AsyncGenerator[Callable[[], Awaitable[AsyncDatagramSocket]]]:
         async with contextlib.AsyncExitStack() as stack:
 
             async def factory() -> AsyncDatagramSocket:

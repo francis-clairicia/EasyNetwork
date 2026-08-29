@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sys
-from collections.abc import AsyncGenerator, Iterator
+from collections.abc import AsyncGenerator, Generator
 from typing import TYPE_CHECKING
 
 from easynetwork.clients.async_tcp import AsyncTCPNetworkClient
@@ -64,7 +64,7 @@ class BaseTestNetworkServer:
     @staticmethod
     def start_server(
         server: AbstractNetworkServer,
-    ) -> Iterator[NetworkServerThread]:
+    ) -> Generator[NetworkServerThread]:
         with server:
             server_thread = NetworkServerThread(server, daemon=True)
             server_thread.start()

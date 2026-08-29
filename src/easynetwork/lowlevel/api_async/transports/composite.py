@@ -25,7 +25,7 @@ __all__ = [
 ]
 
 import contextlib
-from collections.abc import AsyncIterator, Buffer, Callable, Iterable, Mapping
+from collections.abc import AsyncGenerator, Buffer, Callable, Iterable, Mapping
 from dataclasses import dataclass, field as dataclass_field
 from typing import TYPE_CHECKING, Any, final
 
@@ -277,7 +277,7 @@ async def _close_stapled_transports(
 
 
 @contextlib.asynccontextmanager
-async def _try_graceful_close(transport: _transports.AsyncBaseTransport) -> AsyncIterator[None]:
+async def _try_graceful_close(transport: _transports.AsyncBaseTransport) -> AsyncGenerator[None]:
     try:
         yield
     except BaseException:

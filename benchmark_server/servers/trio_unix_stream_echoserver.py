@@ -10,7 +10,7 @@ import os
 import socket
 import stat
 import sys
-from collections.abc import Iterator
+from collections.abc import Generator
 from typing import Final, NoReturn
 
 import trio
@@ -19,7 +19,7 @@ LOGGER: Final[logging.Logger] = logging.getLogger("trio server")
 
 
 @contextlib.contextmanager
-def _cleanup_socket_at_end(path: str) -> Iterator[None]:
+def _cleanup_socket_at_end(path: str) -> Generator[None]:
     try:
         yield
     finally:

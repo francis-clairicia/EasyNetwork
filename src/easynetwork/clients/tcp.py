@@ -23,7 +23,7 @@ import errno as _errno
 import socket as _socket
 import threading
 import warnings
-from collections.abc import Iterator
+from collections.abc import Generator
 from typing import TYPE_CHECKING, Any, final, overload
 
 try:
@@ -359,7 +359,7 @@ class TCPNetworkClient[SentPacket, ReceivedPacket](AbstractNetworkClient[SentPac
 
     @classmethod
     @contextlib.contextmanager
-    def __convert_socket_error(cls, *, endpoint: StreamEndpoint[Any, Any] | None) -> Iterator[None]:
+    def __convert_socket_error(cls, *, endpoint: StreamEndpoint[Any, Any] | None) -> Generator[None]:
         try:
             yield
         except ConnectionError as exc:

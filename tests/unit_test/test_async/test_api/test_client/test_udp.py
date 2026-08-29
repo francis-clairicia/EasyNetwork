@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import errno
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from socket import AF_INET, AF_INET6, AF_UNSPEC, SO_ERROR, SOL_SOCKET
 from typing import TYPE_CHECKING, Any
 
@@ -122,7 +122,7 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
         mock_udp_socket: MagicMock,
         mock_backend: MagicMock,
         mock_datagram_protocol: MagicMock,
-    ) -> AsyncIterator[AsyncUDPNetworkClient[Any, Any]]:
+    ) -> AsyncGenerator[AsyncUDPNetworkClient[Any, Any]]:
         client: AsyncUDPNetworkClient[Any, Any] = AsyncUDPNetworkClient(mock_udp_socket, mock_datagram_protocol, mock_backend)
         assert not client.is_connected()
         async with contextlib.aclosing(client):
@@ -134,7 +134,7 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
         mock_udp_socket: MagicMock,
         mock_backend: MagicMock,
         mock_datagram_protocol: MagicMock,
-    ) -> AsyncIterator[AsyncUDPNetworkClient[Any, Any]]:
+    ) -> AsyncGenerator[AsyncUDPNetworkClient[Any, Any]]:
         client: AsyncUDPNetworkClient[Any, Any] = AsyncUDPNetworkClient(mock_udp_socket, mock_datagram_protocol, mock_backend)
         async with contextlib.aclosing(client):
             await client.wait_connected()
@@ -148,7 +148,7 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
         mock_udp_socket: MagicMock,
         mock_backend: MagicMock,
         mock_datagram_protocol: MagicMock,
-    ) -> AsyncIterator[AsyncUDPNetworkClient[Any, Any]]:
+    ) -> AsyncGenerator[AsyncUDPNetworkClient[Any, Any]]:
         assert request.param in (True, False)
         client: AsyncUDPNetworkClient[Any, Any] = AsyncUDPNetworkClient(mock_udp_socket, mock_datagram_protocol, mock_backend)
         async with contextlib.aclosing(client):

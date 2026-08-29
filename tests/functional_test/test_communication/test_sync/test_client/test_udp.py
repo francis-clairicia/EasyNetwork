@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import socketserver
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from socket import AF_INET, socket as Socket
 from typing import Any
 
@@ -39,7 +39,7 @@ class TestUDPNetworkClient:
         server: Socket,
         udp_socket_factory: Callable[[], Socket],
         datagram_protocol: DatagramProtocol[str, str],
-    ) -> Iterator[UDPNetworkClient[str, str]]:
+    ) -> Generator[UDPNetworkClient[str, str]]:
         address: tuple[str, int] = server.getsockname()[:2]
         socket = udp_socket_factory()
         socket.connect(address)
@@ -171,7 +171,7 @@ class UDPServer(socketserver.UDPServer):
 class TestUDPNetworkClientConnection:
     @pytest.fixture(autouse=True)
     @classmethod
-    def server(cls, localhost_ip: str, socket_family: int) -> Iterator[socketserver.UDPServer]:
+    def server(cls, localhost_ip: str, socket_family: int) -> Generator[socketserver.UDPServer]:
         from threading import Thread
 
         with UDPServer((localhost_ip, 0), socket_family) as server:

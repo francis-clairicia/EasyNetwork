@@ -4,7 +4,7 @@ import io
 import os
 import socketserver
 import sys
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from concurrent.futures import Future
 from socket import SHUT_WR, socket as Socket
 from typing import TYPE_CHECKING, Any, cast
@@ -39,7 +39,7 @@ if sys.platform != "win32":
         def client(
             unix_socket_pair: tuple[Socket, Socket],
             stream_protocol: AnyStreamProtocolType[str, str],
-        ) -> Iterator[UnixStreamClient[str, str]]:
+        ) -> Generator[UnixStreamClient[str, str]]:
             with UnixStreamClient(unix_socket_pair[1], stream_protocol) as client:
                 yield client
 
@@ -302,7 +302,7 @@ if sys.platform != "win32":
     class TestUnixStreamClientConnection:
         @pytest.fixture(autouse=True)
         @classmethod
-        def server(cls, unix_socket_path_factory: UnixSocketPathFactory) -> Iterator[socketserver.UnixStreamServer]:
+        def server(cls, unix_socket_path_factory: UnixSocketPathFactory) -> Generator[socketserver.UnixStreamServer]:
             from threading import Thread
 
             with socketserver.UnixStreamServer(unix_socket_path_factory(), EchoRequestHandler) as server:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import errno
 import os
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Generator, Sequence
 from socket import AF_INET, AF_INET6, AF_UNSPEC, IPPROTO_UDP, SO_ERROR, SOCK_DGRAM, SOL_SOCKET, AddressFamily
 from typing import TYPE_CHECKING, Any, Literal, assert_never
 
@@ -145,7 +145,7 @@ class TestUDPNetworkClient(BaseTestClient):
     def client(
         mock_udp_socket: MagicMock,
         mock_datagram_protocol: MagicMock,
-    ) -> Iterator[UDPNetworkClient[Any, Any]]:
+    ) -> Generator[UDPNetworkClient[Any, Any]]:
         client: UDPNetworkClient[Any, Any] = UDPNetworkClient(mock_udp_socket, protocol=mock_datagram_protocol)
         with client:
             yield client

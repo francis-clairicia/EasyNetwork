@@ -5,7 +5,7 @@ import contextlib
 import logging
 import math
 from collections import deque
-from collections.abc import AsyncGenerator, AsyncIterator, Callable, Coroutine
+from collections.abc import AsyncGenerator, Callable, Coroutine
 from typing import TYPE_CHECKING, Any, NoReturn
 
 from easynetwork.exceptions import DatagramProtocolParseError, UnsupportedOperation
@@ -39,7 +39,7 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
     async def server(
         mock_datagram_listener: MagicMock,
         mock_datagram_protocol: MagicMock,
-    ) -> AsyncIterator[AsyncDatagramServer[Any, Any, Any]]:
+    ) -> AsyncGenerator[AsyncDatagramServer[Any, Any, Any]]:
         server: AsyncDatagramServer[Any, Any, Any] = AsyncDatagramServer(mock_datagram_listener, mock_datagram_protocol)
         async with contextlib.aclosing(server):
             yield server

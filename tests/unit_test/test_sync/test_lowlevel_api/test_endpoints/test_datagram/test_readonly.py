@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Generator
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.lowlevel.api_sync.endpoints.datagram import DatagramReceiverEndpoint
@@ -28,7 +28,7 @@ class TestDatagramReceiverEndpoint(BaseEndpointReceiveTests):
     def endpoint(
         mock_datagram_transport: MagicMock,
         mock_datagram_protocol: MagicMock,
-    ) -> Iterator[DatagramReceiverEndpoint[Any]]:
+    ) -> Generator[DatagramReceiverEndpoint[Any]]:
         endpoint: DatagramReceiverEndpoint[Any] = DatagramReceiverEndpoint(mock_datagram_transport, mock_datagram_protocol)
         with endpoint:
             yield endpoint

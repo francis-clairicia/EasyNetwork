@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import functools
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, Callable
 from socket import AF_INET, socket as Socket
 from typing import TYPE_CHECKING, NoReturn
 
@@ -200,7 +200,7 @@ class _BaseTestAsyncUDPNetworkClient:
 class TestAsyncUDPNetworkClientWithAsyncIO(_BaseTestAsyncUDPNetworkClient):
     @pytest_asyncio.fixture
     @staticmethod
-    async def server(udp_socket_factory: Callable[[], Socket]) -> AsyncIterator[AsyncDatagramSocket]:
+    async def server(udp_socket_factory: Callable[[], Socket]) -> AsyncGenerator[AsyncDatagramSocket]:
         async with await AsyncDatagramSocket.from_stdlib_socket(udp_socket_factory()) as server:
             yield server
 
@@ -210,7 +210,7 @@ class TestAsyncUDPNetworkClientWithAsyncIO(_BaseTestAsyncUDPNetworkClient):
         server: AsyncDatagramSocket,
         udp_socket_factory: Callable[[], Socket],
         datagram_protocol: DatagramProtocol[str, str],
-    ) -> AsyncIterator[AsyncUDPNetworkClient[str, str]]:
+    ) -> AsyncGenerator[AsyncUDPNetworkClient[str, str]]:
         remote_address: tuple[str, int] = server.getsockname()[:2]
         socket = udp_socket_factory()
         socket.connect(remote_address)
@@ -224,7 +224,7 @@ class TestAsyncUDPNetworkClientWithAsyncIO(_BaseTestAsyncUDPNetworkClient):
 class TestAsyncUDPNetworkClientWithTrio(_BaseTestAsyncUDPNetworkClient):
     @trio_fixture
     @staticmethod
-    async def server(udp_socket_factory: Callable[[], Socket]) -> AsyncIterator[AsyncDatagramSocket]:
+    async def server(udp_socket_factory: Callable[[], Socket]) -> AsyncGenerator[AsyncDatagramSocket]:
         async with await AsyncDatagramSocket.from_stdlib_socket(udp_socket_factory()) as server:
             yield server
 
@@ -234,7 +234,7 @@ class TestAsyncUDPNetworkClientWithTrio(_BaseTestAsyncUDPNetworkClient):
         server: AsyncDatagramSocket,
         udp_socket_factory: Callable[[], Socket],
         datagram_protocol: DatagramProtocol[str, str],
-    ) -> AsyncIterator[AsyncUDPNetworkClient[str, str]]:
+    ) -> AsyncGenerator[AsyncUDPNetworkClient[str, str]]:
         remote_address: tuple[str, int] = server.getsockname()[:2]
         socket = udp_socket_factory()
         socket.connect(remote_address)
@@ -403,7 +403,7 @@ class TestAsyncUDPNetworkClientConnectionWithAsyncIO(_BaseTestAsyncUDPNetworkCli
     async def server(
         cls,
         udp_socket_factory: Callable[[], Socket],
-    ) -> AsyncIterator[asyncio.DatagramTransport]:
+    ) -> AsyncGenerator[asyncio.DatagramTransport]:
         event_loop = asyncio.get_running_loop()
 
         transport, protocol = await event_loop.create_datagram_endpoint(
@@ -430,7 +430,7 @@ class TestAsyncUDPNetworkClientConnectionWithTrio(_BaseTestAsyncUDPNetworkClient
         cls,
         udp_socket_factory: Callable[[], Socket],
         nursery: trio.Nursery,
-    ) -> AsyncIterator[trio.socket.SocketType]:
+    ) -> AsyncGenerator[trio.socket.SocketType]:
         import trio
 
         async def echo_server(*, task_status: trio.TaskStatus[trio.socket.SocketType] = trio.TASK_STATUS_IGNORED) -> NoReturn:

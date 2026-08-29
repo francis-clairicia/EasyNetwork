@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Generator
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.lowlevel.api_sync.endpoints.stream import StreamReceiverEndpoint
@@ -29,7 +29,7 @@ class TestStreamReceiverEndpoint(BaseEndpointReceiveTests):
         mock_stream_transport: MagicMock,
         mock_stream_protocol: MagicMock,
         max_recv_size: int,
-    ) -> Iterator[StreamReceiverEndpoint[Any]]:
+    ) -> Generator[StreamReceiverEndpoint[Any]]:
         endpoint: StreamReceiverEndpoint[Any] = StreamReceiverEndpoint(
             mock_stream_transport,
             mock_stream_protocol,

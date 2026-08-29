@@ -6,7 +6,7 @@ import errno
 import os
 import pathlib
 import sys
-from collections.abc import Iterator
+from collections.abc import Generator
 from socket import SO_ERROR, SOCK_STREAM, SOL_SOCKET
 from typing import TYPE_CHECKING, Any
 
@@ -184,7 +184,7 @@ if sys.platform != "win32":
         def client(
             mock_unix_stream_socket: MagicMock,
             mock_stream_protocol: MagicMock,
-        ) -> Iterator[UnixStreamClient[Any, Any]]:
+        ) -> Generator[UnixStreamClient[Any, Any]]:
             client: UnixStreamClient[Any, Any] = UnixStreamClient(
                 mock_unix_stream_socket,
                 mock_stream_protocol,

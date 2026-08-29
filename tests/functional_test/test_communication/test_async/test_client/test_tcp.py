@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import ssl
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from socket import AF_INET, socket as Socket
 from typing import TYPE_CHECKING
 
@@ -261,7 +261,7 @@ class _BaseTestAsyncTCPNetworkClient:
 class TestAsyncTCPNetworkClientWithAsyncIO(_BaseTestAsyncTCPNetworkClient):
     @pytest_asyncio.fixture
     @staticmethod
-    async def server(inet_socket_pair: tuple[Socket, Socket]) -> AsyncIterator[AsyncStreamSocket]:
+    async def server(inet_socket_pair: tuple[Socket, Socket]) -> AsyncGenerator[AsyncStreamSocket]:
         async with await AsyncStreamSocket.from_connected_stdlib_socket(inet_socket_pair[0]) as server:
             yield server
 
@@ -270,7 +270,7 @@ class TestAsyncTCPNetworkClientWithAsyncIO(_BaseTestAsyncTCPNetworkClient):
     async def client(
         inet_socket_pair: tuple[Socket, Socket],
         stream_protocol: AnyStreamProtocolType[str, str],
-    ) -> AsyncIterator[AsyncTCPNetworkClient[str, str]]:
+    ) -> AsyncGenerator[AsyncTCPNetworkClient[str, str]]:
         async with AsyncTCPNetworkClient(inet_socket_pair[1], stream_protocol, "asyncio") as client:
             assert client.is_connected()
             yield client
@@ -280,7 +280,7 @@ class TestAsyncTCPNetworkClientWithAsyncIO(_BaseTestAsyncTCPNetworkClient):
 class TestAsyncTCPNetworkClientWithTrio(_BaseTestAsyncTCPNetworkClient):
     @trio_fixture
     @staticmethod
-    async def server(inet_socket_pair: tuple[Socket, Socket]) -> AsyncIterator[AsyncStreamSocket]:
+    async def server(inet_socket_pair: tuple[Socket, Socket]) -> AsyncGenerator[AsyncStreamSocket]:
         async with await AsyncStreamSocket.from_connected_stdlib_socket(inet_socket_pair[0]) as server:
             yield server
 
@@ -289,7 +289,7 @@ class TestAsyncTCPNetworkClientWithTrio(_BaseTestAsyncTCPNetworkClient):
     async def client(
         inet_socket_pair: tuple[Socket, Socket],
         stream_protocol: AnyStreamProtocolType[str, str],
-    ) -> AsyncIterator[AsyncTCPNetworkClient[str, str]]:
+    ) -> AsyncGenerator[AsyncTCPNetworkClient[str, str]]:
         async with AsyncTCPNetworkClient(inet_socket_pair[1], stream_protocol, "trio") as client:
             assert client.is_connected()
             yield client
@@ -423,7 +423,7 @@ class _BaseTestAsyncTCPNetworkClientConnection:
 class TestAsyncTCPNetworkClientConnectionWithAsyncIO(_BaseTestAsyncTCPNetworkClientConnection):
     @pytest_asyncio.fixture
     @staticmethod
-    async def server(localhost_ip: str, socket_family: int) -> AsyncIterator[asyncio.Server]:
+    async def server(localhost_ip: str, socket_family: int) -> AsyncGenerator[asyncio.Server]:
         async def client_connected_cb(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
             with contextlib.closing(writer):
                 data: bytes = await reader.readline()
@@ -453,7 +453,7 @@ class TestAsyncTCPNetworkClientConnectionWithTrio(_BaseTestAsyncTCPNetworkClient
     async def servers(
         localhost_ip: str,
         nursery: trio.Nursery,
-    ) -> AsyncIterator[list[trio.SocketListener]]:
+    ) -> AsyncGenerator[list[trio.SocketListener]]:
         import trio
 
         from ..socket import _TrioStream
@@ -606,7 +606,7 @@ class TestAsyncSSLOverTCPNetworkClientWithAsyncIO(_BaseTestAsyncSSLOverTCPNetwor
         localhost_ip: str,
         socket_family: int,
         server_ssl_context: ssl.SSLContext | None,
-    ) -> AsyncIterator[asyncio.Server]:
+    ) -> AsyncGenerator[asyncio.Server]:
         if server_ssl_context is None:
             pytest.skip("trustme is not installed")
 
@@ -641,7 +641,7 @@ class TestAsyncSSLOverTCPNetworkClientWithTrio(_BaseTestAsyncSSLOverTCPNetworkCl
         localhost_ip: str,
         server_ssl_context: ssl.SSLContext | None,
         nursery: trio.Nursery,
-    ) -> AsyncIterator[list[trio.SSLListener[trio.SocketStream]]]:
+    ) -> AsyncGenerator[list[trio.SSLListener[trio.SocketStream]]]:
         if server_ssl_context is None:
             pytest.skip("trustme is not installed")
 
