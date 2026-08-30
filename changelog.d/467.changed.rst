@@ -1,0 +1,1 @@
+``UnixSocketAddress.from_raw(None)`` now returns an unnamed address.
