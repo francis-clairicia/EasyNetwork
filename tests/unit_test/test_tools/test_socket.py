@@ -227,10 +227,10 @@ if sys.platform != "win32":
 
         @pytest.mark.parametrize(
             "name",
-            ["", b""],
+            ["", b"", None],
             ids=repr,
         )
-        def test____from_raw____unnamed(self, name: str | bytes) -> None:
+        def test____from_raw____unnamed(self, name: str | bytes | None) -> None:
             # Arrange
 
             # Act
