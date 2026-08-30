@@ -957,7 +957,7 @@ class SocketDatagramListener(base_selector.SelectorDatagramListener["_RetAddress
             self,
             data: bytes | bytearray | memoryview,
             ancillary_data: Iterable[tuple[int, int, Buffer]],
-            address: _RetAddress,
+            address: _Address,
         ) -> None:
             if not _unix_utils.is_unix_socket_family(self.__socket.family):
                 return super().send_noblock_with_ancillary_to(data, ancillary_data, address)
