@@ -26,7 +26,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, NoReturn, final
 
 from ..exceptions import ClientClosedError
-from ..lowlevel import _utils, constants
+from ..lowlevel import _utils
 from ..lowlevel._final import runtime_final_class
 from ..lowlevel.api_async.backend.abc import AsyncBackend, TaskGroup
 from ..lowlevel.api_async.backend.utils import BuiltinAsyncBackendLiteral
@@ -35,11 +35,9 @@ from ..lowlevel.api_async.transports.abc import AsyncListener, AsyncStreamTransp
 from ..lowlevel.api_async.transports.utils import aclose_forcefully
 from ..lowlevel.socket import (
     INETSocketAttribute,
-    ISocket,
     SocketAddress,
     SocketProxy,
     TLSAttribute,
-    enable_socket_linger,
     new_socket_address,
     set_tcp_keepalive,
     set_tcp_nodelay,
@@ -220,7 +218,7 @@ class AsyncTCPNetworkServer[Request, Response](
                 handshake_timeout=ssl_handshake_timeout,
                 shutdown_timeout=ssl_shutdown_timeout,
                 standard_compatible=ssl_standard_compatible,
-                handshake_error_handler=partial(cls.__client_tls_handshake_error_handler, logger),
+                handshake_error_handler=partial(_base.ClientErrorHandler.client_tls_handshake_error_handler, logger),
             )
             for listener in listeners
         ]
@@ -292,7 +290,7 @@ class AsyncTCPNetworkServer[Request, Response](
             # NOTE: Do not set this option if SSL/TLS is enabled
             if lowlevel_client.extra(TLSAttribute.sslcontext, None) is None:
                 client_exit_stack.callback(
-                    self.__set_socket_linger_if_not_closed,
+                    _base.ClientErrorHandler.set_socket_linger_if_not_closed,
                     lowlevel_client.extra(INETSocketAttribute.socket),
                 )
 
@@ -307,27 +305,6 @@ class AsyncTCPNetworkServer[Request, Response](
             except BaseException as exc:
                 _utils.remove_traceback_frames_in_place(exc, 1)
                 raise
-
-    @staticmethod
-    def __set_socket_linger_if_not_closed(socket: ISocket) -> None:
-        with contextlib.suppress(OSError):
-            if socket.fileno() > -1:
-                enable_socket_linger(socket, timeout=0)
-
-    @classmethod
-    def __client_tls_handshake_error_handler(cls, logger: logging.Logger, exc: Exception) -> None:
-        match exc:
-            case TimeoutError():
-                # handshake_timeout hit
-                pass
-            case OSError() if (
-                isinstance(exc, ConnectionError)
-                or _utils.is_ssl_eof_error(exc)
-                or exc.errno in constants.NOT_CONNECTED_SOCKET_ERRNOS
-            ):
-                pass
-            case _:  # pragma: no cover
-                logger.warning("Error in client task (during TLS handshake)", exc_info=exc)
 
     @_utils.inherit_doc(_base.BaseAsyncNetworkServerImpl)
     def get_addresses(self) -> Sequence[SocketAddress]:
