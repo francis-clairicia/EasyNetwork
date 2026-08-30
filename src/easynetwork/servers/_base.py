@@ -38,6 +38,7 @@ from ..lowlevel import _utils, constants
 from ..lowlevel._lock import ForkSafeLock
 from ..lowlevel.api_async.backend.abc import AsyncBackend, CancelScope, Task, TaskGroup, ThreadsPortal
 from ..lowlevel.api_async.backend.utils import BuiltinAsyncBackendLiteral, ensure_backend
+from ..lowlevel.socket import ISocket, enable_socket_linger
 from .abc import AbstractAsyncNetworkServer, AbstractNetworkServer, SupportsEventSet
 
 if TYPE_CHECKING:
@@ -532,6 +533,27 @@ class ClientErrorHandler[Address]:
         except Exception:
             return "<unknown>"
 
+    @staticmethod
+    def set_socket_linger_if_not_closed(socket: ISocket) -> None:
+        with contextlib.suppress(OSError):
+            if socket.fileno() > -1:
+                enable_socket_linger(socket, timeout=0)
+
+    @staticmethod
+    def client_tls_handshake_error_handler(logger: logging.Logger, exc: Exception) -> None:
+        match exc:
+            case TimeoutError():
+                # handshake_timeout hit
+                pass
+            case OSError() if (
+                isinstance(exc, ConnectionError)
+                or _utils.is_ssl_eof_error(exc)
+                or exc.errno in constants.NOT_CONNECTED_SOCKET_ERRNOS
+            ):
+                pass
+            case _:  # pragma: no cover
+                logger.warning("Error in client task (during TLS handshake)", exc_info=exc)
+
 
 def validate_max_recv_size(max_recv_size: int | None) -> int:
     if max_recv_size is None:
@@ -543,7 +565,7 @@ def validate_max_recv_size(max_recv_size: int | None) -> int:
 
 def validate_ssl_arguments(
     *,
-    ssl: SSLContext | bool | None,
+    ssl: SSLContext | None,
     ssl_handshake_timeout: float | None,
     ssl_shutdown_timeout: float | None,
     ssl_standard_compatible: bool | None,
