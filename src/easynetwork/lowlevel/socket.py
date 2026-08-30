@@ -381,6 +381,10 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
                         return cls.__from_abstract_name_unchecked(addr)
                     else:
                         return cls.__from_pathname_unchecked(os.fsdecode(addr))
+                # A datagram received from an unnamed Unix datagram socket have a "None" address.
+                # https://github.com/python/cpython/blob/v3.14.6/Modules/socketmodule.c#L1437-L1440
+                case None:
+                    return cls()
                 case _:
                     raise TypeError(f"Cannot convert {addr!r} to a {cls.__name__}")
 
