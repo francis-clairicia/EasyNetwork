@@ -19,7 +19,7 @@ on:
 
 jobs:
   changelog:
-    if: "!(github.event.pull_request.draft || github.event.pull_request.merged || contains(github.event.pull_request.labels.*.name, 'pr-skip-changelog'))"
+    if: (github.event.pull_request.draft || github.event.pull_request.merged) != true && !contains(github.event.pull_request.labels.*.name, 'pr-skip-changelog')
     runs-on: ubuntu-latest
 
     name: Check changelog
