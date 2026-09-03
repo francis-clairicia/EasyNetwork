@@ -41,7 +41,7 @@ from typing import Any, Literal, NamedTuple, Self, assert_never
 
 from ....exceptions import UnsupportedOperation
 from ....protocol import AnyStreamProtocolType
-from ... import _lock, _stream, _utils, _wakeup_socketpair
+from ... import _lock, _stream, _utils, _wakeup_socketpair, constants
 from ...request_handler import RecvAncillaryDataParams, RecvParams
 from ..transports import abc as _transports, base_selector as _selector_transports
 
@@ -999,11 +999,11 @@ class _ThreadSafeListener(_transports.BaseTransport):
                 accept_future = self.__listener.accept_noblock(handler, executor)
             except _selector_transports.WouldBlockOnRead:
                 return None
-            except Exception as exc:
-                if self.__listener.is_accept_capacity_error(exc):
+            except OSError as exc:
+                if exc.errno in constants.ACCEPT_CAPACITY_ERRNOS:
                     with self.__reader_condvar:
                         self.__ready_for_reading.set()
-                        self.__ready_at_deadline = _get_current_time() + self.__listener.accept_capacity_error_sleep_time()
+                        self.__ready_at_deadline = _get_current_time() + constants.ACCEPT_CAPACITY_ERROR_SLEEP_TIME
                         selector.unregister(self.__listener.read_fileno())
                         self.__reader_done.set()
                         self.__reader_condvar.notify_all()
