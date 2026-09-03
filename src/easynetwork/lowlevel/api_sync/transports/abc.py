@@ -464,27 +464,6 @@ class Listener[T](BaseTransport):
         """
         raise NotImplementedError
 
-    def is_accept_capacity_error(self, exc: Exception) -> bool:
-        """
-        Checks whether an error raised by :meth:`accept` is due to a capacity error or not.
-
-        Parameters:
-            exc: error raised by :meth:`accept`.
-
-        Returns:
-            :data:`True` if the exception is the result of a capacity error.
-        """
-        return False
-
-    def accept_capacity_error_sleep_time(self) -> float:
-        """
-        Returns:
-            the time (in seconds) to wait before calling :meth:`accept` if there were a capacity error.
-        """
-        from ...constants import ACCEPT_CAPACITY_ERROR_SLEEP_TIME
-
-        return ACCEPT_CAPACITY_ERROR_SLEEP_TIME
-
 
 class DatagramListener[Address](BaseTransport):
     """
