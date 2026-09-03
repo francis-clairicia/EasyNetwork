@@ -17,7 +17,6 @@
 from __future__ import annotations
 
 __all__ = [
-    "AsyncBaseClientInterface",
     "AsyncDatagramClient",
     "AsyncDatagramRequestHandler",
     "AsyncStreamClient",
@@ -41,7 +40,7 @@ if TYPE_CHECKING:
 
 class INETClientAttribute(typed_attr.TypedAttributeSet):
     """
-    Typed attributes which can be used on an :class:`AsyncBaseClientInterface`.
+    Typed attributes which can be used on an :class:`AsyncStreamClient` or :class:`AsyncDatagramClient`.
     """
 
     __slots__ = ()
@@ -62,7 +61,7 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
 
     class UNIXClientAttribute(typed_attr.TypedAttributeSet):
         """
-        Typed attributes which can be used on an :class:`AsyncBaseClientInterface`.
+        Typed attributes which can be used on an :class:`AsyncStreamClient` or :class:`AsyncDatagramClient`.
 
         .. versionadded:: 1.1
         """
@@ -82,10 +81,7 @@ if sys.platform != "win32" and hasattr(_socket, "AF_UNIX"):
         """the credentials of the peer process connected to this socket."""
 
 
-class AsyncBaseClientInterface[Response](typed_attr.TypedAttributeProvider, metaclass=ABCMeta):
-    """
-    The base class for a client interface, used by request handlers.
-    """
+class _AsyncBaseClientInterface[Response](metaclass=ABCMeta):
 
     __slots__ = ("__weakref__",)
 
@@ -156,7 +152,7 @@ class AsyncBaseClientInterface[Response](typed_attr.TypedAttributeProvider, meta
         raise NotImplementedError
 
 
-class AsyncStreamClient[Response](AsyncBaseClientInterface[Response]):
+class AsyncStreamClient[Response](_AsyncBaseClientInterface[Response], typed_attr.TypedAttributeProvider):
     """
     A client interface for stream oriented connection, used by stream request handlers.
     """
@@ -181,7 +177,7 @@ class AsyncStreamClient[Response](AsyncBaseClientInterface[Response]):
         raise NotImplementedError
 
 
-class AsyncDatagramClient[Response](AsyncBaseClientInterface[Response]):
+class AsyncDatagramClient[Response](_AsyncBaseClientInterface[Response], typed_attr.TypedAttributeProvider):
     """
     A client interface for datagram oriented connection, used by datagram request handlers.
 

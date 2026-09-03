@@ -9,7 +9,12 @@ from typing import TYPE_CHECKING, Any
 
 from easynetwork.servers.async_tcp import AsyncTCPNetworkServer
 from easynetwork.servers.async_udp import AsyncUDPNetworkServer
-from easynetwork.servers.handlers import AsyncBaseClientInterface, AsyncDatagramRequestHandler, AsyncStreamRequestHandler
+from easynetwork.servers.handlers import (
+    AsyncDatagramClient,
+    AsyncDatagramRequestHandler,
+    AsyncStreamClient,
+    AsyncStreamRequestHandler,
+)
 
 import pytest
 
@@ -19,19 +24,18 @@ if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
 
-class BaseFakeHandler:
+class FakeStreamHandler(AsyncStreamRequestHandler[Any, Any]):
     __slots__ = ()
 
-    def handle(self, client: AsyncBaseClientInterface[Any]) -> AsyncGenerator[None, Any]:
+    def handle(self, client: AsyncStreamClient[Any]) -> AsyncGenerator[None, Any]:
         raise NotImplementedError
 
 
-class FakeStreamHandler(BaseFakeHandler, AsyncStreamRequestHandler[Any, Any]):
+class FakeDatagramHandler(AsyncDatagramRequestHandler[Any, Any]):
     __slots__ = ()
 
-
-class FakeDatagramHandler(BaseFakeHandler, AsyncDatagramRequestHandler[Any, Any]):
-    __slots__ = ()
+    def handle(self, client: AsyncDatagramClient[Any]) -> AsyncGenerator[None, Any]:
+        raise NotImplementedError
 
 
 @pytest.mark.asyncio

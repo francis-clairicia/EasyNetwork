@@ -95,15 +95,19 @@ Request Handler Interface
 Client API
 ----------
 
-.. autoclass:: AsyncBaseClientInterface
-   :members:
-
 .. autoclass:: AsyncStreamClient
    :members:
+   :inherited-members: TypedAttributeProvider
+   :exclude-members: __new__, __init__
 
 .. autoclass:: AsyncDatagramClient
    :members:
-   :special-members: __eq__, __hash__
+   :inherited-members: TypedAttributeProvider
+   :exclude-members: __new__, __init__
+
+   .. automethod:: __hash__
+
+   .. automethod:: __eq__
 
 
 Client Attributes
