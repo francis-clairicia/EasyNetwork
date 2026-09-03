@@ -617,13 +617,6 @@ class SocketStreamListener(base_selector.SelectorListener[SocketStreamTransport]
             future.add_done_callback(functools.partial(self.__on_task_done, client_sock=client_sock))
         return future
 
-    def is_accept_capacity_error(self, exc: Exception) -> bool:
-        match exc:
-            case OSError(errno=exc_errno) if exc_errno in constants.ACCEPT_CAPACITY_ERRNOS:
-                return True
-            case _:
-                return False
-
     def __in_executor[R](self, client_sock: socket.socket, handler: Callable[[SocketStreamTransport], R]) -> R:
         try:
             transport = SocketStreamTransport(client_sock, retry_interval=1.0, selector_factory=self._selector_factory)
@@ -760,13 +753,6 @@ class SSLStreamListener(base_selector.SelectorListener[SSLStreamTransport]):
                 functools.partial(self.__on_client_task_done, whole_task_future=whole_task_future)
             )
         return client_task_future
-
-    def is_accept_capacity_error(self, exc: Exception) -> bool:
-        match exc:
-            case OSError(errno=exc_errno) if exc_errno in constants.ACCEPT_CAPACITY_ERRNOS:
-                return True
-            case _:
-                return False
 
     def __in_executor[R](
         self,
