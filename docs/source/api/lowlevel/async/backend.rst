@@ -55,7 +55,7 @@ All asynchronous objects relying on an :class:`AsyncBackend` object have a ``bac
 
 * High-level servers ( :meth:`.AbstractAsyncNetworkServer.backend` ).
 
-   * This includes the clients created for the request handlers ( :meth:`.AsyncBaseClientInterface.backend` ).
+   * This includes the clients created for the request handlers ( :meth:`.AsyncStreamClient.backend` and :meth:`.AsyncDatagramClient.backend` ).
 
 * Low-level endpoints ( :meth:`.AsyncStreamEndpoint.backend` and :meth:`.AsyncDatagramEndpoint.backend` ).
 

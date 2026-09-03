@@ -8,7 +8,12 @@ from collections.abc import AsyncGenerator, Callable
 from easynetwork.protocol import DatagramProtocol, StreamProtocol
 from easynetwork.serializers.line import StringLineSerializer
 from easynetwork.servers.abc import AbstractAsyncNetworkServer, AbstractNetworkServer
-from easynetwork.servers.handlers import AsyncBaseClientInterface, AsyncDatagramRequestHandler, AsyncStreamRequestHandler
+from easynetwork.servers.handlers import (
+    AsyncDatagramClient,
+    AsyncDatagramRequestHandler,
+    AsyncStreamClient,
+    AsyncStreamRequestHandler,
+)
 from easynetwork.servers.standalone_tcp import StandaloneTCPNetworkServer
 from easynetwork.servers.standalone_udp import StandaloneUDPNetworkServer
 
@@ -21,7 +26,7 @@ class MyAsyncStreamRequestHandler(AsyncStreamRequestHandler[str, str]):
     async def service_init(self, exit_stack: contextlib.AsyncExitStack, server: AbstractAsyncNetworkServer) -> None:
         self.server = server
 
-    async def handle(self, client: AsyncBaseClientInterface[str]) -> AsyncGenerator[None, str]:
+    async def handle(self, client: AsyncStreamClient[str]) -> AsyncGenerator[None, str]:
         request: str = yield
         logger.debug(f"Received {request!r} from {client!r}")
         match request:
@@ -42,7 +47,7 @@ class MyAsyncDatagramRequestHandler(AsyncDatagramRequestHandler[str, str]):
     async def service_init(self, exit_stack: contextlib.AsyncExitStack, server: AbstractAsyncNetworkServer) -> None:
         self.server = server
 
-    async def handle(self, client: AsyncBaseClientInterface[str]) -> AsyncGenerator[None, str]:
+    async def handle(self, client: AsyncDatagramClient[str]) -> AsyncGenerator[None, str]:
         request: str = yield
         logger.debug(f"Received {request!r} from {client!r}")
         match request:
