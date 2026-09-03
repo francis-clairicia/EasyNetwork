@@ -21,7 +21,6 @@ __all__ = [
     "AsyncDatagramRequestHandler",
     "AsyncStreamClient",
     "AsyncStreamRequestHandler",
-    "BlockingBaseClientInterface",
     "BlockingDatagramClient",
     "BlockingDatagramRequestHandler",
     "BlockingStreamClient",
@@ -406,12 +405,7 @@ class AsyncDatagramRequestHandler[Request, Response](metaclass=ABCMeta):
         raise NotImplementedError
 
 
-class BlockingBaseClientInterface[Response](typed_attr.TypedAttributeProvider, metaclass=ABCMeta):
-    """
-    The base class for a client interface, used by request handlers.
-
-    .. versionadded:: NEXT_VERSION
-    """
+class _BlockingBaseClientInterface[Response](metaclass=ABCMeta):
 
     __slots__ = ("__weakref__",)
 
@@ -484,7 +478,7 @@ class BlockingBaseClientInterface[Response](typed_attr.TypedAttributeProvider, m
         raise NotImplementedError
 
 
-class BlockingStreamClient[Response](BlockingBaseClientInterface[Response]):
+class BlockingStreamClient[Response](_BlockingBaseClientInterface[Response], typed_attr.TypedAttributeProvider):
     """
     A client interface for stream oriented connection, used by stream request handlers.
 
@@ -493,6 +487,7 @@ class BlockingStreamClient[Response](BlockingBaseClientInterface[Response]):
 
     __slots__ = ()
 
+    @abstractmethod
     def abort(self) -> None:
         """
         Abruptly closes the client. Thread safe.
@@ -502,7 +497,7 @@ class BlockingStreamClient[Response](BlockingBaseClientInterface[Response]):
 
         Can be safely called multiple times.
         """
-        self.close()
+        raise NotImplementedError
 
     @abstractmethod
     def close(self) -> None:
@@ -517,7 +512,7 @@ class BlockingStreamClient[Response](BlockingBaseClientInterface[Response]):
         raise NotImplementedError
 
 
-class BlockingDatagramClient[Response](BlockingBaseClientInterface[Response]):
+class BlockingDatagramClient[Response](_BlockingBaseClientInterface[Response], typed_attr.TypedAttributeProvider):
     """
     A client interface for datagram oriented connection, used by datagram request handlers.
 
