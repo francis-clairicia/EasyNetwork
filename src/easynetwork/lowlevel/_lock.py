@@ -18,7 +18,7 @@ Synchronization primitive extension module
 
 from __future__ import annotations
 
-__all__ = ["ForkSafeLock"]
+__all__ = ["ForkSafeLock", "RWLock"]
 
 import dataclasses
 import os

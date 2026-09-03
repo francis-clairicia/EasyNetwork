@@ -30,7 +30,7 @@ from ..lowlevel import _utils
 from ..lowlevel._final import runtime_final_class
 from ..lowlevel.api_async.backend.abc import AsyncBackend, TaskGroup
 from ..lowlevel.api_async.backend.utils import BuiltinAsyncBackendLiteral
-from ..lowlevel.api_async.servers import stream as _async_stream_server
+from ..lowlevel.api_async.servers import stream as _stream_server
 from ..lowlevel.api_async.transports.abc import AsyncListener, AsyncStreamTransport
 from ..lowlevel.api_async.transports.utils import aclose_forcefully
 from ..lowlevel.socket import (
@@ -52,7 +52,7 @@ if TYPE_CHECKING:
 
 
 class AsyncTCPNetworkServer[Request, Response](
-    _base.BaseAsyncNetworkServerImpl[_async_stream_server.AsyncStreamServer[Request, Response], SocketAddress],
+    _base.BaseAsyncNetworkServerImpl[_stream_server.AsyncStreamServer[Request, Response], SocketAddress],
 ):
     """
     An asynchronous network server for TCP connections.
@@ -223,9 +223,9 @@ class AsyncTCPNetworkServer[Request, Response](
             for listener in listeners
         ]
 
-    async def __activate_listeners(self) -> list[_async_stream_server.AsyncStreamServer[Request, Response]]:
+    async def __activate_listeners(self) -> list[_stream_server.AsyncStreamServer[Request, Response]]:
         return [
-            _async_stream_server.AsyncStreamServer(
+            _stream_server.AsyncStreamServer(
                 listener,
                 self.__protocol,
                 max_recv_size=self.__max_recv_size,
@@ -241,7 +241,7 @@ class AsyncTCPNetworkServer[Request, Response](
 
     async def __lowlevel_serve(
         self,
-        server: _async_stream_server.AsyncStreamServer[Request, Response],
+        server: _stream_server.AsyncStreamServer[Request, Response],
         task_group: TaskGroup,
     ) -> NoReturn:
         def disconnect_error_filter(exc: Exception) -> bool:
@@ -265,7 +265,7 @@ class AsyncTCPNetworkServer[Request, Response](
     @contextlib.asynccontextmanager
     async def __client_initializer(
         self,
-        lowlevel_client: _async_stream_server.ConnectedStreamClient[Response],
+        lowlevel_client: _stream_server.ConnectedStreamClient[Response],
     ) -> AsyncGenerator[AsyncStreamClient[Response] | None]:
         async with contextlib.AsyncExitStack() as client_exit_stack:
             client_exit_stack.enter_context(self._bind_server())
@@ -344,9 +344,9 @@ class _ConnectedClientAPI[Response](AsyncStreamClient[Response]):
     def __init__(
         self,
         address: SocketAddress,
-        client: _async_stream_server.ConnectedStreamClient[Response],
+        client: _stream_server.ConnectedStreamClient[Response],
     ) -> None:
-        self.__client: _async_stream_server.ConnectedStreamClient[Response] = client
+        self.__client: _stream_server.ConnectedStreamClient[Response] = client
         self.__closing: bool = False
         self.__send_lock = client.backend().create_fair_lock()
         self.__proxy: SocketProxy = SocketProxy(client.extra(INETSocketAttribute.socket))
