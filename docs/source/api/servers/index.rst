@@ -92,6 +92,12 @@ Request Handler Interface
 .. autoclass:: AsyncDatagramRequestHandler
    :members:
 
+.. autoclass:: BlockingStreamRequestHandler
+   :members:
+
+.. autoclass:: BlockingDatagramRequestHandler
+   :members:
+
 Client API
 ----------
 
@@ -101,6 +107,20 @@ Client API
    :exclude-members: __new__, __init__
 
 .. autoclass:: AsyncDatagramClient
+   :members:
+   :inherited-members: TypedAttributeProvider
+   :exclude-members: __new__, __init__
+
+   .. automethod:: __hash__
+
+   .. automethod:: __eq__
+
+.. autoclass:: BlockingStreamClient
+   :members:
+   :inherited-members: TypedAttributeProvider
+   :exclude-members: __new__, __init__
+
+.. autoclass:: BlockingDatagramClient
    :members:
    :inherited-members: TypedAttributeProvider
    :exclude-members: __new__, __init__
