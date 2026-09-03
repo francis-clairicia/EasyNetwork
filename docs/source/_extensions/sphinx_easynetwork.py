@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 from easynetwork.serializers.abc import AbstractIncrementalPacketSerializer, AbstractPacketSerializer
 from easynetwork.servers._base import BaseAsyncNetworkServerImpl, BaseStandaloneNetworkServerImpl
 from easynetwork.servers.abc import AbstractAsyncNetworkServer, AbstractNetworkServer
-from easynetwork.servers.handlers import _AsyncBaseClientInterface
+from easynetwork.servers.handlers import _AsyncBaseClientInterface, _BlockingBaseClientInterface
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +58,7 @@ def autodoc_process_bases(app: Sphinx, name: str, obj: type, options: dict[str, 
     _replace_base_in_place(obj, bases, BaseAsyncNetworkServerImpl, lambda _: AbstractAsyncNetworkServer)
     _replace_base_in_place(obj, bases, BaseStandaloneNetworkServerImpl, lambda _: AbstractNetworkServer)
     _replace_base_in_place(obj, bases, _AsyncBaseClientInterface, lambda _: None)
+    _replace_base_in_place(obj, bases, _BlockingBaseClientInterface, lambda _: None)
 
 
 def _is_magic_method(name: str) -> bool:
