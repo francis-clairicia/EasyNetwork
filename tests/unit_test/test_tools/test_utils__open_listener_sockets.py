@@ -56,12 +56,14 @@ def addrinfo_list() -> Sequence[tuple[int, int, int, str, tuple[Any, ...]]]:
 @pytest.mark.parametrize("SO_REUSEADDR_raise_error", [False, True], ids=lambda boolean: f"SO_REUSEADDR_raise_error__{boolean}")
 @pytest.mark.parametrize("IPPROTO_IPV6_available", [False, True], ids=lambda boolean: f"IPPROTO_IPV6_available__{boolean}")
 @pytest.mark.parametrize("reuse_port", [False, True], ids=lambda boolean: f"reuse_port__{boolean}")
+@pytest.mark.parametrize("use_on_bind_success", [False, True], ids=lambda boolean: f"use_on_bind_success__{boolean}")
 def test____open_listener_sockets_from_getaddrinfo_result____create_listener_sockets(
     reuse_address: bool,
     SO_REUSEADDR_available: bool,
     SO_REUSEADDR_raise_error: bool,
     IPPROTO_IPV6_available: bool,
     reuse_port: bool,
+    use_on_bind_success: bool,
     mock_socket_cls: MagicMock,
     mock_socket_ipv4: MagicMock,
     mock_socket_ipv6: MagicMock,
@@ -84,6 +86,8 @@ def test____open_listener_sockets_from_getaddrinfo_result____create_listener_soc
         mock_socket_ipv4.setsockopt.side_effect = setsockopt
         mock_socket_ipv6.setsockopt.side_effect = setsockopt
 
+    on_bind_success = mocker.stub("on_bind_success") if use_on_bind_success else None
+
     # Act
     sockets = cast(
         "list[MagicMock]",
@@ -91,12 +95,15 @@ def test____open_listener_sockets_from_getaddrinfo_result____create_listener_soc
             addrinfo_list,
             reuse_address=reuse_address,
             reuse_port=reuse_port,
+            on_bind_success=on_bind_success,
         ),
     )
 
     # Assert
     assert len(sockets) == len(addrinfo_list)
     assert mock_socket_cls.call_args_list == [mocker.call(f, t, p) for f, t, p, _, _ in addrinfo_list]
+    if on_bind_success is not None:
+        assert on_bind_success.call_args_list == [mocker.call(s) for s in sockets]
     for socket, (sock_family, _, _, _, sock_addr) in zip(sockets, addrinfo_list, strict=True):
         expected_setsockopt_calls: list[Any] = []
         if reuse_address and SO_REUSEADDR_available:
@@ -133,6 +140,7 @@ def test____open_listener_sockets_from_getaddrinfo_result____bind_failed(
     mock_socket_cls: MagicMock,
     mock_tcp_socket_factory: Callable[[], MagicMock],
     addrinfo_list: Sequence[tuple[int, int, int, str, tuple[Any, ...]]],
+    mocker: MockerFixture,
 ) -> None:
     # Arrange
     assert len(addrinfo_list) == 2  # In prevention
@@ -140,16 +148,24 @@ def test____open_listener_sockets_from_getaddrinfo_result____bind_failed(
     mock_socket_cls.side_effect = [s1, s2]
     s2.bind.side_effect = OSError(1234, "error message")
 
+    on_bind_success = mocker.stub("on_bind_success")
+
     # Act
     with pytest.RaisesGroup(
         pytest.RaisesExc(OSError, check=lambda exc: exc.errno == 1234),
         match=r"^Error when trying to create listeners$",
     ):
-        open_listener_sockets_from_getaddrinfo_result(addrinfo_list, reuse_address=True, reuse_port=False)
+        open_listener_sockets_from_getaddrinfo_result(
+            addrinfo_list,
+            reuse_address=True,
+            reuse_port=False,
+            on_bind_success=on_bind_success,
+        )
 
     # Assert
     s1.close.assert_called_once_with()
     s2.close.assert_called_once_with()
+    on_bind_success.assert_called_once_with(s1)
 
 
 def test____open_listener_sockets_from_getaddrinfo_result____ipv6_scope_id_not_properly_extracted_from_address(
@@ -168,3 +184,62 @@ def test____open_listener_sockets_from_getaddrinfo_result____ipv6_scope_id_not_p
     # Assert
     assert sockets == [mock_socket_ipv6]
     mock_socket_ipv6.bind.assert_called_once_with(("4e76:f928:6bbc:53ce:c01e:00d5:cdd5:6bbb", 65432, 0, 6))
+
+
+def test____open_listener_sockets_from_getaddrinfo_result____on_bind_success____os_error(
+    mock_socket_cls: MagicMock,
+    mock_tcp_socket_factory: Callable[[], MagicMock],
+    addrinfo_list: Sequence[tuple[int, int, int, str, tuple[Any, ...]]],
+    mocker: MockerFixture,
+) -> None:
+    # Arrange
+    assert len(addrinfo_list) == 2  # In prevention
+    s1, s2 = mock_tcp_socket_factory(), mock_tcp_socket_factory()
+    mock_socket_cls.side_effect = [s1, s2]
+
+    on_bind_success = mocker.stub("on_bind_success")
+    on_bind_success.side_effect = [None, OSError(5678, "error message from callback")]
+
+    # Act
+    with pytest.RaisesGroup(
+        pytest.RaisesExc(OSError, check=lambda exc: exc.errno == 5678),
+        match=r"^Error when trying to create listeners$",
+    ):
+        open_listener_sockets_from_getaddrinfo_result(
+            addrinfo_list,
+            reuse_address=True,
+            reuse_port=False,
+            on_bind_success=on_bind_success,
+        )
+
+    # Assert
+    s1.close.assert_called_once_with()
+    s2.close.assert_called_once_with()
+
+
+def test____open_listener_sockets_from_getaddrinfo_result____on_bind_success____crash(
+    mock_socket_cls: MagicMock,
+    mock_tcp_socket_factory: Callable[[], MagicMock],
+    addrinfo_list: Sequence[tuple[int, int, int, str, tuple[Any, ...]]],
+    mocker: MockerFixture,
+) -> None:
+    # Arrange
+    assert len(addrinfo_list) == 2  # In prevention
+    s1, s2 = mock_tcp_socket_factory(), mock_tcp_socket_factory()
+    mock_socket_cls.side_effect = [s1, s2]
+
+    on_bind_success = mocker.stub("on_bind_success")
+    on_bind_success.side_effect = [None, Exception("error message from callback")]
+
+    # Act
+    with pytest.raises(Exception, match=r"^error message from callback$"):
+        open_listener_sockets_from_getaddrinfo_result(
+            addrinfo_list,
+            reuse_address=True,
+            reuse_port=False,
+            on_bind_success=on_bind_success,
+        )
+
+    # Assert
+    s1.close.assert_called_once_with()
+    s2.close.assert_called_once_with()

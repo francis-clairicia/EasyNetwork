@@ -23,6 +23,23 @@ if TYPE_CHECKING:
 _TRIO_BACKEND_MODULE: Final[str] = "easynetwork.lowlevel.api_async.backend._trio"
 
 
+def _patch_open_listener_from_getaddrinfo(mocker: MockerFixture, **magic_mock_kwargs: Any) -> MagicMock:
+
+    side_effect = mocker.MagicMock(**magic_mock_kwargs)
+
+    def side_effect_wrapper(*args: Any, on_bind_success: Any | None = None, **kwargs: Any) -> list[Any]:
+        sockets = side_effect()
+        if on_bind_success is not None:
+            for s in sockets:
+                on_bind_success(s)
+        return sockets
+
+    return mocker.patch(
+        "easynetwork.lowlevel._utils.open_listener_sockets_from_getaddrinfo_result",
+        side_effect=side_effect_wrapper,
+    )
+
+
 @pytest.mark.feature_trio(async_test_auto_mark=True)
 class TestTrioBackend:
     @pytest.fixture(autouse=True)
@@ -506,8 +523,8 @@ class TestTrioBackend:
             new_callable=mocker.AsyncMock,
             return_value=addrinfo_list,
         )
-        mock_open_listeners = mocker.patch(
-            "easynetwork.lowlevel._utils.open_listener_sockets_from_getaddrinfo_result",
+        mock_open_listeners = _patch_open_listener_from_getaddrinfo(
+            mocker,
             return_value=[mock_tcp_socket],
         )
         mock_trio_socket_from_stdlib.side_effect = [mock_trio_tcp_socket]
@@ -536,6 +553,7 @@ class TestTrioBackend:
             addrinfo_list,
             reuse_address=mocker.ANY,  # Determined according to OS
             reuse_port=mocker.sentinel.reuse_port,
+            on_bind_success=mocker.ANY,
         )
         mock_tcp_socket.listen.assert_called_once_with(mocker.sentinel.backlog)
         mock_trio_socket_from_stdlib.assert_called_once_with(mock_tcp_socket)
@@ -586,8 +604,8 @@ class TestTrioBackend:
             new_callable=mocker.AsyncMock,
             return_value=addrinfo_list,
         )
-        mock_open_listeners = mocker.patch(
-            "easynetwork.lowlevel._utils.open_listener_sockets_from_getaddrinfo_result",
+        mock_open_listeners = _patch_open_listener_from_getaddrinfo(
+            mocker,
             return_value=[mock_tcp_socket_ipv6, mock_tcp_socket_ipv4],
         )
         mock_trio_socket_from_stdlib.side_effect = [mock_trio_tcp_socket_ipv6, mock_trio_tcp_socket_ipv4]
@@ -627,6 +645,7 @@ class TestTrioBackend:
             addrinfo_list,
             reuse_address=mocker.ANY,  # Determined according to OS
             reuse_port=mocker.sentinel.reuse_port,
+            on_bind_success=mocker.ANY,
         )
         mock_tcp_socket_ipv4.listen.assert_called_once_with(mocker.sentinel.backlog)
         mock_tcp_socket_ipv6.listen.assert_called_once_with(mocker.sentinel.backlog)
@@ -1152,8 +1171,8 @@ class TestTrioBackend:
             new_callable=mocker.AsyncMock,
             return_value=addrinfo_list,
         )
-        mock_open_listeners = mocker.patch(
-            "easynetwork.lowlevel._utils.open_listener_sockets_from_getaddrinfo_result",
+        mock_open_listeners = _patch_open_listener_from_getaddrinfo(
+            mocker,
             return_value=[mock_udp_socket],
         )
         mock_trio_socket_from_stdlib.side_effect = [mock_trio_udp_socket]
@@ -1225,8 +1244,8 @@ class TestTrioBackend:
             new_callable=mocker.AsyncMock,
             return_value=addrinfo_list,
         )
-        mock_open_listeners = mocker.patch(
-            "easynetwork.lowlevel._utils.open_listener_sockets_from_getaddrinfo_result",
+        mock_open_listeners = _patch_open_listener_from_getaddrinfo(
+            mocker,
             return_value=[mock_udp_socket_ipv6, mock_udp_socket_ipv4],
         )
         mock_trio_socket_from_stdlib.side_effect = [mock_trio_udp_socket_ipv6, mock_trio_udp_socket_ipv4]
