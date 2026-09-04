@@ -330,6 +330,12 @@ class _BaseTestAsyncTCPNetworkServer(BaseTestAsyncServer):
         caplog.set_level(logging.WARNING, LOGGER.name)
         logger_crash_threshold_level[LOGGER.name] = logging.WARNING
 
+    @pytest.fixture
+    @staticmethod
+    def server_backlog(request: pytest.FixtureRequest) -> int | None:
+        backlog = getattr(request, "param", 1)
+        return int(backlog) if backlog is not None else None
+
     @pytest.fixture(params=["NO_SSL", "USE_SSL"])
     @staticmethod
     def use_ssl(request: pytest.FixtureRequest) -> bool:
@@ -452,6 +458,12 @@ class _BaseTestAsyncTCPNetworkServer(BaseTestAsyncServer):
         "log_client_connection",
         [True, False, None],
         ids=lambda p: f"log_client_connection__{p}",
+        indirect=True,
+    )
+    @pytest.mark.parametrize(
+        "server_backlog",
+        [None, 1, 0],
+        ids=lambda p: f"server_backlog__{p}",
         indirect=True,
     )
     async def test____serve_forever____accept_client(
@@ -1130,6 +1142,7 @@ class TestAsyncTCPNetworkServerWithAsyncIO(_BaseTestAsyncTCPNetworkServer, BaseT
         request_handler: MyStreamRequestHandler,
         localhost_ip: str,
         stream_protocol: AnyStreamProtocolType[str, str],
+        server_backlog: int,
     ) -> AsyncGenerator[MyAsyncTCPServer]:
         server = MyAsyncTCPServer(
             localhost_ip,
@@ -1137,7 +1150,7 @@ class TestAsyncTCPNetworkServerWithAsyncIO(_BaseTestAsyncTCPNetworkServer, BaseT
             stream_protocol,
             request_handler,
             backend="asyncio",
-            backlog=1,
+            backlog=server_backlog,
             logger=LOGGER,
         )
         try:
@@ -1154,6 +1167,7 @@ class TestAsyncTCPNetworkServerWithAsyncIO(_BaseTestAsyncTCPNetworkServer, BaseT
         request_handler: MyStreamRequestHandler,
         localhost_ip: str,
         stream_protocol: AnyStreamProtocolType[str, str],
+        server_backlog: int,
         server_ssl_context: ssl.SSLContext | None,
         ssl_handshake_timeout: float | None,
         ssl_standard_compatible: bool | None,
@@ -1165,7 +1179,7 @@ class TestAsyncTCPNetworkServerWithAsyncIO(_BaseTestAsyncTCPNetworkServer, BaseT
             stream_protocol,
             request_handler,
             backend="asyncio",
-            backlog=1,
+            backlog=server_backlog,
             ssl=server_ssl_context,
             ssl_handshake_timeout=ssl_handshake_timeout,
             ssl_standard_compatible=ssl_standard_compatible,
@@ -1220,6 +1234,7 @@ class TestAsyncTCPNetworkServerWithTrio(_BaseTestAsyncTCPNetworkServer, BaseTest
         request_handler: MyStreamRequestHandler,
         localhost_ip: str,
         stream_protocol: AnyStreamProtocolType[str, str],
+        server_backlog: int,
     ) -> AsyncGenerator[MyAsyncTCPServer]:
         server = MyAsyncTCPServer(
             localhost_ip,
@@ -1227,7 +1242,7 @@ class TestAsyncTCPNetworkServerWithTrio(_BaseTestAsyncTCPNetworkServer, BaseTest
             stream_protocol,
             request_handler,
             backend="trio",
-            backlog=1,
+            backlog=server_backlog,
             logger=LOGGER,
         )
         try:
@@ -1244,6 +1259,7 @@ class TestAsyncTCPNetworkServerWithTrio(_BaseTestAsyncTCPNetworkServer, BaseTest
         request_handler: MyStreamRequestHandler,
         localhost_ip: str,
         stream_protocol: AnyStreamProtocolType[str, str],
+        server_backlog: int,
         server_ssl_context: ssl.SSLContext | None,
         ssl_handshake_timeout: float | None,
         ssl_standard_compatible: bool | None,
@@ -1255,7 +1271,7 @@ class TestAsyncTCPNetworkServerWithTrio(_BaseTestAsyncTCPNetworkServer, BaseTest
             stream_protocol,
             request_handler,
             backend="trio",
-            backlog=1,
+            backlog=server_backlog,
             ssl=server_ssl_context,
             ssl_handshake_timeout=ssl_handshake_timeout,
             ssl_standard_compatible=ssl_standard_compatible,

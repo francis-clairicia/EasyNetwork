@@ -229,9 +229,8 @@ class AsyncIOBackend(AbstractAsyncBackend):
             infos,
             reuse_address=reuse_address,
             reuse_port=reuse_port,
+            on_bind_success=lambda sock: sock.listen(backlog),
         )
-        for sock in sockets:
-            sock.listen(backlog)
 
         factory = AcceptedSocketFactory()
         listeners = [ListenerSocketAdapter(self, sock, factory, backlog=backlog) for sock in sockets]

@@ -303,6 +303,7 @@ def open_listener_sockets_from_getaddrinfo_result(
     *,
     reuse_address: bool,
     reuse_port: bool,
+    on_bind_success: Callable[[_socket.socket], None] | None = None,
 ) -> list[_socket.socket]:
     sockets: list[_socket.socket] = []
     reuse_address = reuse_address and hasattr(_socket, "SO_REUSEADDR")
@@ -341,6 +342,12 @@ def open_listener_sockets_from_getaddrinfo_result(
             except OSError as exc:
                 errors.append(convert_socket_bind_error(exc, sa))
                 continue
+            if on_bind_success is not None:
+                try:
+                    on_bind_success(sock)
+                except OSError as exc:
+                    errors.append(exc)
+                    continue
 
         if errors:
             # No need to call errors.clear(), this is done by exit stack

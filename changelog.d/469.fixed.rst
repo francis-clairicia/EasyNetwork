@@ -1,0 +1,1 @@
+TCP/UNIX servers: Fixed sockets not closed if ``socket.listen()`` raises an exception.

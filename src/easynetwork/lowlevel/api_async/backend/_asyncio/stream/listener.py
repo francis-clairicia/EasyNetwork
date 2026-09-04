@@ -70,7 +70,8 @@ class ListenerSocketAdapter[Stream: AsyncStreamTransport](AsyncListener[Stream])
         if socket.type != _socket.SOCK_STREAM:
             raise ValueError("A 'SOCK_STREAM' socket is expected")
         if backlog < 1:
-            raise ValueError("backlog should be strictly positive")
+            # Most of OS uses a backlog of 128 with sock.listen(0)
+            backlog = 128
 
         _utils.check_socket_no_ssl(socket)
         socket.setblocking(False)

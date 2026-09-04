@@ -209,9 +209,8 @@ class TrioBackend(AbstractAsyncBackend):
             infos,
             reuse_address=reuse_address,
             reuse_port=reuse_port,
+            on_bind_success=lambda sock: sock.listen(backlog),
         )
-        for sock in sockets:
-            sock.listen(backlog)
 
         listeners = [
             TrioListenerSocketAdapter(self, self.__trio.SocketListener(sock))

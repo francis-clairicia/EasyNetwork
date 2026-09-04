@@ -443,6 +443,12 @@ if sys.platform != "win32":
             caplog.set_level(logging.WARNING, LOGGER.name)
             logger_crash_threshold_level[LOGGER.name] = logging.WARNING
 
+        @pytest.fixture
+        @staticmethod
+        def server_backlog(request: pytest.FixtureRequest) -> int | None:
+            backlog = getattr(request, "param", 1)
+            return int(backlog) if backlog is not None else None
+
         @pytest.fixture(
             params=[
                 pytest.param("PATHNAME"),
@@ -639,6 +645,12 @@ if sys.platform != "win32":
             "log_client_connection",
             [True, False, None],
             ids=lambda p: f"log_client_connection__{p}",
+            indirect=True,
+        )
+        @pytest.mark.parametrize(
+            "server_backlog",
+            [None, 1, 0],
+            ids=lambda p: f"server_backlog__{p}",
             indirect=True,
         )
         @pytest.mark.parametrize("server_recv_method", ["RECV", "RECVMSG"], indirect=True)
@@ -1397,13 +1409,14 @@ if sys.platform != "win32":
             request_handler: MyStreamRequestHandler,
             unix_socket_path_factory: UnixSocketPathFactory,
             stream_protocol: AnyStreamProtocolType[str, str],
+            server_backlog: int,
         ) -> AsyncGenerator[MyAsyncUnixStreamServer]:
             server = MyAsyncUnixStreamServer(
                 unix_socket_path_factory(),
                 stream_protocol,
                 request_handler,
                 backend="asyncio",
-                backlog=1,
+                backlog=server_backlog,
                 logger=LOGGER,
             )
             try:
@@ -1421,6 +1434,7 @@ if sys.platform != "win32":
             request_handler: MyStreamRequestHandler,
             unix_socket_path_factory: UnixSocketPathFactory,
             stream_protocol: AnyStreamProtocolType[str, str],
+            server_backlog: int,
             log_client_connection: bool | None,
         ) -> AsyncGenerator[MyAsyncUnixStreamServer]:
             if use_unix_address_type == "ABSTRACT":
@@ -1433,7 +1447,7 @@ if sys.platform != "win32":
                 stream_protocol,
                 request_handler,
                 backend="asyncio",
-                backlog=1,
+                backlog=server_backlog,
                 log_client_connection=log_client_connection,
                 logger=LOGGER,
             ) as server:
@@ -1488,13 +1502,14 @@ if sys.platform != "win32":
             request_handler: MyStreamRequestHandler,
             unix_socket_path_factory: UnixSocketPathFactory,
             stream_protocol: AnyStreamProtocolType[str, str],
+            server_backlog: int,
         ) -> AsyncGenerator[MyAsyncUnixStreamServer]:
             server = MyAsyncUnixStreamServer(
                 unix_socket_path_factory(),
                 stream_protocol,
                 request_handler,
                 backend="trio",
-                backlog=1,
+                backlog=server_backlog,
                 logger=LOGGER,
             )
             try:
@@ -1512,6 +1527,7 @@ if sys.platform != "win32":
             request_handler: MyStreamRequestHandler,
             unix_socket_path_factory: UnixSocketPathFactory,
             stream_protocol: AnyStreamProtocolType[str, str],
+            server_backlog: int,
             log_client_connection: bool | None,
         ) -> AsyncGenerator[MyAsyncUnixStreamServer]:
             if use_unix_address_type == "ABSTRACT":
@@ -1524,7 +1540,7 @@ if sys.platform != "win32":
                 stream_protocol,
                 request_handler,
                 backend="trio",
-                backlog=1,
+                backlog=server_backlog,
                 log_client_connection=log_client_connection,
                 logger=LOGGER,
             ) as server:

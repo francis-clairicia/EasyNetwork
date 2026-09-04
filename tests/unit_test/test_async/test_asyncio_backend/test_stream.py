@@ -231,18 +231,24 @@ class TestListenerSocketAdapter(BaseTestSocketTransport, BaseTestAsyncSocket):
         handler.return_value = None
         return handler
 
+    @pytest.fixture
+    @staticmethod
+    def backlog(request: pytest.FixtureRequest) -> int:
+        return int(getattr(request, "param", 1))
+
     @pytest_asyncio.fixture
     @staticmethod
     async def listener(
         asyncio_backend: AsyncIOBackend,
         mock_stream_listener_socket: MagicMock,
         accepted_socket_factory: MagicMock,
+        backlog: int,
     ) -> AsyncGenerator[ListenerSocketAdapter[Any]]:
         listener: ListenerSocketAdapter[Any] = ListenerSocketAdapter(
             asyncio_backend,
             mock_stream_listener_socket,
             accepted_socket_factory,
-            backlog=1,
+            backlog=backlog,
         )
         async with listener:
             yield listener
@@ -273,18 +279,6 @@ class TestListenerSocketAdapter(BaseTestSocketTransport, BaseTestAsyncSocket):
         # Act & Assert
         with pytest.raises(ValueError, match=r"^A 'SOCK_STREAM' socket is expected$"):
             _ = ListenerSocketAdapter(asyncio_backend, mock_udp_socket, accepted_socket_factory, backlog=10)
-
-    async def test____dunder_init____invalid_backlog(
-        self,
-        asyncio_backend: AsyncIOBackend,
-        mock_stream_listener_socket: MagicMock,
-        accepted_socket_factory: MagicMock,
-    ) -> None:
-        # Arrange
-
-        # Act & Assert
-        with pytest.raises(ValueError, match=r"^backlog should be strictly positive$"):
-            _ = ListenerSocketAdapter(asyncio_backend, mock_stream_listener_socket, accepted_socket_factory, backlog=0)
 
     async def test____dunder_init____forbids_ssl_sockets(
         self,
@@ -459,6 +453,28 @@ class TestListenerSocketAdapter(BaseTestSocketTransport, BaseTestAsyncSocket):
             case _:
                 assert len(caplog.records) == 0
                 accepted_socket_factory.log_connection_error.assert_not_called()
+
+    @pytest.mark.parametrize("backlog", [pytest.param(0, id=pytest.HIDDEN_PARAM)], indirect=True)
+    async def test____accept____null_backlog(
+        self,
+        listener: ListenerSocketAdapter[Any],
+        remote_address: tuple[str, int] | bytes,
+        handler: AsyncMock,
+        mock_accepted_stream_socket: MagicMock,
+        mock_stream_listener_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_stream_listener_socket.accept.side_effect = [
+            (mock_accepted_stream_socket, remote_address),
+            asyncio.CancelledError,
+        ]
+
+        # Act
+        with pytest.raises(asyncio.CancelledError):
+            await listener._serve_raw(handler)
+
+        # Assert
+        handler.assert_called_once_with(mock_accepted_stream_socket)
 
     @PlatformMarkers.skipif_platform_win32_because("test failures are all too frequent on CI", skip_only_on_ci=True)
     @PlatformMarkers.skipif_platform_bsd_because("test failures are all too frequent on CI", skip_only_on_ci=True)
