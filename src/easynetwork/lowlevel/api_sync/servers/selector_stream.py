@@ -120,10 +120,10 @@ class ConnectedStreamClient[Response](_transports.BaseTransport):
         with self.__close_lock:
             self.__closing_event.set()
             with self.__reader_condvar:
-                reader_is_done = self.__reader_done.is_set
-                while not reader_is_done():
+                reader_done = self.__reader_done.is_set()
+                while not reader_done:
                     self.__wakeup_socketpair.wakeup_thread_and_signal_safe()
-                    self.__reader_condvar.wait_for(reader_is_done, timeout=1.0)
+                    reader_done = self.__reader_condvar.wait_for(self.__reader_done.is_set, timeout=1.0)
             with self.__send_lock:
                 if abort:
                     self.__transport.abort()
