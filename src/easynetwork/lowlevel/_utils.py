@@ -51,7 +51,9 @@ import contextlib
 import errno as _errno
 import functools
 import math
+import os
 import socket as _socket
+import sys
 import threading
 import time
 import weakref
@@ -314,6 +316,10 @@ def validate_listener_hosts(host: str | Sequence[str] | None) -> list[str | None
             return list(host)
         case _:
             raise TypeError(host)
+
+
+def should_listener_reuse_address_on_current_platform() -> bool:
+    return os.name not in ("nt", "cygwin") and sys.platform != "cygwin"
 
 
 def open_listener_sockets_from_getaddrinfo_result(

@@ -3,11 +3,12 @@ from __future__ import annotations
 import contextlib
 import functools
 import inspect
+import sys
 import threading
 from collections.abc import Awaitable, Callable, Coroutine, Generator, Iterable, Sequence
 from socket import AF_INET, AF_INET6, IPPROTO_TCP, IPPROTO_UDP, SOCK_DGRAM, SOCK_STREAM
 from types import TracebackType
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 
 import pytest
 
@@ -19,6 +20,8 @@ if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
 _DEFAULT_FAMILIES: Sequence[int] = (AF_INET6, AF_INET)
+
+SHOULD_REUSE_ADDRESS_ON_CURRENT_PLATFORM: Final[bool] = sys.platform != "win32"
 
 
 class _LockMixin:
