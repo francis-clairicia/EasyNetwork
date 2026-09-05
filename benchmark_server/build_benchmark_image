@@ -26,7 +26,7 @@ SUPPORTED_PYTHON_VERSIONS = {
     "3.14": "3.14.7",
 }
 
-SUPPORTED_PYTHON_FREETHREADED_VERSIONS = ["3.13t", "3.14t"]
+SUPPORTED_PYTHON_FREETHREADED_VERSIONS = ["3.14t"]
 
 
 def _build_sdist_for_docker_image() -> Path:

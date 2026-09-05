@@ -77,7 +77,7 @@ impl TestReport {
         }
 
         let mut per_worker_data: HashMap<WorkerID, HashMap<Duration, Vec<f64>>> = Default::default();
-        const RESOLUTION: u64 = 2;
+        const RESOLUTION: u64 = 5;
 
         for request_report in &self.times_per_request {
             per_worker_data

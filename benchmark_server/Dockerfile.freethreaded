@@ -19,6 +19,11 @@ ENV PYTHON_GIL=0
 
 RUN pip install -U pip
 
+# Install dependencies prior to copy scripts
+RUN mkdir -p /usr/src/servers
+COPY servers/requirements.txt /usr/src/servers/requirements.txt
+RUN pip install -r /usr/src/servers/requirements.txt
+
 COPY servers /usr/src/servers
 
 ARG EASYNETWORK_SDIST
