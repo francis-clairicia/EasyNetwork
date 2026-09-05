@@ -316,6 +316,9 @@ class ThreadedTCPNetworkServer[Request, Response](
             client_address = new_socket_address(client_address, lowlevel_client.extra(INETSocketAttribute.family))
             client = _ConnectedClientAPI(client_address, lowlevel_client)
 
+            # Explicit abort with high-level client object for thread-safety.
+            client_exit_stack.callback(client.abort)
+
             client_exit_stack.enter_context(
                 _base.ClientErrorHandler(
                     logger=self.logger,
@@ -336,7 +339,6 @@ class ThreadedTCPNetworkServer[Request, Response](
 
             self.logger.log(self.__client_connection_log_level, "Accepted new connection (address = %s)", client_address)
             client_exit_stack.callback(self.logger.log, self.__client_connection_log_level, "%s disconnected", client_address)
-            client_exit_stack.callback(client._on_disconnect)
 
             try:
                 yield client
@@ -390,7 +392,10 @@ class _ConnectedClientAPI[Response](BlockingStreamClient[Response]):
         self.__client: _stream_server.ConnectedStreamClient[Response] = client
         self.__closing = threading.Event()
         self.__send_lock = threading.Lock()
-        self.__proxy: SocketProxy = SocketProxy(client.extra(INETSocketAttribute.socket))
+        self.__proxy: SocketProxy = SocketProxy(
+            client.extra(INETSocketAttribute.socket),
+            lock=_utils.make_callback(self.__simple_attribute_return, self.__send_lock),
+        )
         self.__address: SocketAddress = address
 
         local_address = new_socket_address(client.extra(INETSocketAttribute.sockname), client.extra(INETSocketAttribute.family))
@@ -415,11 +420,6 @@ class _ConnectedClientAPI[Response](BlockingStreamClient[Response]):
     @override
     def is_closing(self) -> bool:
         return self.__closing.is_set()
-
-    def _on_disconnect(self) -> None:
-        self.__closing.set()
-        with self.__send_lock:  # If self.send_packet() took the lock, wait for it to finish
-            pass
 
     @override
     def abort(self) -> None:
