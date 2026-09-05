@@ -8,13 +8,19 @@ import pathlib
 import ssl
 import sys
 from collections.abc import AsyncGenerator, Generator
-from typing import Any, Literal
+from typing import Any, Literal, assert_never
 
 from easynetwork.protocol import BufferedStreamProtocol, StreamProtocol
 from easynetwork.serializers.abc import BufferedIncrementalPacketSerializer
 from easynetwork.serializers.base_stream import AutoSeparatedPacketSerializer
-from easynetwork.servers.handlers import AsyncStreamClient, AsyncStreamRequestHandler
+from easynetwork.servers.handlers import (
+    AsyncStreamClient,
+    AsyncStreamRequestHandler,
+    BlockingStreamClient,
+    BlockingStreamRequestHandler,
+)
 from easynetwork.servers.standalone_tcp import StandaloneTCPNetworkServer
+from easynetwork.servers.threaded_tcp import ThreadedTCPNetworkServer
 
 ROOT_DIR = pathlib.Path(__file__).parent
 
@@ -49,17 +55,24 @@ class LineSerializer(AutoSeparatedPacketSerializer[bytes, bytes]):
         return data
 
 
-class EchoRequestHandler(AsyncStreamRequestHandler[Any, Any]):
+class AsyncEchoRequestHandler(AsyncStreamRequestHandler[Any, Any]):
     async def handle(self, client: AsyncStreamClient[Any]) -> AsyncGenerator[None, Any]:
         request: Any = yield
         await client.send_packet(request)
 
 
-class EchoRequestHandlerInnerLoop(AsyncStreamRequestHandler[Any, Any]):
+class AsyncEchoRequestHandlerInnerLoop(AsyncStreamRequestHandler[Any, Any]):
     async def handle(self, client: AsyncStreamClient[Any]) -> AsyncGenerator[None, Any]:
         while True:
             request: Any = yield
             await client.send_packet(request)
+
+
+class BlockingEchoRequestHandler(BlockingStreamRequestHandler[Any, Any]):
+    def handle(self, client: BlockingStreamClient[Any]) -> Generator[None, Any]:
+        while True:
+            request: Any = yield
+            client.send_packet(request)
 
 
 def _get_runner_and_options_from_arg(
@@ -77,18 +90,34 @@ def _get_runner_and_options_from_arg(
         case "trio":
             print("using trio")
             return ("trio", {})
+        case _:
+            assert_never(runner)
+
+
+def _get_worker_strategy_from_arg(
+    runner: Literal["threaded_clients", "threaded_requests"],
+) -> Literal["clients", "requests"]:
+    match runner:
+        case "threaded_clients":
+            print("using thread pool (clients)")
+            return "clients"
+        case "threaded_requests":
+            print("using thread pool (requests)")
+            return "requests"
+        case _:
+            assert_never(runner)
 
 
 def create_tcp_server(
     *,
     port: int,
     over_ssl: bool,
-    runner: Literal["asyncio", "uvloop", "trio"],
+    runner: Literal["asyncio", "uvloop", "trio", "threaded_clients", "threaded_requests"],
     buffered: bool,
     readline: bool,
     context_reuse: bool,
-) -> StandaloneTCPNetworkServer[Any, Any]:
-    backend, options = _get_runner_and_options_from_arg(runner)
+    concurrency: int | None,
+) -> StandaloneTCPNetworkServer[Any, Any] | ThreadedTCPNetworkServer[Any, Any]:
     ssl_context: ssl.SSLContext | None = None
     if over_ssl:
         ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
@@ -100,6 +129,8 @@ def create_tcp_server(
         ssl_context.verify_mode = ssl.CERT_NONE
     if buffered:
         print("with buffered serializer")
+
+    context_reuse |= runner.startswith("threaded_")
     if context_reuse:
         print("with context reuse")
 
@@ -113,16 +144,36 @@ def create_tcp_server(
         protocol = BufferedStreamProtocol(serializer)
     else:
         protocol = StreamProtocol(serializer)
-    return StandaloneTCPNetworkServer(
-        None,
-        port,
-        protocol,
-        EchoRequestHandlerInnerLoop() if context_reuse else EchoRequestHandler(),
-        ssl=ssl_context,
-        backend=backend,
-        runner_options=options,
-        max_recv_size=65536,  # Default buffer limit of asyncio streams
-    )
+
+    max_recv_size: int = 65536  # Default buffer limit of asyncio streams
+    match runner:
+        case "threaded_clients" | "threaded_requests":
+            if concurrency:
+                print(f"with concurrency : {concurrency}")
+            return ThreadedTCPNetworkServer(
+                None,
+                port,
+                protocol,
+                BlockingEchoRequestHandler(),
+                ssl=ssl_context,
+                max_nb_workers=concurrency,
+                worker_strategy=_get_worker_strategy_from_arg(runner),
+                max_recv_size=max_recv_size,
+            )
+        case _:
+            if concurrency is not None:
+                sys.exit("'concurrency' parameter not handled by asynchronous servers.")
+            backend, options = _get_runner_and_options_from_arg(runner)
+            return StandaloneTCPNetworkServer(
+                None,
+                port,
+                protocol,
+                AsyncEchoRequestHandlerInnerLoop() if context_reuse else AsyncEchoRequestHandler(),
+                ssl=ssl_context,
+                backend=backend,
+                runner_options=options,
+                max_recv_size=max_recv_size,
+            )
 
 
 def main() -> None:
@@ -169,10 +220,20 @@ def main() -> None:
         dest="gc_enabled",
         action="store_false",
     )
+    parser.add_argument(
+        "-c",
+        "--concurrency",
+        dest="concurrency",
+        type=int,
+        default=None,
+        help="Maximum number of concurrent threads",
+    )
 
     runner_parser = parser.add_mutually_exclusive_group()
     runner_parser.add_argument("--uvloop", dest="runner", action="store_const", const="uvloop")
     runner_parser.add_argument("--trio", dest="runner", action="store_const", const="trio")
+    runner_parser.add_argument("--threaded-clients", dest="runner", action="store_const", const="threaded_clients")
+    runner_parser.add_argument("--threaded-requests", dest="runner", action="store_const", const="threaded_requests")
     runner_parser.set_defaults(runner="asyncio")
 
     args = parser.parse_args()
@@ -183,6 +244,7 @@ def main() -> None:
 
     print(f"Python version: {sys.version}")
     print(f"GC enabled: {gc.isenabled()}")
+    print(f"GIL enabled: {getattr(sys, "_is_gil_enabled", lambda: True)()}")
 
     with create_tcp_server(
         port=args.port,
@@ -191,6 +253,7 @@ def main() -> None:
         buffered=args.buffered,
         readline=args.readline,
         context_reuse=args.context_reuse,
+        concurrency=args.concurrency,
     ) as server:
         return server.serve_forever()
 
