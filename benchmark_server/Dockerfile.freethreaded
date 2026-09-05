@@ -1,8 +1,12 @@
-ARG PYPA_BUILD_VERSION=latest
-FROM quay.io/pypa/manylinux_2_34_x86_64:$PYPA_BUILD_VERSION
+FROM ghcr.io/astral-sh/uv:0.12-trixie-slim
 
-ARG PYTHON_VERSION=cp314
-ENV PATH="/opt/python/${PYTHON_VERSION}-${PYTHON_VERSION}t/bin:$PATH"
+ENV UV_NO_CACHE=1
+ENV UV_NO_CONFIG=1
+ENV UV_PYTHON_INSTALL_DIR=/opt/uv-python
+
+ARG PYTHON_VERSION=3.14
+RUN uv python install --no-bin --compile-bytecode "${PYTHON_VERSION}t" && uv venv /opt/venv --seed --python "${PYTHON_VERSION}t"
+ENV PATH="/opt/venv/bin:$PATH"
 
 # This means 'do not warn about it' :)
 ENV PIP_ROOT_USER_ACTION=ignore
