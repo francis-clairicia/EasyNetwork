@@ -1288,7 +1288,7 @@ class _RequestReceiver[Request](_BaseRequestReceiver):
 
         if not data:
             del ancdata
-            raise StopAsyncIteration
+            raise StopIteration
 
         try:
             try:
@@ -1372,7 +1372,7 @@ class _BufferedRequestReceiver[Request](_BaseRequestReceiver):
 
         if not nbytes:
             del ancdata
-            raise StopAsyncIteration
+            raise StopIteration
 
         try:
             ancillary_data_params.data_received(ancdata)
