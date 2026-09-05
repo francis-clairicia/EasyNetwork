@@ -27,7 +27,6 @@ import inspect
 import logging
 from collections.abc import AsyncGenerator, Callable, Generator, Hashable
 from contextlib import AbstractAsyncContextManager, AbstractContextManager, AsyncExitStack, ExitStack
-from typing import assert_never
 
 from ..lowlevel import _utils
 from ..lowlevel.api_async.servers import datagram as _async_datagram_server, stream as _async_stream_server
@@ -122,7 +121,12 @@ def build_lowlevel_stream_server_handler[*VarArgs, Request, Response](
                     await _on_connection_hook.aclose()
             else:
                 assert inspect.isawaitable(_on_connection_hook)  # nosec assert_used
-                await _on_connection_hook
+                try:
+                    await _on_connection_hook
+                except BaseException as exc:
+                    # Remove await frame
+                    _utils.remove_traceback_frames_in_place(exc, 1)
+                    raise
             del _on_connection_hook
 
             async def disconnect_client() -> None:
@@ -280,17 +284,13 @@ def build_lowlevel_blocking_stream_server_handler[*VarArgs, Request, Response](
                 # Initialization failed, but must not raise an exception.
                 return
 
-            request_handler_generator: Generator[RecvParams | None, Request]
-            request: Request | None
-            recv_params: RecvParams | None
-
-            match request_handler.on_connection(client):
-                case None:
-                    pass
-                case Generator() as request_handler_generator:
+            try:
+                if (request_handler_generator := request_handler.on_connection(client)) is not None:
                     yield from request_handler_generator
-                case _handler:
-                    assert_never(_handler)
+            except BaseException as exc:
+                # Remove "yield from" frame
+                _utils.remove_traceback_frames_in_place(exc, 1)
+                raise
 
             def disconnect_client() -> None:
                 try:
@@ -302,39 +302,14 @@ def build_lowlevel_blocking_stream_server_handler[*VarArgs, Request, Response](
 
             del request_handler_exit_stack
 
-            new_request_handler = request_handler.handle
-            client_is_closing = client.is_closing
-
-            while not client_is_closing():
-                request_handler_generator = new_request_handler(client)
-                try:
-                    recv_params = next(request_handler_generator)
-                except StopAsyncIteration:
-                    client.abort()
-                    return
-                else:
-                    while True:
-                        try:
-                            try:
-                                request = yield recv_params
-                            except GeneratorExit:  # pragma: no cover
-                                raise
-                            except BaseException as exc:
-                                del recv_params
-                                recv_params = request_handler_generator.throw(exc)
-                            else:
-                                del recv_params
-                                recv_params = request_handler_generator.send(request)
-                            finally:
-                                request = None
-                        except StopAsyncIteration:
-                            break
-                        except BaseException as exc:
-                            # Remove asend()/athrow() frame
-                            _utils.remove_traceback_frames_in_place(exc, 1)
-                            raise
-                finally:
-                    request_handler_generator.close()
+            try:
+                yield from request_handler.handle(client)
+            except BaseException as exc:
+                # Remove "yield from" frame
+                _utils.remove_traceback_frames_in_place(exc, 1)
+                raise
+            else:
+                client.close()
 
     return handler
 

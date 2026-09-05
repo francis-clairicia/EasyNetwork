@@ -25,13 +25,15 @@ __all__ = [
 import concurrent.futures
 import contextlib
 import dataclasses
+import itertools
 import logging
+import socket as _socket
 import sys
 import threading as _threading
 from abc import abstractmethod
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from types import TracebackType
-from typing import TYPE_CHECKING, Any, Literal, NoReturn, Protocol
+from typing import TYPE_CHECKING, Any, Literal, NoReturn, Protocol, Self, override
 
 from ..exceptions import ClientClosedError, ServerAlreadyRunning, ServerClosedError
 from ..lowlevel import _utils, constants
@@ -50,6 +52,32 @@ class _SupportsAclose(Protocol):
     def is_closing(self) -> bool: ...
     @abstractmethod
     def aclose(self) -> Awaitable[object]: ...
+
+
+class _SupportsShutdownClose(Protocol):
+    @abstractmethod
+    def shutdown(self, timeout: float | None = ..., /) -> None: ...
+    @abstractmethod
+    def is_closed(self) -> bool: ...
+    @abstractmethod
+    def close(self) -> object: ...
+
+
+@dataclasses.dataclass(repr=False, eq=False, frozen=True, slots=True)
+class _BindServer(contextlib.AbstractContextManager[None, None]):
+    attach: Callable[[], None]
+    detach: Callable[[], None]
+
+    def __enter__(self) -> None:
+        self.attach()
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        self.detach()
 
 
 ##############################################################################################################
@@ -112,16 +140,38 @@ class BaseStandaloneNetworkServerImpl[AsyncServer: AbstractAsyncNetworkServer](A
     ) -> R | D:
         return self._run_sync_or_else(f, lambda: default)
 
+    @override
+    def __enter__(self) -> Self:
+        return self
+
+    @override
     @_utils.inherit_doc(AbstractNetworkServer)
     def is_serving(self) -> bool:
         return self._run_sync_or(lambda portal, server: portal.run_sync(server.is_serving), False)
 
+    @override
+    @_utils.inherit_doc(AbstractNetworkServer)
+    def is_listening(self) -> bool:
+        """
+        Checks whether the server is up. Thread-safe.
+        """
+        return self._run_sync_or(lambda portal, server: portal.run_sync(server.is_listening), False)
+
+    @override
+    def server_activate(self) -> None:  # pragma: no cover
+        """
+        This method does not work for asynchronous server wrappers.
+        """
+        raise NotImplementedError("Unable to activate servers before calling serve_forever() method.")
+
+    @override
     @_utils.inherit_doc(AbstractNetworkServer)
     def server_close(self) -> None:
         with self.__close_lock.get(), contextlib.ExitStack() as stack:
             stack.callback(self.__is_closed.set)
             self._run_sync_or(lambda portal, server: portal.run_coroutine(server.server_close), None)
 
+    @override
     @_utils.inherit_doc(AbstractNetworkServer)
     def shutdown(self, timeout: float | None = None) -> None:
         with self.__bootstrap_lock.get():
@@ -143,6 +193,7 @@ class BaseStandaloneNetworkServerImpl[AsyncServer: AbstractAsyncNetworkServer](A
                     timeout = elapsed.recompute_timeout(timeout)
         self.__is_shutdown.wait(timeout)
 
+    @override
     def serve_forever(
         self,
         *,
@@ -207,28 +258,215 @@ class BaseStandaloneNetworkServerImpl[AsyncServer: AbstractAsyncNetworkServer](A
             backend.bootstrap(serve_forever, runner_options=runner_options)
 
 
+class BaseThreadedNetworkServerImpl[LowLevelServer: _SupportsShutdownClose, Address](AbstractNetworkServer):
+    __slots__ = (
+        "__servers",
+        "__servers_factory_cb",
+        "__initialize_service_cb",
+        "__lowlevel_serve_cb",
+        "__max_nb_workers",
+        "__server_activation_lock",
+        "__is_shutdown",
+        "__mainloop_stop",
+        "__server_tasks",
+        "__active_tasks",
+        "__logger",
+    )
+
+    def __init__(
+        self,
+        *,
+        servers_factory: Callable[[], Sequence[LowLevelServer]],
+        initialize_service: Callable[[contextlib.ExitStack], None],
+        lowlevel_serve: Callable[[LowLevelServer, concurrent.futures.ThreadPoolExecutor], None],
+        max_nb_workers: int | None,
+        logger: logging.Logger,
+    ) -> None:
+        super().__init__()
+
+        self.__servers_factory_cb: Callable[[], Sequence[LowLevelServer]] | None = servers_factory
+        self.__initialize_service_cb: Callable[[contextlib.ExitStack], None] = initialize_service
+        self.__lowlevel_serve_cb: Callable[[LowLevelServer, concurrent.futures.ThreadPoolExecutor], None] = lowlevel_serve
+
+        self.__max_nb_workers: int | None = max_nb_workers
+        self.__server_activation_lock = _threading.RLock()
+
+        self.__servers: list[LowLevelServer] = []
+        self.__is_shutdown = _threading.Event()
+        self.__is_shutdown.set()
+        self.__mainloop_stop = _threading.Event()
+        self.__mainloop_stop.set()
+        self.__server_tasks: list[concurrent.futures.Future[Any]] = []
+        self.__active_tasks = _utils.AtomicUIntCounter()
+        self.__logger: logging.Logger = logger
+
+    @override
+    @_utils.inherit_doc(AbstractNetworkServer)
+    def is_serving(self) -> bool:
+        with self.__server_activation_lock:
+            server_tasks = self.__server_tasks.copy()
+            return bool(server_tasks) and all(not t.done() for t in server_tasks) and self.is_listening()
+
+    @override
+    @_utils.inherit_doc(AbstractNetworkServer)
+    def is_listening(self) -> bool:
+        with self.__server_activation_lock:
+            return bool(self.__servers) and all(not server.is_closed() for server in self.__servers)
+
+    @override
+    def server_activate(self) -> None:
+        """
+        Opens all listeners. Thread-safe.
+
+        This method is idempotent. Further calls to :meth:`is_listening` will return :data:`True`.
+
+        Raises:
+            ServerClosedError: The server is closed.
+        """
+        with self.__server_activation_lock:
+            if (servers_factory := self.__servers_factory_cb) is None:
+                raise ServerClosedError("Closed server")
+            if self.__servers:
+                return
+            self.__servers[:] = servers_factory()
+            if not self.__servers:
+                raise OSError("empty listeners list")
+
+    @override
+    @_utils.inherit_doc(AbstractNetworkServer)
+    def server_close(self) -> None:
+        with contextlib.ExitStack() as exit_stack:
+            lock_stack = exit_stack.enter_context(contextlib.ExitStack())
+
+            with self.__server_activation_lock:
+                self.__servers_factory_cb = None
+                exit_stack.callback(self.__servers.clear)
+                for server in self.__servers:
+                    server.shutdown(0)
+                    exit_stack.enter_context(contextlib.closing(server))
+
+                # Take the lock before closing servers
+                exit_stack.callback(lock_stack.enter_context, self.__server_activation_lock)
+                server_tasks = self.__server_tasks.copy()
+
+            concurrent.futures.wait(server_tasks)
+
+    @override
+    @_utils.inherit_doc(AbstractNetworkServer)
+    def shutdown(self, timeout: float | None = None) -> None:
+        with contextlib.ExitStack() as exit_stack:
+            with self.__server_activation_lock:
+                executor = concurrent.futures.ThreadPoolExecutor(max_workers=len(self.__servers) or 1)
+                exit_stack.enter_context(executor)
+                for server in self.__servers:
+                    executor.submit(server.shutdown, timeout)
+                executor.shutdown(wait=False, cancel_futures=False)
+            self.__mainloop_stop.set()
+            self.__is_shutdown.wait(timeout)
+
+    @_utils.inherit_doc(AbstractNetworkServer)
+    def serve_forever(self, *, is_up_event: SupportsEventSet | None = None) -> None:
+        with contextlib.ExitStack() as server_exit_stack:
+
+            with self.__server_activation_lock:
+                # Wake up server
+                if not self.__is_shutdown.is_set():
+                    raise ServerAlreadyRunning("Server is already running")
+                self.__is_shutdown = is_shutdown = _threading.Event()
+                server_exit_stack.callback(is_shutdown.set)
+                self.__mainloop_stop = mainloop_stop = _threading.Event()
+                server_exit_stack.callback(mainloop_stop.set)
+                ################
+
+                # Bind and activate
+                self.server_activate()
+                assert len(self.__servers) > 0  # nosec assert_used
+                ###################
+
+                # Final teardown
+                server_exit_stack.callback(self.__logger.info, "Server stopped")
+                ################
+
+                # Initialize service
+                initialize_service = self.__initialize_service_cb
+                initialize_service(server_exit_stack)
+                ############################
+
+                # Setup task groups
+                server_exit_stack.callback(self.__server_tasks.clear)
+                requests_executor = server_exit_stack.enter_context(
+                    concurrent.futures.ThreadPoolExecutor(thread_name_prefix="req-hdlr", max_workers=self.__max_nb_workers)
+                )
+                listeners_executor = server_exit_stack.enter_context(
+                    concurrent.futures.ThreadPoolExecutor(thread_name_prefix="listener", max_workers=len(self.__servers))
+                )
+                server_exit_stack.callback(self.__logger.info, "Server loop break, waiting for remaining tasks...")
+                ##################
+
+                # Enable listener
+                self.__server_tasks = [
+                    listeners_executor.submit(self.__serve, server, requests_executor) for server in self.__servers
+                ]
+                self.__logger.info("Start serving at %s", ", ".join(map(str, self.get_addresses())))
+                #################
+
+            # Server is up
+            if is_up_event is not None:
+                is_up_event.set()
+            ##############
+
+            # Main loop
+            try:
+                mainloop_stop.wait()
+            except BaseException:
+                self.shutdown(0)
+                raise
+
+    @abstractmethod
+    def get_addresses(self) -> Sequence[Address]:
+        """
+        Returns all interfaces to which the server is bound.
+
+        Returns:
+            A sequence of socket address.
+            If the server is not serving (:meth:`is_serving` returns :data:`False`), an empty sequence is returned.
+        """
+        raise NotImplementedError
+
+    def _bind_server(self) -> _BindServer:
+        return _BindServer(self.__attach_server, self.__detach_server)
+
+    def __serve(
+        self,
+        server: LowLevelServer,
+        executor: concurrent.futures.ThreadPoolExecutor,
+    ) -> None:
+        lowlevel_serve = self.__lowlevel_serve_cb
+        with _BindServer(self.__attach_server, self.__detach_server):
+            lowlevel_serve(server, executor)
+
+    def __attach_server(self) -> None:
+        self.__active_tasks.increment()
+
+    def __detach_server(self) -> None:
+        if self.__active_tasks.decrement() == 0:
+            self.__mainloop_stop.set()
+
+    def _with_lowlevel_servers[R](self, f: Callable[[Sequence[LowLevelServer]], R]) -> R:
+        with self.__server_activation_lock:
+            servers = tuple(self.__servers)
+            return f(servers)
+
+    @property
+    def logger(self) -> logging.Logger:
+        return self.__logger
+
+
 ##############################################################################################################
 #
 # ASYNCHRONOUS SERVER
 #
 ##############################################################################################################
-
-
-@dataclasses.dataclass(repr=False, eq=False, frozen=True, slots=True)
-class _BindServer(contextlib.AbstractContextManager[None, None]):
-    attach: Callable[[], None]
-    detach: Callable[[], None]
-
-    def __enter__(self) -> None:
-        self.attach()
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_value: BaseException | None,
-        traceback: TracebackType | None,
-    ) -> None:
-        self.detach()
 
 
 class BaseAsyncNetworkServerImpl[LowLevelServer: _SupportsAclose, Address](AbstractAsyncNetworkServer):
@@ -280,14 +518,17 @@ class BaseAsyncNetworkServerImpl[LowLevelServer: _SupportsAclose, Address](Abstr
         self.__logger: logging.Logger = logger
         self.__active_tasks: int = 0
 
+    @override
     @_utils.inherit_doc(AbstractAsyncNetworkServer)
     def is_serving(self) -> bool:
         return bool(self.__server_tasks) and all(not t.done() for t in self.__server_tasks) and self.is_listening()
 
+    @override
     @_utils.inherit_doc(AbstractAsyncNetworkServer)
     def is_listening(self) -> bool:
         return bool(self.__servers) and all(not server.is_closing() for server in self.__servers)
 
+    @override
     async def server_activate(self) -> None:
         """
         Opens all listeners.
@@ -316,6 +557,7 @@ class BaseAsyncNetworkServerImpl[LowLevelServer: _SupportsAclose, Address](Abstr
                 raise OSError("empty listeners list")
             self.__servers[:] = listeners
 
+    @override
     @_utils.inherit_doc(AbstractAsyncNetworkServer)
     async def server_close(self) -> None:
         async with contextlib.AsyncExitStack() as exit_stack:
@@ -344,12 +586,14 @@ class BaseAsyncNetworkServerImpl[LowLevelServer: _SupportsAclose, Address](Abstr
     async def __close_server(cls, server: LowLevelServer) -> None:
         await server.aclose()
 
+    @override
     @_utils.inherit_doc(AbstractAsyncNetworkServer)
     async def shutdown(self) -> None:
         if self.__server_run_scope is not None:
             self.__server_run_scope.cancel()
         await self.__is_shutdown.wait()
 
+    @override
     @_utils.inherit_doc(AbstractAsyncNetworkServer)
     async def serve_forever(self, *, is_up_event: SupportsEventSet | None = None) -> None:
         async with contextlib.AsyncExitStack() as server_exit_stack:
@@ -445,6 +689,7 @@ class BaseAsyncNetworkServerImpl[LowLevelServer: _SupportsAclose, Address](Abstr
         servers = tuple(self.__servers)
         return f(servers)
 
+    @override
     @_utils.inherit_doc(AbstractAsyncNetworkServer)
     def backend(self) -> AsyncBackend:
         return self.__backend
@@ -452,6 +697,13 @@ class BaseAsyncNetworkServerImpl[LowLevelServer: _SupportsAclose, Address](Abstr
     @property
     def logger(self) -> logging.Logger:
         return self.__logger
+
+
+##############################################################################################################
+#
+# COMMON TOOLS
+#
+##############################################################################################################
 
 
 class ClientErrorHandler[Address]:
@@ -553,6 +805,26 @@ class ClientErrorHandler[Address]:
                 pass
             case _:  # pragma: no cover
                 logger.warning("Error in client task (during TLS handshake)", exc_info=exc)
+
+
+def resolve_listener_addresses(
+    hosts: Sequence[str | None],
+    port: int,
+    socktype: int,
+) -> Sequence[tuple[int, int, int, str, tuple[str, int] | tuple[str, int, int, int] | tuple[int, bytes]]]:
+    infos = set(
+        itertools.chain.from_iterable(
+            _socket.getaddrinfo(
+                host,
+                port,
+                _socket.AF_UNSPEC,
+                socktype,
+                flags=_socket.AI_PASSIVE | _socket.AI_ADDRCONFIG,
+            )
+            for host in hosts
+        )
+    )
+    return sorted(infos)
 
 
 def validate_max_recv_size(max_recv_size: int | None) -> int:

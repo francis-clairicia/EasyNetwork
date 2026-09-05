@@ -24,8 +24,6 @@ __all__ = [
 
 from typing import Literal, assert_never, cast
 
-import sniffio
-
 from .abc import AsyncBackend
 
 type BuiltinAsyncBackendLiteral = Literal["asyncio", "trio"]
@@ -74,6 +72,8 @@ def ensure_backend(backend: AsyncBackend | BuiltinAsyncBackendLiteral | None) ->
         RuntimeError: unknown async library, or not in async context
     """
     if backend is None:
+        import sniffio
+
         backend = cast(BuiltinAsyncBackendLiteral, sniffio.current_async_library())
 
     match backend:

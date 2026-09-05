@@ -7,6 +7,7 @@ import itertools
 import math
 import os
 import ssl
+import sys
 import threading
 import weakref
 from collections import deque
@@ -42,6 +43,7 @@ from easynetwork.lowlevel._utils import (
     remove_traceback_frames_in_place,
     replace_kwargs,
     set_reuseport,
+    should_listener_reuse_address_on_current_platform,
     validate_listener_hosts,
     validate_optional_timeout_delay,
     validate_timeout_delay,
@@ -760,6 +762,14 @@ def test____set_reuseport____not_supported____defined_but_not_implemented(
 
     # Assert
     mock_tcp_socket.setsockopt.assert_called_once_with(SOL_SOCKET, SO_REUSEPORT, True)
+
+
+def test____should_listener_reuse_address_on_current_platform____windows() -> None:
+    # Arrange
+    expected_result: bool = sys.platform != "win32"
+
+    # Act & Assert
+    assert should_listener_reuse_address_on_current_platform() is expected_result
 
 
 @pytest.mark.parametrize("host", ["", None], ids=repr)
