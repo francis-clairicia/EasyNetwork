@@ -21,17 +21,12 @@ import docker
 ROOT_DIR = Path(__file__).parent
 
 SUPPORTED_PYTHON_VERSIONS = {
-    # Free-threaded builds
-    "3.13t": "cp313",
-    "3.14t": "cp314",
-    # Normal builds
-    "3.12": "3.12.13",
-    "3.13": "3.13.14",
-    "3.14": "3.14.6",
+    "3.12": "3.12.14",
+    "3.13": "3.13.15",
+    "3.14": "3.14.7",
 }
 
-# Used for free-threaded benchmarks
-PYPA_BUILD_VERSION = "2026.08.29-1"
+SUPPORTED_PYTHON_FREETHREADED_VERSIONS = ["3.13t", "3.14t"]
 
 
 def _build_sdist_for_docker_image() -> Path:
@@ -67,11 +62,10 @@ def _build_docker_image(client: docker.DockerClient, sdist_path: Path, tag: str,
         f"--tag={tag}",
     ]
     buildargs = {
-        "PYTHON_VERSION": SUPPORTED_PYTHON_VERSIONS[python_version],
+        "PYTHON_VERSION": SUPPORTED_PYTHON_VERSIONS[python_version.removesuffix("t")],
         "EASYNETWORK_SDIST": os.fspath(sdist_path),
     }
     if python_version.endswith("t"):
-        buildargs["PYPA_BUILD_VERSION"] = PYPA_BUILD_VERSION
         docker_build_command_line += [f"--file={ROOT_DIR / 'Dockerfile.freethreaded'}"]
     docker_build_command_line += chain.from_iterable(["--build-arg", f"{key}={value}"] for key, value in buildargs.items())
     docker_build_command_line += [os.fspath(ROOT_DIR)]
@@ -96,16 +90,14 @@ def main() -> None:
         "-p",
         "--python-version",
         default=list(SUPPORTED_PYTHON_VERSIONS)[-1],
-        choices=list(SUPPORTED_PYTHON_VERSIONS),
+        choices=list(SUPPORTED_PYTHON_VERSIONS) + SUPPORTED_PYTHON_FREETHREADED_VERSIONS,
         help="The CPython version to use for the servers (in major.minor format)",
     )
     args = parser.parse_args()
 
     python_version: str = args.python_version
     if python_version.endswith("t"):
-        print(
-            f"Selected Python version: {python_version} (Docker image tag: quay.io/pypa/manylinux_2_34_x86_64:{PYPA_BUILD_VERSION})"
-        )
+        print(f"Selected Python version: {python_version} (Docker image tag: ghcr.io/astral-sh/uv)")
     else:
         print(f"Selected Python version: {python_version} (Docker image tag: python:{SUPPORTED_PYTHON_VERSIONS[python_version]})")
 
