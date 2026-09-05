@@ -12,7 +12,10 @@
 # limitations under the License.
 #
 #
-"""Multi-threaded TCP Network server implementation module."""
+"""Multi-threaded TCP Network server implementation module.
+
+.. versionadded:: NEXT_VERSION
+"""
 
 from __future__ import annotations
 
@@ -55,7 +58,9 @@ class ThreadedTCPNetworkServer[Request, Response](
     _base.BaseThreadedNetworkServerImpl[_stream_server.SelectorStreamServer[Request, Response], SocketAddress],
 ):
     """
-    An asynchronous network server for TCP connections.
+    A multi-threaded network server for TCP connections.
+
+    .. versionadded:: NEXT_VERSION
     """
 
     __slots__ = (
@@ -384,7 +389,7 @@ class _ConnectedClientAPI[Response](BlockingStreamClient[Response]):
     ) -> None:
         self.__client: _stream_server.ConnectedStreamClient[Response] = client
         self.__closing = threading.Event()
-        self.__send_lock = threading.RLock()
+        self.__send_lock = threading.Lock()
         self.__proxy: SocketProxy = SocketProxy(client.extra(INETSocketAttribute.socket))
         self.__address: SocketAddress = address
 
