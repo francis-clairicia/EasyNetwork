@@ -70,7 +70,7 @@ def _build_docker_image(client: docker.DockerClient, sdist_path: Path, tag: str,
     docker_build_command_line += chain.from_iterable(["--build-arg", f"{key}={value}"] for key, value in buildargs.items())
     docker_build_command_line += [os.fspath(ROOT_DIR)]
 
-    result = subprocess.run(docker_build_command_line)
+    result = subprocess.run(docker_build_command_line, stderr=subprocess.STDOUT)
     if result.returncode != 0:
         sys.exit(result.returncode)
 
