@@ -1,6 +1,6 @@
 ARG PYTHON_VERSION=3.14
 
-FROM python:$PYTHON_VERSION
+FROM python:${PYTHON_VERSION}-slim
 
 # This means 'do not warn about it' :)
 ENV PIP_ROOT_USER_ACTION=ignore
