@@ -249,6 +249,88 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
         "client": _tcp_echoclient,
     },
     {
+        "name": "tcpecho-easynetwork-threaded-clients",
+        "title": "TCP echo server (easynetwork+threads('clients' strategy))",
+        "server": (
+            *_python_cmd,
+            "/usr/src/servers/easynetwork_tcp_echoserver.py",
+            f"--port={EXPOSED_PORT}",
+            "--threaded-clients",
+            "--disable-gc",
+        ),
+        "ping": {
+            "server_address": _tcp_server_address,
+            "ping_request": b"ping\n",
+            "socket_type": SOCK_STREAM,
+        },
+        "client": _tcp_echoclient,
+        "server_spec": {
+            "need_concurrency_value": True,
+        },
+    },
+    {
+        "name": "tcpecho-easynetwork-threaded-requests",
+        "title": "TCP echo server (easynetwork+threads('requests' strategy))",
+        "server": (
+            *_python_cmd,
+            "/usr/src/servers/easynetwork_tcp_echoserver.py",
+            f"--port={EXPOSED_PORT}",
+            "--threaded-requests",
+            "--disable-gc",
+        ),
+        "ping": {
+            "server_address": _tcp_server_address,
+            "ping_request": b"ping\n",
+            "socket_type": SOCK_STREAM,
+        },
+        "client": _tcp_echoclient,
+        "server_spec": {
+            "need_concurrency_value": True,
+        },
+    },
+    {
+        "name": "tcpecho-easynetwork-buffered-threaded-clients",
+        "title": "TCP echo server (easynetwork+buffered+threads('clients' strategy))",
+        "server": (
+            *_python_cmd,
+            "/usr/src/servers/easynetwork_tcp_echoserver.py",
+            f"--port={EXPOSED_PORT}",
+            "--threaded-clients",
+            "--buffered",
+            "--disable-gc",
+        ),
+        "ping": {
+            "server_address": _tcp_server_address,
+            "ping_request": b"ping\n",
+            "socket_type": SOCK_STREAM,
+        },
+        "client": _tcp_echoclient,
+        "server_spec": {
+            "need_concurrency_value": True,
+        },
+    },
+    {
+        "name": "tcpecho-easynetwork-buffered-threaded-requests",
+        "title": "TCP echo server (easynetwork+buffered+threads('requests' strategy))",
+        "server": (
+            *_python_cmd,
+            "/usr/src/servers/easynetwork_tcp_echoserver.py",
+            f"--port={EXPOSED_PORT}",
+            "--threaded-requests",
+            "--buffered",
+            "--disable-gc",
+        ),
+        "ping": {
+            "server_address": _tcp_server_address,
+            "ping_request": b"ping\n",
+            "socket_type": SOCK_STREAM,
+        },
+        "client": _tcp_echoclient,
+        "server_spec": {
+            "need_concurrency_value": True,
+        },
+    },
+    {
         "name": "tcpecho-asyncio-sockets",
         "title": "TCP echo server (asyncio/sockets)",
         "server": (
@@ -1310,16 +1392,16 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
         "server": (
             *_python_cmd,
             "/usr/src/servers/test_selector_stream_server.py",
-            f"--path={UNIX_SOCKET_PATH}",
+            f"--port={EXPOSED_PORT}",
             "--strategy=clients",
             "--disable-gc",
         ),
         "ping": {
-            "server_address": _unix_stream_server_address,
+            "server_address": _tcp_server_address,
             "ping_request": b"ping\n",
             "socket_type": SOCK_STREAM,
         },
-        "client": _unix_stream_echoclient,
+        "client": _tcp_echoclient,
         "server_spec": {
             "need_concurrency_value": True,
         },
@@ -1330,16 +1412,16 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
         "server": (
             *_python_cmd,
             "/usr/src/servers/test_selector_stream_server.py",
-            f"--path={UNIX_SOCKET_PATH}",
+            f"--port={EXPOSED_PORT}",
             "--strategy=requests",
             "--disable-gc",
         ),
         "ping": {
-            "server_address": _unix_stream_server_address,
+            "server_address": _tcp_server_address,
             "ping_request": b"ping\n",
             "socket_type": SOCK_STREAM,
         },
-        "client": _unix_stream_echoclient,
+        "client": _tcp_echoclient,
         "server_spec": {
             "need_concurrency_value": True,
         },
@@ -1350,17 +1432,17 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
         "server": (
             *_python_cmd,
             "/usr/src/servers/test_selector_stream_server.py",
-            f"--path={UNIX_SOCKET_PATH}",
+            f"--port={EXPOSED_PORT}",
             "--strategy=clients",
             "--buffered",
             "--disable-gc",
         ),
         "ping": {
-            "server_address": _unix_stream_server_address,
+            "server_address": _tcp_server_address,
             "ping_request": b"ping\n",
             "socket_type": SOCK_STREAM,
         },
-        "client": _unix_stream_echoclient,
+        "client": _tcp_echoclient,
         "server_spec": {
             "need_concurrency_value": True,
         },
@@ -1371,17 +1453,17 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
         "server": (
             *_python_cmd,
             "/usr/src/servers/test_selector_stream_server.py",
-            f"--path={UNIX_SOCKET_PATH}",
+            f"--port={EXPOSED_PORT}",
             "--strategy=requests",
             "--buffered",
             "--disable-gc",
         ),
         "ping": {
-            "server_address": _unix_stream_server_address,
+            "server_address": _tcp_server_address,
             "ping_request": b"ping\n",
             "socket_type": SOCK_STREAM,
         },
-        "client": _unix_stream_echoclient,
+        "client": _tcp_echoclient,
         "server_spec": {
             "need_concurrency_value": True,
         },
@@ -1392,17 +1474,17 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
         "server": (
             *_python_cmd,
             "/usr/src/servers/test_selector_stream_server.py",
-            f"--path={UNIX_SOCKET_PATH}",
+            f"--port={EXPOSED_PORT}",
             "--readline",
             "--strategy=clients",
             "--disable-gc",
         ),
         "ping": {
-            "server_address": _unix_stream_server_address,
+            "server_address": _tcp_server_address,
             "ping_request": b"ping\n",
             "socket_type": SOCK_STREAM,
         },
-        "client": _unix_stream_readline_client,
+        "client": _tcp_echoclient,
         "server_spec": {
             "need_concurrency_value": True,
         },
@@ -1413,17 +1495,17 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
         "server": (
             *_python_cmd,
             "/usr/src/servers/test_selector_stream_server.py",
-            f"--path={UNIX_SOCKET_PATH}",
+            f"--port={EXPOSED_PORT}",
             "--readline",
             "--strategy=requests",
             "--disable-gc",
         ),
         "ping": {
-            "server_address": _unix_stream_server_address,
+            "server_address": _tcp_server_address,
             "ping_request": b"ping\n",
             "socket_type": SOCK_STREAM,
         },
-        "client": _unix_stream_readline_client,
+        "client": _tcp_echoclient,
         "server_spec": {
             "need_concurrency_value": True,
         },
@@ -1434,18 +1516,18 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
         "server": (
             *_python_cmd,
             "/usr/src/servers/test_selector_stream_server.py",
-            f"--path={UNIX_SOCKET_PATH}",
+            f"--port={EXPOSED_PORT}",
             "--readline",
             "--strategy=clients",
             "--buffered",
             "--disable-gc",
         ),
         "ping": {
-            "server_address": _unix_stream_server_address,
+            "server_address": _tcp_server_address,
             "ping_request": b"ping\n",
             "socket_type": SOCK_STREAM,
         },
-        "client": _unix_stream_readline_client,
+        "client": _tcp_echoclient,
         "server_spec": {
             "need_concurrency_value": True,
         },
@@ -1457,17 +1539,17 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             *_python_cmd,
             "/usr/src/servers/test_selector_stream_server.py",
             "--readline",
-            f"--path={UNIX_SOCKET_PATH}",
+            f"--port={EXPOSED_PORT}",
             "--strategy=requests",
             "--buffered",
             "--disable-gc",
         ),
         "ping": {
-            "server_address": _unix_stream_server_address,
+            "server_address": _tcp_server_address,
             "ping_request": b"ping\n",
             "socket_type": SOCK_STREAM,
         },
-        "client": _unix_stream_readline_client,
+        "client": _tcp_echoclient,
         "server_spec": {
             "need_concurrency_value": True,
         },
@@ -1478,15 +1560,15 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
         "server": (
             *_python_cmd,
             "/usr/src/servers/test_selector_datagram_server.py",
-            f"--path={UNIX_SOCKET_PATH}",
+            f"--port={EXPOSED_PORT}",
             "--disable-gc",
         ),
         "ping": {
-            "server_address": _unix_datagram_server_address,
+            "server_address": _udp_server_address,
             "ping_request": b"ping",
             "socket_type": SOCK_DGRAM,
         },
-        "client": _unix_datagram_echoclient,
+        "client": _udp_echoclient,
         "server_spec": {
             "need_concurrency_value": True,
         },
@@ -1497,16 +1579,16 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
         "server": (
             *_python_cmd,
             "/usr/src/servers/test_selector_datagram_server.py",
-            f"--path={UNIX_SOCKET_PATH}",
+            f"--port={EXPOSED_PORT}",
             "--client-ttl=2",
             "--disable-gc",
         ),
         "ping": {
-            "server_address": _unix_datagram_server_address,
+            "server_address": _udp_server_address,
             "ping_request": b"ping",
             "socket_type": SOCK_DGRAM,
         },
-        "client": _unix_datagram_echoclient,
+        "client": _udp_echoclient,
         "server_spec": {
             "need_concurrency_value": True,
         },
@@ -1738,6 +1820,12 @@ def main() -> None:
         help="a list of benchmarks to run (regular expressions are supported)",
     )
     parser.add_argument(
+        "-l",
+        "--list-only",
+        action="store_true",
+        help="Only print the benchmarks to be run and exit",
+    )
+    parser.add_argument(
         "-t",
         "--docker-image-tag",
         default="easynetwork/benchmark",
@@ -1795,6 +1883,13 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    benchmarks_to_execute = [b for b in BENCHMARKS_DEF if any(re.match(pattern, b["name"]) for pattern in args.benchmark)]
+
+    if args.list_only:
+        for benchmark in benchmarks_to_execute:
+            print(f"- {benchmark["name"]} ({benchmark["title"]})")
+        sys.exit(0)
+
     client = docker.from_env()
     image_tag: str = args.docker_image_tag
     concurrency: int = args.concurrency_level
@@ -1834,7 +1929,7 @@ def main() -> None:
 
     benchmarks_data_list: list[_BenchmarkData] = []
 
-    for benchmark in [b for b in BENCHMARKS_DEF if any(re.match(pattern, b["name"]) for pattern in args.benchmark)]:
+    for benchmark in benchmarks_to_execute:
         _print_benchmark_h1(benchmark["title"])
 
         with contextlib.ExitStack() as stack:

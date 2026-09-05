@@ -3,12 +3,9 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
-import contextlib
 import gc
 import logging
-import os
 import socket
-import stat
 import sys
 from collections.abc import Generator
 from typing import Any
@@ -19,18 +16,6 @@ from easynetwork.lowlevel.constants import DEFAULT_STREAM_BUFSIZE
 from easynetwork.protocol import BufferedStreamProtocol, StreamProtocol
 from easynetwork.serializers.abc import BufferedIncrementalPacketSerializer
 from easynetwork.serializers.base_stream import AutoSeparatedPacketSerializer
-
-
-@contextlib.contextmanager
-def _cleanup_socket_at_end(path: str) -> Generator[None]:
-    try:
-        yield
-    finally:
-        try:
-            if stat.S_ISSOCK(os.stat(path).st_mode):
-                os.remove(path)
-        except OSError:
-            pass
 
 
 class NoSerializer(BufferedIncrementalPacketSerializer[bytes, bytes, memoryview]):
@@ -69,9 +54,9 @@ def request_handler(client: ConnectedStreamClient[bytes]) -> Generator[None, byt
         client.send_packet(request)
 
 
-def create_unix_stream_server(
+def create_tcp_server(
     *,
-    path: str,
+    port: int,
     buffered: bool,
     readline: bool,
 ) -> SelectorStreamServer[bytes, bytes]:
@@ -89,8 +74,8 @@ def create_unix_stream_server(
     else:
         protocol = StreamProtocol(serializer)
 
-    listener_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    listener_sock.bind(path)
+    listener_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener_sock.bind(("0.0.0.0", port))
     listener_sock.listen(100)
 
     listener = SocketStreamListener(listener_sock)
@@ -116,9 +101,10 @@ def main() -> None:
     )
     parser.add_argument(
         "-p",
-        "--path",
-        dest="path",
-        default="/tmp/easynetwork.sock",
+        "--port",
+        dest="port",
+        type=int,
+        default=25000,
     )
     parser.add_argument(
         "--buffered",
@@ -160,17 +146,17 @@ def main() -> None:
 
     print(f"Python version: {sys.version}")
     print(f"GC enabled: {gc.isenabled()}")
+    print(f"GIL enabled: {getattr(sys, "_is_gil_enabled", lambda: True)()}")
 
     with (
-        _cleanup_socket_at_end(args.path),
-        create_unix_stream_server(
-            path=args.path,
+        create_tcp_server(
+            port=args.port,
             buffered=args.buffered,
             readline=args.readline,
         ) as server,
         concurrent.futures.ThreadPoolExecutor(max_workers=args.concurrency) as executor,
     ):
-        print(f"Start serving at {args.path} (pathname)")
+        print(f"Start serving at 0.0.0.0:{args.port}")
         print(f"-> Number of workers: {args.concurrency}")
         print(f"-> Worker strategy: {args.worker_strategy}")
         return server.serve(

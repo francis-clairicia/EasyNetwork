@@ -52,6 +52,8 @@ class AbstractNetworkServer(metaclass=ABCMeta):
     __slots__ = ("__weakref__",)
 
     def __enter__(self) -> Self:
+        """Calls :meth:`server_activate`."""
+        self.server_activate()
         return self
 
     def __exit__(
@@ -66,7 +68,7 @@ class AbstractNetworkServer(metaclass=ABCMeta):
     @abstractmethod
     def is_serving(self) -> bool:
         """
-        Checks whether the server is up and accepting new clients. Thread-safe.
+        Checks whether the server is up (:meth:`is_listening` returns :data:`True`) and accepting new clients. Thread-safe.
         """
         raise NotImplementedError
 
@@ -81,6 +83,25 @@ class AbstractNetworkServer(metaclass=ABCMeta):
         Raises:
             ServerClosedError: The server is closed.
             ServerAlreadyRunning: Another task already called :meth:`serve_forever`.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def is_listening(self) -> bool:
+        """
+        Checks whether the server is up. Thread-safe.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def server_activate(self) -> None:
+        """
+        Opens all listeners. Thread-safe.
+
+        This method MUST be idempotent. Further calls to :meth:`is_listening` will return :data:`True`.
+
+        Raises:
+            ServerClosedError: The server is closed.
         """
         raise NotImplementedError
 

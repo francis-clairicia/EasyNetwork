@@ -560,23 +560,18 @@ class BlockingStreamRequestHandler[Request, Response](metaclass=ABCMeta):
         It is a :term:`generator` function::
 
             def handle(self, client):
-                request = yield
+                while True:
+                    request = yield
 
-                # Do some stuff
-                ...
+                    # Do some stuff
+                    ...
 
-                client.send_packet(response)
+                    client.send_packet(response)
 
         :meth:`handle` can :keyword:`yield` whenever a request from the `client` is needed.
 
         The generator is started immediately after :meth:`on_connection`.
-        When the generator returns, a new generator is created and started immediately after.
-
-        The generator **does not** represent the client life time, ``client.close()`` must be called explicitly.
-
-        Note:
-            There is one exception: if the generator returns before the first :keyword:`yield` statement,
-            the connection is forcibly closed.
+        When the generator returns, the client is closed via ``client.close()``.
 
         Parameters:
             client: An interface to communicate with the remote endpoint.

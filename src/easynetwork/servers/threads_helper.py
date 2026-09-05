@@ -60,6 +60,10 @@ class NetworkServerThread(_threading.Thread):
 
         This method will raise a :exc:`RuntimeError` if called more than once on the same thread object.
         """
+        try:
+            self.__server.server_activate()
+        except NotImplementedError:
+            pass
         super().start()
         self.__is_up_event.wait()
 
