@@ -694,6 +694,9 @@ class SelectorDatagramServer[Request, Response, Address: Hashable](_transports.B
         except RuntimeError:
             handler_future = concurrent.futures.Future()
             _cancel_future_and_notify(handler_future)
+        except BaseException:  # pragma: no cover
+            task_exit_stack.close()
+            raise
         else:
             handler_future.add_done_callback(self.__shutdown_on_handler_exception)
         handler_future.add_done_callback(
