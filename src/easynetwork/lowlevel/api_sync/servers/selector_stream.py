@@ -452,6 +452,7 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
                 request_receiver=request_receiver,
                 request_handler_generator=request_handler_generator,
                 request_handler_context=request_handler_context,
+                request_handler_lock=threading.Lock(),
                 transport_close_exit_stack=transport_close_exit_stack,
             )
             self.__serve_requests__handle_client_request(
@@ -475,7 +476,7 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
         recv_params: RecvParams | None,
     ) -> None:
         try:
-            with task_exit_stack.pop_all() as task_exit_stack:
+            with task_exit_stack.pop_all() as task_exit_stack, client_ctx.request_handler_lock:
                 client = client_ctx.client
                 request: Request | None
                 try:
@@ -587,6 +588,9 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
         except RuntimeError:
             handler_future = concurrent.futures.Future()
             _cancel_future_and_notify(handler_future)
+        except BaseException:  # pragma: no cover
+            task_exit_stack.close()
+            raise
         else:
             handler_future.add_done_callback(self.__shutdown_on_handler_exception)
         handler_future.add_done_callback(
@@ -911,6 +915,7 @@ class _ClientContext[Request, Response]:
     request_receiver: _AnyRequestReceiver[Request]
     request_handler_generator: Generator[RecvParams | None, Request]
     request_handler_context: contextvars.Context
+    request_handler_lock: threading.Lock
     transport_close_exit_stack: contextlib.ExitStack
 
 
