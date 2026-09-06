@@ -1,0 +1,1 @@
+Low-level API: ``SocketProxy`` now accepts any lock objects.
