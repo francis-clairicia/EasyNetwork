@@ -5,15 +5,22 @@ import argparse
 import gc
 import logging
 import sys
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Generator
 from contextlib import AsyncExitStack
-from typing import Any, Literal
+from typing import Any, Literal, assert_never
 
 from easynetwork.lowlevel.request_handler import RecvParams
 from easynetwork.protocol import DatagramProtocol
 from easynetwork.serializers.abc import AbstractPacketSerializer
-from easynetwork.servers.handlers import AsyncDatagramClient, AsyncDatagramRequestHandler, INETClientAttribute
+from easynetwork.servers.handlers import (
+    AsyncDatagramClient,
+    AsyncDatagramRequestHandler,
+    BlockingDatagramClient,
+    BlockingDatagramRequestHandler,
+    INETClientAttribute,
+)
 from easynetwork.servers.standalone_udp import StandaloneUDPNetworkServer
+from easynetwork.servers.threaded_udp import ThreadedUDPNetworkServer
 
 
 class NoSerializer(AbstractPacketSerializer[bytes, bytes]):
@@ -26,7 +33,7 @@ class NoSerializer(AbstractPacketSerializer[bytes, bytes]):
         return data
 
 
-class _BaseRequestHandler(AsyncDatagramRequestHandler[Any, Any]):
+class _BaseAsyncRequestHandler(AsyncDatagramRequestHandler[Any, Any]):
     def __init__(self, eager_tasks: bool) -> None:
         super().__init__()
         self._eager_tasks: bool = bool(eager_tasks)
@@ -43,13 +50,13 @@ class _BaseRequestHandler(AsyncDatagramRequestHandler[Any, Any]):
                 loop.set_task_factory(asyncio.eager_task_factory)
 
 
-class EchoRequestHandlerNoTTL(_BaseRequestHandler):
+class AsyncEchoRequestHandlerNoTTL(_BaseAsyncRequestHandler):
     async def handle(self, client: AsyncDatagramClient[Any]) -> AsyncGenerator[None, Any]:
         request: Any = yield
         await client.send_packet(request)
 
 
-class EchoRequestHandlerWithTTL(_BaseRequestHandler):
+class AsyncEchoRequestHandlerWithTTL(_BaseAsyncRequestHandler):
     def __init__(self, client_ttl: float, eager_tasks: bool) -> None:
         super().__init__(eager_tasks=eager_tasks)
         self._client_ttl: float = client_ttl
@@ -63,6 +70,28 @@ class EchoRequestHandlerWithTTL(_BaseRequestHandler):
                 print(f"{client.extra(INETClientAttribute.remote_address)}: timed out")
                 return
             await client.send_packet(request)
+
+
+class BlockingEchoRequestHandlerNoTTL(BlockingDatagramRequestHandler[Any, Any]):
+    def handle(self, client: BlockingDatagramClient[Any]) -> Generator[None, Any]:
+        request: Any = yield
+        client.send_packet(request)
+
+
+class BlockingEchoRequestHandlerWithTTL(BlockingDatagramRequestHandler[Any, Any]):
+    def __init__(self, client_ttl: float) -> None:
+        super().__init__()
+        self._client_ttl: float = client_ttl
+
+    def handle(self, client: BlockingDatagramClient[Any]) -> Generator[RecvParams | None, Any]:
+        client_ttl = self._client_ttl
+        while True:
+            try:
+                request = yield RecvParams(timeout=client_ttl)
+            except TimeoutError:
+                print(f"{client.extra(INETClientAttribute.remote_address)}: timed out")
+                return
+            client.send_packet(request)
 
 
 def _get_runner_and_options_from_arg(
@@ -80,33 +109,55 @@ def _get_runner_and_options_from_arg(
         case "trio":
             print("using trio")
             return ("trio", {})
+        case _:
+            assert_never(runner)
 
 
 def create_udp_server(
     *,
     port: int,
-    runner: Literal["asyncio", "uvloop", "trio"],
+    runner: Literal["asyncio", "uvloop", "trio", "threaded_requests"],
     eager_tasks: bool,
     client_ttl: float,
-) -> StandaloneUDPNetworkServer[Any, Any]:
-    backend, options = _get_runner_and_options_from_arg(runner)
+    concurrency: int | None,
+) -> StandaloneUDPNetworkServer[Any, Any] | ThreadedUDPNetworkServer[Any, Any]:
     if eager_tasks:
+        if runner != "asyncio":
+            raise NotImplementedError("eager tasks is available only with asyncio backend")
         print("with eager task start")
     if client_ttl > 0:
         print(f"Client TTL: {client_ttl:.1f} seconds")
-    handler = (
-        EchoRequestHandlerWithTTL(client_ttl=client_ttl, eager_tasks=eager_tasks)
-        if client_ttl > 0
-        else EchoRequestHandlerNoTTL(eager_tasks=eager_tasks)
-    )
-    return StandaloneUDPNetworkServer(
-        None,
-        port,
-        DatagramProtocol(NoSerializer()),
-        handler,
-        backend=backend,
-        runner_options=options,
-    )
+    match runner:
+        case "threaded_requests":
+            handler = (
+                BlockingEchoRequestHandlerWithTTL(client_ttl=client_ttl) if client_ttl > 0 else BlockingEchoRequestHandlerNoTTL()
+            )
+            if concurrency:
+                print(f"with concurrency : {concurrency}")
+            return ThreadedUDPNetworkServer(
+                None,
+                port,
+                DatagramProtocol(NoSerializer()),
+                handler,
+                max_nb_workers=concurrency,
+            )
+        case _:
+            handler = (
+                AsyncEchoRequestHandlerWithTTL(client_ttl=client_ttl, eager_tasks=eager_tasks)
+                if client_ttl > 0
+                else AsyncEchoRequestHandlerNoTTL(eager_tasks=eager_tasks)
+            )
+            if concurrency is not None:
+                sys.exit("'concurrency' parameter not handled by asynchronous servers.")
+            backend, options = _get_runner_and_options_from_arg(runner)
+            return StandaloneUDPNetworkServer(
+                None,
+                port,
+                DatagramProtocol(NoSerializer()),
+                handler,
+                backend=backend,
+                runner_options=options,
+            )
 
 
 def main() -> None:
@@ -144,10 +195,20 @@ def main() -> None:
         dest="gc_enabled",
         action="store_false",
     )
+    parser.add_argument(
+        "-c",
+        "--concurrency",
+        dest="concurrency",
+        type=int,
+        default=None,
+        help="Maximum number of concurrent threads",
+    )
 
     runner_parser = parser.add_mutually_exclusive_group()
+    runner_parser.add_argument("--asyncio", dest="runner", action="store_const", const="asyncio")
     runner_parser.add_argument("--uvloop", dest="runner", action="store_const", const="uvloop")
     runner_parser.add_argument("--trio", dest="runner", action="store_const", const="trio")
+    runner_parser.add_argument("--threaded-requests", dest="runner", action="store_const", const="threaded_requests")
     runner_parser.set_defaults(runner="asyncio")
 
     args = parser.parse_args()
@@ -158,12 +219,14 @@ def main() -> None:
 
     print(f"Python version: {sys.version}")
     print(f"GC enabled: {gc.isenabled()}")
+    print(f"GIL enabled: {getattr(sys, "_is_gil_enabled", lambda: True)()}")
 
     with create_udp_server(
         port=args.port,
         runner=args.runner,
         eager_tasks=args.eager_tasks,
         client_ttl=args.client_ttl,
+        concurrency=args.concurrency,
     ) as server:
         return server.serve_forever()
 

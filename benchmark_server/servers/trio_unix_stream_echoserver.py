@@ -119,6 +119,7 @@ def main() -> None:
 
     print(f"Python version: {sys.version}")
     print(f"GC enabled: {gc.isenabled()}")
+    print(f"GIL enabled: {getattr(sys, "_is_gil_enabled", lambda: True)()}")
 
     path: str = args.path
     if args.readline:

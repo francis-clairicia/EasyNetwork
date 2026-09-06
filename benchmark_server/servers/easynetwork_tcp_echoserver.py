@@ -230,6 +230,7 @@ def main() -> None:
     )
 
     runner_parser = parser.add_mutually_exclusive_group()
+    runner_parser.add_argument("--asyncio", dest="runner", action="store_const", const="asyncio")
     runner_parser.add_argument("--uvloop", dest="runner", action="store_const", const="uvloop")
     runner_parser.add_argument("--trio", dest="runner", action="store_const", const="trio")
     runner_parser.add_argument("--threaded-clients", dest="runner", action="store_const", const="threaded_clients")
