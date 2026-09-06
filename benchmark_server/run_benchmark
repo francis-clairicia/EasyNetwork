@@ -1134,7 +1134,7 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
     },
     {
         "name": "udpecho-easynetwork-threaded",
-        "title": "UDP echo server (easynetwork+asyncio+threads)",
+        "title": "UDP echo server (easynetwork+threads)",
         "server": (
             *_python_cmd,
             "/usr/src/servers/easynetwork_udp_echoserver.py",
@@ -1668,10 +1668,6 @@ def _start_docker_instance(
     except docker.errors.NotFound:
         pass
 
-    ports = {
-        f"{EXPOSED_PORT}/tcp": EXPOSED_PORT,
-        f"{EXPOSED_PORT}/udp": EXPOSED_PORT,
-    }
     volumes = {
         os.fspath(UNIX_SOCKET_PATH.parent): {"bind": os.fspath(UNIX_SOCKET_PATH.parent), "mode": "rw"},
     }
@@ -1683,7 +1679,7 @@ def _start_docker_instance(
             server_cmd,
             name=container_name,
             detach=True,
-            ports=ports,
+            network="host",
             volumes=volumes,
             stop_signal="SIGINT",
             user=f"{os.geteuid()}:{os.getegid()}",
