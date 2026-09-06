@@ -32,7 +32,7 @@ from types import TracebackType
 from typing import Any, final, override
 
 from ..exceptions import ClientClosedError
-from ..lowlevel import _utils
+from ..lowlevel import _lock, _utils
 from ..lowlevel._final import runtime_final_class
 from ..lowlevel.api_sync.servers import selector_datagram as _datagram_server
 from ..lowlevel.api_sync.transports.socket import SocketDatagramListener
@@ -60,6 +60,7 @@ class ThreadedUDPNetworkServer[Request, Response](
         "__protocol",
         "__request_handler",
         "__service_available",
+        "__service_close_lock",
     )
 
     def __init__(
@@ -113,6 +114,7 @@ class ThreadedUDPNetworkServer[Request, Response](
         self.__protocol: DatagramProtocol[Response, Request] = protocol
         self.__request_handler: BlockingDatagramRequestHandler[Request, Response] = request_handler
         self.__service_available = threading.Event()
+        self.__service_close_lock = _lock.RWLock()
 
     @classmethod
     def __create_udp_listeners(
@@ -168,8 +170,15 @@ class ThreadedUDPNetworkServer[Request, Response](
             lowlevel_client=lowlevel_client,
             client_cache=client_cache,
             service_available=self.__service_available,
+            service_close_lock=self.__service_close_lock,
             logger=self.logger,
         )
+
+    @override
+    @_utils.inherit_doc(_base.BaseThreadedNetworkServerImpl)
+    def server_close(self) -> None:
+        with self.__service_close_lock.write_lock():
+            return super().server_close()
 
     @override
     @_utils.inherit_doc(_base.BaseThreadedNetworkServerImpl)
@@ -191,7 +200,10 @@ class ThreadedUDPNetworkServer[Request, Response](
             If the server is not running, an empty sequence is returned.
         """
         return self._with_lowlevel_servers(
-            lambda servers: tuple(SocketProxy(server.extra(INETSocketAttribute.socket)) for server in servers)
+            lambda servers: tuple(
+                SocketProxy(server.extra(INETSocketAttribute.socket), lock=self.__service_close_lock.write_lock)
+                for server in servers
+            )
         )
 
 
@@ -201,6 +213,7 @@ class _ClientAPI[Response](BlockingDatagramClient[Response]):
     __slots__ = (
         "__context",
         "__service_available",
+        "__service_close_lock",
         "__h",
     )
 
@@ -208,11 +221,13 @@ class _ClientAPI[Response](BlockingDatagramClient[Response]):
         self,
         context: _datagram_server.DatagramClientContext[Response, tuple[Any, ...]],
         service_available: threading.Event,
+        service_close_lock: _lock.RWLock,
     ) -> None:
         super().__init__()
         self.__context: _datagram_server.DatagramClientContext[Response, tuple[Any, ...]] = context
         self.__h: int | None = None
         self.__service_available: threading.Event = service_available
+        self.__service_close_lock: _lock.RWLock = service_close_lock
 
     def __repr__(self) -> str:
         return f"<client with address {self.__context.address} at {id(self):#x}>"
@@ -252,16 +267,18 @@ class _ClientAPI[Response](BlockingDatagramClient[Response]):
 
     def __get_server_socket(self) -> SocketProxy:
         server = self.__context.server
-        return SocketProxy(server.extra(INETSocketAttribute.socket))
+        return SocketProxy(server.extra(INETSocketAttribute.socket), lock=self.__service_close_lock.write_lock)
 
     def __get_server_address(self) -> SocketAddress:
-        server = self.__context.server
-        return new_socket_address(server.extra(INETSocketAttribute.sockname), server.extra(INETSocketAttribute.family))
+        with self.__service_close_lock.read_lock():
+            server = self.__context.server
+            return new_socket_address(server.extra(INETSocketAttribute.sockname), server.extra(INETSocketAttribute.family))
 
     def __get_remote_address(self) -> SocketAddress:
-        server = self.__context.server
-        address = self.__context.address
-        return new_socket_address(address, server.extra(INETSocketAttribute.family))
+        with self.__service_close_lock.read_lock():
+            server = self.__context.server
+            address = self.__context.address
+            return new_socket_address(address, server.extra(INETSocketAttribute.family))
 
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
@@ -286,6 +303,7 @@ class _ClientContext[Response]:
         "__lowlevel_client",
         "__client_cache",
         "__service_available",
+        "__service_close_lock",
         "__logger",
     )
 
@@ -295,19 +313,25 @@ class _ClientContext[Response]:
         lowlevel_client: _datagram_server.DatagramClientContext[Response, tuple[Any, ...]],
         client_cache: _ClientCacheDictType[Response],
         service_available: threading.Event,
+        service_close_lock: _lock.RWLock,
         logger: logging.Logger,
     ) -> None:
         self.__lowlevel_client: _datagram_server.DatagramClientContext[Response, tuple[Any, ...]] = lowlevel_client
         self.__client_cache: _ClientCacheDictType[Response] = client_cache
         self.__service_available: threading.Event = service_available
         self.__logger: logging.Logger = logger
+        self.__service_close_lock: _lock.RWLock = service_close_lock
 
     def __enter__(self) -> BlockingDatagramClient[Response]:
         lowlevel_client = self.__lowlevel_client
         try:
             client = self.__client_cache[lowlevel_client]
         except KeyError:
-            self.__client_cache[lowlevel_client] = client = _ClientAPI(lowlevel_client, self.__service_available)
+            self.__client_cache[lowlevel_client] = client = _ClientAPI(
+                lowlevel_client,
+                self.__service_available,
+                self.__service_close_lock,
+            )
         return client
 
     def __exit__(
