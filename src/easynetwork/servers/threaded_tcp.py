@@ -390,10 +390,7 @@ class _ConnectedClientAPI[Response](BlockingStreamClient[Response]):
         self.__client: _stream_server.ConnectedStreamClient[Response] = client
         self.__closing = threading.Event()
         self.__send_lock = threading.Lock()
-        self.__proxy: SocketProxy = SocketProxy(
-            client.extra(INETSocketAttribute.socket),
-            lock=_utils.make_callback(self.__simple_attribute_return, self.__send_lock),
-        )
+        self.__proxy: SocketProxy = SocketProxy(client.extra(INETSocketAttribute.socket), lock=self.__send_lock)
         self.__address: SocketAddress = address
 
         local_address = new_socket_address(client.extra(INETSocketAttribute.sockname), client.extra(INETSocketAttribute.family))
