@@ -134,8 +134,8 @@ class ThreadedTCPNetworkServer[Request, Response](
             servers_factory=_utils.weak_method_proxy(self.__activate_listeners),
             initialize_service=_utils.weak_method_proxy(self.__initialize_service),
             lowlevel_serve=_utils.weak_method_proxy(self.__lowlevel_serve),
-            logger=logger or logging.getLogger(__name__),
             max_nb_workers=max_nb_workers,
+            logger=logger or logging.getLogger(__name__),
         )
 
         from ..lowlevel._stream import _check_any_protocol
@@ -167,7 +167,7 @@ class ThreadedTCPNetworkServer[Request, Response](
         if ssl:
             self.__listeners_factory = _utils.make_callback(
                 self.__create_ssl_over_tcp_listeners,
-                host,
+                _utils.validate_listener_hosts(host),
                 port,
                 backlog=backlog,
                 ssl_context=ssl,
@@ -180,7 +180,7 @@ class ThreadedTCPNetworkServer[Request, Response](
         else:
             self.__listeners_factory = _utils.make_callback(
                 self.__create_tcp_listeners,
-                host,
+                _utils.validate_listener_hosts(host),
                 port,
                 backlog=backlog,
                 reuse_port=reuse_port,
@@ -195,19 +195,19 @@ class ThreadedTCPNetworkServer[Request, Response](
     @classmethod
     def __create_tcp_listeners(
         cls,
-        host: str | Sequence[str] | None,
+        hosts: list[str | None],
         port: int,
         *,
         backlog: int,
         reuse_port: bool,
     ) -> Sequence[SocketStreamListener]:
-        sockets = cls.__create_listener_sockets(host, port, backlog=backlog, reuse_port=reuse_port)
+        sockets = cls.__create_listener_sockets(hosts, port, backlog=backlog, reuse_port=reuse_port)
         return [SocketStreamListener(sock) for sock in sockets]
 
     @classmethod
     def __create_ssl_over_tcp_listeners(
         cls,
-        host: str | Sequence[str] | None,
+        hosts: list[str | None],
         port: int,
         *,
         backlog: int,
@@ -220,7 +220,7 @@ class ThreadedTCPNetworkServer[Request, Response](
     ) -> Sequence[SSLStreamListener]:
         from functools import partial
 
-        sockets = cls.__create_listener_sockets(host, port, backlog=backlog, reuse_port=reuse_port)
+        sockets = cls.__create_listener_sockets(hosts, port, backlog=backlog, reuse_port=reuse_port)
         return [
             SSLStreamListener(
                 sock,
@@ -236,15 +236,13 @@ class ThreadedTCPNetworkServer[Request, Response](
     @classmethod
     def __create_listener_sockets(
         cls,
-        host: str | Sequence[str] | None,
+        hosts: list[str | None],
         port: int,
         *,
         backlog: int,
         reuse_port: bool,
     ) -> list[_socket.socket]:
         reuse_address = _utils.should_listener_reuse_address_on_current_platform()
-        hosts = _utils.validate_listener_hosts(host)
-        del host
 
         infos: Sequence[tuple[int, int, int, str, tuple[Any, ...]]] = _base.resolve_listener_addresses(
             hosts,

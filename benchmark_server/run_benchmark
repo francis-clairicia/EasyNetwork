@@ -102,21 +102,26 @@ class _BenchmarkVariationReportingGraphData(TypedDict):
 _python_cmd: Final[_CommandLine] = ("python3", "-OO")
 
 
-def _cargo_run(binary_name: str) -> tuple[str, ...]:
+def _cargo_build(binary_name: str) -> _CommandLine:
     manifest_path = ROOT_DIR / "Cargo.toml"
 
     return (
         "cargo",
-        "run",
+        "build",
         f"--manifest-path={os.fspath(manifest_path)}",
         "--release",
         f"--bin={binary_name}",
-        "--",  # <- Needed to pass the following options to the binary arguments
     )
 
 
+_build_clients_cmds: Final[Sequence[_CommandLine]] = (
+    _cargo_build("stream_echoclient"),
+    _cargo_build("datagram_echoclient"),
+)
+
+
 _generic_stream_echoclient: Final[_CommandLine] = (
-    *_cargo_run("stream_echoclient"),
+    os.fspath(ROOT_DIR / "target" / "release" / "stream_echoclient"),
     "--output-format=json",
 )
 
@@ -130,7 +135,7 @@ _unix_stream_echoclient: Final[_CommandLine] = (*_generic_stream_echoclient, f"-
 _unix_stream_readline_client: Final[_CommandLine] = (*_unix_stream_echoclient, "--mpr=5")
 
 _generic_datagram_echoclient: Final[_CommandLine] = (
-    *_cargo_run("datagram_echoclient"),
+    os.fspath(ROOT_DIR / "target" / "release" / "datagram_echoclient"),
     "--output-format=json",
 )
 
@@ -1128,6 +1133,26 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
         "client": _udp_echoclient,
     },
     {
+        "name": "udpecho-easynetwork-threaded",
+        "title": "UDP echo server (easynetwork+asyncio+threads)",
+        "server": (
+            *_python_cmd,
+            "/usr/src/servers/easynetwork_udp_echoserver.py",
+            f"--port={EXPOSED_PORT}",
+            "--threaded-requests",
+            "--disable-gc",
+        ),
+        "ping": {
+            "server_address": _udp_server_address,
+            "ping_request": b"ping",
+            "socket_type": SOCK_DGRAM,
+        },
+        "client": _udp_echoclient,
+        "server_spec": {
+            "need_concurrency_value": True,
+        },
+    },
+    {
         "name": "udpecho-asyncio-sockets",
         "title": "UDP echo server (asyncio/sockets)",
         "server": (
@@ -1559,48 +1584,6 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
         },
         "client": _unix_datagram_echoclient,
     },
-    #########################################################################
-    ################################ Testing ################################
-    #########################################################################
-    {
-        "name": "test-easynetwork-threaded-dgram-requests",
-        "title": "(Test) Multi-threaded datagram server ('requests' strategy)",
-        "server": (
-            *_python_cmd,
-            "/usr/src/servers/test_selector_datagram_server.py",
-            f"--port={EXPOSED_PORT}",
-            "--disable-gc",
-        ),
-        "ping": {
-            "server_address": _udp_server_address,
-            "ping_request": b"ping",
-            "socket_type": SOCK_DGRAM,
-        },
-        "client": _udp_echoclient,
-        "server_spec": {
-            "need_concurrency_value": True,
-        },
-    },
-    {
-        "name": "test-easynetwork-threaded-dgram-requests-ttl",
-        "title": "(Test) Multi-threaded datagram server ('requests' strategy + TTL)",
-        "server": (
-            *_python_cmd,
-            "/usr/src/servers/test_selector_datagram_server.py",
-            f"--port={EXPOSED_PORT}",
-            "--client-ttl=2",
-            "--disable-gc",
-        ),
-        "ping": {
-            "server_address": _udp_server_address,
-            "ping_request": b"ping",
-            "socket_type": SOCK_DGRAM,
-        },
-        "client": _udp_echoclient,
-        "server_spec": {
-            "need_concurrency_value": True,
-        },
-    },
 )
 
 
@@ -1921,6 +1904,7 @@ def main() -> None:
 
     shutil.rmtree(UNIX_SOCKET_PATH.parent, ignore_errors=True)
 
+    print()
     _print_benchmark_h1("Metadata")
 
     used_python_version: str = _get_python_version_used_in_docker_image(client, image_tag)
@@ -1928,6 +1912,13 @@ def main() -> None:
     print(f"Docker image tag: {image_tag}")
     print(f"Python version used in docker instance: {used_python_version}")
     print()
+
+    if _build_clients_cmds:
+        _print_benchmark_h1("Build clients binaries")
+        for build_cmd in _build_clients_cmds:
+            print(shlex.join(build_cmd))
+            subprocess.run(build_cmd, check=True)
+            print()
 
     variations: list[_BenchmarkVariationDef] = [
         {
