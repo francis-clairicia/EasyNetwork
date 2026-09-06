@@ -46,7 +46,6 @@ import os
 import pathlib
 import socket as _socket
 import sys
-import threading
 from abc import ABCMeta, abstractmethod
 from collections.abc import Buffer, Callable, Iterable, Iterator
 from struct import Struct
@@ -618,17 +617,42 @@ class SocketProxy:
 
     __slots__ = ("__socket", "__lock_ctx", "__runner", "__weakref__")
 
+    @final
+    @runtime_final_class
+    @dataclasses.dataclass(frozen=True, kw_only=True, eq=False, slots=True)
+    class _LockWrapper:
+        acquire: Callable[[], Any]
+        release: Callable[[], None]
+
+        @classmethod
+        def wrap(cls, lock: SocketProxy._LockAPI) -> Self:
+            return cls(acquire=lock.acquire, release=lock.release)
+
+        def __enter__(self) -> None:
+            self.acquire()
+
+        def __exit__(self, *exc_args: Any) -> None:
+            self.release()
+
+    @runtime_checkable
+    class _LockAPI(Protocol):
+        @abstractmethod
+        def acquire(self) -> Any: ...
+
+        @abstractmethod
+        def release(self) -> None: ...
+
     def __init__(
         self,
         socket: ISocket,
         *,
-        lock: Callable[[], threading.Lock | threading.RLock] | None = None,
+        lock: _LockAPI | Callable[[], _LockAPI] | None = None,
         runner: Callable[[Callable[[], Any]], Any] | None = None,
     ) -> None:
         """
         Parameters:
             socket: The socket-like object to wrap.
-            lock: A callback function to use when a lock is required to gain access to the wrapped socket.
+            lock: A lock object or a callback function to use when a lock is required to gain access to the wrapped socket.
             runner: A callback function to use to execute the socket method.
 
         Warning:
@@ -658,7 +682,7 @@ class SocketProxy:
                     return runner(socket.fileno)
         """
         self.__socket: ISocket = socket
-        self.__lock_ctx: Callable[[], threading.Lock | threading.RLock] | None = lock
+        self.__lock_ctx: Callable[[], contextlib.AbstractContextManager[None]] = self.__make_lock_ctx(lock)
         self.__runner: Callable[[Callable[[], Any]], Any] | None = runner
 
     def __repr__(self) -> str:
@@ -681,8 +705,20 @@ class SocketProxy:
 
         return f"{s}>"
 
+    @classmethod
+    def __make_lock_ctx(
+        cls, lock: Callable[[], _LockAPI] | _LockAPI | None
+    ) -> Callable[[], contextlib.AbstractContextManager[None]]:
+        match lock:
+            case None:
+                return contextlib.nullcontext
+            case SocketProxy._LockAPI():
+                return functools.partial(cls._LockWrapper.wrap, lock)
+            case _:
+                return functools.partial(lambda wrapper, lock: wrapper(lock()), cls._LockWrapper.wrap, lock)
+
     def __execute[**P, R](self, func: Callable[P, R], /, *args: P.args, **kwargs: P.kwargs) -> R:
-        with lock_ctx() if (lock_ctx := self.__lock_ctx) is not None else contextlib.nullcontext():
+        with self.__lock_ctx():
             if (run := self.__runner) is not None:
                 if args or kwargs:
                     func = functools.partial(func, *args, **kwargs)

@@ -7,7 +7,7 @@ import struct
 import sys
 from collections.abc import Callable
 from socket import AF_INET, AF_INET6, IPPROTO_TCP, SO_KEEPALIVE, SO_LINGER, SOL_SOCKET, TCP_NODELAY
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from easynetwork.lowlevel.socket import (
     IPv4SocketAddress,
@@ -322,7 +322,31 @@ if sys.platform != "win32":
                 assert address_as_str == os.fspath(path)
 
 
+type _LockStub = SocketProxy._LockAPI | Callable[[], SocketProxy._LockAPI]
+
+
 class TestSocketProxy:
+    @pytest.fixture
+    @staticmethod
+    def mock_lock(mocker: MockerFixture) -> MagicMock:
+        return mocker.NonCallableMagicMock(spec=SocketProxy._LockAPI)
+
+    @pytest.fixture(
+        params=[
+            pytest.param(False, id="without_lock"),
+            pytest.param(True, id="with_lock_object"),
+            pytest.param("callback", id="with_lock_callback"),
+        ]
+    )
+    @staticmethod
+    def lock_stub(request: pytest.FixtureRequest, mock_lock: MagicMock, mocker: MockerFixture) -> _LockStub | None:
+        use_lock: bool | Literal["callback"] = request.param
+        if not use_lock:
+            return None
+        if use_lock == "callback":
+            return lambda: mock_lock
+        return mock_lock
+
     @pytest.fixture(
         params=[
             pytest.param(False, id="without_runner"),
@@ -346,16 +370,20 @@ class TestSocketProxy:
         prop: str,
         mock_tcp_socket: MagicMock,
         runner_stub: MagicMock | None,
+        mock_lock: MagicMock,
+        lock_stub: _LockStub | None,
     ) -> None:
         # Arrange
         expected_value = getattr(mock_tcp_socket, prop)
 
         # Act
-        socket_proxy = SocketProxy(mock_tcp_socket, runner=runner_stub)
+        socket_proxy = SocketProxy(mock_tcp_socket, lock=lock_stub, runner=runner_stub)
         prop_value = getattr(socket_proxy, prop)
 
         # Assert
         assert prop_value == expected_value
+        if lock_stub is not None:
+            mock_lock.assert_not_called()
         if runner_stub is not None:
             runner_stub.assert_not_called()
 
@@ -412,10 +440,12 @@ class TestSocketProxy:
         mock_tcp_socket: MagicMock,
         mocker: MockerFixture,
         runner_stub: MagicMock | None,
+        mock_lock: MagicMock,
+        lock_stub: _LockStub | None,
     ) -> None:
         # Arrange
         mock_tcp_socket.fileno.return_value = mocker.sentinel.fd
-        socket_proxy = SocketProxy(mock_tcp_socket, runner=runner_stub)
+        socket_proxy = SocketProxy(mock_tcp_socket, lock=lock_stub, runner=runner_stub)
 
         # Act
         fd = socket_proxy.fileno()
@@ -423,6 +453,8 @@ class TestSocketProxy:
         # Assert
         mock_tcp_socket.fileno.assert_called_once_with()
         assert fd is mocker.sentinel.fd
+        if lock_stub is not None:
+            assert mock_lock.mock_calls == [mocker.call.acquire(), mocker.call.release()]
         if runner_stub is not None:
             runner_stub.assert_called_once_with(mock_tcp_socket.fileno)
 
@@ -431,10 +463,12 @@ class TestSocketProxy:
         mock_tcp_socket: MagicMock,
         mocker: MockerFixture,
         runner_stub: MagicMock | None,
+        mock_lock: MagicMock,
+        lock_stub: _LockStub | None,
     ) -> None:
         # Arrange
         mock_tcp_socket.get_inheritable.return_value = mocker.sentinel.status
-        socket_proxy = SocketProxy(mock_tcp_socket, runner=runner_stub)
+        socket_proxy = SocketProxy(mock_tcp_socket, lock=lock_stub, runner=runner_stub)
 
         # Act
         status = socket_proxy.get_inheritable()
@@ -442,6 +476,8 @@ class TestSocketProxy:
         # Assert
         mock_tcp_socket.get_inheritable.assert_called_once_with()
         assert status is mocker.sentinel.status
+        if lock_stub is not None:
+            assert mock_lock.mock_calls == [mocker.call.acquire(), mocker.call.release()]
         if runner_stub is not None:
             runner_stub.assert_called_once_with(mock_tcp_socket.get_inheritable)
 
@@ -452,10 +488,12 @@ class TestSocketProxy:
         mock_tcp_socket: MagicMock,
         mocker: MockerFixture,
         runner_stub: MagicMock | None,
+        mock_lock: MagicMock,
+        lock_stub: _LockStub | None,
     ) -> None:
         # Arrange
         mock_tcp_socket.getsockopt.return_value = mocker.sentinel.value
-        socket_proxy = SocketProxy(mock_tcp_socket, runner=runner_stub)
+        socket_proxy = SocketProxy(mock_tcp_socket, lock=lock_stub, runner=runner_stub)
         args: tuple[Any, ...] = (mocker.sentinel.level, mocker.sentinel.optname)
         if nb_args == 3:
             args += (mocker.sentinel.buflen,)
@@ -466,6 +504,8 @@ class TestSocketProxy:
         # Assert
         mock_tcp_socket.getsockopt.assert_called_once_with(*args)
         assert value is mocker.sentinel.value
+        if lock_stub is not None:
+            assert mock_lock.mock_calls == [mocker.call.acquire(), mocker.call.release()]
         if runner_stub is not None:
             runner_stub.assert_called_once_with(partial_eq(mock_tcp_socket.getsockopt, *args))
 
@@ -476,9 +516,11 @@ class TestSocketProxy:
         mock_tcp_socket: MagicMock,
         mocker: MockerFixture,
         runner_stub: MagicMock | None,
+        mock_lock: MagicMock,
+        lock_stub: _LockStub | None,
     ) -> None:
         # Arrange
-        socket_proxy = SocketProxy(mock_tcp_socket, runner=runner_stub)
+        socket_proxy = SocketProxy(mock_tcp_socket, lock=lock_stub, runner=runner_stub)
         args: tuple[Any, ...] = (mocker.sentinel.level, mocker.sentinel.optname, mocker.sentinel.value)
         if nb_args == 4:
             args += (mocker.sentinel.optlen,)
@@ -488,6 +530,8 @@ class TestSocketProxy:
 
         # Assert
         mock_tcp_socket.setsockopt.assert_called_once_with(*args)
+        if lock_stub is not None:
+            assert mock_lock.mock_calls == [mocker.call.acquire(), mocker.call.release()]
         if runner_stub is not None:
             runner_stub.assert_called_once_with(partial_eq(mock_tcp_socket.setsockopt, *args))
 
@@ -498,9 +542,11 @@ class TestSocketProxy:
         mock_tcp_socket: MagicMock,
         mocker: MockerFixture,
         runner_stub: MagicMock | None,
+        mock_lock: MagicMock,
+        lock_stub: _LockStub | None,
     ) -> None:
         # Arrange
-        socket_proxy = SocketProxy(mock_tcp_socket, runner=runner_stub)
+        socket_proxy = SocketProxy(mock_tcp_socket, lock=lock_stub, runner=runner_stub)
         getattr(mock_tcp_socket, method).return_value = mocker.sentinel.address
 
         # Act
@@ -509,6 +555,8 @@ class TestSocketProxy:
         # Assert
         getattr(mock_tcp_socket, method).assert_called_once_with()
         assert address is mocker.sentinel.address
+        if lock_stub is not None:
+            assert mock_lock.mock_calls == [mocker.call.acquire(), mocker.call.release()]
         if runner_stub is not None:
             runner_stub.assert_called_once_with(getattr(mock_tcp_socket, method))
 
