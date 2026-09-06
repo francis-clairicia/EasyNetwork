@@ -149,6 +149,7 @@ def main() -> None:
     )
 
     runner_parser = parser.add_mutually_exclusive_group()
+    runner_parser.add_argument("--asyncio", dest="runner", action="store_const", const="asyncio")
     runner_parser.add_argument("--uvloop", dest="runner", action="store_const", const="uvloop")
     runner_parser.add_argument("--trio", dest="runner", action="store_const", const="trio")
     runner_parser.set_defaults(runner="asyncio")
@@ -161,6 +162,7 @@ def main() -> None:
 
     print(f"Python version: {sys.version}")
     print(f"GC enabled: {gc.isenabled()}")
+    print(f"GIL enabled: {getattr(sys, "_is_gil_enabled", lambda: True)()}")
 
     with create_unix_stream_server(
         path=args.path,

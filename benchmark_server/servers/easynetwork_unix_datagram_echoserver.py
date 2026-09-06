@@ -91,6 +91,8 @@ def create_unix_datagram_server(
 ) -> StandaloneUnixDatagramServer[Any, Any]:
     backend, options = _get_runner_and_options_from_arg(runner)
     if eager_tasks:
+        if backend != "asyncio":
+            raise NotImplementedError("eager tasks is available only with asyncio backend")
         print("with eager task start")
     if client_ttl > 0:
         print(f"Client TTL: {client_ttl:.1f} seconds")
@@ -145,6 +147,7 @@ def main() -> None:
     )
 
     runner_parser = parser.add_mutually_exclusive_group()
+    runner_parser.add_argument("--asyncio", dest="runner", action="store_const", const="asyncio")
     runner_parser.add_argument("--uvloop", dest="runner", action="store_const", const="uvloop")
     runner_parser.add_argument("--trio", dest="runner", action="store_const", const="trio")
     runner_parser.set_defaults(runner="asyncio")
@@ -157,6 +160,7 @@ def main() -> None:
 
     print(f"Python version: {sys.version}")
     print(f"GC enabled: {gc.isenabled()}")
+    print(f"GIL enabled: {getattr(sys, "_is_gil_enabled", lambda: True)()}")
 
     with create_unix_datagram_server(
         path=args.path,
