@@ -22,7 +22,7 @@ import time
 from collections.abc import Sequence
 from pathlib import Path
 from socket import SOCK_DGRAM, SOCK_STREAM
-from typing import TYPE_CHECKING, Final, NotRequired, TypedDict, cast
+from typing import TYPE_CHECKING, Final, Literal, NotRequired, TypedDict, assert_never, cast
 
 import docker
 import docker.errors
@@ -1658,6 +1658,7 @@ def _start_docker_instance(
     ping: _PingOptions,
     timeout: float,
     docker_wait: float,
+    docker_network: Literal["host", "bridge"],
 ) -> Container:
     container_name = "easynetwork-benchmark"
 
@@ -1667,6 +1668,17 @@ def _start_docker_instance(
         container.remove(force=True)
     except docker.errors.NotFound:
         pass
+
+    match docker_network:
+        case "host":
+            ports = None
+        case "bridge":
+            ports = {
+                f"{EXPOSED_PORT}/tcp": EXPOSED_PORT,
+                f"{EXPOSED_PORT}/udp": EXPOSED_PORT,
+            }
+        case _:
+            assert_never(docker_network)
 
     volumes = {
         os.fspath(UNIX_SOCKET_PATH.parent): {"bind": os.fspath(UNIX_SOCKET_PATH.parent), "mode": "rw"},
@@ -1679,7 +1691,8 @@ def _start_docker_instance(
             server_cmd,
             name=container_name,
             detach=True,
-            network="host",
+            network=docker_network,
+            ports=ports,
             volumes=volumes,
             stop_signal="SIGINT",
             user=f"{os.geteuid()}:{os.getegid()}",
@@ -1874,6 +1887,12 @@ def main() -> None:
         + "running in docker takes a little bit of "
         + "time to start.",
     )
+    parser.add_argument(
+        "--docker-network",
+        default="host",
+        choices=("host", "bridge"),
+        help="The network configuration of the docker container",
+    )
     args = parser.parse_args()
 
     benchmarks_to_execute = [b for b in BENCHMARKS_DEF if any(re.match(pattern, b["name"]) for pattern in args.benchmark)]
@@ -1907,6 +1926,7 @@ def main() -> None:
 
     print(f"Docker image tag: {image_tag}")
     print(f"Python version used in docker instance: {used_python_version}")
+    print(f"Docker network mode: {args.docker_network}")
     print()
 
     if _build_clients_cmds:
@@ -1952,6 +1972,7 @@ def main() -> None:
                 ping=benchmark["ping"],
                 timeout=args.docker_timeout,
                 docker_wait=args.docker_wait,
+                docker_network=args.docker_network,
             )
             print()
 
