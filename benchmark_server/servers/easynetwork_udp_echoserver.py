@@ -129,6 +129,7 @@ def create_udp_server(
         print(f"Client TTL: {client_ttl:.1f} seconds")
     match runner:
         case "threaded_requests":
+            print("using thread pool (requests)")
             handler = (
                 BlockingEchoRequestHandlerWithTTL(client_ttl=client_ttl) if client_ttl > 0 else BlockingEchoRequestHandlerNoTTL()
             )
@@ -142,6 +143,7 @@ def create_udp_server(
                 max_nb_workers=concurrency,
             )
         case _:
+            backend, options = _get_runner_and_options_from_arg(runner)
             handler = (
                 AsyncEchoRequestHandlerWithTTL(client_ttl=client_ttl, eager_tasks=eager_tasks)
                 if client_ttl > 0
@@ -149,7 +151,6 @@ def create_udp_server(
             )
             if concurrency is not None:
                 sys.exit("'concurrency' parameter not handled by asynchronous servers.")
-            backend, options = _get_runner_and_options_from_arg(runner)
             return StandaloneUDPNetworkServer(
                 None,
                 port,

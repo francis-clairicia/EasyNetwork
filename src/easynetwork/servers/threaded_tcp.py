@@ -23,6 +23,8 @@ __all__ = ["ThreadedTCPNetworkServer"]
 
 import concurrent.futures
 import contextlib
+import errno as _errno
+import functools
 import logging
 import socket as _socket
 import threading
@@ -314,9 +316,6 @@ class ThreadedTCPNetworkServer[Request, Response](
             client_address = new_socket_address(client_address, lowlevel_client.extra(INETSocketAttribute.family))
             client = _ConnectedClientAPI(client_address, lowlevel_client)
 
-            # Explicit abort with high-level client object for thread-safety.
-            client_exit_stack.callback(client.abort)
-
             client_exit_stack.enter_context(
                 _base.ClientErrorHandler(
                     logger=self.logger,
@@ -337,6 +336,7 @@ class ThreadedTCPNetworkServer[Request, Response](
 
             self.logger.log(self.__client_connection_log_level, "Accepted new connection (address = %s)", client_address)
             client_exit_stack.callback(self.logger.log, self.__client_connection_log_level, "%s disconnected", client_address)
+            client_exit_stack.callback(client._on_disconnect)
 
             try:
                 yield client
@@ -390,7 +390,14 @@ class _ConnectedClientAPI[Response](BlockingStreamClient[Response]):
         self.__client: _stream_server.ConnectedStreamClient[Response] = client
         self.__closing = threading.Event()
         self.__send_lock = threading.Lock()
-        self.__proxy: SocketProxy = SocketProxy(client.extra(INETSocketAttribute.socket), lock=self.__send_lock)
+        self.__proxy: SocketProxy = SocketProxy(
+            client.extra(INETSocketAttribute.socket),
+            lock=self.__send_lock,
+            runner=functools.partial(
+                self.__run_socket_method,
+                client_is_closing=self.__closing,
+            ),
+        )
         self.__address: SocketAddress = address
 
         local_address = new_socket_address(client.extra(INETSocketAttribute.sockname), client.extra(INETSocketAttribute.family))
@@ -434,6 +441,16 @@ class _ConnectedClientAPI[Response](BlockingStreamClient[Response]):
             if self.__closing.is_set():
                 raise ClientClosedError("Closed client")
             self.__client.send_packet(packet, timeout=timeout)
+
+    def _on_disconnect(self) -> None:
+        with self.__send_lock:  # If self.send_packet() took the lock, wait for it to finish
+            self.__closing.set()
+
+    @staticmethod
+    def __run_socket_method[Return](method: Callable[[], Return], /, *, client_is_closing: threading.Event) -> Return:
+        if client_is_closing.is_set():
+            raise _utils.error_from_errno(_errno.EBADF)
+        return method()
 
     @staticmethod
     def __simple_attribute_return[T](value: T) -> T:
