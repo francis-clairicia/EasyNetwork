@@ -20,6 +20,9 @@ __all__ = [
     "BaseAsyncNetworkServerImpl",
     "BaseStandaloneNetworkServerImpl",
     "ClientErrorHandler",
+    "resolve_listener_addresses",
+    "validate_max_recv_size",
+    "validate_ssl_arguments",
 ]
 
 import concurrent.futures
@@ -31,9 +34,9 @@ import socket as _socket
 import sys
 import threading as _threading
 from abc import abstractmethod
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence, Sized
 from types import TracebackType
-from typing import TYPE_CHECKING, Any, Literal, NoReturn, Protocol, Self, override
+from typing import TYPE_CHECKING, Any, Literal, NoReturn, Protocol, Self, final, override
 
 from ..exceptions import ClientClosedError, ServerAlreadyRunning, ServerClosedError
 from ..lowlevel import _utils, constants
@@ -853,6 +856,13 @@ def validate_ssl_arguments(
 
 
 if sys.platform != "win32":
+    import pathlib
+    from os import PathLike, fspath
+
+    __all__ += [
+        "UnixSocketPathCleaner",
+        "validate_unix_socket_ancillary_buffer_size",
+    ]
 
     def validate_unix_socket_ancillary_buffer_size(ancillary_bufsize: int | None) -> int:
         if ancillary_bufsize is None:
@@ -860,3 +870,35 @@ if sys.platform != "win32":
         if not isinstance(ancillary_bufsize, int) or ancillary_bufsize <= 0:
             raise ValueError("ancillary_bufsize must be a strictly positive integer")
         return ancillary_bufsize
+
+    @final
+    class UnixSocketPathCleaner(Sized):
+        __slots__ = ("__paths", "__lock")
+
+        def __init__(self) -> None:
+            self.__paths: dict[pathlib.Path, int] = {}
+            self.__lock = _threading.Lock()
+
+        def __len__(self) -> int:
+            with self.__lock:
+                return len(self.__paths)
+
+        def register(self, path: str | PathLike[str]) -> None:
+            path = pathlib.Path(path)
+            with self.__lock:
+                self.__paths[path] = path.stat().st_ino
+
+        def clean_all(self, logger: logging.Logger) -> None:
+            with self.__lock:
+                to_delete = self.__paths
+                self.__paths = {}
+
+            while to_delete:
+                path, prev_ino = to_delete.popitem()
+                try:
+                    if path.stat().st_ino == prev_ino:
+                        path.unlink()
+                except FileNotFoundError:
+                    pass
+                except OSError as exc:
+                    logger.error("Unable to clean up listening Unix socket %r: %s", fspath(path), exc)
