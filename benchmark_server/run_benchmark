@@ -723,6 +723,48 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
         "client": _unix_stream_readline_client,
     },
     {
+        "name": "readline-unixstream-easynetwork-threaded-clients",
+        "title": "UNIX readline server (easynetwork+threads('clients' strategy))",
+        "server": (
+            *_python_cmd,
+            "/usr/src/servers/easynetwork_unix_stream_echoserver.py",
+            f"--path={UNIX_SOCKET_PATH}",
+            "--readline",
+            "--threaded-clients",
+            "--disable-gc",
+        ),
+        "ping": {
+            "server_address": _unix_stream_server_address,
+            "ping_request": b"ping\n",
+            "socket_type": SOCK_STREAM,
+        },
+        "client": _unix_stream_readline_client,
+        "server_spec": {
+            "need_concurrency_value": True,
+        },
+    },
+    {
+        "name": "readline-unixstream-easynetwork-threaded-requests",
+        "title": "UNIX readline server (easynetwork+threads('requests' strategy))",
+        "server": (
+            *_python_cmd,
+            "/usr/src/servers/easynetwork_unix_stream_echoserver.py",
+            f"--path={UNIX_SOCKET_PATH}",
+            "--readline",
+            "--threaded-requests",
+            "--disable-gc",
+        ),
+        "ping": {
+            "server_address": _unix_stream_server_address,
+            "ping_request": b"ping\n",
+            "socket_type": SOCK_STREAM,
+        },
+        "client": _unix_stream_readline_client,
+        "server_spec": {
+            "need_concurrency_value": True,
+        },
+    },
+    {
         "name": "readline-unixstream-easynetwork-buffered-asyncio",
         "title": "UNIX readline server (easynetwork+buffered+asyncio)",
         "server": (
@@ -777,6 +819,50 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             "socket_type": SOCK_STREAM,
         },
         "client": _unix_stream_readline_client,
+    },
+    {
+        "name": "readline-unixstream-easynetwork-buffered-threaded-clients",
+        "title": "UNIX readline server (easynetwork+buffered+threads('clients' strategy))",
+        "server": (
+            *_python_cmd,
+            "/usr/src/servers/easynetwork_unix_stream_echoserver.py",
+            f"--path={UNIX_SOCKET_PATH}",
+            "--readline",
+            "--buffered",
+            "--threaded-clients",
+            "--disable-gc",
+        ),
+        "ping": {
+            "server_address": _unix_stream_server_address,
+            "ping_request": b"ping\n",
+            "socket_type": SOCK_STREAM,
+        },
+        "client": _unix_stream_readline_client,
+        "server_spec": {
+            "need_concurrency_value": True,
+        },
+    },
+    {
+        "name": "readline-unixstream-easynetwork-buffered-threaded-requests",
+        "title": "UNIX readline server (easynetwork+buffered+threads('requests' strategy))",
+        "server": (
+            *_python_cmd,
+            "/usr/src/servers/easynetwork_unix_stream_echoserver.py",
+            f"--path={UNIX_SOCKET_PATH}",
+            "--readline",
+            "--buffered",
+            "--threaded-requests",
+            "--disable-gc",
+        ),
+        "ping": {
+            "server_address": _unix_stream_server_address,
+            "ping_request": b"ping\n",
+            "socket_type": SOCK_STREAM,
+        },
+        "client": _unix_stream_readline_client,
+        "server_spec": {
+            "need_concurrency_value": True,
+        },
     },
     {
         "name": "readline-unixstream-asyncio-streams",
@@ -1292,6 +1378,46 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
         "client": _unix_stream_echoclient,
     },
     {
+        "name": "unixstreamecho-easynetwork-threaded-clients",
+        "title": "UNIX stream echo server (easynetwork+threads('clients' strategy))",
+        "server": (
+            *_python_cmd,
+            "/usr/src/servers/easynetwork_unix_stream_echoserver.py",
+            f"--path={UNIX_SOCKET_PATH}",
+            "--threaded-clients",
+            "--disable-gc",
+        ),
+        "ping": {
+            "server_address": _unix_stream_server_address,
+            "ping_request": b"ping\n",
+            "socket_type": SOCK_STREAM,
+        },
+        "client": _unix_stream_readline_client,
+        "server_spec": {
+            "need_concurrency_value": True,
+        },
+    },
+    {
+        "name": "unixstreamecho-easynetwork-threaded-requests",
+        "title": "UNIX stream echo (easynetwork+threads('requests' strategy))",
+        "server": (
+            *_python_cmd,
+            "/usr/src/servers/easynetwork_unix_stream_echoserver.py",
+            f"--path={UNIX_SOCKET_PATH}",
+            "--threaded-requests",
+            "--disable-gc",
+        ),
+        "ping": {
+            "server_address": _unix_stream_server_address,
+            "ping_request": b"ping\n",
+            "socket_type": SOCK_STREAM,
+        },
+        "client": _unix_stream_readline_client,
+        "server_spec": {
+            "need_concurrency_value": True,
+        },
+    },
+    {
         "name": "unixstreamecho-easynetwork-buffered-asyncio",
         "title": "UNIX stream echo server (easynetwork+buffered+asyncio)",
         "server": (
@@ -1343,6 +1469,48 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             "socket_type": SOCK_STREAM,
         },
         "client": _unix_stream_echoclient,
+    },
+    {
+        "name": "unixstreamecho-easynetwork-buffered-threaded-clients",
+        "title": "UNIX stream echo server (easynetwork+buffered+threads('clients' strategy))",
+        "server": (
+            *_python_cmd,
+            "/usr/src/servers/easynetwork_unix_stream_echoserver.py",
+            f"--path={UNIX_SOCKET_PATH}",
+            "--buffered",
+            "--threaded-clients",
+            "--disable-gc",
+        ),
+        "ping": {
+            "server_address": _unix_stream_server_address,
+            "ping_request": b"ping\n",
+            "socket_type": SOCK_STREAM,
+        },
+        "client": _unix_stream_readline_client,
+        "server_spec": {
+            "need_concurrency_value": True,
+        },
+    },
+    {
+        "name": "unixstreamecho-easynetwork-buffered-threaded-requests",
+        "title": "UNIX stream echo server (easynetwork+buffered+threads('requests' strategy))",
+        "server": (
+            *_python_cmd,
+            "/usr/src/servers/easynetwork_unix_stream_echoserver.py",
+            f"--path={UNIX_SOCKET_PATH}",
+            "--buffered",
+            "--threaded-requests",
+            "--disable-gc",
+        ),
+        "ping": {
+            "server_address": _unix_stream_server_address,
+            "ping_request": b"ping\n",
+            "socket_type": SOCK_STREAM,
+        },
+        "client": _unix_stream_readline_client,
+        "server_spec": {
+            "need_concurrency_value": True,
+        },
     },
     {
         "name": "unixstreamecho-asyncio-sockets",

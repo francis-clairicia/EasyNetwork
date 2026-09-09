@@ -1,13 +1,16 @@
 [package]
 name = "benchmark_server"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [lib]
 doc = false
 doctest = false
 name = "benchmark_server"
 path = "src/lib.rs"
+
+[profile.release]
+panic = 'abort'
 
 [[bin]]
 doc = false

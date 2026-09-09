@@ -129,7 +129,6 @@ def create_tcp_server(
         ssl_context.verify_mode = ssl.CERT_NONE
     if buffered:
         print("with buffered serializer")
-
     context_reuse |= runner.startswith("threaded_")
     if context_reuse:
         print("with context reuse")
@@ -148,6 +147,7 @@ def create_tcp_server(
     max_recv_size: int = 65536  # Default buffer limit of asyncio streams
     match runner:
         case "threaded_clients" | "threaded_requests":
+            worker_strategy = _get_worker_strategy_from_arg(runner)
             if concurrency:
                 print(f"with concurrency : {concurrency}")
             return ThreadedTCPNetworkServer(
@@ -157,13 +157,13 @@ def create_tcp_server(
                 BlockingEchoRequestHandler(),
                 ssl=ssl_context,
                 max_nb_workers=concurrency,
-                worker_strategy=_get_worker_strategy_from_arg(runner),
+                worker_strategy=worker_strategy,
                 max_recv_size=max_recv_size,
             )
         case _:
+            backend, options = _get_runner_and_options_from_arg(runner)
             if concurrency is not None:
                 sys.exit("'concurrency' parameter not handled by asynchronous servers.")
-            backend, options = _get_runner_and_options_from_arg(runner)
             return StandaloneTCPNetworkServer(
                 None,
                 port,

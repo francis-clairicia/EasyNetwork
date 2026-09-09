@@ -12,9 +12,9 @@
 # limitations under the License.
 #
 #
-"""Asynchronous Unix stream server implementation module.
+"""Multi-threaded Unix stream server implementation module.
 
-.. versionadded:: 1.1
+.. versionadded:: NEXT_VERSION
 """
 
 from __future__ import annotations
@@ -31,37 +31,39 @@ else:
     # The "else" is necessary for mypy not to check this part...
     # Seems like a big "ImportError" is not enough.
 
-    __all__ += ["AsyncUnixStreamServer"]
+    __all__ += ["ThreadedUnixStreamServer"]
 
+    import concurrent.futures
     import contextlib
+    import errno as _errno
+    import functools
     import logging
     import os
+    import socket as _socket
+    import threading
     import weakref
-    from collections.abc import AsyncGenerator, Callable, Coroutine, Mapping, Sequence
+    from collections.abc import Callable, Generator, Mapping, Sequence
     from types import MappingProxyType
-    from typing import Any, NoReturn, final
+    from typing import Any, Literal, final, override
 
     from ..exceptions import ClientClosedError
     from ..lowlevel import _unix_utils, _utils
     from ..lowlevel._final import runtime_final_class
-    from ..lowlevel.api_async.backend.abc import AsyncBackend, TaskGroup
-    from ..lowlevel.api_async.backend.utils import BuiltinAsyncBackendLiteral
-    from ..lowlevel.api_async.servers import stream as _stream_server
-    from ..lowlevel.api_async.transports.abc import AsyncListener, AsyncStreamTransport
-    from ..lowlevel.api_async.transports.utils import aclose_forcefully
-    from ..lowlevel.socket import SocketAncillary, SocketProxy, UnixCredentials, UnixSocketAddress, UNIXSocketAttribute
+    from ..lowlevel.api_sync.servers import selector_stream as _stream_server
+    from ..lowlevel.api_sync.transports.socket import SocketStreamListener
+    from ..lowlevel.socket import SocketProxy, UnixCredentials, UnixSocketAddress, UNIXSocketAttribute
     from ..protocol import AnyStreamProtocolType
     from . import _base
-    from .handlers import AsyncStreamClient, AsyncStreamRequestHandler, UNIXClientAttribute
-    from .misc import build_lowlevel_stream_server_handler
+    from .handlers import BlockingStreamClient, BlockingStreamRequestHandler, UNIXClientAttribute
+    from .misc import build_lowlevel_blocking_stream_server_handler
 
-    class AsyncUnixStreamServer[Request, Response](
-        _base.BaseAsyncNetworkServerImpl[_stream_server.AsyncStreamServer[Request, Response], UnixSocketAddress],
+    class ThreadedUnixStreamServer[Request, Response](
+        _base.BaseThreadedNetworkServerImpl[_stream_server.SelectorStreamServer[Request, Response], UnixSocketAddress],
     ):
         """
-        An asynchronous Unix stream server.
+        A multi-threaded Unix stream server.
 
-        .. versionadded:: 1.1
+        .. versionadded:: NEXT_VERSION
         """
 
         __slots__ = (
@@ -70,6 +72,7 @@ else:
             "__request_handler",
             "__max_recv_size",
             "__ancillary_bufsize",
+            "__worker_strategy",
             "__client_connection_log_level",
             "__unix_socket_to_delete",
         )
@@ -78,13 +81,14 @@ else:
             self,
             path: str | os.PathLike[str] | bytes | UnixSocketAddress,
             protocol: AnyStreamProtocolType[Response, Request],
-            request_handler: AsyncStreamRequestHandler[Request, Response],
-            backend: AsyncBackend | BuiltinAsyncBackendLiteral | None = None,
+            request_handler: BlockingStreamRequestHandler[Request, Response],
             *,
             backlog: int | None = None,
             mode: int | None = None,
             max_recv_size: int | None = None,
             ancillary_bufsize: int | None = None,
+            max_nb_workers: int | None = None,
+            worker_strategy: Literal["clients", "requests"] = "requests",
             log_client_connection: bool | None = None,
             logger: logging.Logger | None = None,
         ) -> None:
@@ -108,10 +112,10 @@ else:
                 logger: If given, the logger instance to use.
             """
             super().__init__(
-                backend=backend,
                 servers_factory=_utils.weak_method_proxy(self.__activate_listeners),
                 initialize_service=_utils.weak_method_proxy(self.__initialize_service),
                 lowlevel_serve=_utils.weak_method_proxy(self.__lowlevel_serve),
+                max_nb_workers=max_nb_workers,
                 logger=logger or logging.getLogger(__name__),
             )
 
@@ -125,10 +129,8 @@ else:
 
             _check_any_protocol(protocol)
 
-            if not isinstance(request_handler, AsyncStreamRequestHandler):
-                raise TypeError(f"Expected an AsyncStreamRequestHandler object, got {request_handler!r}")
-
-            backend = self.backend()
+            if not isinstance(request_handler, BlockingStreamRequestHandler):
+                raise TypeError(f"Expected an BlockingStreamRequestHandler object, got {request_handler!r}")
 
             if backlog is None:
                 backlog = 100
@@ -139,84 +141,101 @@ else:
             max_recv_size = _base.validate_max_recv_size(max_recv_size)
             ancillary_bufsize = _base.validate_unix_socket_ancillary_buffer_size(ancillary_bufsize)
 
-            self.__listener_factory: Callable[[], Coroutine[Any, Any, AsyncListener[AsyncStreamTransport]]]
-            self.__listener_factory = _utils.make_callback(
-                backend.create_unix_stream_listener,
+            self.__listener_factory: Callable[[], SocketStreamListener] = _utils.make_callback(
+                self.__create_unix_stream_listener,
                 path,
                 backlog=backlog,
                 mode=mode,
             )
 
             self.__protocol: AnyStreamProtocolType[Response, Request] = protocol
-            self.__request_handler: AsyncStreamRequestHandler[Request, Response] = request_handler
+            self.__request_handler: BlockingStreamRequestHandler[Request, Response] = request_handler
             self.__max_recv_size: int = max_recv_size
             self.__ancillary_bufsize: int = ancillary_bufsize
+            self.__worker_strategy: Literal["clients", "requests"] = worker_strategy
             self.__client_connection_log_level: int = logging.INFO if log_client_connection else logging.DEBUG
             self.__unix_socket_to_delete = _base.UnixSocketPathCleaner()
 
-        async def server_close(self) -> None:
-            try:
-                await super().server_close()
-            except self.backend().get_cancelled_exc_class():
-                if self.__unix_socket_to_delete:
-                    await self.backend().ignore_cancellation(
-                        self.backend().run_in_thread(self.__unix_socket_to_delete.clean_all, self.logger)
-                    )
-                raise
-            else:
-                if self.__unix_socket_to_delete:
-                    await self.backend().ignore_cancellation(
-                        self.backend().run_in_thread(self.__unix_socket_to_delete.clean_all, self.logger)
-                    )
+        @classmethod
+        def __create_unix_stream_listener(
+            cls,
+            path: str | bytes,
+            *,
+            backlog: int,
+            mode: int | None,
+        ) -> SocketStreamListener:
 
-        async def __activate_listeners(self) -> list[_stream_server.AsyncStreamServer[Request, Response]]:
-            listener = await self.__listener_factory()
+            socket = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM, 0)
+            try:
+                try:
+                    socket.bind(path)
+                except OSError as exc:
+                    raise _utils.convert_socket_bind_error(exc, path) from None
+                if mode is not None:
+                    os.chmod(path, mode)
+                socket.setblocking(False)
+                socket.listen(backlog)
+            except BaseException:
+                socket.close()
+                raise
+
+            return SocketStreamListener(socket)
+
+        def server_close(self) -> None:
+            try:
+                super().server_close()
+            finally:
+                self.__unix_socket_to_delete.clean_all(self.logger)
+
+        def __activate_listeners(self) -> list[_stream_server.SelectorStreamServer[Request, Response]]:
+            listener = self.__listener_factory()
 
             local_name = UnixSocketAddress.from_raw(listener.extra(UNIXSocketAttribute.sockname))
             if (path := local_name.as_pathname()) is not None:
                 self.__unix_socket_to_delete.register(path)
 
-            server = _stream_server.AsyncStreamServer(
+            server = _stream_server.SelectorStreamServer(
                 listener,
                 self.__protocol,
                 max_recv_size=self.__max_recv_size,
             )
             return [server]
 
-        async def __initialize_service(self, server_exit_stack: contextlib.AsyncExitStack) -> None:
-            await self.__request_handler.service_init(
-                await server_exit_stack.enter_async_context(contextlib.AsyncExitStack()),
+        def __initialize_service(self, server_exit_stack: contextlib.ExitStack) -> None:
+            self.__request_handler.service_init(
+                server_exit_stack.enter_context(contextlib.ExitStack()),
                 weakref.proxy(self),
             )
 
-        async def __lowlevel_serve(
+        def __lowlevel_serve(
             self,
-            server: _stream_server.AsyncStreamServer[Request, Response],
-            task_group: TaskGroup,
-        ) -> NoReturn:
+            server: _stream_server.SelectorStreamServer[Request, Response],
+            executor: concurrent.futures.ThreadPoolExecutor,
+        ) -> None:
             def disconnect_error_filter(exc: Exception) -> bool:  # pragma: no cover
                 # Don't cover because theorically, socket.recv() should never get a BrokenPipeError.
                 # It is a fallback for a very very edge case.
                 return isinstance(exc, ConnectionError)
 
-            handler = build_lowlevel_stream_server_handler(
+            handler = build_lowlevel_blocking_stream_server_handler(
                 self.__client_initializer,
                 self.__request_handler,
                 logger=self.logger,
             )
-            await server.serve(
+            server.serve(
                 handler,
-                task_group,
+                executor,
+                worker_strategy=self.__worker_strategy,
                 disconnect_error_filter=disconnect_error_filter,
                 ancillary_bufsize=self.__ancillary_bufsize,
             )
 
-        @contextlib.asynccontextmanager
-        async def __client_initializer(
+        @contextlib.contextmanager
+        def __client_initializer(
             self,
             lowlevel_client: _stream_server.ConnectedStreamClient[Response],
-        ) -> AsyncGenerator[AsyncStreamClient[Response] | None]:
-            async with contextlib.AsyncExitStack() as client_exit_stack:
+        ) -> Generator[BlockingStreamClient[Response] | None]:
+            with contextlib.ExitStack() as client_exit_stack:
                 client_exit_stack.enter_context(self._bind_server())
 
                 client_address_raw = lowlevel_client.extra(UNIXSocketAttribute.peername, None)
@@ -243,7 +262,7 @@ else:
                 client_exit_stack.callback(
                     self.__log_client_disconnection, self.logger, self.__client_connection_log_level, client
                 )
-                client_exit_stack.push_async_callback(client._on_disconnect)
+                client_exit_stack.callback(client._on_disconnect)
 
                 try:
                     yield client
@@ -255,13 +274,14 @@ else:
         def __log_client_disconnection(logger: logging.Logger, level: int, client: _ConnectedClientAPI[Response]) -> None:
             logger.log(level, "%s disconnected", client.extra(UNIXClientAttribute.peer_name, UnixSocketAddress()))
 
+        @override
         @_utils.inherit_doc(_base.BaseAsyncNetworkServerImpl)
         def get_addresses(self) -> Sequence[UnixSocketAddress]:
             return self._with_lowlevel_servers(
                 lambda servers: tuple(
                     UnixSocketAddress.from_raw(server.extra(UNIXSocketAttribute.sockname))
                     for server in servers
-                    if not server.is_closing()
+                    if not server.is_closed()
                 )
             )
 
@@ -279,7 +299,7 @@ else:
 
     @final
     @runtime_final_class
-    class _ConnectedClientAPI[Response](AsyncStreamClient[Response]):
+    class _ConnectedClientAPI[Response](BlockingStreamClient[Response]):
         __slots__ = (
             "__client",
             "__closing",
@@ -296,9 +316,16 @@ else:
             client: _stream_server.ConnectedStreamClient[Response],
         ) -> None:
             self.__client: _stream_server.ConnectedStreamClient[Response] = client
-            self.__closing: bool = False
-            self.__send_lock = client.backend().create_fair_lock()
-            self.__proxy: SocketProxy = SocketProxy(client.extra(UNIXSocketAttribute.socket))
+            self.__closing = threading.Event()
+            self.__send_lock = threading.Lock()
+            self.__proxy: SocketProxy = SocketProxy(
+                client.extra(UNIXSocketAttribute.socket),
+                lock=self.__send_lock,
+                runner=functools.partial(
+                    self.__run_socket_method,
+                    client_is_closing=self.__closing,
+                ),
+            )
             self.__peer_name_cache = initial_peer_name
             self.__peer_creds_cache = _unix_utils.UnixCredsContainer(self.__proxy)
 
@@ -318,43 +345,45 @@ else:
             address = self.__get_peer_name()
             return f"<client with address {address} at {id(self):#x}>"
 
+        @override
         def is_closing(self) -> bool:
-            return self.__closing
+            return self.__closing.is_set()
 
-        async def _on_disconnect(self) -> None:
-            self.__closing = True
-            async with self.__send_lock:  # If self.send_packet() took the lock, wait for it to finish
-                pass
+        @override
+        def abort(self) -> None:
+            with self.__send_lock:
+                self.__closing.set()
+                self.__client.abort()
 
-        async def aclose(self) -> None:
-            async with contextlib.AsyncExitStack() as stack:
-                try:
-                    await stack.enter_async_context(self.__send_lock)
-                except self.backend().get_cancelled_exc_class():
-                    if not self.__closing:
-                        self.__closing = True
-                        await aclose_forcefully(self.__client)
-                    raise
-                else:
-                    self.__closing = True
-                    await self.__client.aclose()
+        @override
+        def close(self) -> None:
+            with self.__send_lock:
+                self.__closing.set()
+                self.__client.close()
 
-        async def send_packet(self, packet: Response, /) -> None:
-            async with self.__send_lock:
-                if self.__closing:
+        @override
+        def send_packet(self, packet: Response, /, *, timeout: float | None = None) -> None:
+            with self.__send_lock:
+                if self.__closing.is_set():
                     raise ClientClosedError("Closed client")
-                await self.__client.send_packet(packet)
+                self.__client.send_packet(packet, timeout=timeout)
 
-        async def send_packet_with_ancillary(self, packet: Response, ancillary_data: Any, /) -> None:
-            if isinstance(ancillary_data, SocketAncillary):
-                ancillary_data = ancillary_data.as_raw()
-            async with self.__send_lock:
-                if self.__closing:
+        @override
+        def send_packet_with_ancillary(self, packet: Response, ancillary_data: Any, *, timeout: float | None = None) -> None:
+            with self.__send_lock:
+                if self.__closing.is_set():
                     raise ClientClosedError("Closed client")
-                await self.__client.send_packet_with_ancillary(packet, ancillary_data)
+                self.__client.send_packet_with_ancillary(packet, ancillary_data, timeout=timeout)
 
-        def backend(self) -> AsyncBackend:
-            return self.__client.backend()
+        def _on_disconnect(self) -> None:
+            with self.__send_lock:  # If self.send_packet() took the lock, wait for it to finish
+                self.__closing.set()
+
+        @staticmethod
+        def __run_socket_method[Return](method: Callable[[], Return], /, *, client_is_closing: threading.Event) -> Return:
+            if client_is_closing.is_set():
+                raise _utils.error_from_errno(_errno.EBADF)
+            return method()
 
         def __get_peer_name(self) -> UnixSocketAddress:
             if (peer_name := self.__peer_name_cache).is_unnamed():

@@ -35,6 +35,14 @@ UDP Implementation
    :inherited-members:
 
 
+UNIX Stream Implementation
+--------------------------
+
+.. automodule:: easynetwork.servers.threaded_unix_stream
+   :members:
+   :inherited-members:
+
+
 Asynchronous Server Objects (``async def``)
 ===========================================
 
