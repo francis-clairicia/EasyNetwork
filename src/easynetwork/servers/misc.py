@@ -26,7 +26,7 @@ __all__ = [
 import inspect
 import logging
 from collections.abc import AsyncGenerator, Callable, Generator, Hashable
-from contextlib import AbstractAsyncContextManager, AbstractContextManager, AsyncExitStack, ExitStack
+from contextlib import AbstractAsyncContextManager, AbstractContextManager, AsyncExitStack
 
 from ..lowlevel import _utils
 from ..lowlevel.api_async.servers import datagram as _async_datagram_server, stream as _async_stream_server
@@ -277,7 +277,7 @@ def build_lowlevel_blocking_stream_server_handler[*VarArgs, Request, Response](
     def handler(
         lowlevel_client: _blocking_stream_server.ConnectedStreamClient[Response], /
     ) -> Generator[RecvParams | None, Request]:
-        with initializer(lowlevel_client, *args) as client, ExitStack() as request_handler_exit_stack:
+        with initializer(lowlevel_client, *args) as client:
             del lowlevel_client
 
             if client is None:
@@ -285,31 +285,11 @@ def build_lowlevel_blocking_stream_server_handler[*VarArgs, Request, Response](
                 return
 
             try:
-                if (request_handler_generator := request_handler.on_connection(client)) is not None:
-                    yield from request_handler_generator
-            except BaseException as exc:
-                # Remove "yield from" frame
-                _utils.remove_traceback_frames_in_place(exc, 1)
-                raise
-
-            def disconnect_client() -> None:
-                try:
-                    request_handler.on_disconnection(client)
-                except* ConnectionError:
-                    logger.warning("ConnectionError raised in request_handler.on_disconnection()")
-
-            request_handler_exit_stack.callback(disconnect_client)
-
-            del request_handler_exit_stack
-
-            try:
                 yield from request_handler.handle(client)
             except BaseException as exc:
                 # Remove "yield from" frame
                 _utils.remove_traceback_frames_in_place(exc, 1)
                 raise
-            else:
-                client.close()
 
     return handler
 
