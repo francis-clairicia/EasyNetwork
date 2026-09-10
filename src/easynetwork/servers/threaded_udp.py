@@ -102,7 +102,7 @@ class ThreadedUDPNetworkServer[Request, Response](
         if not isinstance(protocol, DatagramProtocol):
             raise TypeError(f"Expected a DatagramProtocol object, got {protocol!r}")
         if not isinstance(request_handler, BlockingDatagramRequestHandler):
-            raise TypeError(f"Expected an BlockingDatagramRequestHandler object, got {request_handler!r}")
+            raise TypeError(f"Expected a BlockingDatagramRequestHandler object, got {request_handler!r}")
 
         self.__listeners_factory: Callable[[], Sequence[SocketDatagramListener]] = _utils.make_callback(
             self.__create_udp_listeners,

@@ -490,9 +490,14 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
                         recv_params = _rcv(recv_params)
                         if reader_future is None:
                             timeout = _utils.validate_optional_timeout_delay(recv_params.timeout, positive_check=True)
+                        elif not reader_future.done():
+                            raise AssertionError(f"{reader_future=} not done.")
                         else:
                             try:
-                                elapsed_time = reader_future.result(timeout=0)
+                                elapsed_time = reader_future.result()
+                            except TimeoutError as exc:
+                                exc.__traceback__ = None
+                                raise
                             except concurrent.futures.CancelledError:
                                 return
                             # recv_params have already a valid timeout
@@ -749,6 +754,9 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
                                             timeout = max(deadline - _get_current_time(), 0.0)
                                             if not available and not timeout:
                                                 raise _utils.error_from_errno(_errno.ETIMEDOUT)
+                                    except TimeoutError as exc:
+                                        exc.__traceback__ = None
+                                        raise
                                     finally:
                                         selector.unregister(fileno)
                         except StopIteration:

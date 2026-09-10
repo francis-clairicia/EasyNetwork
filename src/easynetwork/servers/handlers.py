@@ -556,18 +556,23 @@ class BlockingStreamRequestHandler[Request, Response](metaclass=ABCMeta):
         It is a :term:`generator` function::
 
             def handle(self, client):
-                while True:
-                    request = yield
+                request = yield
 
-                    # Do some stuff
-                    ...
+                # Do some stuff
+                ...
 
-                    client.send_packet(response)
+                client.send_packet(response)
 
         :meth:`handle` can :keyword:`yield` whenever a request from the `client` is needed.
 
         The generator is started immediately after :meth:`on_connection`.
-        When the generator returns, the client is closed via ``client.close()``.
+        When the generator returns, a new generator is created and started immediately after.
+
+        The generator **does not** represent the client life time, ``client.close()`` must be called explicitly.
+
+        Note:
+            There is one exception: if the generator returns before the first :keyword:`yield` statement,
+            the connection is forcibly closed.
 
         Parameters:
             client: An interface to communicate with the remote endpoint.
@@ -576,6 +581,57 @@ class BlockingStreamRequestHandler[Request, Response](metaclass=ABCMeta):
             :data:`None` or a :class:`.RecvParams` object.
         """
         raise NotImplementedError
+
+    def on_connection(self, client: BlockingStreamClient[Response], /) -> Generator[RecvParams | None, Request] | None:
+        """
+        Called once the client is connected to perform any initialization actions required.
+        The default implementation does nothing.
+
+        It can be either a simple function::
+
+            def on_connection(self, client):
+                # Do some stuff
+                ...
+
+        or a :term:`generator` function::
+
+            def on_connection(self, client):
+                # Do some stuff
+                ...
+
+                initial_info = yield
+
+                # Finish initialization
+                ...
+
+        In the latter case, as for :meth:`handle`, :meth:`on_connection` can :keyword:`yield` whenever a request from
+        the `client` is needed.
+
+        Parameters:
+            client: An interface to communicate with the remote endpoint.
+
+        Yields:
+            If it is a :term:`generator`, :data:`None` or a :class:`.RecvParams` object.
+        """
+        pass
+
+    def on_disconnection(self, client: BlockingStreamClient[Response], /) -> None:
+        """
+        Called once the client is disconnected to perform any clean-up actions required. The default implementation does nothing.
+
+        This function will not be called if :meth:`on_connection` raises an exception.
+
+        Important:
+            :meth:`BlockingStreamClient.is_closing` should return :data:`True` when this function is called.
+            However, if :meth:`handle` raises an exception, the client task is shut down and the connection is forcibly closed
+            *after* :meth:`on_disconnection` is called.
+
+            This behavior allows you to notify the client that something unusual has occurred.
+
+        Parameters:
+            client: An interface to communicate with the remote endpoint.
+        """
+        pass
 
 
 class BlockingDatagramRequestHandler[Request, Response](metaclass=ABCMeta):
