@@ -376,6 +376,8 @@ else:
 
         @override
         def send_packet_with_ancillary(self, packet: Response, ancillary_data: Any, *, timeout: float | None = None) -> None:
+            if isinstance(ancillary_data, SocketAncillary):
+                ancillary_data = ancillary_data.as_raw()
             server = self.__context.server
             address = self.__context.address
             if self.__is_closing(self.__service_available, server):
