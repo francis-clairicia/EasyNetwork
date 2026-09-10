@@ -1,1 +1,1 @@
-Low-level API: Added ``SelectorStreamServer`` and ``SelectorDatagramServer`` implementations.
+Low-level API: Added ``SocketStreamListener``, ``SSLStreamListener`` and ``SocketDatagramListener`` transports.
