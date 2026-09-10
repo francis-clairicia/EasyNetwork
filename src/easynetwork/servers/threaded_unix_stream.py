@@ -50,7 +50,7 @@ else:
     from ..lowlevel._final import runtime_final_class
     from ..lowlevel.api_sync.servers import selector_stream as _stream_server
     from ..lowlevel.api_sync.transports.socket import SocketStreamListener
-    from ..lowlevel.socket import SocketProxy, UnixCredentials, UnixSocketAddress, UNIXSocketAttribute
+    from ..lowlevel.socket import SocketAncillary, SocketProxy, UnixCredentials, UnixSocketAddress, UNIXSocketAttribute
     from ..protocol import AnyStreamProtocolType
     from . import _base
     from .handlers import BlockingStreamClient, BlockingStreamRequestHandler, UNIXClientAttribute
@@ -365,6 +365,8 @@ else:
 
         @override
         def send_packet_with_ancillary(self, packet: Response, ancillary_data: Any, *, timeout: float | None = None) -> None:
+            if isinstance(ancillary_data, SocketAncillary):
+                ancillary_data = ancillary_data.as_raw()
             with self.__send_lock:
                 if self.__closing.is_set():
                     raise ClientClosedError("Closed client")
