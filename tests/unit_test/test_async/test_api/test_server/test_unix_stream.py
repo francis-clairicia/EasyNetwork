@@ -22,7 +22,7 @@ if sys.platform != "win32":
     from socket import AF_UNIX
 
     from easynetwork.exceptions import ClientClosedError, TypedAttributeLookupError
-    from easynetwork.lowlevel.socket import SocketProxy, UnixCredentials, UnixSocketAddress, UNIXSocketAttribute
+    from easynetwork.lowlevel.socket import SocketAncillary, SocketProxy, UnixCredentials, UnixSocketAddress, UNIXSocketAttribute
     from easynetwork.servers.async_unix_stream import AsyncUnixStreamServer, _ConnectedClientAPI
     from easynetwork.servers.handlers import UNIXClientAttribute
 
@@ -506,6 +506,30 @@ if sys.platform != "win32":
                 mocker.sentinel.ancdata,
             )
             mock_connected_stream_client.send_packet.assert_not_called()
+            ## This client object should not check SO_ERROR
+            mock_unix_stream_socket.getsockopt.assert_not_called()
+
+        async def test____send_packet_with_ancillary____socket_ancillary(
+            self,
+            client: _ConnectedClientAPI[Any],
+            mock_connected_stream_client: MagicMock,
+            mock_unix_stream_socket: MagicMock,
+            mocker: MockerFixture,
+        ) -> None:
+            # Arrange
+            mock_socket_ancillary = mocker.NonCallableMagicMock(spec=SocketAncillary)
+            mock_socket_ancillary.as_raw.return_value = mocker.sentinel.ancdata
+
+            # Act
+            await client.send_packet_with_ancillary(mocker.sentinel.packet, mock_socket_ancillary)
+
+            # Assert
+            mock_connected_stream_client.send_packet_with_ancillary.assert_awaited_once_with(
+                mocker.sentinel.packet,
+                mocker.sentinel.ancdata,
+            )
+            mock_connected_stream_client.send_packet.assert_not_called()
+            assert mock_socket_ancillary.mock_calls == [mocker.call.as_raw()]
             ## This client object should not check SO_ERROR
             mock_unix_stream_socket.getsockopt.assert_not_called()
 

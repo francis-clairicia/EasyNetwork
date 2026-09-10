@@ -21,7 +21,7 @@ if sys.platform != "win32":
 
     from easynetwork.exceptions import ClientClosedError
     from easynetwork.lowlevel._utils import Flag
-    from easynetwork.lowlevel.socket import SocketProxy, UnixSocketAddress, UNIXSocketAttribute
+    from easynetwork.lowlevel.socket import SocketAncillary, SocketProxy, UnixSocketAddress, UNIXSocketAttribute
     from easynetwork.servers.async_unix_datagram import AsyncUnixDatagramServer, _ClientAPI
     from easynetwork.servers.handlers import UNIXClientAttribute
 
@@ -464,6 +464,29 @@ if sys.platform != "win32":
                 UnixSocketAddress.from_raw(remote_address),
             )
             mock_datagram_server.send_packet_to.assert_not_called()
+
+        async def test____send_packet_with_ancillary____socket_ancillary(
+            self,
+            remote_address: str | bytes,
+            client: _ClientAPI[Any],
+            mock_datagram_server: MagicMock,
+            mocker: MockerFixture,
+        ) -> None:
+            # Arrange
+            mock_socket_ancillary = mocker.NonCallableMagicMock(spec=SocketAncillary)
+            mock_socket_ancillary.as_raw.return_value = mocker.sentinel.ancdata
+
+            # Act
+            await client.send_packet_with_ancillary(mocker.sentinel.packet, mock_socket_ancillary)
+
+            # Assert
+            mock_datagram_server.send_packet_with_ancillary_to.assert_awaited_once_with(
+                mocker.sentinel.packet,
+                mocker.sentinel.ancdata,
+                UnixSocketAddress.from_raw(remote_address),
+            )
+            mock_datagram_server.send_packet_to.assert_not_called()
+            assert mock_socket_ancillary.mock_calls == [mocker.call.as_raw()]
 
         @pytest.mark.parametrize("method", ["server_close", "service_shutdown"])
         @pytest.mark.parametrize("with_ancillary_data", [False, True], ids=lambda p: f"with_ancillary_data__{p}")
