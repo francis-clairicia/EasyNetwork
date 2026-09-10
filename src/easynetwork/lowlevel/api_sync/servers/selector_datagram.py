@@ -574,10 +574,14 @@ class SelectorDatagramServer[Request, Response, Address: Hashable](_transports.B
                 try:
                     try:
                         if waiter_future is not None:
-                            assert waiter_future.done()  # nosec assert_used
+                            if not waiter_future.done():
+                                raise AssertionError(f"{waiter_future=} not done.")
                             # Raises error to throw in generator if needed.
                             try:
-                                waiter_future.result(timeout=0)
+                                waiter_future.result()
+                            except TimeoutError as exc:
+                                exc.__traceback__ = None
+                                raise
                             except concurrent.futures.CancelledError:
                                 should_restart_handle.clear()
                                 return

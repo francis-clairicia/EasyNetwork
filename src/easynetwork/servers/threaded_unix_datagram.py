@@ -95,9 +95,6 @@ else:
             logger: logging.Logger | None = None,
         ) -> None:
             """
-            .. versionchanged:: 1.2
-                Added `receive_ancillary_data` and `ancillary_bufsize` parameters.
-
             Parameters:
                 path: Path of the socket.
                 protocol: The :term:`protocol object` to use.
@@ -135,7 +132,7 @@ else:
             if not isinstance(protocol, DatagramProtocol):
                 raise TypeError(f"Expected a DatagramProtocol object, got {protocol!r}")
             if not isinstance(request_handler, BlockingDatagramRequestHandler):
-                raise TypeError(f"Expected an BlockingDatagramRequestHandler object, got {request_handler!r}")
+                raise TypeError(f"Expected a BlockingDatagramRequestHandler object, got {request_handler!r}")
 
             match unnamed_addresses_behavior:
                 case None:

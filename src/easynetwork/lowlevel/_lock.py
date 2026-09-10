@@ -67,7 +67,7 @@ class RWLock:
     def __init__(self) -> None:
         self.__read_lock = threading.Lock()
         self.__readers_nb = 0
-        self.__write_lock = threading.RLock()
+        self.__write_lock = threading.Lock()
 
     def acquire_read(self) -> None:
         with self.__read_lock:
