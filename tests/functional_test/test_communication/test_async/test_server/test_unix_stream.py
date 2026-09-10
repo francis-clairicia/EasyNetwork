@@ -77,6 +77,7 @@ if sys.platform != "win32":
         fail_on_disconnection: bool = False
         use_recvmsg_by_default: bool = False
         use_sendmsg_by_default: bool = False
+        send_raw_ancillary: bool = True
 
         async def service_init(self, exit_stack: contextlib.AsyncExitStack, server: AsyncUnixStreamServer[str, str]) -> None:
             await super().service_init(exit_stack, server)
@@ -213,7 +214,10 @@ if sys.platform != "win32":
                 ancillary_data = SocketAncillary()
 
             if ancillary_data:
-                await client.send_packet_with_ancillary(response, ancillary_data.as_raw())
+                if self.send_raw_ancillary:
+                    await client.send_packet_with_ancillary(response, ancillary_data.as_raw())
+                else:
+                    await client.send_packet_with_ancillary(response, ancillary_data)
             else:
                 await client.send_packet(response)
 
@@ -860,11 +864,15 @@ if sys.platform != "win32":
                 await client.sendmsg([b"fds\n"], ancillary.as_raw())
                 assert await client.readline() == b"Received 3 file descriptors.\n"
 
+        @pytest.mark.parametrize("send_raw_ancillary", [False, True], ids=lambda p: f"send_raw_ancillary__{p}")
         async def test____serve_forever____send_with_ancillary_data(
             self,
+            send_raw_ancillary: bool,
+            request_handler: MyStreamRequestHandler,
             client_factory: Callable[[], Awaitable[AsyncStreamSocket]],
         ) -> None:
             client = await client_factory()
+            request_handler.send_raw_ancillary = send_raw_ancillary
 
             with client.backend().timeout(5), contextlib.ExitStack() as files:
                 await client.send_all(b"__sendmsg__\n")

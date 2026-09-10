@@ -1,0 +1,1 @@
+Unix socket servers: Calling ``client.send_packet_with_ancillary()`` with a ``SocketAncillary`` no longer raises a ``TypeError``.
