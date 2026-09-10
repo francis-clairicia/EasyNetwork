@@ -1667,6 +1667,26 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
         "client": _unix_datagram_echoclient,
     },
     {
+        "name": "unixdgramecho-easynetwork-threads",
+        "title": "UNIX datagram echo server (easynetwork+threads)",
+        "server": (
+            *_python_cmd,
+            "/usr/src/servers/easynetwork_unix_datagram_echoserver.py",
+            f"--path={UNIX_SOCKET_PATH}",
+            "--threaded-requests",
+            "--disable-gc",
+        ),
+        "ping": {
+            "server_address": _unix_datagram_server_address,
+            "ping_request": b"ping",
+            "socket_type": SOCK_DGRAM,
+        },
+        "client": _unix_datagram_echoclient,
+        "server_spec": {
+            "need_concurrency_value": True,
+        },
+    },
+    {
         "name": "unixdgramecho-asyncio-sockets",
         "title": "UNIX datagram echo (asyncio/sockets)",
         "server": (
@@ -1976,6 +1996,26 @@ def _list_benchmarks(benchmarks_to_execute: list[_BenchmarkDef]) -> None:
         print(f"- {b["name"].ljust(name_padding)} : {b["title"]}")
 
 
+def _print_benchmark_report(data: _BenchmarkVariationData, duration: int) -> None:
+    print(f"{data['messages']:,} in {duration} seconds")
+    print("Latency:")
+    print(f"- min {data['latency_min']}ms")
+    print(f"- max {data['latency_max']}ms")
+    print(f"- mean {data['latency_mean']}ms")
+    print(f"- std {data['latency_stdev']}ms ({100 * data['latency_stdev'] / data['latency_mean']:.2f}%)")
+    latency_distribution = [
+        (25, data["latency_q1"]),
+        (50, data["latency_median"]),
+        (75, data["latency_q3"]),
+    ]
+    print(f"- distribution: {'; '.join(f'{percent}% under {time}ms' for percent, time in latency_distribution)}")
+    print(f"- number of low outliers: {data['latency_nb_low_outliers']:,} ({data['latency_percent_low_outliers']}%)")
+    print(f"- number of high outliers: {data['latency_nb_high_outliers']:,} ({data['latency_percent_high_outliers']}%)")
+    print(f"{data['rps']:,} requests/sec")
+    if "transfer" in data:
+        print(f"Transfer: {data['transfer']:,} MiB/sec")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument(
@@ -2195,25 +2235,8 @@ def main() -> None:
                 del output
 
                 print()
-                print(f"{data['messages']} in {duration} seconds")
-                print("Latency:")
-                print(f"- min {data['latency_min']}ms")
-                print(f"- max {data['latency_max']}ms")
-                print(f"- mean {data['latency_mean']}ms")
-                print(f"- std {data['latency_stdev']}ms ({100 * data['latency_stdev'] / data['latency_mean']:.2f}%)")
-                latency_distribution = [
-                    (25, data["latency_q1"]),
-                    (50, data["latency_median"]),
-                    (75, data["latency_q3"]),
-                ]
-                print(f"- distribution: {'; '.join(f'{percent}% under {time}ms' for percent, time in latency_distribution)}")
-                print(f"- number of low outliers: {data['latency_nb_low_outliers']} ({data['latency_percent_low_outliers']}%)")
-                print(f"- number of high outliers: {data['latency_nb_high_outliers']} ({data['latency_percent_high_outliers']}%)")
-                print(f"{data['rps']} requests/sec")
-                if "transfer" in data:
-                    print(f"Transfer: {data['transfer']} MiB/sec")
+                _print_benchmark_report(data, duration)
                 print()
-                del latency_distribution
 
                 benchmark_data["variation"].append(data)
 

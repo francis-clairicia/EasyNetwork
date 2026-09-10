@@ -52,7 +52,6 @@ from ... import _unix_utils, _utils, constants, socket as socket_tools
 from . import base_selector
 
 if TYPE_CHECKING:
-    from socket import _Address, _RetAddress
     from ssl import SSLContext, SSLSession, SSLSocket
 
 
@@ -851,7 +850,7 @@ class SSLStreamListener(base_selector.SelectorListener[SSLStreamTransport]):
         return self.__extra_attributes
 
 
-class SocketDatagramListener(base_selector.SelectorDatagramListener["_RetAddress"]):
+class SocketDatagramListener(base_selector.SelectorDatagramListener[Any]):
     """
     A datagram listener implementation which wraps a datagram :class:`~socket.socket`.
 
@@ -907,7 +906,7 @@ class SocketDatagramListener(base_selector.SelectorDatagramListener["_RetAddress
         return self.__socket.fileno()
 
     @_utils.inherit_doc(base_selector.SelectorDatagramListener)
-    def recv_noblock_from(self) -> tuple[bytes, _RetAddress]:
+    def recv_noblock_from(self) -> tuple[bytes, Any]:
         try:
             return self.__socket.recvfrom(constants.MAX_DATAGRAM_BUFSIZE)
         except (BlockingIOError, InterruptedError):
@@ -919,7 +918,7 @@ class SocketDatagramListener(base_selector.SelectorDatagramListener["_RetAddress
         def recv_noblock_with_ancillary_from(
             self,
             ancillary_bufsize: int,
-        ) -> tuple[bytes, list[tuple[int, int, bytes]] | None, _RetAddress]:
+        ) -> tuple[bytes, list[tuple[int, int, bytes]] | None, Any]:
             if not _unix_utils.is_unix_socket_family(self.__socket.family):
                 return super().recv_noblock_with_ancillary_from(ancillary_bufsize)
             try:
@@ -930,7 +929,7 @@ class SocketDatagramListener(base_selector.SelectorDatagramListener["_RetAddress
                 return msg, ancdata, address
 
     @_utils.inherit_doc(base_selector.SelectorDatagramListener)
-    def send_noblock_to(self, data: bytes | bytearray | memoryview, address: _Address) -> None:
+    def send_noblock_to(self, data: bytes | bytearray | memoryview, address: Any) -> None:
         try:
             self.__socket.sendto(data, address)
         except (BlockingIOError, InterruptedError):
@@ -943,7 +942,7 @@ class SocketDatagramListener(base_selector.SelectorDatagramListener["_RetAddress
             self,
             data: bytes | bytearray | memoryview,
             ancillary_data: Iterable[tuple[int, int, Buffer]],
-            address: _Address,
+            address: Any,
         ) -> None:
             if not _unix_utils.is_unix_socket_family(self.__socket.family):
                 return super().send_noblock_with_ancillary_to(data, ancillary_data, address)
