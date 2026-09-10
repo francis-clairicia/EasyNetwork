@@ -122,8 +122,8 @@ class ThreadedTCPNetworkServer[Request, Response](
                         endpoints are bound to, so long as they all set this flag when being created.
                         This option is not supported on Windows and some Unixes.
                         If the SO_REUSEPORT constant is not defined then this capability is unsupported.
-            max_nb_workers: Use a pool of at most the given value.
             max_recv_size: Read buffer size. If not given, a default reasonable value is used.
+            max_nb_workers: Use a pool of at most the given value.
             worker_strategy: Decides how to manage the executor.
             log_client_connection: If :data:`True` (default), log clients connection/disconnection in :data:`~logging.INFO` level.
                                    (This log will always be available in :data:`~logging.DEBUG` level.)
