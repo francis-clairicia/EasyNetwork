@@ -70,6 +70,12 @@ class AsyncEchoRequestHandlerInnerLoop(AsyncStreamRequestHandler[Any, Any]):
 
 class BlockingEchoRequestHandler(BlockingStreamRequestHandler[Any, Any]):
     def handle(self, client: BlockingStreamClient[Any]) -> Generator[None, Any]:
+        request: Any = yield
+        client.send_packet(request)
+
+
+class BlockingEchoRequestHandlerInnerLoop(BlockingStreamRequestHandler[Any, Any]):
+    def handle(self, client: BlockingStreamClient[Any]) -> Generator[None, Any]:
         while True:
             request: Any = yield
             client.send_packet(request)
@@ -129,7 +135,6 @@ def create_tcp_server(
         ssl_context.verify_mode = ssl.CERT_NONE
     if buffered:
         print("with buffered serializer")
-    context_reuse |= runner.startswith("threaded_")
     if context_reuse:
         print("with context reuse")
 
@@ -154,7 +159,7 @@ def create_tcp_server(
                 None,
                 port,
                 protocol,
-                BlockingEchoRequestHandler(),
+                BlockingEchoRequestHandlerInnerLoop() if context_reuse else BlockingEchoRequestHandler(),
                 ssl=ssl_context,
                 max_nb_workers=concurrency,
                 worker_strategy=worker_strategy,

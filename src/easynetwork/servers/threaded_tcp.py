@@ -145,7 +145,7 @@ class ThreadedTCPNetworkServer[Request, Response](
         _check_any_protocol(protocol)
 
         if not isinstance(request_handler, BlockingStreamRequestHandler):
-            raise TypeError(f"Expected an BlockingStreamRequestHandler object, got {request_handler!r}")
+            raise TypeError(f"Expected a BlockingStreamRequestHandler object, got {request_handler!r}")
 
         if backlog is None:
             backlog = 100

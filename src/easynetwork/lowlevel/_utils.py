@@ -59,7 +59,7 @@ import time
 import weakref
 from abc import abstractmethod
 from collections import deque
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Generator, Iterable, Iterator, Sequence
 from typing import TYPE_CHECKING, Any, Concatenate, Protocol, Self, TypeGuard, overload
 
 try:
@@ -415,6 +415,49 @@ def iterate_exceptions(exception: BaseException) -> Iterator[BaseException]:
             yield from iterate_exceptions(exc)
     else:
         yield exception
+
+
+class FakeStartGenerator[Yield, Send, Return](Generator[Yield, Send, Return]):
+    __slots__ = ("_gen", "_initial_value")
+
+    _SENTINEL = object()
+
+    def __init__(self, gen: Generator[Yield, Send, Return], initial_value: Yield) -> None:
+        self._gen: Generator[Yield, Send, Return] = gen
+        self._initial_value: Yield | Any = initial_value
+
+    # let the interpreter access gi_* attributes if defined
+    def __getattr__(self, name: str, /) -> Any:
+        return getattr(self._gen, name)
+
+    def __next__(self) -> Yield:
+        if (value := self._initial_value) is not (sentiel := self._SENTINEL):
+            self._initial_value = sentiel
+            return value
+        try:
+            return next(self._gen)
+        except BaseException as exc:
+            remove_traceback_frames_in_place(exc, 1)
+            raise
+
+    def send(self, value: Send) -> Yield:
+        try:
+            return self._gen.send(value)
+        except BaseException as exc:
+            remove_traceback_frames_in_place(exc, 1)
+            raise
+
+    def throw(self, *args: Any) -> Yield:
+        try:
+            return self._gen.throw(*args)
+        except BaseException as exc:
+            remove_traceback_frames_in_place(exc, 1)
+            raise
+        finally:
+            del args, self
+
+    def close(self) -> None:
+        return self._gen.close()
 
 
 class WarnCallback(Protocol):

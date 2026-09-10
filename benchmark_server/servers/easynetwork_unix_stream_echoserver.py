@@ -66,6 +66,12 @@ class AsyncEchoRequestHandlerInnerLoop(AsyncStreamRequestHandler[Any, Any]):
 
 class BlockingEchoRequestHandler(BlockingStreamRequestHandler[Any, Any]):
     def handle(self, client: BlockingStreamClient[Any]) -> Generator[None, Any]:
+        request: Any = yield
+        client.send_packet(request)
+
+
+class BlockingEchoRequestHandlerInnerLoop(BlockingStreamRequestHandler[Any, Any]):
+    def handle(self, client: BlockingStreamClient[Any]) -> Generator[None, Any]:
         while True:
             request: Any = yield
             client.send_packet(request)
@@ -113,7 +119,6 @@ def create_unix_stream_server(
 ) -> StandaloneUnixStreamServer[Any, Any] | ThreadedUnixStreamServer[Any, Any]:
     if buffered:
         print("with buffered serializer")
-    context_reuse |= runner.startswith("threaded_")
     if context_reuse:
         print("with context reuse")
 
@@ -136,7 +141,7 @@ def create_unix_stream_server(
             return ThreadedUnixStreamServer(
                 path,
                 protocol,
-                BlockingEchoRequestHandler(),
+                BlockingEchoRequestHandlerInnerLoop() if context_reuse else BlockingEchoRequestHandler(),
                 max_nb_workers=concurrency,
                 worker_strategy=worker_strategy,
                 max_recv_size=max_recv_size,
