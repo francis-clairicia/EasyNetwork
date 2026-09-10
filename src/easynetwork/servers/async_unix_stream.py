@@ -50,7 +50,7 @@ else:
     from ..lowlevel.api_async.servers import stream as _stream_server
     from ..lowlevel.api_async.transports.abc import AsyncListener, AsyncStreamTransport
     from ..lowlevel.api_async.transports.utils import aclose_forcefully
-    from ..lowlevel.socket import SocketProxy, UnixCredentials, UnixSocketAddress, UNIXSocketAttribute
+    from ..lowlevel.socket import SocketAncillary, SocketProxy, UnixCredentials, UnixSocketAddress, UNIXSocketAttribute
     from ..protocol import AnyStreamProtocolType
     from . import _base
     from .handlers import AsyncStreamClient, AsyncStreamRequestHandler, UNIXClientAttribute
@@ -361,6 +361,8 @@ else:
                 await self.__client.send_packet(packet)
 
         async def send_packet_with_ancillary(self, packet: Response, ancillary_data: Any, /) -> None:
+            if isinstance(ancillary_data, SocketAncillary):
+                ancillary_data = ancillary_data.as_raw()
             async with self.__send_lock:
                 if self.__closing:
                     raise ClientClosedError("Closed client")
