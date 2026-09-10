@@ -1,7 +1,7 @@
 use std::{
     io,
     num::NonZero,
-    sync::{mpsc::channel, Arc, Barrier},
+    sync::{Arc, Barrier, mpsc::channel},
     time::{Duration, Instant},
 };
 
@@ -78,7 +78,7 @@ fn start_workers(args: &Args) -> io::Result<std::sync::mpsc::Receiver<RequestRep
         std::thread::spawn(move || {
             client.write_all(b"ping\n").unwrap();
             if *client.read_owned(128).unwrap().to_ascii_lowercase() != *b"ping\n" {
-                panic!("socket read")
+                panic!("socket read");
             }
 
             let mut recv_buffer: Vec<u8> = vec![0; request.len()];
@@ -86,12 +86,21 @@ fn start_workers(args: &Args) -> io::Result<std::sync::mpsc::Receiver<RequestRep
             barrier.wait();
 
             let mut current_test_duration = Duration::ZERO;
+            let mut try_count: usize = 0;
 
             while current_test_duration < duration {
                 let request_start_time = Instant::now();
                 client.write_all(request.as_bytes()).unwrap();
-                client.read_exact(&mut recv_buffer).unwrap();
+                let result = client.read_exact(&mut recv_buffer);
                 let request_duration = request_start_time.elapsed();
+                if let Err(e) = &result
+                    && e.kind() == io::ErrorKind::WouldBlock
+                {
+                    try_count += 1;
+                    eprintln!("Worker {worker_id}: timed out {try_count} time(s)");
+                } else {
+                    result.unwrap();
+                }
                 current_test_duration += request_duration;
                 sender.send(RequestReport::new(request_duration, worker_id)).unwrap();
             }
