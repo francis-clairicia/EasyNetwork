@@ -39,7 +39,6 @@ else:
     import functools
     import logging
     import os
-    import socket as _socket
     import threading
     import weakref
     from collections.abc import Callable, Generator, Mapping, Sequence
@@ -100,13 +99,14 @@ else:
                 path: Path of the socket.
                 protocol: The :term:`protocol object` to use.
                 request_handler: The request handler to use.
-                backend: The :term:`asynchronous backend interface` to use.
 
             Keyword Arguments:
                 backlog: is the maximum number of queued connections passed to :class:`~socket.socket.listen` (defaults to ``100``).
                 mode: Permissions to set on the socket.
                 max_recv_size: Read buffer size. If not given, a default reasonable value is used.
                 ancillary_bufsize: read buffer size for ancillary data. Defaults to ~8KiB.
+                max_nb_workers: Use a pool of at most the given value.
+                worker_strategy: Decides how to manage the executor.
                 log_client_connection: If :data:`True` (default), log clients connection/disconnection in :data:`~logging.INFO` level.
                                        (This log will always be available in :data:`~logging.DEBUG` level.)
                 logger: If given, the logger instance to use.
@@ -164,7 +164,6 @@ else:
             backlog: int,
             mode: int | None,
         ) -> SocketStreamListener:
-
             socket = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM, 0)
             try:
                 try:
@@ -178,7 +177,6 @@ else:
             except BaseException:
                 socket.close()
                 raise
-
             return SocketStreamListener(socket)
 
         def server_close(self) -> None:

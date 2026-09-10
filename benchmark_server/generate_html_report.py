@@ -115,7 +115,7 @@ def _print_report(
             _print_benchmark_h3(
                 f"BENCHMARK: {round(msgsize / 1024, 1)}KiB messages, concurrency {concurrency_level}, duration {duration}s"
             )
-            print(f"{data['messages']} in {duration} seconds")
+            print(f"{data['messages']:,} in {duration} seconds")
             print("Latency:")
             print(f"- min {data['latency_min']}ms")
             print(f"- max {data['latency_max']}ms")
@@ -127,11 +127,11 @@ def _print_report(
                 (75, data["latency_q3"]),
             ]
             print(f"- distribution: {'; '.join(f'{percent}% under {time}ms' for percent, time in latency_distribution)}")
-            print(f"- number of low outliers: {data['latency_nb_low_outliers']} ({data['latency_percent_low_outliers']}%)")
-            print(f"- number of high outliers: {data['latency_nb_high_outliers']} ({data['latency_percent_high_outliers']}%)")
-            print(f"{data['rps']} requests/sec")
+            print(f"- number of low outliers: {data['latency_nb_low_outliers']:,} ({data['latency_percent_low_outliers']}%)")
+            print(f"- number of high outliers: {data['latency_nb_high_outliers']:,} ({data['latency_percent_high_outliers']}%)")
+            print(f"{data['rps']:,} requests/sec")
             if "transfer" in data:
-                print(f"Transfer: {data['transfer']} MiB/sec")
+                print(f"Transfer: {data['transfer']:,} MiB/sec")
             print()
 
 

@@ -34,11 +34,17 @@ UDP Implementation
    :members:
    :inherited-members:
 
-
 UNIX Stream Implementation
 --------------------------
 
 .. automodule:: easynetwork.servers.threaded_unix_stream
+   :members:
+   :inherited-members:
+
+UNIX Datagram Implementation
+----------------------------
+
+.. automodule:: easynetwork.servers.threaded_unix_datagram
    :members:
    :inherited-members:
 
