@@ -580,7 +580,7 @@ class SelectorDatagramServer[Request, Response, Address: Hashable](_transports.B
                             try:
                                 waiter_future.result()
                             except TimeoutError as exc:
-                                exc.__traceback__ = None
+                                exc.with_traceback(None)
                                 raise
                             except concurrent.futures.CancelledError:
                                 should_restart_handle.clear()

@@ -496,7 +496,7 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
                             try:
                                 elapsed_time = reader_future.result()
                             except TimeoutError as exc:
-                                exc.__traceback__ = None
+                                exc.with_traceback(None)
                                 raise
                             except concurrent.futures.CancelledError:
                                 return
@@ -755,7 +755,7 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
                                             if not available and not timeout:
                                                 raise _utils.error_from_errno(_errno.ETIMEDOUT)
                                     except TimeoutError as exc:
-                                        exc.__traceback__ = None
+                                        exc.with_traceback(None)
                                         raise
                                     finally:
                                         selector.unregister(fileno)
