@@ -370,4 +370,3 @@ issue_format = "`#{issue} <https://github.com/francis-clairicia/EasyNetwork/pull
     directory = "doc"
     name = "Documentation"
     showcontent = true
-    check = false
