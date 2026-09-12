@@ -1,0 +1,1 @@
+External links in documentation now opens a new tab.

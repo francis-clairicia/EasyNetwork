@@ -162,6 +162,9 @@ html_css_files = [
     "css/details.css",
     "css/rtfd.css",
 ]
+html_js_files = [
+    "js/external-links.js",
+]
 
 # -- sphinx-rtd-theme configuration ------------------------------------------
 # https://sphinx-rtd-theme.readthedocs.io/en/stable/configuring.html
