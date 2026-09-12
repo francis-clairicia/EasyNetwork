@@ -34,18 +34,37 @@ The Server
 Create Your Datagram Request Handler
 ------------------------------------
 
-First, you must create a request handler class by subclassing the :class:`.AsyncDatagramRequestHandler` class and overriding
-its :meth:`~.AsyncDatagramRequestHandler.handle` method; this method will process incoming requests.
+.. tabs::
 
-.. literalinclude:: ../_include/examples/tutorials/echo_client_server_udp/echo_request_handler.py
-   :linenos:
-   :caption: echo_request_handler.py
-   :emphasize-lines: 13,16,20
+   .. group-tab:: Synchronous
 
-.. note::
+      First, you must create a request handler class by subclassing the :class:`.BlockingDatagramRequestHandler` class and overriding
+      its :meth:`~.BlockingDatagramRequestHandler.handle` method; this method will process incoming requests.
 
-   There is no connection pipe with UDP, so there is no ``aclose()`` method.
-   But the client object still has an ``is_closing()`` that returns :data:`True` when the server itself closes.
+      .. literalinclude:: ../_include/examples/tutorials/echo_client_server_udp/echo_request_handler_blocking.py
+         :linenos:
+         :caption: echo_request_handler_blocking.py
+         :emphasize-lines: 13,16,20
+
+      .. note::
+
+         There is no connection pipe with UDP, so there is no ``close()`` method.
+         But the client object still has an ``is_closing()`` that returns :data:`True` when the server itself closes.
+
+   .. group-tab:: Asynchronous
+
+      First, you must create a request handler class by subclassing the :class:`.AsyncDatagramRequestHandler` class and overriding
+      its :meth:`~.AsyncDatagramRequestHandler.handle` method; this method will process incoming requests.
+
+      .. literalinclude:: ../_include/examples/tutorials/echo_client_server_udp/echo_request_handler_async.py
+         :linenos:
+         :caption: echo_request_handler_async.py
+         :emphasize-lines: 13,16,20
+
+      .. note::
+
+         There is no connection pipe with UDP, so there is no ``aclose()`` method.
+         But the client object still has an ``is_closing()`` that returns :data:`True` when the server itself closes.
 
 
 Start The Server
@@ -58,21 +77,25 @@ and the request handler instance.
 
    .. group-tab:: Synchronous
 
-      .. literalinclude:: ../_include/examples/tutorials/echo_client_server_udp/server.py
+      .. literalinclude:: ../_include/examples/tutorials/echo_client_server_udp/threaded_server.py
          :linenos:
          :caption: server.py
 
-   .. group-tab:: Asynchronous (asyncio)
+   .. group-tab:: Asynchronous
 
-      .. literalinclude:: ../_include/examples/tutorials/echo_client_server_udp/async_server_asyncio.py
-         :linenos:
-         :caption: server.py
+      .. tabs::
 
-   .. group-tab:: Asynchronous (trio)
+         .. group-tab:: Using ``asyncio``
 
-      .. literalinclude:: ../_include/examples/tutorials/echo_client_server_udp/async_server_trio.py
-         :linenos:
-         :caption: server.py
+            .. literalinclude:: ../_include/examples/tutorials/echo_client_server_udp/async_server_asyncio.py
+               :linenos:
+               :caption: server.py
+
+         .. group-tab:: Using ``trio``
+
+            .. literalinclude:: ../_include/examples/tutorials/echo_client_server_udp/async_server_trio.py
+               :linenos:
+               :caption: server.py
 
 
 The Client
@@ -88,17 +111,21 @@ This is the client side:
          :linenos:
          :caption: client.py
 
-   .. group-tab:: Asynchronous (asyncio)
+   .. group-tab:: Asynchronous
 
-      .. literalinclude:: ../_include/examples/tutorials/echo_client_server_udp/async_client_asyncio.py
-         :linenos:
-         :caption: client.py
+      .. tabs::
 
-   .. group-tab:: Asynchronous (trio)
+         .. group-tab:: Using ``asyncio``
 
-      .. literalinclude:: ../_include/examples/tutorials/echo_client_server_udp/async_client_trio.py
-         :linenos:
-         :caption: client.py
+            .. literalinclude:: ../_include/examples/tutorials/echo_client_server_udp/async_client_asyncio.py
+               :linenos:
+               :caption: client.py
+
+         .. group-tab:: Using ``trio``
+
+            .. literalinclude:: ../_include/examples/tutorials/echo_client_server_udp/async_client_trio.py
+               :linenos:
+               :caption: client.py
 
 .. note::
 

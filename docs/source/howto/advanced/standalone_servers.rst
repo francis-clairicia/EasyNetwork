@@ -1,6 +1,6 @@
-***************************
-How-to — Standalone Servers
-***************************
+****************************************
+How-to — Standalone Asynchronous Servers
+****************************************
 
 .. include:: ../../_include/sync-async-variants.rst
 

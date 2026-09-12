@@ -222,7 +222,7 @@ class AsyncStreamRequestHandler[Request, Response](metaclass=ABCMeta):
         """
         This function must do all the work required to service a request.
 
-        It is an :term:`asynchronous generator` function::
+        It is an :term:`asynchronous generator function`::
 
             async def handle(self, client):
                 request = yield
@@ -275,7 +275,7 @@ class AsyncStreamRequestHandler[Request, Response](metaclass=ABCMeta):
                 # Do some stuff
                 ...
 
-        or an :term:`asynchronous generator` function::
+        or an :term:`asynchronous generator function`::
 
             async def on_connection(self, client):
                 # Do some stuff
@@ -352,7 +352,7 @@ class AsyncDatagramRequestHandler[Request, Response](metaclass=ABCMeta):
         """
         This function must do all the work required to service a request.
 
-        It is an :term:`asynchronous generator` function::
+        It is an :term:`asynchronous generator function`::
 
             async def handle(self, client):
                 request = yield
@@ -553,7 +553,7 @@ class BlockingStreamRequestHandler[Request, Response](metaclass=ABCMeta):
         """
         This function must do all the work required to service a request.
 
-        It is a :term:`generator` function::
+        It is a :term:`generator function`::
 
             def handle(self, client):
                 request = yield
@@ -593,7 +593,7 @@ class BlockingStreamRequestHandler[Request, Response](metaclass=ABCMeta):
                 # Do some stuff
                 ...
 
-        or a :term:`generator` function::
+        or a :term:`generator function`::
 
             def on_connection(self, client):
                 # Do some stuff
@@ -658,7 +658,7 @@ class BlockingDatagramRequestHandler[Request, Response](metaclass=ABCMeta):
         """
         This function must do all the work required to service a request.
 
-        It is a :term:`generator` function::
+        It is a :term:`generator function`::
 
             def handle(self, client):
                 request = yield
