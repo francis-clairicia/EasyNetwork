@@ -54,7 +54,7 @@ def build_lowlevel_stream_server_handler[*VarArgs, Request, Response](
     logger: logging.Logger | None = None,
 ) -> Callable[[_async_stream_server.ConnectedStreamClient[Response]], AsyncGenerator[RecvParams | None, Request]]:
     """
-    Creates an :term:`asynchronous generator` function, usable by :meth:`.AsyncStreamServer.serve`, from
+    Creates an :term:`asynchronous generator function`, usable by :meth:`.AsyncStreamServer.serve`, from
     an :class:`.AsyncStreamRequestHandler`.
 
     .. versionchanged:: 1.1
@@ -68,7 +68,7 @@ def build_lowlevel_stream_server_handler[*VarArgs, Request, Response](
         logger: if given, will be used to log some warnings.
 
     Returns:
-        an :term:`asynchronous generator` function.
+        an :term:`asynchronous generator function`.
     """
 
     if logger is None:
@@ -185,7 +185,7 @@ def build_lowlevel_datagram_server_handler[*VarArgs, Request, Response, Address:
     *args: *VarArgs,
 ) -> Callable[[_async_datagram_server.DatagramClientContext[Response, Address]], AsyncGenerator[RecvParams | None, Request]]:
     """
-    Creates an :term:`asynchronous generator` function, usable by :meth:`.AsyncDatagramServer.serve`, from
+    Creates an :term:`asynchronous generator function`, usable by :meth:`.AsyncDatagramServer.serve`, from
     an :class:`.AsyncDatagramRequestHandler`.
 
     .. versionchanged:: 1.1
@@ -198,7 +198,7 @@ def build_lowlevel_datagram_server_handler[*VarArgs, Request, Response, Address:
         request_handler: the high-level interface which handles the incoming requests.
 
     Returns:
-        an :term:`asynchronous generator` function.
+        an :term:`asynchronous generator function`.
     """
 
     async def handler(
@@ -255,7 +255,7 @@ def build_lowlevel_blocking_stream_server_handler[*VarArgs, Request, Response](
     logger: logging.Logger | None = None,
 ) -> Callable[[_blocking_stream_server.ConnectedStreamClient[Response]], Generator[RecvParams | None, Request]]:
     """
-    Creates a :term:`generator` function, usable by :meth:`.SelectorStreamServer.serve`, from
+    Creates a :term:`generator function`, usable by :meth:`.SelectorStreamServer.serve`, from
     a :class:`.BlockingStreamRequestHandler`.
 
     .. versionadded:: NEXT_VERSION
@@ -268,7 +268,7 @@ def build_lowlevel_blocking_stream_server_handler[*VarArgs, Request, Response](
         logger: if given, will be used to log some warnings.
 
     Returns:
-        a :term:`generator` function.
+        a :term:`generator function`.
     """
 
     if logger is None:
@@ -326,7 +326,7 @@ def build_lowlevel_blocking_datagram_server_handler[*VarArgs, Request, Response,
     *args: *VarArgs,
 ) -> Callable[[_blocking_datagram_server.DatagramClientContext[Response, Address]], Generator[RecvParams | None, Request]]:
     """
-    Creates a :term:`generator` function, usable by :meth:`.SelectorDatagramServer.serve`, from
+    Creates a :term:`generator function`, usable by :meth:`.SelectorDatagramServer.serve`, from
     a :class:`.BlockingDatagramRequestHandler`.
 
     .. versionadded:: NEXT_VERSION
@@ -338,7 +338,7 @@ def build_lowlevel_blocking_datagram_server_handler[*VarArgs, Request, Response,
         request_handler: the high-level interface which handles the incoming requests.
 
     Returns:
-        a :term:`generator` function.
+        a :term:`generator function`.
     """
 
     def handler(

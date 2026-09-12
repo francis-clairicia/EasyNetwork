@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from easynetwork.servers import StandaloneTCPNetworkServer
+from easynetwork.servers import ThreadedTCPNetworkServer
 
-from echo_request_handler import EchoRequestHandler
+from echo_request_handler_blocking import EchoRequestHandler
 from json_protocol import JSONProtocol
 
 
@@ -12,7 +12,7 @@ def main() -> None:
     protocol = JSONProtocol()
     handler = EchoRequestHandler()
 
-    with StandaloneTCPNetworkServer(host, port, protocol, handler) as server:
+    with ThreadedTCPNetworkServer(host, port, protocol, handler) as server:
         server.serve_forever()
 
 

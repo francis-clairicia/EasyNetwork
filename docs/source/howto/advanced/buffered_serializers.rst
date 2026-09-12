@@ -150,7 +150,7 @@ Buffer Instantiation
 The Purpose Of ``buffered_incremental_deserialize()``
 -----------------------------------------------------
 
-:meth:`~.BufferedIncrementalPacketSerializer.buffered_incremental_deserialize` must be a :term:`generator` function
+:meth:`~.BufferedIncrementalPacketSerializer.buffered_incremental_deserialize` must be a :term:`generator function`
 (or at least return a :term:`generator iterator`) that yields until all the data parts of the packet have been retrieved and parsed.
 
 The value yielded is the position to start writing to the buffer. It can be:
