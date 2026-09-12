@@ -6,7 +6,7 @@ from typing import Any
 from easynetwork.exceptions import StreamProtocolParseError
 from easynetwork.servers.handlers import AsyncStreamClient, AsyncStreamRequestHandler, INETClientAttribute
 
-# These TypeAliases are there to help you understand
+# These type aliases are there to help you understand
 # where requests and responses are used
 type RequestType = Any
 type ResponseType = Any

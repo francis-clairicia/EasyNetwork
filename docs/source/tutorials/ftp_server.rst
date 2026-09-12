@@ -144,24 +144,49 @@ is to define actions to perform at start/end of the server.
 Here, we'll only initialize the logger, but we could also use it to prepare the folders and files that the server should handle
 (location, permissions, file existence, etc.).
 
-.. literalinclude:: ../_include/examples/tutorials/ftp_server/ftp_server_request_handler.py
-   :pyobject: FTPRequestHandler
-   :end-before: async def on_connection
-   :lineno-match:
-   :dedent:
+.. tabs::
+
+   .. group-tab:: Synchronous
+
+      .. literalinclude:: ../_include/examples/tutorials/ftp_server/_ftp_server_request_handler_blocking.py
+         :pyobject: BlockingFTPRequestHandler
+         :end-before: def on_connection
+         :lineno-match:
+         :dedent:
+
+   .. group-tab:: Asynchronous
+
+      .. literalinclude:: ../_include/examples/tutorials/ftp_server/_ftp_server_request_handler_async.py
+         :pyobject: AsyncFTPRequestHandler
+         :end-before: async def on_connection
+         :lineno-match:
+         :dedent:
 
 
 Control Connection Hooks
 ^^^^^^^^^^^^^^^^^^^^^^^^
 
-Here are the features brought by :class:`.AsyncStreamRequestHandler`: It is possible to perform actions when connecting/disconnecting the client.
+Here are the features brought by stream request handlers: It is possible to perform actions when connecting/disconnecting the client.
 
-.. literalinclude:: ../_include/examples/tutorials/ftp_server/ftp_server_request_handler.py
-   :pyobject: FTPRequestHandler
-   :start-at: async def on_connection
-   :end-before: async def handle
-   :lineno-match:
-   :dedent:
+.. tabs::
+
+   .. group-tab:: Synchronous
+
+      .. literalinclude:: ../_include/examples/tutorials/ftp_server/_ftp_server_request_handler_blocking.py
+         :pyobject: BlockingFTPRequestHandler
+         :start-at: def on_connection
+         :end-before: def handle
+         :lineno-match:
+         :dedent:
+
+   .. group-tab:: Asynchronous
+
+      .. literalinclude:: ../_include/examples/tutorials/ftp_server/_ftp_server_request_handler_async.py
+         :pyobject: AsyncFTPRequestHandler
+         :start-at: async def on_connection
+         :end-before: async def handle
+         :lineno-match:
+         :dedent:
 
 
 The :meth:`~handle` Method
@@ -169,18 +194,39 @@ The :meth:`~handle` Method
 
 Only ``NOOP`` and ``QUIT`` commands will be implemented for this tutorial. All parse errors are considered syntax errors.
 
-.. literalinclude:: ../_include/examples/tutorials/ftp_server/ftp_server_request_handler.py
-   :pyobject: FTPRequestHandler.handle
-   :lineno-match:
-   :dedent:
+.. tabs::
+
+   .. group-tab:: Synchronous
+
+      .. literalinclude:: ../_include/examples/tutorials/ftp_server/_ftp_server_request_handler_blocking.py
+         :pyobject: BlockingFTPRequestHandler.handle
+         :lineno-match:
+         :dedent:
+
+   .. group-tab:: Asynchronous
+
+      .. literalinclude:: ../_include/examples/tutorials/ftp_server/_ftp_server_request_handler_async.py
+         :pyobject: AsyncFTPRequestHandler.handle
+         :lineno-match:
+         :dedent:
 
 
 Full Code
 ^^^^^^^^^
 
-.. literalinclude:: ../_include/examples/tutorials/ftp_server/ftp_server_request_handler.py
-   :caption: ftp_server_request_handler.py
-   :linenos:
+.. tabs::
+
+   .. group-tab:: Synchronous
+
+      .. literalinclude:: ../_include/examples/tutorials/ftp_server/_ftp_server_request_handler_blocking.py
+         :caption: ftp_server_request_handler.py
+         :linenos:
+
+   .. group-tab:: Asynchronous
+
+      .. literalinclude:: ../_include/examples/tutorials/ftp_server/_ftp_server_request_handler_async.py
+         :caption: ftp_server_request_handler.py
+         :linenos:
 
 
 Start The Server
@@ -190,21 +236,25 @@ Start The Server
 
    .. group-tab:: Synchronous
 
-      .. literalinclude:: ../_include/examples/tutorials/ftp_server/server.py
+      .. literalinclude:: ../_include/examples/tutorials/ftp_server/threaded_server.py
          :linenos:
          :caption: server.py
 
-   .. group-tab:: Asynchronous (asyncio)
+   .. group-tab:: Asynchronous
 
-      .. literalinclude:: ../_include/examples/tutorials/ftp_server/async_server_asyncio.py
-         :linenos:
-         :caption: server.py
+      .. tabs::
 
-   .. group-tab:: Asynchronous (trio)
+         .. group-tab:: Using ``asyncio``
 
-      .. literalinclude:: ../_include/examples/tutorials/ftp_server/async_server_trio.py
-         :linenos:
-         :caption: server.py
+            .. literalinclude:: ../_include/examples/tutorials/ftp_server/async_server_asyncio.py
+               :linenos:
+               :caption: server.py
+
+         .. group-tab:: Using ``trio``
+
+            .. literalinclude:: ../_include/examples/tutorials/ftp_server/async_server_trio.py
+               :linenos:
+               :caption: server.py
 
 
 Outputs

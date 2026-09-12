@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from easynetwork.servers import StandaloneUDPNetworkServer
+from easynetwork.servers import ThreadedUDPNetworkServer
 
-from echo_request_handler import EchoRequestHandler
+from echo_request_handler_blocking import EchoRequestHandler
 from json_protocol import JSONDatagramProtocol
 
 
@@ -12,7 +12,7 @@ def main() -> None:
     protocol = JSONDatagramProtocol()
     handler = EchoRequestHandler()
 
-    with StandaloneUDPNetworkServer(host, port, protocol, handler) as server:
+    with ThreadedUDPNetworkServer(host, port, protocol, handler) as server:
         server.serve_forever()
 
 
