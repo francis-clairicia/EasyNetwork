@@ -161,7 +161,7 @@ class BaseStandaloneNetworkServerImpl[AsyncServer: AbstractAsyncNetworkServer](A
         return self._run_sync_or(lambda portal, server: portal.run_sync(server.is_listening), False)
 
     @override
-    def server_activate(self) -> None:  # pragma: no cover
+    def server_activate(self) -> NoReturn:  # pragma: no cover
         """
         This method does not work for asynchronous server wrappers.
         """
@@ -400,6 +400,7 @@ class BaseThreadedNetworkServerImpl[LowLevelServer: _SupportsShutdownClose, Addr
                 requests_executor = server_exit_stack.enter_context(
                     concurrent.futures.ThreadPoolExecutor(thread_name_prefix="req-hdlr", max_workers=self.__max_nb_workers)
                 )
+                server_exit_stack.callback(requests_executor.shutdown, wait=False, cancel_futures=True)
                 listeners_executor = server_exit_stack.enter_context(
                     concurrent.futures.ThreadPoolExecutor(thread_name_prefix="listener", max_workers=len(self.__servers))
                 )

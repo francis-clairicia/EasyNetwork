@@ -103,7 +103,13 @@ else:
                 max_recv_size: Read buffer size. If not given, a default reasonable value is used.
                 ancillary_bufsize: read buffer size for ancillary data. Defaults to ~8KiB.
                 max_nb_workers: Use a pool of at most the given value.
-                worker_strategy: Decides how to manage the executor.
+                worker_strategy: Decides how to manage the executor:
+
+                    * ``"requests"``: The thread pool only manages request handlers (default).
+
+                    * ``"clients"``: Each thread is reserved for a single connection. Therefore, the maximum number of
+                      simultaneous connections is restricted to the size of the pool, but handling requests is much faster.
+
                 log_client_connection: If :data:`True` (default), log clients connection/disconnection in :data:`~logging.INFO` level.
                                        (This log will always be available in :data:`~logging.DEBUG` level.)
                 logger: If given, the logger instance to use.

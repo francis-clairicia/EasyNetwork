@@ -308,7 +308,13 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
         Parameters:
             client_connected_cb: a callable that will be used to handle each accepted connection.
             executor: will be used to start tasks for handling each accepted connection.
-            worker_strategy: Decides how to manage the executor.
+            worker_strategy: Decides how to manage the executor:
+
+                * ``"requests"``: The thread pool only manages request handlers (default).
+
+                * ``"clients"``: Each thread is reserved for a single connection. Therefore, the maximum number of simultaneous
+                  connections is restricted to the size of the pool, but handling requests is much faster.
+
             disconnect_error_filter: a callable that returns :data:`True` if the exception is the result of a pipe disconnect.
             ancillary_bufsize: the maximum buffer size for ancillary data.
                                If :data:`None`, using :class:`.RecvAncillaryDataParams` will raise :exc:`.UnsupportedOperation`.
