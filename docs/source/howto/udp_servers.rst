@@ -17,23 +17,35 @@ the standard :mod:`socketserver` library, but is an enhanced version with even m
 
 Creating a UDP server requires several steps:
 
-#. Derive a class from :class:`.AsyncDatagramRequestHandler` and redefine its :meth:`~.AsyncDatagramRequestHandler.handle` method;
-   this method will process incoming requests.
+.. tabs::
 
-#. Instantiate the :class:`.AsyncUDPNetworkServer` class passing it the server's address, the :term:`protocol object`
-   and the request handler instance.
+   .. group-tab:: Synchronous
 
-#. Call :meth:`~.AsyncUDPNetworkServer.serve_forever` to process requests.
+      #. Derive a class from :class:`.BlockingDatagramRequestHandler` and redefine its :meth:`~.BlockingDatagramRequestHandler.handle` method;
+         this method will process incoming requests.
 
-Writing :term:`coroutine functions <coroutine function>` is mandatory to use this server.
+      #. Instantiate the :class:`.ThreadedUDPNetworkServer` class passing it the server's address, the :term:`protocol object`
+         and the request handler instance.
 
-.. seealso::
+      #. Call :meth:`~.ThreadedUDPNetworkServer.serve_forever` to process requests.
 
-   :pep:`492` — Coroutines with async and await syntax
-      The proposal to introduce native coroutines in Python with :keyword:`async` and :keyword:`await` syntax.
+   .. group-tab:: Asynchronous
 
-   :external+python:doc:`library/asyncio`
-      If you are not familiar with async/await syntax, you can use the standard library to get started with coroutines.
+      #. Derive a class from :class:`.AsyncDatagramRequestHandler` and redefine its :meth:`~.AsyncDatagramRequestHandler.handle` method;
+         this method will process incoming requests.
+
+      #. Instantiate the :class:`.AsyncUDPNetworkServer` class passing it the server's address, the :term:`protocol object`
+         and the request handler instance.
+
+      #. Call :meth:`~.AsyncUDPNetworkServer.serve_forever` to process requests.
+
+      .. seealso::
+
+         :pep:`492` — Coroutines with async and await syntax
+            The proposal to introduce native coroutines in Python with :keyword:`async` and :keyword:`await` syntax.
+
+         :external+python:doc:`library/asyncio`
+            If you are not familiar with async/await syntax, you can use the standard library to get started with coroutines.
 
 
 Request Handler Objects
@@ -41,13 +53,22 @@ Request Handler Objects
 
 .. note::
 
-   Unlike :class:`socketserver.BaseRequestHandler`, there is **only one** :class:`.AsyncDatagramRequestHandler` instance for the entire service.
+   Unlike :class:`socketserver.BaseRequestHandler`, there is **only one** request handler instance for the entire service.
 
 
 Here is a simple example:
 
-.. literalinclude:: ../_include/examples/howto/udp_servers/simple_request_handler.py
-   :linenos:
+.. tabs::
+
+   .. group-tab:: Synchronous
+
+      .. literalinclude:: ../_include/examples/howto/udp_servers/blocking_simple_request_handler.py
+         :linenos:
+
+   .. group-tab:: Asynchronous
+
+      .. literalinclude:: ../_include/examples/howto/udp_servers/async_simple_request_handler.py
+         :linenos:
 
 
 Using ``handle()`` Generator
@@ -63,10 +84,21 @@ Using ``handle()`` Generator
 Minimum Requirements
 ^^^^^^^^^^^^^^^^^^^^
 
-.. literalinclude:: ../_include/examples/howto/udp_servers/request_handler_explanation.py
-   :pyobject: MinimumRequestHandler.handle
-   :dedent:
-   :linenos:
+.. tabs::
+
+   .. group-tab:: Synchronous
+
+      .. literalinclude:: ../_include/examples/howto/udp_servers/blocking_request_handler_explanation.py
+         :pyobject: MinimumRequestHandler.handle
+         :dedent:
+         :linenos:
+
+   .. group-tab:: Asynchronous
+
+      .. literalinclude:: ../_include/examples/howto/udp_servers/async_request_handler_explanation.py
+         :pyobject: MinimumRequestHandler.handle
+         :dedent:
+         :linenos:
 
 
 Refuse datagrams
@@ -74,41 +106,90 @@ Refuse datagrams
 
 Your UDP socket can receive datagrams from anywhere. You may want to control who can send you information.
 
-.. literalinclude:: ../_include/examples/howto/udp_servers/request_handler_explanation.py
-   :pyobject: SkipDatagramRequestHandler.handle
-   :dedent:
-   :linenos:
-   :emphasize-lines: 5-8
+.. tabs::
+
+   .. group-tab:: Synchronous
+
+      .. literalinclude:: ../_include/examples/howto/udp_servers/blocking_request_handler_explanation.py
+         :pyobject: SkipDatagramRequestHandler.handle
+         :dedent:
+         :linenos:
+         :emphasize-lines: 5-8
+
+   .. group-tab:: Asynchronous
+
+      .. literalinclude:: ../_include/examples/howto/udp_servers/async_request_handler_explanation.py
+         :pyobject: SkipDatagramRequestHandler.handle
+         :dedent:
+         :linenos:
+         :emphasize-lines: 5-8
 
 Error Handling
 ^^^^^^^^^^^^^^
 
-.. literalinclude:: ../_include/examples/howto/udp_servers/request_handler_explanation.py
-   :pyobject: ErrorHandlingInRequestHandler.handle
-   :dedent:
-   :linenos:
+.. tabs::
+
+   .. group-tab:: Synchronous
+
+      .. literalinclude:: ../_include/examples/howto/udp_servers/blocking_request_handler_explanation.py
+         :pyobject: ErrorHandlingInRequestHandler.handle
+         :dedent:
+         :linenos:
+
+   .. group-tab:: Asynchronous
+
+      .. literalinclude:: ../_include/examples/howto/udp_servers/async_request_handler_explanation.py
+         :pyobject: ErrorHandlingInRequestHandler.handle
+         :dedent:
+         :linenos:
 
 .. warning::
 
    You should always log or re-raise a bare :exc:`Exception` thrown in your generator.
 
-   .. literalinclude:: ../_include/examples/howto/udp_servers/request_handler_explanation.py
-      :pyobject: ErrorHandlingInRequestHandler.handle
-      :dedent:
-      :linenos:
-      :start-at: except Exception
-      :end-at: InternalError()
-      :emphasize-lines: 2-3
+   .. tabs::
+
+      .. group-tab:: Synchronous
+
+         .. literalinclude:: ../_include/examples/howto/udp_servers/blocking_request_handler_explanation.py
+            :pyobject: ErrorHandlingInRequestHandler.handle
+            :dedent:
+            :linenos:
+            :start-at: except Exception
+            :end-at: InternalError()
+            :emphasize-lines: 2-3
+
+      .. group-tab:: Asynchronous
+
+         .. literalinclude:: ../_include/examples/howto/udp_servers/async_request_handler_explanation.py
+            :pyobject: ErrorHandlingInRequestHandler.handle
+            :dedent:
+            :linenos:
+            :start-at: except Exception
+            :end-at: InternalError()
+            :emphasize-lines: 2-3
 
 
 Having Multiple ``yield`` Statements
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-.. literalinclude:: ../_include/examples/howto/udp_servers/request_handler_explanation.py
-   :pyobject: MultipleYieldInRequestHandler.handle
-   :dedent:
-   :linenos:
-   :emphasize-lines: 5,12
+.. tabs::
+
+   .. group-tab:: Synchronous
+
+      .. literalinclude:: ../_include/examples/howto/udp_servers/blocking_request_handler_explanation.py
+         :pyobject: MultipleYieldInRequestHandler.handle
+         :dedent:
+         :linenos:
+         :emphasize-lines: 5,12
+
+   .. group-tab:: Asynchronous
+
+      .. literalinclude:: ../_include/examples/howto/udp_servers/async_request_handler_explanation.py
+         :pyobject: MultipleYieldInRequestHandler.handle
+         :dedent:
+         :linenos:
+         :emphasize-lines: 5,12
 
 .. warning::
 
@@ -129,15 +210,27 @@ Cancellation And Timeouts
 
    .. tab:: Using ``yield`` (Recommended)
 
-      It is possible to send the timeout delay to the parent task:
+      It is possible to send the timeout delay to the parent task by using :class:`.RecvParams`:
 
-      .. literalinclude:: ../_include/examples/howto/udp_servers/request_handler_explanation.py
-         :pyobject: TimeoutYieldedRequestHandler.handle
-         :dedent:
-         :linenos:
-         :emphasize-lines: 4,16-18
+      .. tabs::
 
-   .. tab:: Using ``with``
+         .. group-tab:: Synchronous
+
+            .. literalinclude:: ../_include/examples/howto/udp_servers/blocking_request_handler_explanation.py
+               :pyobject: TimeoutYieldedRequestHandler.handle
+               :dedent:
+               :linenos:
+               :emphasize-lines: 4,16-18
+
+         .. group-tab:: Asynchronous
+
+            .. literalinclude:: ../_include/examples/howto/udp_servers/async_request_handler_explanation.py
+               :pyobject: TimeoutYieldedRequestHandler.handle
+               :dedent:
+               :linenos:
+               :emphasize-lines: 4,16-18
+
+   .. tab:: Using ``with`` (Asynchronous only)
 
       Since all :exc:`BaseException` subclasses are thrown into the generator, you can apply a timeout to the read stream
       using the :term:`asynchronous framework` (the cancellation exception is retrieved in the generator):
@@ -146,7 +239,7 @@ Cancellation And Timeouts
 
          .. group-tab:: Using ``asyncio``
 
-            .. literalinclude:: ../_include/examples/howto/udp_servers/request_handler_explanation.py
+            .. literalinclude:: ../_include/examples/howto/udp_servers/async_request_handler_explanation.py
                :pyobject: TimeoutContextRequestHandlerAsyncIO.handle
                :dedent:
                :linenos:
@@ -154,7 +247,7 @@ Cancellation And Timeouts
 
          .. group-tab:: Using ``trio``
 
-            .. literalinclude:: ../_include/examples/howto/udp_servers/request_handler_explanation.py
+            .. literalinclude:: ../_include/examples/howto/udp_servers/async_request_handler_explanation.py
                :pyobject: TimeoutContextRequestHandlerTrio.handle
                :dedent:
                :linenos:
@@ -162,7 +255,7 @@ Cancellation And Timeouts
 
          .. group-tab:: Using the ``AsyncBackend`` API
 
-            .. literalinclude:: ../_include/examples/howto/udp_servers/request_handler_explanation.py
+            .. literalinclude:: ../_include/examples/howto/udp_servers/async_request_handler_explanation.py
                :pyobject: TimeoutContextRequestHandlerWithClientBackend.handle
                :dedent:
                :linenos:
@@ -182,68 +275,119 @@ Client Metadata
 
 The client's metadata are available via :class:`.INETClientAttribute`:
 
-.. literalinclude:: ../_include/examples/howto/udp_servers/request_handler_explanation.py
-   :pyobject: ClientExtraAttributesRequestHandler.handle
-   :dedent:
-   :linenos:
-   :emphasize-lines: 5
+.. tabs::
+
+   .. group-tab:: Synchronous
+
+      .. literalinclude:: ../_include/examples/howto/udp_servers/blocking_request_handler_explanation.py
+         :pyobject: ClientExtraAttributesRequestHandler.handle
+         :dedent:
+         :linenos:
+         :emphasize-lines: 5
+
+   .. group-tab:: Asynchronous
+
+      .. literalinclude:: ../_include/examples/howto/udp_servers/async_request_handler_explanation.py
+         :pyobject: ClientExtraAttributesRequestHandler.handle
+         :dedent:
+         :linenos:
+         :emphasize-lines: 5
 
 
 Service Initialization
 ----------------------
 
-The server will call :meth:`~.AsyncDatagramRequestHandler.service_init` and pass it an :class:`~contextlib.AsyncExitStack`
-at the beginning of the :meth:`~.AsyncUDPNetworkServer.serve_forever` task to set up the global service.
-
-This allows you to do something like this:
-
 .. tabs::
 
-   .. group-tab:: Using ``asyncio``
+   .. group-tab:: Synchronous
 
-      .. literalinclude:: ../_include/examples/howto/udp_servers/request_handler_explanation.py
-         :pyobject: ServiceInitializationHookRequestHandlerAsyncIO
-         :start-after: ServiceInitializationHookRequestHandlerAsyncIO
+      The server will call :meth:`~.BlockingDatagramRequestHandler.service_init` and pass it an :class:`~contextlib.ExitStack`
+      at the beginning of the :meth:`~.ThreadedUDPNetworkServer.serve_forever` task to set up the global service.
+
+      This allows you to do something like this:
+
+      .. literalinclude:: ../_include/examples/howto/udp_servers/blocking_request_handler_explanation.py
+         :pyobject: ServiceInitializationHookRequestHandler
+         :start-after: ServiceInitializationHookRequestHandler
          :dedent:
          :linenos:
          :emphasize-lines: 1
 
-   .. group-tab:: Using ``trio``
+   .. group-tab:: Asynchronous
 
-      .. literalinclude:: ../_include/examples/howto/udp_servers/request_handler_explanation.py
-         :pyobject: ServiceInitializationHookRequestHandlerTrio
-         :start-after: ServiceInitializationHookRequestHandlerTrio
-         :dedent:
-         :linenos:
-         :emphasize-lines: 1
+      The server will call :meth:`~.AsyncDatagramRequestHandler.service_init` and pass it an :class:`~contextlib.AsyncExitStack`
+      at the beginning of the :meth:`~.AsyncUDPNetworkServer.serve_forever` task to set up the global service.
 
-   .. group-tab:: Using the ``AsyncBackend`` API
+      This allows you to do something like this:
 
-      .. literalinclude:: ../_include/examples/howto/udp_servers/request_handler_explanation.py
-         :pyobject: ServiceInitializationHookRequestHandlerWithServerBackend
-         :start-after: ServiceInitializationHookRequestHandlerWithServerBackend
-         :dedent:
-         :linenos:
-         :emphasize-lines: 1,8,15
+      .. tabs::
+
+         .. group-tab:: Using ``asyncio``
+
+            .. literalinclude:: ../_include/examples/howto/udp_servers/async_request_handler_explanation.py
+               :pyobject: ServiceInitializationHookRequestHandlerAsyncIO
+               :start-after: ServiceInitializationHookRequestHandlerAsyncIO
+               :dedent:
+               :linenos:
+               :emphasize-lines: 1
+
+         .. group-tab:: Using ``trio``
+
+            .. literalinclude:: ../_include/examples/howto/udp_servers/async_request_handler_explanation.py
+               :pyobject: ServiceInitializationHookRequestHandlerTrio
+               :start-after: ServiceInitializationHookRequestHandlerTrio
+               :dedent:
+               :linenos:
+               :emphasize-lines: 1
+
+         .. group-tab:: Using the ``AsyncBackend`` API
+
+            .. literalinclude:: ../_include/examples/howto/udp_servers/async_request_handler_explanation.py
+               :pyobject: ServiceInitializationHookRequestHandlerWithServerBackend
+               :start-after: ServiceInitializationHookRequestHandlerWithServerBackend
+               :dedent:
+               :linenos:
+               :emphasize-lines: 1,8,15
 
 
 Per-client variables (``contextvars`` integration)
 --------------------------------------------------
 
-If your :term:`asynchronous framework` supports per-task :external+python:doc:`context variables <library/contextvars>`,
-you can use this feature in your request handler:
+.. tabs::
 
-.. literalinclude:: ../_include/examples/howto/udp_servers/request_handler_explanation.py
-   :pyobject: ClientContextRequestHandler
-   :dedent:
-   :linenos:
+   .. group-tab:: Synchronous
 
-.. tip::
+      The :class:`.ThreadedUDPNetworkServer` supports per-task :external+python:doc:`context variables <library/contextvars>`.
+      You can use this feature in your request handler:
 
-   It is possible to initialize the context to be copied in :meth:`~.AsyncDatagramRequestHandler.service_init`.
+      .. literalinclude:: ../_include/examples/howto/udp_servers/blocking_request_handler_explanation.py
+         :pyobject: ClientContextRequestHandler
+         :dedent:
+         :linenos:
 
-   This means that the :meth:`contextvars.ContextVar.set` calls made in ``service_init()`` will be applied
-   to subsequent client tasks.
+      .. tip::
+
+         It is possible to initialize the context to be copied in :meth:`~.BlockingDatagramRequestHandler.service_init`.
+
+         This means that the :meth:`contextvars.ContextVar.set` calls made in ``service_init()`` will be applied
+         to subsequent client tasks.
+
+   .. group-tab:: Asynchronous
+
+      If your :term:`asynchronous framework` supports per-task :external+python:doc:`context variables <library/contextvars>`,
+      you can use this feature in your request handler:
+
+      .. literalinclude:: ../_include/examples/howto/udp_servers/async_request_handler_explanation.py
+         :pyobject: ClientContextRequestHandler
+         :dedent:
+         :linenos:
+
+      .. tip::
+
+         It is possible to initialize the context to be copied in :meth:`~.AsyncDatagramRequestHandler.service_init`.
+
+         This means that the :meth:`contextvars.ContextVar.set` calls made in ``service_init()`` will be applied
+         to subsequent client tasks.
 
 
 Server Object
@@ -251,8 +395,17 @@ Server Object
 
 A basic example of how to run the server:
 
-.. literalinclude:: ../_include/examples/howto/udp_servers/async_server.py
-   :linenos:
+.. tabs::
+
+   .. group-tab:: Synchronous
+
+      .. literalinclude:: ../_include/examples/howto/udp_servers/threaded_server.py
+         :linenos:
+
+   .. group-tab:: Asynchronous
+
+      .. literalinclude:: ../_include/examples/howto/udp_servers/async_server.py
+         :linenos:
 
 .. seealso::
 
@@ -263,15 +416,34 @@ A basic example of how to run the server:
 Run Server In Background
 ------------------------
 
-.. literalinclude:: ../_include/examples/howto/udp_servers/background_server.py
-   :linenos:
+.. tabs::
 
-The output of the example should look something like this:
+   .. group-tab:: Synchronous
 
-.. code-block:: console
+      .. literalinclude:: ../_include/examples/howto/udp_servers/threaded_background_server.py
+         :linenos:
 
-   $ python background_server.py
-   Server loop running in task: Task-2
-   From server: {'task': 'Task-6', 'request': {'message': 'Hello world 1'}}
-   From server: {'task': 'Task-7', 'request': {'message': 'Hello world 2'}}
-   From server: {'task': 'Task-8', 'request': {'message': 'Hello world 3'}}
+      The output of the example should look something like this:
+
+      .. code-block:: console
+
+         $ python background_server.py
+         Server loop running in thread: Thread-1 (serve_forever)
+         From server: {'thread': 'req-hdlr_0', 'request': {'message': 'Hello world 1'}}
+         From server: {'thread': 'req-hdlr_0', 'request': {'message': 'Hello world 2'}}
+         From server: {'thread': 'req-hdlr_1', 'request': {'message': 'Hello world 3'}}
+
+   .. group-tab:: Asynchronous
+
+      .. literalinclude:: ../_include/examples/howto/udp_servers/async_background_server.py
+         :linenos:
+
+      The output of the example should look something like this:
+
+      .. code-block:: console
+
+         $ python background_server.py
+         Server loop running in task: Task-2
+         From server: {'task': 'Task-6', 'request': {'message': 'Hello world 1'}}
+         From server: {'task': 'Task-7', 'request': {'message': 'Hello world 2'}}
+         From server: {'task': 'Task-8', 'request': {'message': 'Hello world 3'}}
