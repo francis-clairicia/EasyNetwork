@@ -7,13 +7,16 @@ import threading
 import time
 import traceback
 from collections.abc import Generator
+from socket import SO_PASSCRED, SOL_SOCKET
 from typing import ClassVar
 
 from easynetwork.exceptions import DatagramProtocolParseError
-from easynetwork.lowlevel.request_handler import RecvParams
-from easynetwork.lowlevel.socket import SocketAddress
-from easynetwork.servers import ThreadedUDPNetworkServer
-from easynetwork.servers.handlers import BlockingDatagramClient, BlockingDatagramRequestHandler, INETClientAttribute
+from easynetwork.lowlevel.request_handler import RecvAncillaryDataParams, RecvParams
+from easynetwork.lowlevel.socket import SCMCredentials, SCMRights, SocketAncillary, UnixSocketAddress
+from easynetwork.protocol import DatagramProtocol
+from easynetwork.serializers import JSONSerializer
+from easynetwork.servers.handlers import BlockingDatagramClient, BlockingDatagramRequestHandler, UNIXClientAttribute
+from easynetwork.servers.threaded_unix_datagram import ThreadedUnixDatagramServer
 
 
 class Request: ...
@@ -140,16 +143,70 @@ class TimeoutYieldedRequestHandler(BlockingDatagramRequestHandler[Request, Respo
             client.send_packet(Response())
 
 
+class SCMSendRequestHandler(BlockingDatagramRequestHandler[Request, Response]):
+    def handle(
+        self,
+        client: BlockingDatagramClient[Response],
+    ) -> Generator[None, Request]:
+        request: Request = yield
+
+        ancillary = SocketAncillary()
+        ancillary.add_fds([4])
+        client.send_packet_with_ancillary(Response(), ancillary)
+
+
+class SCMRecvRequestHandler(BlockingDatagramRequestHandler[Request, Response]):
+    def handle(
+        self,
+        client: BlockingDatagramClient[Response],
+    ) -> Generator[RecvParams | None, Request]:
+        ancillary = SocketAncillary()
+        request: Request = yield RecvParams(recv_with_ancillary=RecvAncillaryDataParams(ancillary.update_from_raw))
+
+        for message in ancillary.messages():
+            match message:
+                case SCMRights(fds):
+                    for fd in fds:
+                        print(f"Received file descriptor: {fd}")
+                case SCMCredentials(credentials):
+                    for ucred in credentials:
+                        print(f"Received unix credential: {ucred}")
+
+    @staticmethod
+    def receive_ancillary_data() -> None:
+        # [start]
+        server = ThreadedUnixDatagramServer(
+            "/var/run/app.sock",
+            DatagramProtocol(JSONSerializer()),
+            SCMRecvRequestHandler(),
+            receive_ancillary_data=True,
+        )
+
+    @staticmethod
+    def example_custom_ancillary_bufsize() -> None:
+        # [start]
+        from socket import CMSG_LEN
+
+        max_fds = 128
+        server = ThreadedUnixDatagramServer(
+            "/var/run/app.sock",
+            DatagramProtocol(JSONSerializer()),
+            SCMRecvRequestHandler(),
+            receive_ancillary_data=True,
+            ancillary_bufsize=CMSG_LEN(max_fds * 4),
+        )
+
+
 class ClientExtraAttributesRequestHandler(BlockingDatagramRequestHandler[Request, Response]):
     def handle(
         self,
         client: BlockingDatagramClient[Response],
     ) -> Generator[None, Request]:
-        client_address = client.extra(INETClientAttribute.remote_address)
+        client_address = client.extra(UNIXClientAttribute.peer_name)
 
         request: Request = yield
 
-        print(f"{client_address.host} sent {request}")
+        print(f"{client_address} sent {request}")
 
         client.send_packet(Response())
 
@@ -158,7 +215,7 @@ class ServiceInitializationHookRequestHandler(BlockingDatagramRequestHandler[Req
     def service_init(
         self,
         exit_stack: contextlib.ExitStack,
-        server: ThreadedUDPNetworkServer[Request, Response],
+        server: ThreadedUnixDatagramServer[Request, Response],
     ) -> None:
         exit_stack.callback(self._service_quit)
 
@@ -178,8 +235,19 @@ class ServiceInitializationHookRequestHandler(BlockingDatagramRequestHandler[Req
         print("Service stopped")
 
 
+class LowLevelSocketOperationsRequestHandler(BlockingDatagramRequestHandler[Request, Response]):
+    def service_init(
+        self,
+        exit_stack: contextlib.ExitStack,
+        server: ThreadedUnixDatagramServer[Request, Response],
+    ) -> None:
+        for sock in server.get_sockets():
+            # Enable SO_PASSCRED in order to use SCMCredentials
+            sock.setsockopt(SOL_SOCKET, SO_PASSCRED, 1)
+
+
 class ClientContextRequestHandler(BlockingDatagramRequestHandler[Request, Response]):
-    client_addr_var: ClassVar[contextvars.ContextVar[SocketAddress]]
+    client_addr_var: ClassVar[contextvars.ContextVar[UnixSocketAddress]]
     client_addr_var = contextvars.ContextVar("client_addr")
 
     @classmethod
@@ -197,7 +265,7 @@ class ClientContextRequestHandler(BlockingDatagramRequestHandler[Request, Respon
         self,
         client: BlockingDatagramClient[Response],
     ) -> Generator[None, Request]:
-        address = client.extra(INETClientAttribute.remote_address)
+        address = client.extra(UNIXClientAttribute.peer_name)
         self.client_addr_var.set(address)
 
         # In any code that we call within "handle()" is now possible to get
