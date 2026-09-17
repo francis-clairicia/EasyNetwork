@@ -59,12 +59,12 @@ Here is a simple example:
 
    .. group-tab:: Synchronous
 
-      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/api_sync/simple_request_handler.py
+      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/blocking_simple_request_handler.py
          :linenos:
 
    .. group-tab:: Asynchronous
 
-      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/api_async/simple_request_handler.py
+      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/async_simple_request_handler.py
          :linenos:
 
 
@@ -101,14 +101,14 @@ Minimum Requirements
 
    .. group-tab:: Synchronous
 
-      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/api_sync/request_handler_explanation.py
+      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/blocking_request_handler_explanation.py
          :pyobject: MinimumRequestHandler.handle
          :dedent:
          :linenos:
 
    .. group-tab:: Asynchronous
 
-      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/api_async/request_handler_explanation.py
+      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/async_request_handler_explanation.py
          :pyobject: MinimumRequestHandler.handle
          :dedent:
          :linenos:
@@ -121,7 +121,7 @@ Closing the connection
 
    .. group-tab:: Synchronous
 
-      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/api_sync/request_handler_explanation.py
+      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/blocking_request_handler_explanation.py
          :pyobject: ConnectionCloseRequestHandler.handle
          :dedent:
          :linenos:
@@ -131,7 +131,7 @@ Closing the connection
 
          You can use :func:`contextlib.closing` to close the client at the generator exit.
 
-         .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/api_sync/request_handler_explanation.py
+         .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/blocking_request_handler_explanation.py
             :pyobject: ConnectionCloseWithContextRequestHandler.handle
             :dedent:
             :linenos:
@@ -145,7 +145,7 @@ Closing the connection
 
          * ``handle()`` returns *before* the first :keyword:`yield` statement.
 
-            .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/api_sync/request_handler_explanation.py
+            .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/blocking_request_handler_explanation.py
                :pyobject: ConnectionCloseBeforeYieldRequestHandler.handle
                :dedent:
                :linenos:
@@ -153,7 +153,7 @@ Closing the connection
 
    .. group-tab:: Asynchronous
 
-      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/api_async/request_handler_explanation.py
+      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/async_request_handler_explanation.py
          :pyobject: ConnectionCloseRequestHandler.handle
          :dedent:
          :linenos:
@@ -163,7 +163,7 @@ Closing the connection
 
          You can use :func:`contextlib.aclosing` to close the client at the generator exit.
 
-         .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/api_async/request_handler_explanation.py
+         .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/async_request_handler_explanation.py
             :pyobject: ConnectionCloseWithContextRequestHandler.handle
             :dedent:
             :linenos:
@@ -177,7 +177,7 @@ Closing the connection
 
          * ``handle()`` returns *before* the first :keyword:`yield` statement.
 
-            .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/api_async/request_handler_explanation.py
+            .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/async_request_handler_explanation.py
                :pyobject: ConnectionCloseBeforeYieldRequestHandler.handle
                :dedent:
                :linenos:
@@ -191,7 +191,7 @@ Error Handling
 
    .. group-tab:: Synchronous
 
-      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/api_sync/request_handler_explanation.py
+      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/blocking_request_handler_explanation.py
          :pyobject: ErrorHandlingInRequestHandler.handle
          :dedent:
          :linenos:
@@ -205,7 +205,7 @@ Error Handling
 
          You should always log or re-raise a bare :exc:`Exception` thrown in your generator.
 
-         .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/api_sync/request_handler_explanation.py
+         .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/blocking_request_handler_explanation.py
             :pyobject: ErrorHandlingInRequestHandler.handle
             :dedent:
             :linenos:
@@ -215,7 +215,7 @@ Error Handling
 
    .. group-tab:: Asynchronous
 
-      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/api_async/request_handler_explanation.py
+      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/async_request_handler_explanation.py
          :pyobject: ErrorHandlingInRequestHandler.handle
          :dedent:
          :linenos:
@@ -229,7 +229,7 @@ Error Handling
 
          You should always log or re-raise a bare :exc:`Exception` thrown in your generator.
 
-         .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/api_async/request_handler_explanation.py
+         .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/async_request_handler_explanation.py
             :pyobject: ErrorHandlingInRequestHandler.handle
             :dedent:
             :linenos:
@@ -245,7 +245,7 @@ Having Multiple ``yield`` Statements
 
    .. group-tab:: Synchronous
 
-      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/api_sync/request_handler_explanation.py
+      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/blocking_request_handler_explanation.py
          :pyobject: MultipleYieldInRequestHandler.handle
          :dedent:
          :linenos:
@@ -253,7 +253,7 @@ Having Multiple ``yield`` Statements
 
    .. group-tab:: Asynchronous
 
-      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/api_async/request_handler_explanation.py
+      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/async_request_handler_explanation.py
          :pyobject: MultipleYieldInRequestHandler.handle
          :dedent:
          :linenos:
@@ -270,14 +270,14 @@ Having Multiple ``yield`` Statements
 
       .. group-tab:: Synchronous
 
-         .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/api_sync/request_handler_explanation.py
+         .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/blocking_request_handler_explanation.py
             :pyobject: ClientLoopInRequestHandler.handle
             :dedent:
             :linenos:
 
       .. group-tab:: Asynchronous
 
-         .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/api_async/request_handler_explanation.py
+         .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/async_request_handler_explanation.py
             :pyobject: ClientLoopInRequestHandler.handle
             :dedent:
             :linenos:
@@ -296,7 +296,7 @@ Cancellation And Timeouts
 
          .. group-tab:: Synchronous
 
-            .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/api_sync/request_handler_explanation.py
+            .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/blocking_request_handler_explanation.py
                :pyobject: TimeoutYieldedRequestHandler.handle
                :dedent:
                :linenos:
@@ -304,7 +304,7 @@ Cancellation And Timeouts
 
          .. group-tab:: Asynchronous
 
-            .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/api_async/request_handler_explanation.py
+            .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/async_request_handler_explanation.py
                :pyobject: TimeoutYieldedRequestHandler.handle
                :dedent:
                :linenos:
@@ -319,7 +319,7 @@ Cancellation And Timeouts
 
          .. group-tab:: Using ``asyncio``
 
-            .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/api_async/request_handler_explanation.py
+            .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/async_request_handler_explanation.py
                :pyobject: TimeoutContextRequestHandlerAsyncIO.handle
                :dedent:
                :linenos:
@@ -327,7 +327,7 @@ Cancellation And Timeouts
 
          .. group-tab:: Using ``trio``
 
-            .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/api_async/request_handler_explanation.py
+            .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/async_request_handler_explanation.py
                :pyobject: TimeoutContextRequestHandlerTrio.handle
                :dedent:
                :linenos:
@@ -335,7 +335,7 @@ Cancellation And Timeouts
 
          .. group-tab:: Using the ``AsyncBackend`` API
 
-            .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/api_async/request_handler_explanation.py
+            .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/async_request_handler_explanation.py
                :pyobject: TimeoutContextRequestHandlerWithClientBackend.handle
                :dedent:
                :linenos:
@@ -359,7 +359,7 @@ By using :class:`.SocketAncillary`, you can send SCM data. See the Unix manual p
 
    .. group-tab:: Synchronous
 
-      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/api_sync/request_handler_explanation.py
+      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/blocking_request_handler_explanation.py
          :pyobject: SCMSendRequestHandler.handle
          :dedent:
          :linenos:
@@ -367,7 +367,7 @@ By using :class:`.SocketAncillary`, you can send SCM data. See the Unix manual p
 
    .. group-tab:: Asynchronous
 
-      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/api_async/request_handler_explanation.py
+      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/async_request_handler_explanation.py
          :pyobject: SCMSendRequestHandler.handle
          :dedent:
          :linenos:
@@ -384,7 +384,7 @@ See the Unix manual page :manpage:`recvmsg(2)` for details.
 
    .. group-tab:: Synchronous
 
-      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/api_sync/request_handler_explanation.py
+      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/blocking_request_handler_explanation.py
          :pyobject: SCMRecvRequestHandler.handle
          :dedent:
          :linenos:
@@ -392,7 +392,7 @@ See the Unix manual page :manpage:`recvmsg(2)` for details.
 
    .. group-tab:: Asynchronous
 
-      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/api_async/request_handler_explanation.py
+      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/async_request_handler_explanation.py
          :pyobject: SCMRecvRequestHandler.handle
          :dedent:
          :linenos:
@@ -406,7 +406,7 @@ See the Unix manual page :manpage:`recvmsg(2)` for details.
 
       .. group-tab:: Synchronous
 
-         .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/api_sync/request_handler_explanation.py
+         .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/blocking_request_handler_explanation.py
             :pyobject: SCMRecvRequestHandler.example_custom_ancillary_bufsize
             :start-after: [start]
             :dedent:
@@ -415,7 +415,7 @@ See the Unix manual page :manpage:`recvmsg(2)` for details.
 
       .. group-tab:: Asynchronous
 
-         .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/api_async/request_handler_explanation.py
+         .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/async_request_handler_explanation.py
             :pyobject: SCMRecvRequestHandler.example_custom_ancillary_bufsize
             :start-after: [start]
             :dedent:
@@ -436,7 +436,7 @@ Connecting/Disconnecting Hooks
 
       * :meth:`~.BlockingStreamRequestHandler.on_disconnection` is called on client task teardown.
 
-      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/api_sync/request_handler_explanation.py
+      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/blocking_request_handler_explanation.py
          :pyobject: ClientConnectionHooksRequestHandler
          :start-after: ClientConnectionHooksRequestHandler
          :dedent:
@@ -451,7 +451,7 @@ Connecting/Disconnecting Hooks
 
       * :meth:`~.AsyncStreamRequestHandler.on_disconnection` is called on client task teardown.
 
-      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/api_async/request_handler_explanation.py
+      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/async_request_handler_explanation.py
          :pyobject: ClientConnectionHooksRequestHandler
          :start-after: ClientConnectionHooksRequestHandler
          :dedent:
@@ -469,7 +469,7 @@ Wait For Client Data On Connection
       If you need to use the read stream, :meth:`~.BlockingStreamRequestHandler.on_connection` can be an asynchronous generator instead of
       a coroutine function:
 
-      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/api_sync/request_handler_explanation.py
+      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/blocking_request_handler_explanation.py
          :pyobject: ClientConnectionGeneratorRequestHandler
          :start-after: ClientConnectionGeneratorRequestHandler
          :dedent:
@@ -481,7 +481,7 @@ Wait For Client Data On Connection
       If you need to use the read stream, :meth:`~.AsyncStreamRequestHandler.on_connection` can be an asynchronous generator instead of
       a coroutine function:
 
-      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/api_async/request_handler_explanation.py
+      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/async_request_handler_explanation.py
          :pyobject: ClientConnectionAsyncGenRequestHandler
          :start-after: ClientConnectionAsyncGenRequestHandler
          :dedent:
@@ -498,7 +498,7 @@ The client's metadata are available via :class:`.UNIXClientAttribute`:
 
    .. group-tab:: Synchronous
 
-      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/api_sync/request_handler_explanation.py
+      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/blocking_request_handler_explanation.py
          :pyobject: ClientExtraAttributesRequestHandler.handle
          :dedent:
          :linenos:
@@ -506,7 +506,7 @@ The client's metadata are available via :class:`.UNIXClientAttribute`:
 
    .. group-tab:: Asynchronous
 
-      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/api_async/request_handler_explanation.py
+      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/async_request_handler_explanation.py
          :pyobject: ClientExtraAttributesRequestHandler.handle
          :dedent:
          :linenos:
@@ -525,7 +525,7 @@ Service Initialization
 
       This allows you to do something like this:
 
-      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/api_sync/request_handler_explanation.py
+      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/blocking_request_handler_explanation.py
          :pyobject: ServiceInitializationHookRequestHandler
          :start-after: ServiceInitializationHookRequestHandler
          :dedent:
@@ -543,7 +543,7 @@ Service Initialization
 
          .. group-tab:: Using ``asyncio``
 
-            .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/api_async/request_handler_explanation.py
+            .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/async_request_handler_explanation.py
                :pyobject: ServiceInitializationHookRequestHandlerAsyncIO
                :start-after: ServiceInitializationHookRequestHandlerAsyncIO
                :dedent:
@@ -552,7 +552,7 @@ Service Initialization
 
          .. group-tab:: Using ``trio``
 
-            .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/api_async/request_handler_explanation.py
+            .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/async_request_handler_explanation.py
                :pyobject: ServiceInitializationHookRequestHandlerTrio
                :start-after: ServiceInitializationHookRequestHandlerTrio
                :dedent:
@@ -561,7 +561,7 @@ Service Initialization
 
          .. group-tab:: Using the ``AsyncBackend`` API
 
-            .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/api_async/request_handler_explanation.py
+            .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/async_request_handler_explanation.py
                :pyobject: ServiceInitializationHookRequestHandlerWithServerBackend
                :start-after: ServiceInitializationHookRequestHandlerWithServerBackend
                :dedent:
@@ -579,7 +579,7 @@ Per-client variables (``contextvars`` integration)
       The :class:`.ThreadedUnixStreamServer` supports per-task :external+python:doc:`context variables <library/contextvars>`.
       You can use this feature in your request handler:
 
-      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/api_sync/request_handler_explanation.py
+      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/blocking_request_handler_explanation.py
          :pyobject: ClientContextRequestHandler
          :dedent:
          :linenos:
@@ -602,7 +602,7 @@ Per-client variables (``contextvars`` integration)
       If your :term:`asynchronous framework` supports per-task :external+python:doc:`context variables <library/contextvars>`,
       you can use this feature in your request handler:
 
-      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/api_async/request_handler_explanation.py
+      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/async_request_handler_explanation.py
          :pyobject: ClientContextRequestHandler
          :dedent:
          :linenos:
@@ -630,10 +630,10 @@ A basic example of how to run the server:
 
    .. group-tab:: Synchronous
 
-      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/api_sync/server.py
+      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/threaded_server.py
          :linenos:
 
    .. group-tab:: Asynchronous
 
-      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/api_async/server.py
+      .. literalinclude:: ../../_include/examples/alternatives/unix_stream_servers/async_server.py
          :linenos:
