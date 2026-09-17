@@ -652,7 +652,7 @@ class SelectorDatagramListener[Address](SelectorBaseTransport, transports.Datagr
         """
         return self._retry(lambda: self.recv_noblock_from(), timeout)[0]
 
-    def recv_noblock_with_ancillary_from(self, ancillary_bufsize: int) -> tuple[bytes, Any | None, Address]:
+    def recv_noblock_with_ancillary_from(self, ancillary_bufsize: int) -> tuple[bytes, Any | None, Address]:  # pragma: no cover
         """
         Read and return the next available packet.
 

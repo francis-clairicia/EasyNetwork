@@ -187,6 +187,24 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
         assert state is expected_state
 
     @pytest.mark.parametrize("error", [None, OSError])
+    def test____abort____default(
+        self,
+        error: type[OSError] | None,
+        transport: SocketStreamTransport,
+        mock_stream_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        if error is not None:
+            mock_stream_socket.shutdown.side_effect = error
+
+        # Act
+        transport.abort()
+
+        # Assert
+        assert mock_stream_socket.mock_calls == [mocker.call.shutdown(SHUT_RDWR), mocker.call.close()]
+
+    @pytest.mark.parametrize("error", [None, OSError])
     def test____close____default(
         self,
         error: type[OSError] | None,
@@ -1178,6 +1196,31 @@ class TestSSLStreamTransport:
         # Assert
         assert state is expected_state
 
+    @pytest.mark.parametrize("shutdown_error", [None, OSError])
+    @pytest.mark.parametrize("standard_compatible", [False, True], ids=lambda p: f"standard_compatible__{p}", indirect=True)
+    def test____abort____default(
+        self,
+        shutdown_error: type[OSError] | None,
+        transport: SSLStreamTransport,
+        mock_ssl_socket: MagicMock,
+        mock_transport_retry: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        if shutdown_error is not None:
+            mock_ssl_socket.shutdown.side_effect = shutdown_error
+        mock_transport_retry.reset_mock()
+
+        # Act
+        transport.abort()
+
+        # Assert
+        assert mock_ssl_socket.mock_calls == [
+            mocker.call.shutdown(SHUT_RDWR),
+            mocker.call.close(),
+        ]
+        mock_transport_retry.assert_not_called()
+
     @pytest.mark.parametrize("unwrap_error", [None, OSError])
     @pytest.mark.parametrize("shutdown_error", [None, OSError])
     @pytest.mark.parametrize("standard_compatible", [False, True], ids=lambda p: f"standard_compatible__{p}", indirect=True)
@@ -1686,6 +1729,20 @@ class TestSocketDatagramTransport(BaseTestSocketTransport):
 
         # Assert
         assert state is expected_state
+
+    def test____abort____default(
+        self,
+        transport: SocketDatagramTransport,
+        mock_datagram_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+
+        # Act
+        transport.abort()
+
+        # Assert
+        assert mock_datagram_socket.mock_calls == [mocker.call.close()]
 
     def test____close____default(
         self,
