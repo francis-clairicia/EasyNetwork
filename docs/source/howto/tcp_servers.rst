@@ -199,14 +199,25 @@ Error Handling
          :dedent:
          :linenos:
 
-      .. note::
+   .. group-tab:: Asynchronous
 
-         ``handle()`` will never get a :exc:`ConnectionError` subclass. In case of an unexpected disconnect, the generator is closed,
-         so you should handle :exc:`GeneratorExit` instead.
+      .. literalinclude:: ../_include/examples/howto/tcp_servers/async_request_handler_explanation.py
+         :pyobject: ErrorHandlingInRequestHandler.handle
+         :dedent:
+         :linenos:
 
-      .. warning::
+.. note::
 
-         You should always log or re-raise a bare :exc:`Exception` thrown in your generator.
+   ``handle()`` will never get a :exc:`ConnectionError` subclass. In case of an unexpected disconnect, the generator is closed,
+   so you should handle :exc:`GeneratorExit` instead.
+
+.. warning::
+
+   You should always log or re-raise a bare :exc:`Exception` thrown in your generator.
+
+   .. tabs::
+
+      .. group-tab:: Synchronous
 
          .. literalinclude:: ../_include/examples/howto/tcp_servers/blocking_request_handler_explanation.py
             :pyobject: ErrorHandlingInRequestHandler.handle
@@ -216,21 +227,7 @@ Error Handling
             :end-at: InternalError()
             :emphasize-lines: 2-3
 
-   .. group-tab:: Asynchronous
-
-      .. literalinclude:: ../_include/examples/howto/tcp_servers/async_request_handler_explanation.py
-         :pyobject: ErrorHandlingInRequestHandler.handle
-         :dedent:
-         :linenos:
-
-      .. note::
-
-         ``handle()`` will never get a :exc:`ConnectionError` subclass. In case of an unexpected disconnect, the generator is closed,
-         so you should handle :exc:`GeneratorExit` instead.
-
-      .. warning::
-
-         You should always log or re-raise a bare :exc:`Exception` thrown in your generator.
+      .. group-tab:: Asynchronous
 
          .. literalinclude:: ../_include/examples/howto/tcp_servers/async_request_handler_explanation.py
             :pyobject: ErrorHandlingInRequestHandler.handle
