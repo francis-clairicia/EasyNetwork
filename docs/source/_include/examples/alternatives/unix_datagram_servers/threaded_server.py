@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from collections.abc import Generator
 
-from easynetwork.protocol import StreamProtocol
-from easynetwork.servers.handlers import BlockingStreamClient, BlockingStreamRequestHandler
-from easynetwork.servers.threaded_unix_stream import ThreadedUnixStreamServer
+from easynetwork.protocol import DatagramProtocol
+from easynetwork.servers.handlers import BlockingDatagramClient, BlockingDatagramRequestHandler
+from easynetwork.servers.threaded_unix_datagram import ThreadedUnixDatagramServer
 
 
 class Request: ...
@@ -13,10 +13,10 @@ class Request: ...
 class Response: ...
 
 
-class MyRequestHandler(BlockingStreamRequestHandler[Request, Response]):
+class MyRequestHandler(BlockingDatagramRequestHandler[Request, Response]):
     def handle(
         self,
-        client: BlockingStreamClient[Response],
+        client: BlockingDatagramClient[Response],
     ) -> Generator[None, Request]:
         request: Request = yield
 
@@ -26,7 +26,7 @@ class MyRequestHandler(BlockingStreamRequestHandler[Request, Response]):
 
 
 # NOTE: The sent packet is "Response" and the received packet is "Request"
-class ServerProtocol(StreamProtocol[Response, Request]):
+class ServerProtocol(DatagramProtocol[Response, Request]):
     def __init__(self) -> None: ...
 
 
@@ -36,7 +36,7 @@ def main() -> None:
     handler = MyRequestHandler()
 
     # Create the server, binding to /var/run/app.sock
-    with ThreadedUnixStreamServer(path, protocol, handler) as server:
+    with ThreadedUnixDatagramServer(path, protocol, handler) as server:
         # Activate the server; this will keep running until you
         # interrupt the program with Ctrl-C
         server.serve_forever()

@@ -9,7 +9,7 @@ from easynetwork.serializers import JSONSerializer
 
 async def main() -> None:
     protocol = StreamProtocol(JSONSerializer())
-    address = "/var/run/app/app.sock"
+    address = "/var/run/app.sock"
 
     async with AsyncUnixStreamClient(address, protocol) as client:
         print(f"Remote address: {client.get_peer_name()}")
