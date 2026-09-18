@@ -619,7 +619,7 @@ class SocketStreamListener(base_selector.SelectorListener[SocketStreamTransport]
     def __in_executor[R](self, client_sock: socket.socket, handler: Callable[[SocketStreamTransport], R]) -> R:
         try:
             transport = SocketStreamTransport(client_sock, retry_interval=1.0, selector_factory=self._selector_factory)
-        except BaseException:
+        except BaseException:  # pragma: no cover
             client_sock.close()
             raise
         else:
