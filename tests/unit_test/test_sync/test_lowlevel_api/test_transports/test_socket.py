@@ -5,9 +5,11 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import errno
+import logging
 import math
 import os
 import ssl
+import time
 from collections.abc import Buffer, Callable, Generator, Iterable
 from concurrent.futures import Executor, Future
 from socket import AF_INET, SHUT_RDWR, SHUT_WR
@@ -20,6 +22,7 @@ from easynetwork.lowlevel.api_sync.transports.socket import (
     SocketDatagramTransport,
     SocketStreamListener,
     SocketStreamTransport,
+    SSLStreamListener,
     SSLStreamTransport,
 )
 from easynetwork.lowlevel.constants import (
@@ -35,7 +38,7 @@ import pytest
 
 from .....tools import PlatformMarkers
 from ...._utils import executor_submit_default_side_effect, make_executor_submit_side_effect
-from ....base import BaseTestSocketTransport, MixinTestSocketSendMSG
+from ....base import BaseTestIPSocketTransport, BaseTestSocketTransport, MixinTestSocketSendMSG
 
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
@@ -937,7 +940,7 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
         mock_get_address.assert_not_called()
 
 
-class TestSSLStreamTransport:
+class TestSSLStreamTransport(BaseTestIPSocketTransport):
     @pytest.fixture(autouse=True)
     @staticmethod
     def mock_transport_retry(mocker: MockerFixture) -> MagicMock:
@@ -958,14 +961,20 @@ class TestSSLStreamTransport:
         return getattr(request, "param", 12345)
 
     @pytest.fixture
-    @staticmethod
-    def mock_ssl_socket(mock_ssl_socket: MagicMock, socket_fileno: int) -> MagicMock:
+    @classmethod
+    def mock_ssl_socket(
+        cls,
+        mock_ssl_socket: MagicMock,
+        local_address: tuple[str, int],
+        remote_address: tuple[str, int],
+        socket_fileno: int,
+    ) -> MagicMock:
         mock_ssl_socket.fileno.return_value = socket_fileno
         mock_ssl_socket.do_handshake.side_effect = [ssl.SSLWantReadError, ssl.SSLWantWriteError, None]
         mock_ssl_socket.unwrap.side_effect = [ssl.SSLWantReadError, ssl.SSLWantWriteError, None]
 
-        mock_ssl_socket.getsockname.return_value = ("local_address", 11111)
-        mock_ssl_socket.getpeername.return_value = ("remote_address", 12345)
+        cls.set_local_address_to_socket_mock(mock_ssl_socket, mock_ssl_socket.family, local_address)
+        cls.set_remote_address_to_socket_mock(mock_ssl_socket, mock_ssl_socket.family, remote_address)
 
         return mock_ssl_socket
 
@@ -1011,6 +1020,8 @@ class TestSSLStreamTransport:
     def test____dunder_init____default(
         self,
         request: pytest.FixtureRequest,
+        local_address: tuple[str, int],
+        remote_address: tuple[str, int],
         mock_tcp_socket: MagicMock,
         mock_ssl_socket: MagicMock,
         mock_ssl_context: MagicMock,
@@ -1035,8 +1046,8 @@ class TestSSLStreamTransport:
         assert transport._selector_factory is mock_selector_factory
         assert isinstance(transport.extra(SocketAttribute.socket), SocketProxy)
         assert transport.extra(SocketAttribute.family) == mock_tcp_socket.family
-        assert transport.extra(SocketAttribute.sockname) == ("local_address", 11111)
-        assert transport.extra(SocketAttribute.peername) == ("remote_address", 12345)
+        assert transport.extra(SocketAttribute.sockname) == local_address
+        assert transport.extra(SocketAttribute.peername) == remote_address
 
         assert transport.extra(TLSAttribute.sslcontext) is mock_ssl_context
         assert transport.extra(TLSAttribute.peercert) is mocker.sentinel.peercert
@@ -2115,6 +2126,13 @@ class TestSocketStreamListener(BaseTestSocketTransport):
         mock_transport_retry.side_effect = _retry_side_effect
         return mock_transport_retry
 
+    @pytest.fixture(autouse=True)
+    @staticmethod
+    def mock_accepted_transport_retry(mocker: MockerFixture) -> MagicMock:
+        mock_transport_retry = mocker.patch.object(SocketStreamTransport, "_retry", autospec=True)
+        mock_transport_retry.side_effect = _retry_side_effect
+        return mock_transport_retry
+
     @pytest.fixture
     @staticmethod
     def mock_executor(mocker: MockerFixture) -> MagicMock:
@@ -2318,6 +2336,8 @@ class TestSocketStreamListener(BaseTestSocketTransport):
         self,
         request: pytest.FixtureRequest,
         transport: SocketStreamListener,
+        local_address: tuple[str, int] | bytes,
+        remote_address: tuple[str, int] | bytes,
         mock_stream_listener_socket: MagicMock,
         mock_accepted_stream_socket: MagicMock,
         mock_executor: MagicMock,
@@ -2334,10 +2354,14 @@ class TestSocketStreamListener(BaseTestSocketTransport):
         assert mock_stream_listener_socket.mock_calls == [mocker.call.accept()]
         assert isinstance(handler.transport, SocketStreamTransport)
         assert handler.transport.read_fileno() == mock_accepted_stream_socket.fileno()
+        assert handler.transport._retry_interval == 1.0
+        assert handler.transport._selector_factory is transport._selector_factory
+        assert handler.transport.extra(SocketAttribute.sockname) == local_address
+        assert handler.transport.extra(SocketAttribute.peername) == remote_address
         assert task.result(timeout=0) is mocker.sentinel.handler_ret_val
 
     @pytest.mark.parametrize("error", [BlockingIOError, InterruptedError])
-    def test____accept_noblock___blocking_error(
+    def test____accept_noblock____blocking_error(
         self,
         error: type[OSError],
         request: pytest.FixtureRequest,
@@ -2366,7 +2390,7 @@ class TestSocketStreamListener(BaseTestSocketTransport):
         list(map(pytest.param, sorted(IGNORABLE_ACCEPT_ERRNOS | CLOSED_SOCKET_ERRNOS))),
         ids=lambda p: errno.errorcode.get(p, repr(p)),
     )
-    def test____accept_noblock___os_error(
+    def test____accept_noblock____os_error(
         self,
         os_error: int,
         request: pytest.FixtureRequest,
@@ -2400,7 +2424,7 @@ class TestSocketStreamListener(BaseTestSocketTransport):
         else:
             assert task is None
 
-    def test____accept_noblock___executor_shut_down(
+    def test____accept_noblock____executor_shut_down(
         self,
         request: pytest.FixtureRequest,
         transport: SocketStreamListener,
@@ -2424,7 +2448,7 @@ class TestSocketStreamListener(BaseTestSocketTransport):
         assert handler.transport is None
         mock_accepted_stream_socket.close.assert_called_once()
 
-    def test____accept_noblock___task_cancelled_before_execution(
+    def test____accept_noblock____task_cancelled_before_execution(
         self,
         request: pytest.FixtureRequest,
         transport: SocketStreamListener,
@@ -2486,6 +2510,781 @@ class TestSocketStreamListener(BaseTestSocketTransport):
         extra_attribute: Any,
         called_socket_method: str,
         transport: SocketStreamListener,
+        mock_stream_listener_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_get_address: MagicMock = getattr(mock_stream_listener_socket, called_socket_method)
+        transport.close()
+        assert mock_stream_listener_socket.fileno.return_value == -1
+
+        # Act & Assert
+        with pytest.raises(TypedAttributeLookupError):
+            transport.extra(extra_attribute)
+        mock_get_address.assert_not_called()
+
+
+@dataclasses.dataclass
+class _RequestHandlerSSL:
+    request: pytest.FixtureRequest
+    stub: MagicMock
+    transport: SSLStreamTransport | None = dataclasses.field(init=False, default=None)
+
+    def __call__(self, transport: SSLStreamTransport) -> Any:
+        self.transport = transport
+        self.request.addfinalizer(transport.close)
+        return self.stub()
+
+
+class TestSSLStreamListener(BaseTestIPSocketTransport):
+    @pytest.fixture(autouse=True)
+    @staticmethod
+    def mock_transport_retry(mocker: MockerFixture) -> MagicMock:
+        mock_transport_retry = mocker.patch.object(SSLStreamListener, "_retry", autospec=True)
+        mock_transport_retry.side_effect = _retry_side_effect
+        return mock_transport_retry
+
+    @pytest.fixture(autouse=True)
+    @staticmethod
+    def mock_accepted_transport_retry(mocker: MockerFixture) -> MagicMock:
+        mock_transport_retry = mocker.patch.object(SSLStreamTransport, "_retry", autospec=True)
+        mock_transport_retry.side_effect = _retry_side_effect
+        return mock_transport_retry
+
+    @pytest.fixture
+    @staticmethod
+    def mock_executor(mocker: MockerFixture) -> MagicMock:
+        mock_executor = mocker.NonCallableMagicMock(spec=Executor)
+        mock_executor.submit.side_effect = executor_submit_default_side_effect
+        return mock_executor
+
+    @pytest.fixture
+    @staticmethod
+    def socket_fileno(request: pytest.FixtureRequest) -> int:
+        return getattr(request, "param", 12345)
+
+    @pytest.fixture
+    @classmethod
+    def mock_accepted_stream_socket(
+        cls,
+        socket_family_name: str,
+        local_address: tuple[str, int] | bytes,
+        remote_address: tuple[str, int] | bytes,
+        mock_tcp_socket_factory: Callable[[int, int], MagicMock],
+        mock_unix_stream_socket_factory: Callable[[int], MagicMock],
+    ) -> MagicMock:
+        mock_accepted_stream_socket: MagicMock
+        socket_fileno: int = 567
+
+        match socket_family_name:
+            case "AF_INET":
+                mock_accepted_stream_socket = mock_tcp_socket_factory(AF_INET, socket_fileno)
+            case "AF_UNIX":
+                mock_accepted_stream_socket = mock_unix_stream_socket_factory(socket_fileno)
+            case _:
+                pytest.fail(f"Invalid param: {socket_family_name!r}")
+
+        cls.set_local_address_to_socket_mock(mock_accepted_stream_socket, mock_accepted_stream_socket.family, local_address)
+        cls.set_remote_address_to_socket_mock(mock_accepted_stream_socket, mock_accepted_stream_socket.family, remote_address)
+        return mock_accepted_stream_socket
+
+    @pytest.fixture
+    @classmethod
+    def mock_ssl_socket(
+        cls,
+        mock_ssl_socket: MagicMock,
+        local_address: tuple[str, int],
+        remote_address: tuple[str, int],
+    ) -> MagicMock:
+        mock_ssl_socket.do_handshake.side_effect = [ssl.SSLWantReadError, ssl.SSLWantWriteError, None]
+        mock_ssl_socket.unwrap.side_effect = [ssl.SSLWantReadError, ssl.SSLWantWriteError, None]
+
+        cls.set_local_address_to_socket_mock(mock_ssl_socket, mock_ssl_socket.family, local_address)
+        cls.set_remote_address_to_socket_mock(mock_ssl_socket, mock_ssl_socket.family, remote_address)
+
+        return mock_ssl_socket
+
+    @pytest.fixture
+    @staticmethod
+    def mock_ssl_context(mock_ssl_context: MagicMock, mock_ssl_socket: MagicMock, mocker: MockerFixture) -> MagicMock:
+        def wrap_socket_side_effect(sock: MagicMock, **kwargs: Any) -> MagicMock:
+            mock_ssl_socket.fileno.return_value = sock.detach()
+            return mock_ssl_socket
+
+        mock_ssl_context.wrap_socket.side_effect = wrap_socket_side_effect
+        mock_ssl_socket.context = mock_ssl_context
+        mock_ssl_socket.getpeercert.return_value = mocker.sentinel.peercert
+        mock_ssl_socket.cipher.return_value = mocker.sentinel.cipher
+        mock_ssl_socket.compression.return_value = mocker.sentinel.compression
+        mock_ssl_socket.version.return_value = mocker.sentinel.tls_version
+        return mock_ssl_context
+
+    @pytest.fixture
+    @staticmethod
+    def standard_compatible(request: pytest.FixtureRequest) -> bool:
+        return getattr(request, "param", True)
+
+    @pytest.fixture
+    @staticmethod
+    def handshake_error_handler(request: pytest.FixtureRequest, mocker: MockerFixture) -> MagicMock | None:
+        with_handshake_error_handler: bool = getattr(request, "param", True)
+        return mocker.stub("handshake_error_handler") if with_handshake_error_handler else None
+
+    @pytest.fixture
+    @classmethod
+    def mock_stream_listener_socket(
+        cls,
+        socket_family_name: str,
+        socket_fileno: int,
+        local_address: tuple[str, int],
+        remote_address: tuple[str, int],
+        mock_tcp_socket_factory: Callable[[int, int], MagicMock],
+        mock_unix_stream_socket_factory: Callable[[int], MagicMock],
+        mock_accepted_stream_socket: MagicMock,
+    ) -> MagicMock:
+        mock_stream_listener_socket: MagicMock
+
+        match socket_family_name:
+            case "AF_INET":
+                mock_stream_listener_socket = mock_tcp_socket_factory(AF_INET, socket_fileno)
+            case "AF_UNIX":
+                mock_stream_listener_socket = mock_unix_stream_socket_factory(socket_fileno)
+            case _:
+                pytest.fail(f"Invalid param: {socket_family_name!r}")
+
+        cls.set_local_address_to_socket_mock(mock_stream_listener_socket, mock_stream_listener_socket.family, local_address)
+        cls.configure_socket_mock_to_raise_ENOTCONN(mock_stream_listener_socket)
+        mock_stream_listener_socket.accept.return_value = (mock_accepted_stream_socket, remote_address)
+
+        return mock_stream_listener_socket
+
+    @pytest.fixture
+    @staticmethod
+    def transport(
+        mock_stream_listener_socket: MagicMock,
+        mock_ssl_context: MagicMock,
+        standard_compatible: bool,
+        handshake_error_handler: MagicMock | None,
+    ) -> Generator[SSLStreamListener]:
+        transport = SSLStreamListener(
+            mock_stream_listener_socket,
+            mock_ssl_context,
+            standard_compatible=standard_compatible,
+            handshake_error_handler=handshake_error_handler,
+        )
+        mock_stream_listener_socket.reset_mock()
+        with transport:
+            yield transport
+
+    def test____dunder_init____default(
+        self,
+        request: pytest.FixtureRequest,
+        mock_stream_listener_socket: MagicMock,
+        mock_ssl_context: MagicMock,
+        local_address: tuple[str, int],
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_selector_factory = mocker.stub()
+
+        # Act
+        transport = SSLStreamListener(mock_stream_listener_socket, mock_ssl_context, selector_factory=mock_selector_factory)
+        request.addfinalizer(transport.close)
+
+        # Assert
+        assert transport._retry_interval == 1.0
+        assert transport._selector_factory is mock_selector_factory
+        assert isinstance(transport.extra(SocketAttribute.socket), SocketProxy)
+        assert transport.extra(SocketAttribute.family) == mock_stream_listener_socket.family
+        assert transport.extra(SocketAttribute.sockname) == local_address
+        with pytest.raises(TypedAttributeLookupError):
+            transport.extra(SocketAttribute.peername)
+
+        assert transport.extra(TLSAttribute.sslcontext) is mock_ssl_context
+        assert transport.extra(TLSAttribute.standard_compatible) is True
+
+        mock_stream_listener_socket.getsockname.assert_called_once_with()
+        mock_stream_listener_socket.getpeername.assert_called()
+        mock_stream_listener_socket.setblocking.assert_called_once_with(False)
+        mock_stream_listener_socket.settimeout.assert_not_called()
+
+    @pytest.mark.parametrize("standard_compatible", [False, True], ids=lambda p: f"standard_compatible__{p}", indirect=True)
+    def test____dunder_init____ssl_context_parameters(
+        self,
+        request: pytest.FixtureRequest,
+        standard_compatible: bool,
+        mock_stream_listener_socket: MagicMock,
+        mock_ssl_context: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act
+        transport = SSLStreamListener(
+            mock_stream_listener_socket,
+            mock_ssl_context,
+            handshake_timeout=123456789,
+            shutdown_timeout=987654321,
+            standard_compatible=standard_compatible,
+        )
+        request.addfinalizer(transport.close)
+
+        # Assert
+        assert transport.extra(TLSAttribute.standard_compatible) is standard_compatible
+
+    def test____dunder_init____forbid_ssl_sockets(
+        self,
+        mock_ssl_socket: MagicMock,
+        mock_ssl_context: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        with pytest.raises(TypeError, match=r"^ssl\.SSLSocket instances are forbidden$"):
+            _ = SSLStreamListener(mock_ssl_socket, mock_ssl_context)
+
+    def test____dunder_init____forbid_non_stream_sockets(
+        self,
+        mock_udp_socket: MagicMock,
+        mock_ssl_context: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        with pytest.raises(ValueError, match=r"^A 'SOCK_STREAM' socket is expected$"):
+            _ = SSLStreamListener(mock_udp_socket, mock_ssl_context)
+
+    def test____dunder_del____ResourceWarning(
+        self,
+        mock_stream_listener_socket: MagicMock,
+        mock_ssl_context: MagicMock,
+    ) -> None:
+        # Arrange
+        transport = SSLStreamListener(mock_stream_listener_socket, mock_ssl_context)
+
+        # Act & Assert
+        with pytest.warns(ResourceWarning, match=r"^unclosed listener .+$"):
+            del transport
+
+        mock_stream_listener_socket.close.assert_called()
+
+    @pytest.mark.parametrize(
+        ["socket_fileno", "expected_state"],
+        [
+            pytest.param(0, False),
+            pytest.param(12345, False),
+            pytest.param(-1, True),
+            pytest.param(-42, True),
+        ],
+        indirect=["socket_fileno"],
+    )
+    def test____is_closed____returned_state(
+        self,
+        expected_state: bool,
+        transport: SSLStreamListener,
+    ) -> None:
+        # Arrange
+
+        # Act
+        state = transport.is_closed()
+
+        # Assert
+        assert state is expected_state
+
+    def test____abort____default(
+        self,
+        transport: SSLStreamListener,
+        mock_stream_listener_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+
+        # Act
+        transport.abort()
+
+        # Assert
+        assert mock_stream_listener_socket.mock_calls == [mocker.call.close()]
+
+    def test____close____default(
+        self,
+        transport: SSLStreamListener,
+        mock_stream_listener_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+
+        # Act
+        transport.close()
+
+        # Assert
+        assert mock_stream_listener_socket.mock_calls == [mocker.call.close()]
+
+    @pytest.mark.parametrize("socket_fileno", [0, 12345, -1, -42], indirect=True)
+    def test____read_fileno____socket_fileno(
+        self,
+        socket_fileno: int,
+        transport: SSLStreamListener,
+    ) -> None:
+        # Arrange
+
+        # Act
+        fd = transport.read_fileno()
+
+        # Assert
+        assert fd == socket_fileno
+
+    @pytest.mark.parametrize("standard_compatible", [False, True], ids=lambda p: f"standard_compatible__{p}", indirect=True)
+    def test____accept_noblock____accept_socket(
+        self,
+        request: pytest.FixtureRequest,
+        standard_compatible: bool,
+        transport: SSLStreamListener,
+        local_address: tuple[str, int],
+        remote_address: tuple[str, int],
+        mock_stream_listener_socket: MagicMock,
+        mock_accepted_stream_socket: MagicMock,
+        mock_ssl_context: MagicMock,
+        mock_ssl_socket: MagicMock,
+        mock_executor: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        handler = _RequestHandlerSSL(request, mocker.stub())
+        handler.stub.return_value = mocker.sentinel.handler_ret_val
+
+        # Act
+        task: Future[Any] = transport.accept_noblock(handler, mock_executor)
+
+        # Assert
+        assert mock_stream_listener_socket.mock_calls == [mocker.call.accept()]
+        assert isinstance(handler.transport, SSLStreamTransport)
+        assert mock_accepted_stream_socket.fileno() == -1
+        assert handler.transport.read_fileno() == mock_ssl_socket.fileno()
+        assert handler.transport._retry_interval == 1.0
+        assert handler.transport._selector_factory is transport._selector_factory
+        assert handler.transport.extra(SocketAttribute.sockname) == local_address
+        assert handler.transport.extra(SocketAttribute.peername) == remote_address
+        assert handler.transport.extra(TLSAttribute.sslcontext) is mock_ssl_context
+        assert handler.transport.extra(TLSAttribute.standard_compatible) is standard_compatible
+        assert handler.transport.extra(TLSAttribute.peercert) is mocker.sentinel.peercert
+        assert handler.transport.extra(TLSAttribute.cipher) is mocker.sentinel.cipher
+        assert handler.transport.extra(TLSAttribute.compression) is mocker.sentinel.compression
+        assert handler.transport.extra(TLSAttribute.tls_version) is mocker.sentinel.tls_version
+
+        mock_ssl_context.wrap_socket.assert_called_once_with(
+            mock_accepted_stream_socket,
+            server_side=True,
+            server_hostname=None,
+            suppress_ragged_eofs=not standard_compatible,
+            do_handshake_on_connect=False,
+            session=None,
+        )
+
+        assert task.result(timeout=0) is mocker.sentinel.handler_ret_val
+
+    @pytest.mark.parametrize("error", [BlockingIOError, InterruptedError])
+    def test____accept_noblock____blocking_error(
+        self,
+        error: type[OSError],
+        request: pytest.FixtureRequest,
+        transport: SSLStreamListener,
+        mock_stream_listener_socket: MagicMock,
+        mock_executor: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_stream_listener_socket.accept.side_effect = error
+
+        handler = _RequestHandlerSSL(request, mocker.stub())
+        handler.stub.return_value = mocker.sentinel.handler_ret_val
+
+        # Act
+        with pytest.raises(WouldBlockOnRead):
+            transport.accept_noblock(handler, mock_executor)
+
+        # Assert
+        assert mock_stream_listener_socket.mock_calls == [mocker.call.accept()]
+        mock_executor.submit.assert_not_called()
+        assert handler.transport is None
+
+    @pytest.mark.parametrize(
+        "os_error",
+        list(map(pytest.param, sorted(IGNORABLE_ACCEPT_ERRNOS | CLOSED_SOCKET_ERRNOS))),
+        ids=lambda p: errno.errorcode.get(p, repr(p)),
+    )
+    def test____accept_noblock____os_error(
+        self,
+        os_error: int,
+        request: pytest.FixtureRequest,
+        transport: SSLStreamListener,
+        mock_stream_listener_socket: MagicMock,
+        mock_executor: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_stream_listener_socket.accept.side_effect = OSError(os_error, os.strerror(os_error))
+
+        handler = _RequestHandlerSSL(request, mocker.stub())
+        handler.stub.return_value = mocker.sentinel.handler_ret_val
+
+        # Act
+        task: Future[Any] | None = None
+        with (
+            pytest.raises(OSError, check=lambda exc: exc.errno == os_error)
+            if os_error not in IGNORABLE_ACCEPT_ERRNOS
+            else contextlib.nullcontext()
+        ):
+            task = transport.accept_noblock(handler, mock_executor)
+
+        # Assert
+        assert mock_stream_listener_socket.mock_calls == [mocker.call.accept()]
+        mock_executor.submit.assert_not_called()
+        assert handler.transport is None
+        if os_error in IGNORABLE_ACCEPT_ERRNOS:
+            assert task is not None
+            assert task.cancelled()
+        else:
+            assert task is None
+
+    def test____accept_noblock____executor_shut_down(
+        self,
+        request: pytest.FixtureRequest,
+        transport: SSLStreamListener,
+        mock_stream_listener_socket: MagicMock,
+        mock_accepted_stream_socket: MagicMock,
+        mock_ssl_context: MagicMock,
+        mock_executor: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_executor.submit.side_effect = RuntimeError("executor shut down")
+
+        handler = _RequestHandlerSSL(request, mocker.stub())
+        handler.stub.return_value = mocker.sentinel.handler_ret_val
+
+        # Act
+        with pytest.raises(RuntimeError, match="executor shut down"):
+            transport.accept_noblock(handler, mock_executor)
+
+        # Assert
+        assert mock_stream_listener_socket.mock_calls == [mocker.call.accept()]
+        assert handler.transport is None
+        mock_accepted_stream_socket.close.assert_called_once()
+        mock_ssl_context.wrap_socket.assert_not_called()
+
+    # The Future object returned by accept() is not the one returned by executor.submit()
+    # so we must test the exception propagation.
+    def test____accept_noblock____handler_exception(
+        self,
+        request: pytest.FixtureRequest,
+        transport: SSLStreamListener,
+        mock_stream_listener_socket: MagicMock,
+        mock_executor: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        handler = _RequestHandlerSSL(request, mocker.stub())
+        handler.stub.side_effect = handler_exception = RuntimeError("from within handler")
+
+        # Act
+        task: Future[Any] = transport.accept_noblock(handler, mock_executor)
+
+        # Assert
+        assert mock_stream_listener_socket.mock_calls == [mocker.call.accept()]
+        assert isinstance(handler.transport, SSLStreamTransport)
+        assert task.exception(timeout=0) is handler_exception
+
+    @pytest.mark.parametrize(
+        "handshake_error_handler",
+        [
+            pytest.param(False, id="DEFAULT_ERROR_HANDLER"),
+            pytest.param(True, id="CUSTOM_ERROR_HANDLER"),
+        ],
+        indirect=True,
+    )
+    def test____accept_noblock____ssl_handshake_error(
+        self,
+        handshake_error_handler: MagicMock | None,
+        request: pytest.FixtureRequest,
+        transport: SSLStreamListener,
+        mock_stream_listener_socket: MagicMock,
+        mock_accepted_stream_socket: MagicMock,
+        mock_ssl_socket: MagicMock,
+        mock_executor: MagicMock,
+        mocker: MockerFixture,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        # Arrange
+        handler = _RequestHandlerSSL(request, mocker.stub())
+        mock_ssl_socket.do_handshake.side_effect = do_handshake_error = ConnectionAbortedError("do_handshake")
+        caplog.set_level(logging.WARNING, SSLStreamListener.__module__)
+
+        # Act
+        task: Future[Any] = transport.accept_noblock(handler, mock_executor)
+
+        # Assert
+        assert mock_stream_listener_socket.mock_calls == [mocker.call.accept()]
+        assert handler.transport is None
+        assert task.cancelled()
+        if handshake_error_handler is None:
+            assert len(caplog.records) == 1
+            assert caplog.records[0].levelno == logging.WARNING
+            assert caplog.records[0].exc_info is not None and caplog.records[0].exc_info[1] is do_handshake_error
+        else:
+            assert len(caplog.records) == 0
+            handshake_error_handler.assert_called_once_with(do_handshake_error)
+        mock_accepted_stream_socket.close.assert_called_once()
+
+    @pytest.mark.parametrize("handshake_error_handler", [pytest.param(True, id=pytest.HIDDEN_PARAM)], indirect=True)
+    def test____accept_noblock____ssl_handshake_error____callback_error(
+        self,
+        handshake_error_handler: MagicMock,
+        request: pytest.FixtureRequest,
+        transport: SSLStreamListener,
+        mock_stream_listener_socket: MagicMock,
+        mock_accepted_stream_socket: MagicMock,
+        mock_ssl_socket: MagicMock,
+        mock_executor: MagicMock,
+        mocker: MockerFixture,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        # Arrange
+        handler = _RequestHandlerSSL(request, mocker.stub())
+        mock_ssl_socket.do_handshake.side_effect = do_handshake_error = ConnectionAbortedError("do_handshake")
+        handshake_error_handler.side_effect = error_handler_crash = RuntimeError("handshake_error_handler")
+        caplog.set_level(logging.WARNING, SSLStreamListener.__module__)
+
+        # Act
+        task: Future[Any] = transport.accept_noblock(handler, mock_executor)
+
+        # Assert
+        assert mock_stream_listener_socket.mock_calls == [mocker.call.accept()]
+        assert handler.transport is None
+        assert task.cancelled()
+        handshake_error_handler.assert_called_once_with(do_handshake_error)
+        assert len(caplog.records) == 1
+        assert caplog.records[0].levelno == logging.WARNING
+        assert caplog.records[0].exc_info is not None and caplog.records[0].exc_info[1] is error_handler_crash
+        assert error_handler_crash.__context__ is do_handshake_error
+        mock_accepted_stream_socket.close.assert_called_once()
+
+    @pytest.mark.parametrize(
+        "handshake_error_handler",
+        [
+            pytest.param(False, id="DEFAULT_ERROR_HANDLER"),
+            pytest.param(True, id="CUSTOM_ERROR_HANDLER"),
+        ],
+        indirect=True,
+    )
+    def test____accept_noblock____ssl_handshake_error____base_exception(
+        self,
+        handshake_error_handler: MagicMock | None,
+        request: pytest.FixtureRequest,
+        transport: SSLStreamListener,
+        mock_stream_listener_socket: MagicMock,
+        mock_accepted_stream_socket: MagicMock,
+        mock_ssl_socket: MagicMock,
+        mock_executor: MagicMock,
+        mocker: MockerFixture,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        # Arrange
+        class MyException(BaseException):
+            pass
+
+        handler = _RequestHandlerSSL(request, mocker.stub())
+        mock_ssl_socket.do_handshake.side_effect = do_handshake_error = MyException("do_handshake")
+        caplog.set_level(logging.WARNING, SSLStreamListener.__module__)
+
+        # Act
+        task: Future[Any] = transport.accept_noblock(handler, mock_executor)
+
+        # Assert
+        assert mock_stream_listener_socket.mock_calls == [mocker.call.accept()]
+        assert handler.transport is None
+        assert task.exception(timeout=0) is do_handshake_error
+        assert len(caplog.records) == 0
+        if handshake_error_handler is not None:
+            handshake_error_handler.assert_not_called()
+        mock_accepted_stream_socket.close.assert_called_once()
+
+    @pytest.mark.flaky(retries=3, delay=0.1)
+    @pytest.mark.parametrize(
+        "handshake_error_handler",
+        [
+            pytest.param(False, id="DEFAULT_ERROR_HANDLER"),
+            pytest.param(True, id="CUSTOM_ERROR_HANDLER"),
+        ],
+        indirect=True,
+    )
+    def test____accept_noblock____ssl_handshake_error____base_exception____task_cancelled_before(
+        self,
+        handshake_error_handler: MagicMock | None,
+        request: pytest.FixtureRequest,
+        transport: SSLStreamListener,
+        mock_stream_listener_socket: MagicMock,
+        mock_accepted_stream_socket: MagicMock,
+        mock_ssl_socket: MagicMock,
+        mock_executor: MagicMock,
+        mocker: MockerFixture,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        # Arrange
+        class MyException(BaseException):
+            pass
+
+        mock_executor.submit.side_effect = make_executor_submit_side_effect(request, interval=0)
+
+        handler = _RequestHandlerSSL(request, mocker.stub())
+        do_handshake_error = MyException("do_handshake")
+
+        def sleep_then_raise() -> None:
+            time.sleep(1.0)
+            raise do_handshake_error
+
+        mock_ssl_socket.do_handshake.side_effect = sleep_then_raise
+        caplog.set_level(logging.WARNING, SSLStreamListener.__module__)
+
+        # Act
+        task: Future[Any] = transport.accept_noblock(handler, mock_executor)
+        time.sleep(0.1)
+        assert not task.done()
+        task.cancel()
+        assert task.cancelled()
+        time.sleep(1.0)
+
+        # Assert
+        assert mock_stream_listener_socket.mock_calls == [mocker.call.accept()]
+        assert handler.transport is None
+        assert len(caplog.records) == 1
+        assert caplog.records[0].levelno == logging.WARNING
+        assert caplog.records[0].exc_info is not None and caplog.records[0].exc_info[1] is do_handshake_error
+        if handshake_error_handler is not None:
+            handshake_error_handler.assert_not_called()
+        mock_accepted_stream_socket.close.assert_called_once()
+
+    def test____accept_noblock____task_cancelled_before_execution(
+        self,
+        request: pytest.FixtureRequest,
+        transport: SSLStreamListener,
+        mock_ssl_context: MagicMock,
+        mock_stream_listener_socket: MagicMock,
+        mock_accepted_stream_socket: MagicMock,
+        mock_executor: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_executor.submit.side_effect = make_executor_submit_side_effect(request, interval=math.inf)
+
+        handler = _RequestHandlerSSL(request, mocker.stub())
+        handler.stub.return_value = mocker.sentinel.handler_ret_val
+
+        # Act
+        task: Future[Any] = transport.accept_noblock(handler, mock_executor)
+        assert not task.done()
+        task.cancel()
+        assert task.cancelled()
+
+        # Assert
+        assert mock_stream_listener_socket.mock_calls == [mocker.call.accept()]
+        assert handler.transport is None
+        mock_accepted_stream_socket.close.assert_called_once()
+        mock_ssl_context.wrap_socket.assert_not_called()
+
+    # The Future object returned by accept() is not the one returned by executor.submit()
+    # so we must test the cancellation propagation.
+    def test____accept_noblock____task_cancelled_before_execution____cancelled_by_executor(
+        self,
+        request: pytest.FixtureRequest,
+        transport: SSLStreamListener,
+        mock_ssl_context: MagicMock,
+        mock_stream_listener_socket: MagicMock,
+        mock_accepted_stream_socket: MagicMock,
+        mock_executor: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_executor.submit.side_effect = make_executor_submit_side_effect(request, interval=math.inf, cancelled_after_delay=0.1)
+
+        handler = _RequestHandlerSSL(request, mocker.stub())
+        handler.stub.return_value = mocker.sentinel.handler_ret_val
+
+        # Act
+        task: Future[Any] = transport.accept_noblock(handler, mock_executor)
+        time.sleep(0.5)
+
+        # Assert
+        assert task.cancelled()
+        assert mock_stream_listener_socket.mock_calls == [mocker.call.accept()]
+        assert handler.transport is None
+        mock_accepted_stream_socket.close.assert_called_once()
+        mock_ssl_context.wrap_socket.assert_not_called()
+
+    @pytest.mark.flaky(retries=3, delay=0.1)
+    def test____accept_noblock____task_cancelled_before_ssl_handshake_done(
+        self,
+        request: pytest.FixtureRequest,
+        transport: SSLStreamListener,
+        mock_ssl_socket: MagicMock,
+        mock_stream_listener_socket: MagicMock,
+        mock_executor: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_executor.submit.side_effect = make_executor_submit_side_effect(request, interval=0)
+        mock_ssl_socket.do_handshake.side_effect = lambda: time.sleep(1.0)
+
+        handler = _RequestHandlerSSL(request, mocker.stub())
+        handler.stub.return_value = mocker.sentinel.handler_ret_val
+
+        # Act
+        task: Future[Any] = transport.accept_noblock(handler, mock_executor)
+        time.sleep(0.1)
+        assert not task.done()
+        task.cancel()
+        assert task.cancelled()
+        time.sleep(1.0)
+
+        # Assert
+        assert mock_stream_listener_socket.mock_calls == [mocker.call.accept()]
+        assert handler.transport is None
+        mock_ssl_socket.unwrap.assert_not_called()
+        mock_ssl_socket.close.assert_called()
+
+    @pytest.mark.parametrize(
+        ["extra_attribute", "called_socket_method", "os_error"],
+        [
+            pytest.param(SocketAttribute.sockname, "getsockname", errno.EINVAL, id="socket.getsockname()"),
+            pytest.param(SocketAttribute.peername, "getpeername", errno.ENOTCONN, id="socket.getpeername()"),
+        ],
+    )
+    def test____extra_attributes____address_lookup_raises_OSError(
+        self,
+        extra_attribute: Any,
+        called_socket_method: str,
+        os_error: int,
+        transport: SSLStreamListener,
+        mock_stream_listener_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_get_address: MagicMock = getattr(mock_stream_listener_socket, called_socket_method)
+        mock_get_address.side_effect = OSError(os_error, os.strerror(os_error))
+
+        # Act & Assert
+        with pytest.raises(TypedAttributeLookupError):
+            transport.extra(extra_attribute)
+        mock_get_address.assert_called_once()
+
+    @pytest.mark.parametrize(
+        ["extra_attribute", "called_socket_method"],
+        [
+            pytest.param(SocketAttribute.sockname, "getsockname", id="socket.getsockname()"),
+            pytest.param(SocketAttribute.peername, "getpeername", id="socket.getpeername()"),
+        ],
+    )
+    def test____extra_attributes____address_lookup_on_closed_socket(
+        self,
+        extra_attribute: Any,
+        called_socket_method: str,
+        transport: SSLStreamListener,
         mock_stream_listener_socket: MagicMock,
     ) -> None:
         # Arrange

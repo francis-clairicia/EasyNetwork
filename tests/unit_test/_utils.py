@@ -349,14 +349,30 @@ def executor_submit_default_side_effect(func: Callable[..., Any], /, *args: Any,
     return f
 
 
-def make_executor_submit_side_effect(request: pytest.FixtureRequest, *, interval: float) -> Callable[..., Future[Any]]:
+def make_executor_submit_side_effect(
+    request: pytest.FixtureRequest,
+    *,
+    interval: float,
+    cancelled_after_delay: float | None = None,
+) -> Callable[..., Future[Any]]:
+
+    def _on_future_done(f: Future[Any], *, _timer: threading.Timer) -> None:
+        if f.cancelled():
+            _timer.cancel()
 
     def submit_side_effect(func: Callable[..., Any], /, *args: Any, **kwargs: Any) -> Future[Any]:
         f: Future[Any] = Future()
         if interval != math.inf:
             timer = threading.Timer(interval, _call_submitted_function, args=(f, func, *args), kwargs=kwargs)
+            timer.daemon = True
             request.addfinalizer(timer.cancel)
             timer.start()
+            f.add_done_callback(functools.partial(_on_future_done, _timer=timer))
+        if cancelled_after_delay is not None:
+            cancel_timer = threading.Timer(cancelled_after_delay, f.cancel)
+            cancel_timer.daemon = True
+            request.addfinalizer(cancel_timer.cancel)
+            cancel_timer.start()
         return f
 
     return submit_side_effect
