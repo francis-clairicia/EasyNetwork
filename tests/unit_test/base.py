@@ -145,6 +145,13 @@ class BaseTestSocketTransport(BaseTestSocket):
                 pytest.fail(f"Invalid param: {socket_family_name!r}")
 
 
+class BaseTestIPSocketTransport(BaseTestSocketTransport):
+    @pytest.fixture
+    @staticmethod
+    def socket_family_name() -> str:
+        return "AF_INET"
+
+
 class BaseTestUnixSocketTransport(BaseTestSocketTransport):
     @pytest.fixture
     @staticmethod
