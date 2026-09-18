@@ -3,9 +3,11 @@ from __future__ import annotations
 import contextlib
 import functools
 import inspect
+import math
 import sys
 import threading
 from collections.abc import Awaitable, Callable, Coroutine, Generator, Iterable, Sequence
+from concurrent.futures import Future
 from socket import AF_INET, AF_INET6, IPPROTO_TCP, IPPROTO_UDP, SOCK_DGRAM, SOCK_STREAM
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, Final
@@ -85,6 +87,9 @@ class DummyRLock(DummyLock):
 
     def _get_requester_id(self) -> object:
         return threading.get_ident()
+
+    def _is_owned(self) -> bool:
+        return self._owner == self._get_requester_id()
 
 
 class AsyncDummyLock(_LockMixin):
@@ -323,3 +328,35 @@ def temporary_mock_side_effect(mock: MagicMock, side_effect: Any) -> Generator[N
     with restore_mock_side_effect(mock):
         mock.side_effect = side_effect
         yield
+
+
+def _call_submitted_function(f: Future[Any], func: Callable[..., Any], /, *args: Any, **kwargs: Any) -> None:
+    if not f.set_running_or_notify_cancel():
+        return
+    try:
+        result = func(*args, **kwargs)
+    except BaseException as exc:
+        f.set_exception(exc)
+    else:
+        f.set_result(result)
+    finally:
+        del f, func, args, kwargs
+
+
+def executor_submit_default_side_effect(func: Callable[..., Any], /, *args: Any, **kwargs: Any) -> Future[Any]:
+    f: Future[Any] = Future()
+    _call_submitted_function(f, func, *args, **kwargs)
+    return f
+
+
+def make_executor_submit_side_effect(request: pytest.FixtureRequest, *, interval: float) -> Callable[..., Future[Any]]:
+
+    def submit_side_effect(func: Callable[..., Any], /, *args: Any, **kwargs: Any) -> Future[Any]:
+        f: Future[Any] = Future()
+        if interval != math.inf:
+            timer = threading.Timer(interval, _call_submitted_function, args=(f, func, *args), kwargs=kwargs)
+            request.addfinalizer(timer.cancel)
+            timer.start()
+        return f
+
+    return submit_side_effect
