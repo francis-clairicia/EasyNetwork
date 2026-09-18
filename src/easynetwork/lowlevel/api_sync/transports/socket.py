@@ -857,20 +857,27 @@ class SocketDatagramListener(base_selector.SelectorDatagramListener[Any]):
     .. versionadded:: NEXT_VERSION
     """
 
-    __slots__ = ("__socket", "__extra_attributes")
+    __slots__ = ("__socket", "__max_datagram_size", "__extra_attributes")
 
     def __init__(
         self,
         sock: socket.socket,
         *,
+        max_datagram_size: int = constants.MAX_DATAGRAM_BUFSIZE,
         selector_factory: Callable[[], selectors.BaseSelector] | None = None,
     ) -> None:
         """
         Parameters:
             sock: The :data:`~socket.SOCK_DGRAM` listener socket to wrap.
+            max_datagram_size: The maximum packet size supported by :manpage:`recvfrom(2)` for the current socket.
             selector_factory: If given, the callable object to use to create a new :class:`selectors.BaseSelector` instance.
         """
         super().__init__(retry_interval=1.0, selector_factory=selector_factory)
+
+        if max_datagram_size <= 0:
+            raise ValueError("max_datagram_size must not be <= 0")
+
+        self.__max_datagram_size: int = max_datagram_size
 
         _utils.check_socket_no_ssl(sock)
         if sock.type != socket.SOCK_DGRAM:
@@ -907,8 +914,9 @@ class SocketDatagramListener(base_selector.SelectorDatagramListener[Any]):
 
     @_utils.inherit_doc(base_selector.SelectorDatagramListener)
     def recv_noblock_from(self) -> tuple[bytes, Any]:
+        max_datagram_size: int = self.__max_datagram_size
         try:
-            return self.__socket.recvfrom(constants.MAX_DATAGRAM_BUFSIZE)
+            return self.__socket.recvfrom(max_datagram_size)
         except (BlockingIOError, InterruptedError):
             raise base_selector.WouldBlockOnRead from None
 
@@ -921,8 +929,9 @@ class SocketDatagramListener(base_selector.SelectorDatagramListener[Any]):
         ) -> tuple[bytes, list[tuple[int, int, bytes]] | None, Any]:
             if not _unix_utils.is_unix_socket_family(self.__socket.family):
                 return super().recv_noblock_with_ancillary_from(ancillary_bufsize)
+            max_datagram_size: int = self.__max_datagram_size
             try:
-                msg, ancdata, _, address = self.__socket.recvmsg(constants.MAX_DATAGRAM_BUFSIZE, ancillary_bufsize)
+                msg, ancdata, _, address = self.__socket.recvmsg(max_datagram_size, ancillary_bufsize)
             except (BlockingIOError, InterruptedError):
                 raise base_selector.WouldBlockOnRead from None
             else:
@@ -950,6 +959,20 @@ class SocketDatagramListener(base_selector.SelectorDatagramListener[Any]):
                 self.__socket.sendmsg([data], ancillary_data, 0, address)
             except (BlockingIOError, InterruptedError):
                 raise base_selector.WouldBlockOnWrite from None
+
+        @_utils.inherit_doc(base_selector.SelectorDatagramListener)
+        def send_with_ancillary_to(
+            self,
+            data: bytes | bytearray | memoryview,
+            ancillary_data: Any,
+            address: Any,
+            timeout: float,
+        ) -> None:
+            if hasattr(ancillary_data, "__next__"):
+                # Do not send the iterator directly because if sendmsg() blocks,
+                # it would retry with an already consumed iterator.
+                ancillary_data = list(ancillary_data)
+            return super().send_with_ancillary_to(data, ancillary_data, address, timeout)
 
     @property
     @_utils.inherit_doc(base_selector.SelectorDatagramListener)
