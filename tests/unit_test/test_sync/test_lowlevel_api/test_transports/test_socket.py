@@ -12,7 +12,12 @@ from typing import TYPE_CHECKING, Any
 
 from easynetwork.exceptions import TypedAttributeLookupError, UnsupportedOperation
 from easynetwork.lowlevel.api_sync.transports.base_selector import SelectorBaseTransport, WouldBlockOnRead, WouldBlockOnWrite
-from easynetwork.lowlevel.api_sync.transports.socket import SocketDatagramTransport, SocketStreamTransport, SSLStreamTransport
+from easynetwork.lowlevel.api_sync.transports.socket import (
+    SocketDatagramListener,
+    SocketDatagramTransport,
+    SocketStreamTransport,
+    SSLStreamTransport,
+)
 from easynetwork.lowlevel.constants import (
     CLOSED_SOCKET_ERRNOS,
     MAX_DATAGRAM_BUFSIZE,
@@ -2052,7 +2057,6 @@ class TestSocketDatagramTransport(BaseTestSocketTransport):
         os_error: int,
         transport: SocketDatagramTransport,
         mock_datagram_socket: MagicMock,
-        mocker: MockerFixture,
     ) -> None:
         # Arrange
         mock_get_address: MagicMock = getattr(mock_datagram_socket, called_socket_method)
@@ -2075,6 +2079,525 @@ class TestSocketDatagramTransport(BaseTestSocketTransport):
         extra_attribute: Any,
         called_socket_method: str,
         transport: SocketDatagramTransport,
+        mock_datagram_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_get_address: MagicMock = getattr(mock_datagram_socket, called_socket_method)
+        transport.close()
+        assert mock_datagram_socket.fileno.return_value == -1
+
+        # Act & Assert
+        with pytest.raises(TypedAttributeLookupError):
+            transport.extra(extra_attribute)
+        mock_get_address.assert_not_called()
+
+
+class TestSocketDatagramListener(BaseTestSocketTransport):
+    @pytest.fixture(autouse=True)
+    @staticmethod
+    def mock_transport_retry(mocker: MockerFixture) -> MagicMock:
+        mock_transport_retry = mocker.patch.object(SocketDatagramListener, "_retry", autospec=True)
+        mock_transport_retry.side_effect = _retry_side_effect
+        return mock_transport_retry
+
+    @pytest.fixture
+    @staticmethod
+    def socket_fileno(request: pytest.FixtureRequest) -> int:
+        return getattr(request, "param", 12345)
+
+    @pytest.fixture
+    @classmethod
+    def mock_datagram_socket(
+        cls,
+        socket_family_name: str,
+        socket_fileno: int,
+        local_address: tuple[str, int] | bytes,
+        mock_udp_socket_factory: Callable[[int, int], MagicMock],
+        mock_unix_datagram_socket_factory: Callable[[int], MagicMock],
+    ) -> MagicMock:
+        mock_datagram_socket: MagicMock
+
+        match socket_family_name:
+            case "AF_INET":
+                mock_datagram_socket = mock_udp_socket_factory(AF_INET, socket_fileno)
+            case "AF_UNIX":
+                mock_datagram_socket = mock_unix_datagram_socket_factory(socket_fileno)
+            case _:
+                pytest.fail(f"Invalid param: {socket_family_name!r}")
+
+        cls.set_local_address_to_socket_mock(mock_datagram_socket, mock_datagram_socket.family, local_address)
+        cls.configure_socket_mock_to_raise_ENOTCONN(mock_datagram_socket)
+
+        return mock_datagram_socket
+
+    @pytest.fixture
+    @staticmethod
+    def max_datagram_size(request: pytest.FixtureRequest) -> int | None:
+        return getattr(request, "param", None)
+
+    @pytest.fixture
+    @staticmethod
+    def transport(mock_datagram_socket: MagicMock, max_datagram_size: int | None) -> Generator[SocketDatagramListener]:
+        if max_datagram_size is None:
+            transport = SocketDatagramListener(mock_datagram_socket)
+        else:
+            transport = SocketDatagramListener(mock_datagram_socket, max_datagram_size=max_datagram_size)
+        mock_datagram_socket.reset_mock()
+        with transport:
+            yield transport
+
+    def test____dunder_init____default(
+        self,
+        request: pytest.FixtureRequest,
+        local_address: tuple[str, int] | bytes,
+        mock_datagram_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_selector_factory = mocker.stub()
+
+        # Act
+        transport = SocketDatagramListener(mock_datagram_socket, selector_factory=mock_selector_factory)
+        request.addfinalizer(transport.close)
+
+        # Assert
+        assert transport._retry_interval == 1.0
+        assert transport._selector_factory is mock_selector_factory
+        assert isinstance(transport.extra(SocketAttribute.socket), SocketProxy)
+        assert transport.extra(SocketAttribute.family) == mock_datagram_socket.family
+        assert transport.extra(SocketAttribute.sockname) == local_address
+        with pytest.raises(TypedAttributeLookupError):
+            transport.extra(SocketAttribute.peername)
+
+        mock_datagram_socket.getsockname.assert_called_once_with()
+        mock_datagram_socket.getpeername.assert_called()
+        mock_datagram_socket.setblocking.assert_called_once_with(False)
+        mock_datagram_socket.settimeout.assert_not_called()
+
+    def test____dunder_init____forbid_ssl_sockets(
+        self,
+        mock_ssl_socket: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        with pytest.raises(TypeError, match=r"^ssl\.SSLSocket instances are forbidden$"):
+            _ = SocketDatagramListener(mock_ssl_socket)
+
+    def test____dunder_init____forbid_non_datagram_sockets(
+        self,
+        mock_tcp_socket: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        with pytest.raises(ValueError, match=r"^A 'SOCK_DGRAM' socket is expected$"):
+            _ = SocketDatagramListener(mock_tcp_socket)
+
+    @pytest.mark.parametrize("max_datagram_size", [0, -42], ids=lambda p: f"max_datagram_size__{p}")
+    def test____dunder_init____invalid_datagram_size(
+        self,
+        max_datagram_size: int,
+        mock_datagram_socket: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        with pytest.raises(ValueError, match=r"^max_datagram_size must not be <= 0$"):
+            _ = SocketDatagramListener(mock_datagram_socket, max_datagram_size=max_datagram_size)
+
+    def test____dunder_del____ResourceWarning(
+        self,
+        mock_datagram_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        transport = SocketDatagramListener(mock_datagram_socket)
+
+        # Act & Assert
+        with pytest.warns(ResourceWarning, match=r"^unclosed listener .+$"):
+            del transport
+
+        mock_datagram_socket.close.assert_called()
+
+    @pytest.mark.parametrize(
+        ["socket_fileno", "expected_state"],
+        [
+            pytest.param(0, False),
+            pytest.param(12345, False),
+            pytest.param(-1, True),
+            pytest.param(-42, True),
+        ],
+        indirect=["socket_fileno"],
+    )
+    def test____is_closed____returned_state(
+        self,
+        expected_state: bool,
+        transport: SocketDatagramListener,
+    ) -> None:
+        # Arrange
+
+        # Act
+        state = transport.is_closed()
+
+        # Assert
+        assert state is expected_state
+
+    def test____abort____default(
+        self,
+        transport: SocketDatagramListener,
+        mock_datagram_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+
+        # Act
+        transport.abort()
+
+        # Assert
+        assert mock_datagram_socket.mock_calls == [mocker.call.close()]
+
+    def test____close____default(
+        self,
+        transport: SocketDatagramListener,
+        mock_datagram_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+
+        # Act
+        transport.close()
+
+        # Assert
+        assert mock_datagram_socket.mock_calls == [mocker.call.close()]
+
+    @pytest.mark.parametrize("socket_fileno", [0, 12345, -1, -42], indirect=True)
+    def test____read_fileno____socket_fileno(
+        self,
+        socket_fileno: int,
+        transport: SocketDatagramListener,
+    ) -> None:
+        # Arrange
+
+        # Act
+        fd = transport.read_fileno()
+
+        # Assert
+        assert fd == socket_fileno
+
+    @pytest.mark.parametrize("socket_fileno", [0, 12345, -1, -42], indirect=True)
+    def test____write_fileno____socket_fileno(
+        self,
+        socket_fileno: int,
+        transport: SocketDatagramListener,
+    ) -> None:
+        # Arrange
+
+        # Act
+        fd = transport.write_fileno()
+
+        # Assert
+        assert fd == socket_fileno
+
+    @pytest.mark.parametrize("max_datagram_size", [None, 1024], ids=lambda p: f"max_datagram_size__{p}", indirect=True)
+    def test____recv_noblock_from____default(
+        self,
+        max_datagram_size: int | None,
+        transport: SocketDatagramListener,
+        mock_datagram_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_datagram_socket.recvfrom.return_value = (mocker.sentinel.bytes, mocker.sentinel.addr)
+
+        # Act
+        result, sender_address = transport.recv_noblock_from()
+
+        # Assert
+        if max_datagram_size is None:
+            mock_datagram_socket.recvfrom.assert_called_once_with(MAX_DATAGRAM_BUFSIZE)
+        else:
+            mock_datagram_socket.recvfrom.assert_called_once_with(max_datagram_size)
+        mock_datagram_socket.fileno.assert_not_called()
+        assert result is mocker.sentinel.bytes
+        assert sender_address is mocker.sentinel.addr
+
+    @pytest.mark.parametrize("error", [BlockingIOError, InterruptedError])
+    @pytest.mark.parametrize("max_datagram_size", [None, 1024], ids=lambda p: f"max_datagram_size__{p}", indirect=True)
+    def test____recv_noblock_from____blocking_error(
+        self,
+        max_datagram_size: int | None,
+        error: type[OSError],
+        transport: SocketDatagramListener,
+        mock_datagram_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_datagram_socket.recvfrom.side_effect = error
+
+        # Act
+        with pytest.raises(WouldBlockOnRead):
+            transport.recv_noblock_from()
+
+        # Assert
+        if max_datagram_size is None:
+            mock_datagram_socket.recvfrom.assert_called_once_with(MAX_DATAGRAM_BUFSIZE)
+        else:
+            mock_datagram_socket.recvfrom.assert_called_once_with(max_datagram_size)
+        mock_datagram_socket.fileno.assert_not_called()
+
+    @PlatformMarkers.supports_socket_recvmsg
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
+    @pytest.mark.parametrize("max_datagram_size", [None, 1024], ids=lambda p: f"max_datagram_size__{p}", indirect=True)
+    def test____recv_noblock_with_ancillary_from____default(
+        self,
+        max_datagram_size: int | None,
+        transport: SocketDatagramListener,
+        mock_datagram_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_datagram_socket.recvmsg.return_value = (mocker.sentinel.bytes, mocker.sentinel.ancdata, 0, mocker.sentinel.addr)
+
+        # Act
+        result, ancdata, sender_address = transport.recv_noblock_with_ancillary_from(mocker.sentinel.ancbufsize)
+
+        # Assert
+        if max_datagram_size is None:
+            mock_datagram_socket.recvmsg.assert_called_once_with(MAX_DATAGRAM_BUFSIZE, mocker.sentinel.ancbufsize)
+        else:
+            mock_datagram_socket.recvmsg.assert_called_once_with(max_datagram_size, mocker.sentinel.ancbufsize)
+        mock_datagram_socket.fileno.assert_not_called()
+        assert result is mocker.sentinel.bytes
+        assert ancdata is mocker.sentinel.ancdata
+        assert sender_address is mocker.sentinel.addr
+
+    @PlatformMarkers.supports_socket_recvmsg
+    @pytest.mark.parametrize("socket_family_name", _ANCILLARY_UNSUPPORTED, indirect=True)
+    def test____recv_noblock_with_ancillary_from____socket_family_unsupported(
+        self,
+        transport: SocketDatagramListener,
+        mock_datagram_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_datagram_socket.recvmsg.return_value = (mocker.sentinel.bytes, mocker.sentinel.ancdata, 0, mocker.sentinel.addr)
+
+        # Act
+        with pytest.raises(UnsupportedOperation):
+            transport.recv_noblock_with_ancillary_from(mocker.sentinel.ancbufsize)
+
+        # Assert
+        mock_datagram_socket.recvmsg.assert_not_called()
+        mock_datagram_socket.fileno.assert_not_called()
+
+    @PlatformMarkers.supports_socket_recvmsg
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
+    @pytest.mark.parametrize("error", [BlockingIOError, InterruptedError])
+    @pytest.mark.parametrize("max_datagram_size", [None, 1024], ids=lambda p: f"max_datagram_size__{p}", indirect=True)
+    def test____recv_noblock_with_ancillary_from____blocking_error(
+        self,
+        max_datagram_size: int | None,
+        error: type[OSError],
+        transport: SocketDatagramListener,
+        mock_datagram_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_datagram_socket.recvmsg.side_effect = error
+
+        # Act
+        with pytest.raises(WouldBlockOnRead):
+            transport.recv_noblock_with_ancillary_from(mocker.sentinel.ancbufsize)
+
+        # Assert
+        if max_datagram_size is None:
+            mock_datagram_socket.recvmsg.assert_called_once_with(MAX_DATAGRAM_BUFSIZE, mocker.sentinel.ancbufsize)
+        else:
+            mock_datagram_socket.recvmsg.assert_called_once_with(max_datagram_size, mocker.sentinel.ancbufsize)
+        mock_datagram_socket.fileno.assert_not_called()
+
+    def test____send_noblock_to____default(
+        self,
+        transport: SocketDatagramListener,
+        mock_datagram_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_datagram_socket.sendto.return_value = mocker.sentinel.nb_bytes_sent
+
+        # Act
+        result = transport.send_noblock_to(mocker.sentinel.data, mocker.sentinel.addr)
+
+        # Assert
+        mock_datagram_socket.sendto.assert_called_once_with(mocker.sentinel.data, mocker.sentinel.addr)
+        mock_datagram_socket.fileno.assert_not_called()
+        assert result is None
+
+    @pytest.mark.parametrize("error", [BlockingIOError, InterruptedError])
+    def test____send_noblock_to____blocking_error(
+        self,
+        error: type[OSError],
+        transport: SocketDatagramListener,
+        mock_datagram_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_datagram_socket.sendto.side_effect = error
+
+        # Act
+        with pytest.raises(WouldBlockOnWrite):
+            transport.send_noblock_to(mocker.sentinel.data, mocker.sentinel.addr)
+
+        # Assert
+        mock_datagram_socket.sendto.assert_called_once_with(mocker.sentinel.data, mocker.sentinel.addr)
+        mock_datagram_socket.fileno.assert_not_called()
+
+    @PlatformMarkers.supports_socket_sendmsg
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
+    def test____send_noblock_with_ancillary_to____default(
+        self,
+        transport: SocketDatagramListener,
+        mock_datagram_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_datagram_socket.sendmsg.return_value = mocker.sentinel.nb_bytes_sent
+
+        # Act
+        result = transport.send_noblock_with_ancillary_to(mocker.sentinel.data, mocker.sentinel.ancdata, mocker.sentinel.addr)
+
+        # Assert
+        mock_datagram_socket.sendmsg.assert_called_once_with(
+            [mocker.sentinel.data],
+            mocker.sentinel.ancdata,
+            0,
+            mocker.sentinel.addr,
+        )
+        mock_datagram_socket.fileno.assert_not_called()
+        assert result is None
+
+    @PlatformMarkers.supports_socket_sendmsg
+    @pytest.mark.parametrize("socket_family_name", _ANCILLARY_UNSUPPORTED, indirect=True)
+    def test____send_noblock_with_ancillary_to____socket_family_unsupported(
+        self,
+        transport: SocketDatagramListener,
+        mock_datagram_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_datagram_socket.sendmsg.return_value = mocker.sentinel.nb_bytes_sent
+
+        # Act
+        with pytest.raises(UnsupportedOperation):
+            transport.send_noblock_with_ancillary_to(mocker.sentinel.data, mocker.sentinel.ancdata, mocker.sentinel.addr)
+
+        # Assert
+        mock_datagram_socket.sendmsg.assert_not_called()
+        mock_datagram_socket.fileno.assert_not_called()
+
+    @PlatformMarkers.supports_socket_sendmsg
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
+    @pytest.mark.parametrize("error", [BlockingIOError, InterruptedError])
+    def test____send_noblock_with_ancillary_to____blocking_error(
+        self,
+        error: type[OSError],
+        transport: SocketDatagramListener,
+        mock_datagram_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_datagram_socket.sendmsg.side_effect = error
+
+        # Act
+        with pytest.raises(WouldBlockOnWrite):
+            transport.send_noblock_with_ancillary_to(mocker.sentinel.data, mocker.sentinel.ancdata, mocker.sentinel.addr)
+
+        # Assert
+        mock_datagram_socket.sendmsg.assert_called_once_with(
+            [mocker.sentinel.data],
+            mocker.sentinel.ancdata,
+            0,
+            mocker.sentinel.addr,
+        )
+        mock_datagram_socket.fileno.assert_not_called()
+
+    @PlatformMarkers.supports_socket_sendmsg
+    @pytest.mark.parametrize("socket_family_name", _SUPPORTS_ANCILLARY, indirect=True)
+    @pytest.mark.parametrize("ancillary_data_is_iterator", [False, True], ids=lambda p: f"ancillary_data_is_iterator__{p}")
+    @pytest.mark.parametrize("error", [BlockingIOError, InterruptedError])
+    def test____send_with_ancillary_to____correctly_handle_iterables(
+        self,
+        error: type[OSError],
+        ancillary_data_is_iterator: bool,
+        transport: SocketDatagramListener,
+        mock_datagram_socket: MagicMock,
+        mock_transport_retry: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        to_raise: list[type[OSError]] = [error]
+        chunks: list[list[bytes]] = []
+        ancillary_data_sent: list[list[Any]] = []
+
+        def sendmsg_side_effect(buffers: Iterable[Buffer], ancdata: Iterable[Any], _flags: int, _addr: Any) -> int:
+            buffers = list(buffers)
+            ancdata = list(ancdata)
+            if to_raise:
+                raise to_raise.pop(0)
+            chunks.append(list(map(bytes, buffers)))
+            ancillary_data_sent.append(ancdata)
+            return sum(memoryview(v).nbytes for v in buffers)
+
+        mock_datagram_socket.sendmsg.side_effect = sendmsg_side_effect
+
+        ancillary_data: Iterable[Any] = [mocker.sentinel.ancdata]
+        if ancillary_data_is_iterator:
+            ancillary_data = iter(ancillary_data)
+
+        # Act
+        transport.send_with_ancillary_to(b"data", ancillary_data, mocker.sentinel.addr, 123456)
+
+        # Assert
+        mock_transport_retry.assert_called_once_with(transport, mocker.ANY, 123456)
+        assert mock_datagram_socket.sendmsg.call_count == 2
+        assert chunks == [[b"data"]]
+        assert ancillary_data_sent == [[mocker.sentinel.ancdata]]
+
+    @pytest.mark.parametrize(
+        ["extra_attribute", "called_socket_method", "os_error"],
+        [
+            pytest.param(SocketAttribute.sockname, "getsockname", errno.EINVAL, id="socket.getsockname()"),
+            pytest.param(SocketAttribute.peername, "getpeername", errno.ENOTCONN, id="socket.getpeername()"),
+        ],
+    )
+    def test____extra_attributes____address_lookup_raises_OSError(
+        self,
+        extra_attribute: Any,
+        called_socket_method: str,
+        os_error: int,
+        transport: SocketDatagramListener,
+        mock_datagram_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_get_address: MagicMock = getattr(mock_datagram_socket, called_socket_method)
+        mock_get_address.side_effect = OSError(os_error, os.strerror(os_error))
+
+        # Act & Assert
+        with pytest.raises(TypedAttributeLookupError):
+            transport.extra(extra_attribute)
+        mock_get_address.assert_called_once()
+
+    @pytest.mark.parametrize(
+        ["extra_attribute", "called_socket_method"],
+        [
+            pytest.param(SocketAttribute.sockname, "getsockname", id="socket.getsockname()"),
+            pytest.param(SocketAttribute.peername, "getpeername", id="socket.getpeername()"),
+        ],
+    )
+    def test____extra_attributes____address_lookup_on_closed_socket(
+        self,
+        extra_attribute: Any,
+        called_socket_method: str,
+        transport: SocketDatagramListener,
         mock_datagram_socket: MagicMock,
     ) -> None:
         # Arrange
