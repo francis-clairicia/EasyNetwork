@@ -319,6 +319,10 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
             ancillary_bufsize: the maximum buffer size for ancillary data.
                                If :data:`None`, using :class:`.RecvAncillaryDataParams` will raise :exc:`.UnsupportedOperation`.
         """
+        if ancillary_bufsize is not None:
+            if not isinstance(ancillary_bufsize, int) or ancillary_bufsize <= 0:
+                raise ValueError("ancillary_bufsize must be a strictly positive integer")
+
         with self.__serve_guard, contextlib.ExitStack() as stack:
             self.__is_shut_down.clear()
             try:
@@ -407,6 +411,9 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
         ancillary_bufsize: int | None,
         server_is_shutting_down: Callable[[], bool],
     ) -> None:
+        if not isinstance(transport, _selector_transports.SelectorStreamTransport):
+            raise AssertionError(f"Expected a SelectorStreamTransport object, got {transport!r}")
+
         request_handler_context = default_context.copy()
         del default_context
 
@@ -671,7 +678,7 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
         server_is_shutting_down: Callable[[], bool],
     ) -> None:
         if not isinstance(transport, _selector_transports.SelectorStreamTransport):
-            raise TypeError(f"Expected a SelectorStreamTransport object, got {transport!r}")
+            raise AssertionError(f"Expected a SelectorStreamTransport object, got {transport!r}")
 
         with contextlib.ExitStack() as task_exit_stack:
             self.__attach_server()

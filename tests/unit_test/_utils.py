@@ -249,10 +249,33 @@ def make_recv_with_ancillary_into_side_effect(
 def make_recv_noblock_into_side_effect(to_write: bytes | list[bytes]) -> Callable[[bytearray | memoryview], int]:
     write_in_buffer = __make_write_in_buffer_side_effect(to_write)
 
-    def recv_into_side_effect(buffer: bytearray | memoryview) -> int:
+    def recv_noblock_into_side_effect(buffer: bytearray | memoryview) -> int:
         return write_in_buffer(buffer)
 
-    return recv_into_side_effect
+    return recv_noblock_into_side_effect
+
+
+def make_recv_noblock_with_ancillary_into_side_effect(
+    to_write: tuple[bytes, Any] | list[tuple[bytes, Any]],
+) -> Callable[[bytearray | memoryview, int], tuple[int, Any]]:
+    match to_write:
+        case list():
+            write_in_buffer = __make_write_in_buffer_side_effect([b[0] for b in to_write])
+            ancdata_iter = iter([b[1] for b in to_write])
+
+            def recv_noblock_into_side_effect(buffer: bytearray | memoryview, ancbufsize: int) -> tuple[int, Any]:
+                return write_in_buffer(buffer), next(ancdata_iter)
+
+        case (bytes_to_write, ancdata):
+            write_in_buffer = __make_write_in_buffer_side_effect(bytes_to_write)
+
+            def recv_noblock_into_side_effect(buffer: bytearray | memoryview, ancbufsize: int) -> tuple[int, Any]:
+                return write_in_buffer(buffer), ancdata
+
+        case _:
+            pytest.fail("Invalid setup")
+
+    return recv_noblock_into_side_effect
 
 
 def make_async_recv_into_side_effect(to_write: bytes | list[bytes]) -> Callable[[bytearray | memoryview], Awaitable[int]]:
@@ -290,7 +313,7 @@ def make_async_recv_with_ancillary_into_side_effect(
 def stub_decorator(mocker: MockerFixture, name: str | None = None) -> Callable[[Callable[..., Any]], MagicMock]:
 
     def decorator(f: Callable[..., Any]) -> MagicMock:
-        stub = mocker.stub(name)
+        stub = mocker.stub(name or f.__name__)
         stub.side_effect = f
         return stub
 
@@ -305,11 +328,25 @@ def async_stub_decorator(
     def decorator(f: Callable[..., Coroutine[Any, Any, Any]]) -> AsyncMock:
         if not inspect.iscoroutinefunction(f):
             raise TypeError("decorated function must be a coroutine function")
-        stub = mocker.async_stub(name)
+        stub = mocker.async_stub(name or f.__name__)
         stub.side_effect = f
         return stub
 
     return decorator
+
+
+def return_values_and_then_side_effect(mocker: MockerFixture, values: Iterable[Any], side_effect: Any) -> Callable[..., Any]:
+    side_effect = mocker.MagicMock(side_effect=side_effect)
+    values = iter(values)
+
+    def return_values_and_then_side_effect(*args: Any, **kwargs: Any) -> Any:
+        try:
+            return next(values)
+        except StopIteration:
+            pass
+        return side_effect(*args, **kwargs)
+
+    return return_values_and_then_side_effect
 
 
 @contextlib.contextmanager
