@@ -58,7 +58,7 @@ class WakeupSocketPair:
         self._receive.close()
 
     def wakeup_thread_and_signal_safe(self) -> None:
-        with contextlib.suppress(BlockingIOError, InterruptedError):
+        with contextlib.suppress(BlockingIOError, InterruptedError, BrokenPipeError):
             self._send.send(b"\x00")
 
     def drain(self) -> None:
