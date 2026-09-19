@@ -209,7 +209,7 @@ extend_skip = [
 
 [tool.black]
 line-length = 130
-target-version = ["py312", "py313", "py314"]
+target-version = ["py312"]
 
 [tool.mypy]
 python_version = "3.12"
