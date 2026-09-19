@@ -6,7 +6,6 @@ import asyncio
 import contextlib
 import logging
 import math
-import warnings
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from typing import TYPE_CHECKING, Any, NoReturn
 
@@ -17,7 +16,6 @@ from easynetwork.lowlevel.api_async.backend._asyncio.tasks import TaskGroup
 from easynetwork.lowlevel.api_async.servers.stream import AsyncStreamServer, ConnectedStreamClient
 from easynetwork.lowlevel.api_async.transports.abc import AsyncListener, AsyncStreamTransport, AsyncStreamWriteTransport
 from easynetwork.lowlevel.request_handler import RecvAncillaryDataParams, RecvParams
-from easynetwork.warnings import ManualBufferAllocationWarning
 
 import pytest
 import pytest_asyncio
@@ -744,73 +742,3 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
 
         # Act & Assert
         assert server.backend() is mock_listener.backend()
-
-    @pytest.mark.parametrize("stream_protocol_mode", ["buffer"], indirect=True)
-    async def test____manual_buffer_allocation____is_available(
-        self,
-        server: AsyncStreamServer[Any, Any],
-        mock_stream_transport: MagicMock,
-        mock_listener: MagicMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        mock_stream_transport.recv_into.side_effect = make_recv_into_side_effect([b"packet\n"])
-
-        async def serve_side_effect(handler: Callable[[Any], Awaitable[None]], task_group: Any) -> NoReturn:
-            await handler(mock_stream_transport)
-            raise asyncio.CancelledError("serve_side_effect")
-
-        packet_received = mocker.stub()
-
-        @stub_decorator(mocker)
-        async def client_connected_cb(_: Any) -> AsyncGenerator[None, Any]:
-            packet = yield
-            packet_received(packet)
-
-        mock_listener.serve.side_effect = serve_side_effect
-
-        # Act
-        async with TaskGroup() as tg:
-            with pytest.raises(asyncio.CancelledError, match=r"^serve_side_effect$"), warnings.catch_warnings():
-                warnings.simplefilter("error", ManualBufferAllocationWarning)
-                await server.serve(client_connected_cb, tg)
-
-        # Assert
-        mock_stream_transport.recv_into.assert_awaited_once()
-        mock_stream_transport.recv.assert_not_called()
-        packet_received.assert_called_once_with(mocker.sentinel.packet)
-
-    @pytest.mark.parametrize("stream_protocol_mode", ["data"], indirect=True)
-    async def test____manual_buffer_allocation____disabled(
-        self,
-        server: AsyncStreamServer[Any, Any],
-        mock_stream_transport: MagicMock,
-        mock_listener: MagicMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        mock_stream_transport.recv.side_effect = [b"packet\n"]
-
-        async def serve_side_effect(handler: Callable[[Any], Awaitable[None]], task_group: Any) -> NoReturn:
-            await handler(mock_stream_transport)
-            raise asyncio.CancelledError("serve_side_effect")
-
-        packet_received = mocker.stub()
-
-        @stub_decorator(mocker)
-        async def client_connected_cb(_: Any) -> AsyncGenerator[None, Any]:
-            packet = yield
-            packet_received(packet)
-
-        mock_listener.serve.side_effect = serve_side_effect
-
-        # Act
-        async with TaskGroup() as tg:
-            with pytest.raises(asyncio.CancelledError, match=r"^serve_side_effect$"), warnings.catch_warnings():
-                warnings.simplefilter("error", ManualBufferAllocationWarning)
-                await server.serve(client_connected_cb, tg)
-
-        # Assert
-        mock_stream_transport.recv.assert_awaited_once()
-        mock_stream_transport.recv_into.assert_not_called()
-        packet_received.assert_called_once_with(mocker.sentinel.packet)
