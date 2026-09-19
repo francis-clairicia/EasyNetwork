@@ -39,6 +39,7 @@ PYTEST_PLUGINS_PACKAGE = f"{__package__}.pytest_plugins"
 
 
 pytest_plugins = [
+    f"{__package__}.import_utils",  # Always initialize modules list constants.
     f"{PYTEST_PLUGINS_PACKAGE}.async_finalizer",
     f"{PYTEST_PLUGINS_PACKAGE}.asyncio_event_loop",
     f"{PYTEST_PLUGINS_PACKAGE}.auto_markers",

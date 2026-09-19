@@ -21,17 +21,10 @@ from __future__ import annotations
 
 __all__ = [
     "EasyNetworkWarning",
-    "ManualBufferAllocationWarning",
 ]
 
 
 class EasyNetworkWarning(UserWarning):
     """
     Base class for all warning categories emitted by EasyNetwork.
-    """
-
-
-class ManualBufferAllocationWarning(EasyNetworkWarning):
-    """
-    Warning emitted by stream endpoints about manual buffer allocation.
     """

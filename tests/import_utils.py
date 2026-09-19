@@ -14,6 +14,9 @@ def _catch_all_easynetwork_packages_and_modules() -> list[ModuleInfo]:
 
     result: list[ModuleInfo] = []
 
+    # Import warnings module before anything else.
+    import_module("easynetwork.warnings")
+
     for module_name in ["easynetwork"]:
         module = import_module(module_name)
         module_spec = module.__spec__
