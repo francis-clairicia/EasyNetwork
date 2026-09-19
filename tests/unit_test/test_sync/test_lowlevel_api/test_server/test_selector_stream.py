@@ -264,12 +264,6 @@ class _ServerStopHandle:
 type _WorkerStrategy = Literal["clients", "requests"]
 
 
-def _ready_future[T](result: T) -> Future[T]:
-    f: Future[T] = Future()
-    f.set_result(result)
-    return f
-
-
 def _selector_accept_side_effect(transports: Iterable[SelectorStreamTransport]) -> Callable[..., Future[Any]]:
     transports = iter(transports)
 
@@ -299,6 +293,10 @@ class TestSelectorStreamServer(BaseTestWithStreamProtocol):
         mock_stream_transport.recv_with_ancillary.side_effect = NotImplementedError
         mock_stream_transport.recv_with_ancillary_into.side_effect = NotImplementedError
         mock_stream_transport.send.side_effect = NotImplementedError
+        mock_stream_transport.send_noblock.side_effect = NotImplementedError
+        mock_stream_transport.send_all.side_effect = NotImplementedError
+        mock_stream_transport.send_all_from_iterable.side_effect = NotImplementedError
+        mock_stream_transport.send_all_with_ancillary.side_effect = NotImplementedError
         return mock_stream_transport
 
     @pytest.fixture
@@ -332,7 +330,7 @@ class TestSelectorStreamServer(BaseTestWithStreamProtocol):
             mocker.stop(dummy_lock_cls[0])
             mocker.stop(dummy_lock_cls[1])
             yield server
-            server.shutdown(timeout=30)
+            server.shutdown(timeout=5)
 
     @classmethod
     def _start_server(
@@ -451,7 +449,7 @@ class TestSelectorStreamServer(BaseTestWithStreamProtocol):
 
     def test____serve____server_closed(
         self,
-        worker_strategy: Any,
+        worker_strategy: _WorkerStrategy,
         server: SelectorStreamServer[Any, Any],
         mock_listener: MagicMock,
         mocker: MockerFixture,
@@ -533,7 +531,8 @@ class TestSelectorStreamServer(BaseTestWithStreamProtocol):
                         ancillary_bufsize=(1024 if recv_with_ancillary else None),
                     ),
                 )
-            request_done.wait(2)
+            if not request_done.wait(2):
+                raise AssertionError("request handler not done after 2 seconds")
             handle.stop()
 
         client_connected_cb.assert_called_once()
@@ -589,7 +588,8 @@ class TestSelectorStreamServer(BaseTestWithStreamProtocol):
                     ancillary_bufsize=(1024 if recv_with_ancillary else None),
                 ),
             )
-            request_done.wait(2)
+            if not request_done.wait(2):
+                raise AssertionError("request handler not done after 2 seconds")
             handle.stop()
 
         client_connected_cb.assert_called_once()
@@ -634,7 +634,8 @@ class TestSelectorStreamServer(BaseTestWithStreamProtocol):
                     disconnect_error_filter=lambda exc: isinstance(exc, ConnectionError),
                 ),
             )
-            request_done.wait(2)
+            if not request_done.wait(2):
+                raise AssertionError("request handler not done after 2 seconds")
             handle.stop()
 
         client_connected_cb.assert_called_once()
@@ -692,7 +693,8 @@ class TestSelectorStreamServer(BaseTestWithStreamProtocol):
                     ancillary_bufsize=(1024 if recv_with_ancillary else None),
                 ),
             )
-            request_done.wait(2)
+            if not request_done.wait(2):
+                raise AssertionError("request handler not done after 2 seconds")
             handle.stop()
 
         client_connected_cb.assert_called_once()
@@ -744,7 +746,8 @@ class TestSelectorStreamServer(BaseTestWithStreamProtocol):
                     ancillary_bufsize=(1024 if recv_with_ancillary else None),
                 ),
             )
-            request_done.wait(2)
+            if not request_done.wait(2):
+                raise AssertionError("request handler not done after 2 seconds")
             handle.stop()
 
         client_connected_cb.assert_called_once()
@@ -802,7 +805,8 @@ class TestSelectorStreamServer(BaseTestWithStreamProtocol):
                     ancillary_bufsize=(1024 if recv_with_ancillary else None),
                 ),
             )
-            request_done.wait(2)
+            if not request_done.wait(2):
+                raise AssertionError("request handler not done after 2 seconds")
             handle.stop()
 
         client_connected_cb.assert_called_once()
@@ -877,7 +881,8 @@ class TestSelectorStreamServer(BaseTestWithStreamProtocol):
                     worker_strategy=worker_strategy,
                 ),
             )
-            request_done.wait(2)
+            if not request_done.wait(2):
+                raise AssertionError("request handler not done after 2 seconds")
             handle.stop()
 
         client_connected_cb.assert_called_once()
@@ -934,7 +939,8 @@ class TestSelectorStreamServer(BaseTestWithStreamProtocol):
                     ancillary_bufsize=1024,
                 ),
             )
-            request_done.wait(2)
+            if not request_done.wait(2):
+                raise AssertionError("request handler not done after 2 seconds")
             handle.stop()
 
         client_connected_cb.assert_called_once()
@@ -991,7 +997,8 @@ class TestSelectorStreamServer(BaseTestWithStreamProtocol):
                     ancillary_bufsize=1024,
                 ),
             )
-            request_done.wait(2)
+            if not request_done.wait(2):
+                raise AssertionError("request handler not done after 2 seconds")
             handle.stop()
 
         client_connected_cb.assert_called_once()
