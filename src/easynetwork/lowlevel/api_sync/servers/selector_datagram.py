@@ -653,6 +653,10 @@ class SelectorDatagramServer[Request, Response, Address: Hashable](_transports.B
                     recv_params = None
                     raise
                 timeout = _utils.validate_optional_timeout_delay(recv_params.timeout, positive_check=True)
+                self.__check_ancillary_data_are_available(
+                    recv_with_ancillary=recv_params.recv_with_ancillary,
+                    server_ancillary_data_params=server_ancillary_data_params,
+                )
             except BaseException as exc:
                 waiter_future = concurrent.futures.Future()
                 waiter_future.set_exception(exc)
@@ -828,8 +832,9 @@ class SelectorDatagramServer[Request, Response, Address: Hashable](_transports.B
         except Exception as exc:
             raise RuntimeError("protocol.build_packet_from_datagram() crashed") from exc
 
-    @staticmethod
+    @classmethod
     def __handle_ancillary_data(
+        cls,
         *,
         ancillary_data: Any | None,
         recv_with_ancillary: RecvAncillaryDataParams | None,
@@ -837,6 +842,8 @@ class SelectorDatagramServer[Request, Response, Address: Hashable](_transports.B
         client_address: Address,
     ) -> None:
         if server_ancillary_data_params is None:
+            if ancillary_data is not None:
+                raise AssertionError(f"Expected code to be unreachable, but got: {ancillary_data}")
             if recv_with_ancillary is not None:
                 raise UnsupportedOperation("The server is not configured to handle ancillary data.")
         elif ancillary_data is not None:
@@ -849,7 +856,18 @@ class SelectorDatagramServer[Request, Response, Address: Hashable](_transports.B
                 try:
                     ancillary_data_unused(ancillary_data, client_address)
                 except Exception as exc:
-                    raise RuntimeError("ancillary_data_unused() crashed") from exc
+                    runtime_error = RuntimeError("ancillary_data_unused() crashed")
+                    runtime_error.__cause__ = exc
+                    cls.__unhandled_exception_log(type(runtime_error), runtime_error, runtime_error.__traceback__)
+
+    @staticmethod
+    def __check_ancillary_data_are_available(
+        *,
+        recv_with_ancillary: RecvAncillaryDataParams | None,
+        server_ancillary_data_params: _ServerAncillaryDataParams[Address] | None,
+    ) -> None:
+        if server_ancillary_data_params is None and recv_with_ancillary is not None:
+            raise UnsupportedOperation("The server is not configured to handle ancillary data.")
 
     @property
     @_utils.inherit_doc(_transports.BaseTransport)
@@ -1184,11 +1202,11 @@ class _ClientData:
 
     def notify_client_task(self) -> None:
         with self.__state_lock:
+            if self.__datagram_queue.empty():
+                raise self.inconsistent_state_error()
             waiter = self.__waiter_data
             self.__waiter_data = None
             if waiter is not None:
-                if self.__datagram_queue.empty():
-                    raise self.inconsistent_state_error()
                 _set_future_result_unless_cancelled(waiter.future, None)
 
     def cancel_pending_task(self) -> None:

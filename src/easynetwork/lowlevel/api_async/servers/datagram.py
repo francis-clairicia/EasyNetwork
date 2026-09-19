@@ -395,6 +395,10 @@ class AsyncDatagramServer[Request, Response, Address: Hashable](_transports.Asyn
                                 timeout_scope = _no_timeout_scope
                             case timeout:
                                 timeout_scope = _timeout_scope_ctx(timeout)
+                        self.__check_ancillary_data_are_available(
+                            recv_with_ancillary=recv_params.recv_with_ancillary,
+                            server_ancillary_data_params=server_ancillary_data_params,
+                        )
                         with timeout_scope:
                             datagram, ancillary_data = await client_data.pop_datagram()
                         try:
@@ -468,8 +472,9 @@ class AsyncDatagramServer[Request, Response, Address: Hashable](_transports.Asyn
         except Exception as exc:
             raise RuntimeError("protocol.build_packet_from_datagram() crashed") from exc
 
-    @staticmethod
+    @classmethod
     def __handle_ancillary_data(
+        cls,
         *,
         ancillary_data: Any | None,
         recv_with_ancillary: RecvAncillaryDataParams | None,
@@ -477,6 +482,8 @@ class AsyncDatagramServer[Request, Response, Address: Hashable](_transports.Asyn
         client_address: Address,
     ) -> None:
         if server_ancillary_data_params is None:
+            if ancillary_data is not None:
+                raise AssertionError(f"Expected code to be unreachable, but got: {ancillary_data}")
             if recv_with_ancillary is not None:
                 raise UnsupportedOperation("The server is not configured to handle ancillary data.")
         elif ancillary_data is not None:
@@ -489,7 +496,18 @@ class AsyncDatagramServer[Request, Response, Address: Hashable](_transports.Asyn
                 try:
                     ancillary_data_unused(ancillary_data, client_address)
                 except Exception as exc:
-                    raise RuntimeError("ancillary_data_unused() crashed") from exc
+                    runtime_error = RuntimeError("ancillary_data_unused() crashed")
+                    runtime_error.__cause__ = exc
+                    cls.__unhandled_exception_log(runtime_error)
+
+    @staticmethod
+    def __check_ancillary_data_are_available(
+        *,
+        recv_with_ancillary: RecvAncillaryDataParams | None,
+        server_ancillary_data_params: _ServerAncillaryDataParams[Address] | None,
+    ) -> None:
+        if server_ancillary_data_params is None and recv_with_ancillary is not None:
+            raise UnsupportedOperation("The server is not configured to handle ancillary data.")
 
     @property
     @_utils.inherit_doc(_transports.AsyncBaseTransport)
