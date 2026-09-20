@@ -29,14 +29,13 @@ if TYPE_CHECKING:
 
 # Ignore selected loops: Always use standard library
 def pytest_asyncio_loop_factories(config: pytest.Config) -> dict[str, LoopFactory]:
-    from ..pytest_plugins.asyncio_event_loop import EventLoop, _get_event_loop_factories_from_config
+    from ..pytest_plugins.asyncio_event_loop import EventLoop, pytest_asyncio_loop_factories
 
-    all_loop_factories: Mapping[str, LoopFactory] = _get_event_loop_factories_from_config(config)
+    all_loop_factories: Mapping[str, LoopFactory] = pytest_asyncio_loop_factories(config)
 
-    try:
-        asyncio_loop_factory = all_loop_factories[EventLoop.ASYNCIO]
-    except KeyError:
-        raise pytest.UsageError(f"Unit tests run only with {EventLoop.ASYNCIO} event-loop")
+    asyncio_loop_factory = all_loop_factories.get(EventLoop.ASYNCIO)
+    if asyncio_loop_factory is None:
+        raise pytest.fail(f"asyncio unit tests run only with {EventLoop.ASYNCIO} event-loop", pytrace=False)
 
     return {EventLoop.ASYNCIO: asyncio_loop_factory}
 

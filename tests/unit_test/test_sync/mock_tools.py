@@ -4,6 +4,7 @@ import itertools
 import math
 import selectors
 import time
+import weakref
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.lowlevel._utils import weak_method_proxy
@@ -25,7 +26,12 @@ def make_transport_mock(*, mocker: MockerFixture, spec: Any) -> MagicMock:
     mock_transport = mocker.NonCallableMagicMock(spec=spec)
     mock_transport.is_closed.return_value = False
 
+    mock_transport_ref = weakref.ref(mock_transport)
+
     def close_side_effect() -> None:
+        mock_transport = mock_transport_ref()
+        if mock_transport is None:
+            return
         mock_transport.is_closed.return_value = True
         if issubclass(spec, SelectorBaseTransport):
             mock_transport.read_fileno.return_value = -1
