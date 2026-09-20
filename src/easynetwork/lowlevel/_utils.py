@@ -158,9 +158,11 @@ def prepend_argument[**P, Arg, R](
     return decorator
 
 
-def get_callable_name(func: Callable[..., Any]) -> str:
+def get_callable_name(func: Callable[..., Any], *, full_name: bool = True) -> str:
     while isinstance(func, functools.partial):
         func = func.func
+    if not full_name:
+        return getattr(func, "__name__", "")
     qualname: str | None = getattr(func, "__qualname__", None)
     if not qualname:
         qualname = getattr(func, "__name__", None)
@@ -551,11 +553,9 @@ class ResourceGuard:
 class ThreadSafeResourceGuard(ResourceGuard):
     __slots__ = ("__lock",)
 
-    def __init__(self, message: str, *, lock: threading.Lock | threading.RLock | None = None) -> None:
+    def __init__(self, message: str) -> None:
         super().__init__(message)
-        if lock is None:
-            lock = threading.Lock()
-        self.__lock = lock
+        self.__lock = threading.Lock()
 
     def __enter__(self) -> None:
         with self.__lock:

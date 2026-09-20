@@ -31,7 +31,7 @@ import threading
 import weakref
 from collections.abc import Callable, Generator, Mapping, Sequence
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Literal, final, override
+from typing import TYPE_CHECKING, Any, Literal, cast, final, override
 
 from ..exceptions import ClientClosedError
 from ..lowlevel import _utils
@@ -455,6 +455,8 @@ class _ConnectedClientAPI[Response](BlockingStreamClient[Response]):
     @staticmethod
     def __run_socket_method[Return](method: Callable[[], Return], /, *, client_is_closing: threading.Event) -> Return:
         if client_is_closing.is_set():
+            if _utils.get_callable_name(method, full_name=False) == "fileno":
+                return cast(Return, -1)
             raise _utils.error_from_errno(_errno.EBADF)
         return method()
 

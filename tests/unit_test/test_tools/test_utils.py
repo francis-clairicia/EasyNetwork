@@ -19,9 +19,12 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol
 from easynetwork.exceptions import BusyResourceError
 from easynetwork.lowlevel._final import runtime_final_class
 from easynetwork.lowlevel._utils import (
+    AtomicFloat,
+    AtomicUIntCounter,
     ElapsedTime,
     Flag,
     ResourceGuard,
+    ThreadSafeResourceGuard,
     adjust_leftover_buffer,
     check_inet_socket_family,
     check_real_socket_state,
@@ -182,6 +185,26 @@ def test____weak_method_proxy_____strong_reference_dropped(mocker: MockerFixture
         _ = cb()
 
 
+def test____weak_method_proxy_____strong_reference_dropped____default_return(mocker: MockerFixture) -> None:
+    # Arrange
+    @dataclasses.dataclass
+    class MyObject:
+        stub: MagicMock = dataclasses.field(default_factory=mocker.stub)
+
+        def method(self, *args: Any, **kwargs: Any) -> Any:
+            return self.stub(*args, **kwargs)
+
+    obj = MyObject()
+    obj.stub.return_value = mocker.sentinel.ret_val
+
+    # Act
+    cb = weak_method_proxy(obj.method, default=mocker.sentinel.ref_dropped)
+
+    # Assert
+    del obj
+    assert cb() is mocker.sentinel.ref_dropped
+
+
 def test____prepend_argument____add_positional_argument____direct_call(mocker: MockerFixture) -> None:
     # Arrange
     stub = mocker.stub()
@@ -230,7 +253,8 @@ def test____prepend_argument____several_prepend(mocker: MockerFixture) -> None:
 
 
 @pytest.mark.parametrize("module", ["package.module", None], ids=lambda p: f"module__{p!r}")
-def test____get_callable_name____qualname(module: str | None, mocker: MockerFixture) -> None:
+@pytest.mark.parametrize("full_name", [pytest.param(True, id="FULL_NAME"), pytest.param(False, id="NAME_ONLY")])
+def test____get_callable_name____qualname(module: str | None, full_name: bool, mocker: MockerFixture) -> None:
     # Arrange
     func = mocker.stub()
     func.__name__ = "func"
@@ -238,17 +262,20 @@ def test____get_callable_name____qualname(module: str | None, mocker: MockerFixt
     func.__module__ = module or ""
 
     # Act
-    name = get_callable_name(func)
+    name = get_callable_name(func, full_name=full_name)
 
     # Assert
-    if module:
+    if not full_name:
+        assert name == "func"
+    elif module:
         assert name == f"{module}.namespace.func"
     else:
         assert name == "namespace.func"
 
 
 @pytest.mark.parametrize("module", ["package.module", None], ids=lambda p: f"module__{p!r}")
-def test____get_callable_name____name_without_qualname(module: str | None, mocker: MockerFixture) -> None:
+@pytest.mark.parametrize("full_name", [pytest.param(True, id="FULL_NAME"), pytest.param(False, id="NAME_ONLY")])
+def test____get_callable_name____name_without_qualname(module: str | None, full_name: bool, mocker: MockerFixture) -> None:
     # Arrange
     func = mocker.stub()
     func.__name__ = "func"
@@ -256,17 +283,18 @@ def test____get_callable_name____name_without_qualname(module: str | None, mocke
     func.__module__ = module or ""
 
     # Act
-    name = get_callable_name(func)
+    name = get_callable_name(func, full_name=full_name)
 
     # Assert
-    if module:
+    if module and full_name:
         assert name == f"{module}.func"
     else:
         assert name == "func"
 
 
 @pytest.mark.parametrize("module", ["package.module", None], ids=lambda p: f"module__{p!r}")
-def test____get_callable_name____neither_name_nor_qualname(module: str | None, mocker: MockerFixture) -> None:
+@pytest.mark.parametrize("full_name", [pytest.param(True, id="FULL_NAME"), pytest.param(False, id="NAME_ONLY")])
+def test____get_callable_name____neither_name_nor_qualname(module: str | None, full_name: bool, mocker: MockerFixture) -> None:
     # Arrange
     func = mocker.stub()
     del func.__name__
@@ -274,7 +302,7 @@ def test____get_callable_name____neither_name_nor_qualname(module: str | None, m
     func.__module__ = module or ""
 
     # Act
-    name = get_callable_name(func)
+    name = get_callable_name(func, full_name=full_name)
 
     # Assert
     assert name == ""
@@ -1073,6 +1101,87 @@ def test____ResourceGuard____forbid_nested_contexts() -> None:
     with guard, pytest.raises(BusyResourceError, match=r"^guard message$"):
         with guard:
             pass
+
+
+def test____ThreadSafeResourceGuard____forbid_nested_contexts() -> None:
+    # Arrange
+    guard = ThreadSafeResourceGuard("guard message")
+
+    # Act & Assert
+    with guard, pytest.raises(BusyResourceError, match=r"^guard message$"):
+        with guard:
+            pass
+
+
+def test____AtomicUIntCounter____initial_value() -> None:
+    # Arrange
+
+    # Act
+    default_value = AtomicUIntCounter()
+    custom_value = AtomicUIntCounter(value=38)
+    negative_value = AtomicUIntCounter(value=-42)
+
+    # Assert
+    assert default_value.value == 0
+    assert negative_value.value == 0
+    assert custom_value.value == 38
+
+
+def test____AtomicUIntCounter____increment() -> None:
+    # Arrange
+    counter = AtomicUIntCounter()
+
+    # Act & Assert
+    assert counter.increment() == 1
+    assert counter.increment() == 2
+    assert counter.increment() == 3
+    assert counter.value == 3
+
+
+def test____AtomicUIntCounter____decrement() -> None:
+    # Arrange
+    counter = AtomicUIntCounter(value=3)
+
+    # Act & Assert
+    assert counter.decrement() == 2
+    assert counter.decrement() == 1
+    assert counter.decrement() == 0
+    assert counter.value == 0
+
+
+def test____AtomicUIntCounter____decrement____cannot_go_below_zero() -> None:
+    # Arrange
+    counter = AtomicUIntCounter()
+
+    # Act & Assert
+    assert counter.decrement() == 0
+    assert counter.decrement() == 0
+    assert counter.decrement() == 0
+    assert counter.value == 0
+
+
+def test____AtomicFloat____initial_value() -> None:
+    # Arrange
+
+    # Act
+    default_value = AtomicFloat()
+    custom_value_int = AtomicFloat(value=38)
+    custom_value_float = AtomicFloat(value=-42.4)
+
+    assert default_value.value == 0.0
+    assert custom_value_int.value == 38.0
+    assert custom_value_float.value == -42.4
+
+
+def test____AtomicFloat____value_assignation() -> None:
+    # Arrange
+    atomic_float = AtomicFloat()
+
+    # Act
+    atomic_float.value = 12.3
+
+    # Assert
+    assert atomic_float.value == 12.3
 
 
 @runtime_final_class

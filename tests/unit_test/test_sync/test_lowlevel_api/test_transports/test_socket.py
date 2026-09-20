@@ -38,7 +38,7 @@ import pytest
 
 from .....tools import PlatformMarkers
 from ...._utils import executor_submit_default_side_effect, make_executor_submit_side_effect
-from ....base import BaseTestIPSocketTransport, BaseTestSocketTransport, MixinTestSocketSendMSG
+from ....base import BaseTestIPv4OnlySocketTransport, BaseTestSocketTransport, MixinTestSocketSendMSG
 
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
@@ -940,7 +940,7 @@ class TestSocketStreamTransport(BaseTestSocketTransport, MixinTestSocketSendMSG)
         mock_get_address.assert_not_called()
 
 
-class TestSSLStreamTransport(BaseTestIPSocketTransport):
+class TestSSLStreamTransport(BaseTestIPv4OnlySocketTransport):
     @pytest.fixture(autouse=True)
     @staticmethod
     def mock_transport_retry(mocker: MockerFixture) -> MagicMock:
@@ -2535,7 +2535,7 @@ class _RequestHandlerSSL:
         return self.stub()
 
 
-class TestSSLStreamListener(BaseTestIPSocketTransport):
+class TestSSLStreamListener(BaseTestIPv4OnlySocketTransport):
     @pytest.fixture(autouse=True)
     @staticmethod
     def mock_transport_retry(mocker: MockerFixture) -> MagicMock:

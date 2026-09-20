@@ -333,7 +333,7 @@ class BaseThreadedNetworkServerImpl[LowLevelServer: _SupportsShutdownClose, Addr
                 return
             self.__servers[:] = servers_factory()
             if not self.__servers:
-                raise OSError("empty listeners list")
+                raise AssertionError("empty listeners list")
 
     @override
     @_utils.inherit_doc(AbstractNetworkServer)
@@ -397,6 +397,7 @@ class BaseThreadedNetworkServerImpl[LowLevelServer: _SupportsShutdownClose, Addr
 
                 # Setup task groups
                 server_exit_stack.callback(self.__server_tasks.clear)
+                server_exit_stack.callback(self.__check_server_health)
                 requests_executor = server_exit_stack.enter_context(
                     concurrent.futures.ThreadPoolExecutor(thread_name_prefix="req-hdlr", max_workers=self.__max_nb_workers)
                 )
@@ -455,6 +456,14 @@ class BaseThreadedNetworkServerImpl[LowLevelServer: _SupportsShutdownClose, Addr
     def __detach_server(self) -> None:
         if self.__active_tasks.decrement() == 0:
             self.__mainloop_stop.set()
+
+    def __check_server_health(self) -> None:
+        errors: list[BaseException] = [exc for task in self.__server_tasks if (exc := task.exception()) is not None]
+        if errors:
+            try:
+                raise BaseExceptionGroup("server exceptions", errors)
+            finally:
+                errors.clear()
 
     def _with_lowlevel_servers[R](self, f: Callable[[Sequence[LowLevelServer]], R]) -> R:
         with self.__server_activation_lock:

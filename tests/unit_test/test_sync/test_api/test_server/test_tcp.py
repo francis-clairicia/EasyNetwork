@@ -1,16 +1,16 @@
 from __future__ import annotations
 
+import errno
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Literal
 
 from easynetwork.exceptions import ClientClosedError, UnsupportedOperation
 from easynetwork.lowlevel.socket import INETSocketAttribute, SocketProxy, new_socket_address
-from easynetwork.servers.async_tcp import AsyncTCPNetworkServer, _ConnectedClientAPI
 from easynetwork.servers.handlers import INETClientAttribute
+from easynetwork.servers.threaded_tcp import ThreadedTCPNetworkServer, _ConnectedClientAPI
 
 import pytest
 
-from ...._utils import AsyncDummyLock
 from ....base import BaseTestIPv4v6SocketTransport
 from ...mock_tools import make_transport_mock
 
@@ -20,120 +20,66 @@ if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
 
-@pytest.mark.asyncio
-class TestAsyncTCPNetworkServer:
-    @pytest.fixture
-    @staticmethod
-    def server(
-        mock_stream_protocol: MagicMock,
-        mock_stream_request_handler: MagicMock,
-        mock_backend: MagicMock,
-    ) -> AsyncTCPNetworkServer[Any, Any]:
-        return AsyncTCPNetworkServer(None, 0, mock_stream_protocol, mock_stream_request_handler, mock_backend)
+class TestThreadedTCPNetworkServer:
 
-    async def test____dunder_init____protocol____invalid_value(
+    def test____dunder_init____protocol____invalid_value(
         self,
         mock_datagram_protocol: MagicMock,
         mock_stream_request_handler: MagicMock,
-        mock_backend: MagicMock,
     ) -> None:
         # Arrange
 
         # Act & Assert
         with pytest.raises(TypeError, match=r"^Expected a StreamProtocol or a BufferedStreamProtocol object, got .*$"):
-            _ = AsyncTCPNetworkServer(None, 0, mock_datagram_protocol, mock_stream_request_handler, mock_backend)
+            _ = ThreadedTCPNetworkServer(None, 0, mock_datagram_protocol, mock_stream_request_handler)
 
-    async def test____dunder_init____request_handler____invalid_value(
+    def test____dunder_init____request_handler____invalid_value(
         self,
         mock_stream_protocol: MagicMock,
         mock_datagram_request_handler: MagicMock,
-        mock_backend: MagicMock,
     ) -> None:
         # Arrange
 
         # Act & Assert
-        with pytest.raises(TypeError, match=r"^Expected an AsyncStreamRequestHandler object, got .*$"):
-            _ = AsyncTCPNetworkServer(None, 0, mock_stream_protocol, mock_datagram_request_handler, mock_backend)
-
-    async def test____dunder_init____backend____invalid_value(
-        self,
-        mock_stream_protocol: MagicMock,
-        mock_stream_request_handler: MagicMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        invalid_backend = mocker.NonCallableMagicMock(spec=object)
-
-        # Act & Assert
-        with pytest.raises(TypeError, match=r"^Expected either a string literal or a backend instance, got .*$"):
-            _ = AsyncTCPNetworkServer(None, 0, mock_stream_protocol, mock_stream_request_handler, invalid_backend)
+        with pytest.raises(TypeError, match=r"^Expected a BlockingStreamRequestHandler object, got .*$"):
+            _ = ThreadedTCPNetworkServer(None, 0, mock_stream_protocol, mock_datagram_request_handler)
 
     @pytest.mark.parametrize("ssl_parameter", ["ssl_handshake_timeout", "ssl_shutdown_timeout", "ssl_standard_compatible"])
-    async def test____dunder_init____useless_parameter_if_no_ssl_context(
+    def test____dunder_init____useless_parameter_if_no_ssl_context(
         self,
         ssl_parameter: str,
         mock_stream_protocol: MagicMock,
         mock_stream_request_handler: MagicMock,
-        mock_backend: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         kwargs: dict[str, Any] = {ssl_parameter: mocker.sentinel.value}
         with pytest.raises(ValueError, match=rf"^{ssl_parameter} is only meaningful with ssl$"):
-            _ = AsyncTCPNetworkServer(
+            _ = ThreadedTCPNetworkServer(
                 None,
                 0,
                 mock_stream_protocol,
                 mock_stream_request_handler,
-                mock_backend,
                 ssl=None,
                 **kwargs,
             )
 
     @pytest.mark.parametrize("max_recv_size", [0, -1, 10.4], ids=lambda p: f"max_recv_size__{p}")
-    async def test____dunder_init____max_recv_size____invalid_value(
+    def test____dunder_init____max_recv_size____invalid_value(
         self,
         max_recv_size: Any,
         mock_stream_protocol: MagicMock,
         mock_stream_request_handler: MagicMock,
-        mock_backend: MagicMock,
     ) -> None:
         with pytest.raises(ValueError, match=r"^'max_recv_size' must be a strictly positive integer$"):
-            _ = AsyncTCPNetworkServer(
+            _ = ThreadedTCPNetworkServer(
                 None,
                 0,
                 mock_stream_protocol,
                 mock_stream_request_handler,
-                mock_backend,
                 max_recv_size=max_recv_size,
             )
 
-    async def test____get_backend____returns_linked_instance(
-        self,
-        server: AsyncTCPNetworkServer[Any, Any],
-        mock_backend: MagicMock,
-    ) -> None:
-        # Arrange
 
-        # Act & Assert
-        assert server.backend() is mock_backend
-
-    async def test____server_activate____empty_listener_list(
-        self,
-        server: AsyncTCPNetworkServer[Any, Any],
-        mock_backend: MagicMock,
-    ) -> None:
-        # Arrange
-        mock_backend.create_tcp_listeners.side_effect = None
-        mock_backend.create_tcp_listeners.return_value = []
-
-        # Act & Assert
-        with pytest.raises(OSError, match=r"^empty listeners list$"):
-            await server.server_activate()
-
-        assert not server.get_sockets()
-
-
-@pytest.mark.asyncio
 class TestConnectedClientAPI(BaseTestIPv4v6SocketTransport):
     @pytest.fixture
     @staticmethod
@@ -148,15 +94,14 @@ class TestConnectedClientAPI(BaseTestIPv4v6SocketTransport):
         local_address: tuple[str, int],
         remote_address: tuple[str, int],
         mock_tcp_socket: MagicMock,
-        mock_backend: MagicMock,
         mocker: MockerFixture,
     ) -> MagicMock:
-        from easynetwork.lowlevel.api_async.servers.stream import ConnectedStreamClient
+        from easynetwork.lowlevel.api_sync.servers.selector_stream import ConnectedStreamClient
         from easynetwork.lowlevel.socket import _get_socket_extra
 
         cls.set_local_address_to_socket_mock(mock_tcp_socket, socket_family, local_address)
         cls.set_remote_address_to_socket_mock(mock_tcp_socket, socket_family, remote_address)
-        mock_connected_stream_client = make_transport_mock(mocker=mocker, spec=ConnectedStreamClient, backend=mock_backend)
+        mock_connected_stream_client = make_transport_mock(mocker=mocker, spec=ConnectedStreamClient)
         mock_connected_stream_client.extra_attributes = {
             **_get_socket_extra(mock_tcp_socket, wrap_in_proxy=False),
             # Used to ensure that ConnectedStreamClient specific attributes are merged.
@@ -179,13 +124,12 @@ class TestConnectedClientAPI(BaseTestIPv4v6SocketTransport):
         mock_tcp_socket.reset_mock()
         return client
 
-    async def test____dunder_init____initialize_inner_client(
+    def test____dunder_init____initialize_inner_client(
         self,
         local_address: tuple[str, int],
         remote_address: tuple[str, int],
         socket_family: int,
         mock_tcp_socket: MagicMock,
-        mock_backend: MagicMock,
         mock_connected_stream_client: MagicMock,
         mocker: MockerFixture,
     ) -> None:
@@ -203,14 +147,13 @@ class TestConnectedClientAPI(BaseTestIPv4v6SocketTransport):
             mocker.call(IPPROTO_TCP, TCP_NODELAY, True),
             mocker.call(SOL_SOCKET, SO_KEEPALIVE, True),
         ]
-        assert client.backend() is mock_backend
         assert isinstance(client.extra(INETClientAttribute.socket), SocketProxy)
         assert client.extra(INETClientAttribute.local_address) == new_socket_address(local_address, socket_family)
         assert client.extra(INETClientAttribute.remote_address) == new_socket_address(remote_address, socket_family)
         assert client.extra(INETSocketAttribute.family) == socket_family
         assert client.extra(mocker.sentinel.custom_attribute) is mocker.sentinel.custom_value
 
-    async def test____send_packet____send_bytes_to_socket(
+    def test____send_packet____send_bytes_to_socket(
         self,
         client: _ConnectedClientAPI[Any],
         mock_connected_stream_client: MagicMock,
@@ -220,17 +163,34 @@ class TestConnectedClientAPI(BaseTestIPv4v6SocketTransport):
         # Arrange
 
         # Act
-        await client.send_packet(mocker.sentinel.packet)
+        client.send_packet(mocker.sentinel.packet)
 
         # Assert
-        mock_connected_stream_client.send_packet.assert_awaited_once_with(mocker.sentinel.packet)
+        mock_connected_stream_client.send_packet.assert_called_once_with(mocker.sentinel.packet, timeout=None)
         ## This client object should not check SO_ERROR
         mock_tcp_socket.getsockopt.assert_not_called()
 
-    @pytest.mark.parametrize("method", ["close", "force_disconnect"])
-    async def test____send_packet____closed_client(
+    def test____send_packet____send_bytes_to_socket____with_timeout(
         self,
-        method: Literal["close", "force_disconnect"],
+        client: _ConnectedClientAPI[Any],
+        mock_connected_stream_client: MagicMock,
+        mock_tcp_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+
+        # Act
+        client.send_packet(mocker.sentinel.packet, timeout=mocker.sentinel.timeout)
+
+        # Assert
+        mock_connected_stream_client.send_packet.assert_called_once_with(mocker.sentinel.packet, timeout=mocker.sentinel.timeout)
+        ## This client object should not check SO_ERROR
+        mock_tcp_socket.getsockopt.assert_not_called()
+
+    @pytest.mark.parametrize("method", ["close", "abort", "force_disconnect"])
+    def test____send_packet____closed_client(
+        self,
+        method: Literal["close", "abort", "force_disconnect"],
         client: _ConnectedClientAPI[Any],
         mock_connected_stream_client: MagicMock,
         mock_tcp_socket: MagicMock,
@@ -239,21 +199,29 @@ class TestConnectedClientAPI(BaseTestIPv4v6SocketTransport):
         # Arrange
         match method:
             case "close":
-                await client.aclose()
+                client.close()
+                mock_connected_stream_client.close.assert_called_once_with()
+                mock_connected_stream_client.abort.assert_not_called()
+            case "abort":
+                client.abort()
+                mock_connected_stream_client.abort.assert_called_once_with()
+                mock_connected_stream_client.close.assert_not_called()
             case "force_disconnect":
-                await client._on_disconnect()
+                client._on_disconnect()
+                mock_connected_stream_client.abort.assert_not_called()
+                mock_connected_stream_client.close.assert_not_called()
         assert client.is_closing()
         mock_connected_stream_client.reset_mock()
 
         # Act
         with pytest.raises(ClientClosedError):
-            await client.send_packet(mocker.sentinel.packet)
+            client.send_packet(mocker.sentinel.packet)
 
         # Assert
-        mock_connected_stream_client.send_packet.assert_not_awaited()
+        mock_connected_stream_client.send_packet.assert_not_called()
         mock_tcp_socket.getsockopt.assert_not_called()
 
-    async def test____send_packet_with_ancillary____unsupported(
+    def test____send_packet_with_ancillary____unsupported(
         self,
         client: _ConnectedClientAPI[Any],
         mocker: MockerFixture,
@@ -262,43 +230,41 @@ class TestConnectedClientAPI(BaseTestIPv4v6SocketTransport):
 
         # Act & Assert
         with pytest.raises(UnsupportedOperation):
-            await client.send_packet_with_ancillary(mocker.sentinel.packet, mocker.sentinel.ancdata)
+            client.send_packet_with_ancillary(mocker.sentinel.packet, mocker.sentinel.ancdata)
 
-    async def test____special_case____close_cancelled_during_lock_acquisition(
+    @pytest.mark.parametrize("method", ["close", "abort", "force_disconnect"])
+    def test____socket_proxy____closed_client(
         self,
+        method: Literal["close", "abort", "force_disconnect"],
         client: _ConnectedClientAPI[Any],
         mock_connected_stream_client: MagicMock,
-        mocker: MockerFixture,
+        mock_tcp_socket: MagicMock,
     ) -> None:
         # Arrange
-        ## We simulate another task which takes the lock and aclose() has been cancelled.
-        CancelledError = client.backend().get_cancelled_exc_class()
-        mock_lock_acquire = mocker.patch.object(AsyncDummyLock, "acquire", side_effect=CancelledError)
+        from socket import SO_KEEPALIVE, SOL_SOCKET
 
-        # Act
-        with pytest.raises(CancelledError):
-            await client.aclose()
-        mocker.stop(mock_lock_acquire)
+        match method:
+            case "close":
+                client.close()
+                mock_connected_stream_client.close.assert_called_once_with()
+                mock_connected_stream_client.abort.assert_not_called()
+            case "abort":
+                client.abort()
+                mock_connected_stream_client.abort.assert_called_once_with()
+                mock_connected_stream_client.close.assert_not_called()
+            case "force_disconnect":
+                client._on_disconnect()
+                mock_connected_stream_client.abort.assert_not_called()
+                mock_connected_stream_client.close.assert_not_called()
+        assert client.is_closing()
+        mock_connected_stream_client.reset_mock()
+        mock_tcp_socket.reset_mock()
+        mock_tcp_socket.fileno.__name__ = "fileno"
 
-        # Assert
-        mock_connected_stream_client.aclose.assert_awaited_once_with()
-
-    async def test____special_case____close_cancelled_during_lock_acquisition____endpoint_is_already_closing(
-        self,
-        client: _ConnectedClientAPI[Any],
-        mock_connected_stream_client: MagicMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        await client._on_disconnect()
-        ## We simulate another task which takes the lock and aclose() has been cancelled.
-        CancelledError = client.backend().get_cancelled_exc_class()
-        mock_lock_acquire = mocker.patch.object(AsyncDummyLock, "acquire", side_effect=CancelledError)
-
-        # Act
-        with pytest.raises(CancelledError):
-            await client.aclose()
-        mocker.stop(mock_lock_acquire)
-
-        # Assert
-        mock_connected_stream_client.aclose.assert_not_awaited()
+        # Act & Assert
+        socket = client.extra(INETClientAttribute.socket)
+        assert socket.fileno() == -1
+        with pytest.raises(OSError, check=lambda exc: exc.errno == errno.EBADF):
+            socket.setsockopt(SOL_SOCKET, SO_KEEPALIVE, False)
+        mock_tcp_socket.fileno.assert_not_called()
+        mock_tcp_socket.setsockopt.assert_not_called()

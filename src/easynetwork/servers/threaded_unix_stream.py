@@ -23,7 +23,7 @@ __all__: list[str] = []
 
 import socket as _socket
 import sys
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 if sys.platform == "win32" or (not TYPE_CHECKING and not hasattr(_socket, "AF_UNIX")):
     raise ImportError(f"UNIX sockets are not supported on {sys.platform}.")  # pragma: no cover
@@ -385,6 +385,8 @@ else:
         @staticmethod
         def __run_socket_method[Return](method: Callable[[], Return], /, *, client_is_closing: threading.Event) -> Return:
             if client_is_closing.is_set():
+                if _utils.get_callable_name(method, full_name=False) == "fileno":
+                    return cast(Return, -1)
                 raise _utils.error_from_errno(_errno.EBADF)
             return method()
 
