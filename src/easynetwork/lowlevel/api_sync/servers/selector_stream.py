@@ -346,8 +346,11 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
                     selector.register(self.__wakeup_socketpair, selectors.EVENT_READ)
                     self.__wakeup_socketpair.drain()
 
-                server_is_shutting_down = threading.Event()
-                stack.callback(server_is_shutting_down.set)
+                server_is_shutting_down = _utils.make_callback(
+                    _server_is_shutting_down_check,
+                    shutdown_requested=self.__shutdown_request,
+                    is_shutdown=self.__is_shut_down,
+                )
 
                 match worker_strategy:
                     case "clients":
@@ -357,7 +360,7 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
                             executor=executor,
                             disconnect_error_filter=disconnect_error_filter,
                             ancillary_bufsize=ancillary_bufsize,
-                            server_is_shutting_down=server_is_shutting_down.is_set,
+                            server_is_shutting_down=server_is_shutting_down,
                             is_up_event=is_up_event,
                         )
                     case "requests":
@@ -367,7 +370,7 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
                             executor=executor,
                             disconnect_error_filter=disconnect_error_filter,
                             ancillary_bufsize=ancillary_bufsize,
-                            server_is_shutting_down=server_is_shutting_down.is_set,
+                            server_is_shutting_down=server_is_shutting_down,
                             is_up_event=is_up_event,
                         )
                     case _:
@@ -375,7 +378,10 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
             finally:
                 self.__is_shut_down.set()
                 self.__shutdown_request.clear()
-                if not self.__active_tasks.value:
+                if self.__active_tasks.value:
+                    with contextlib.suppress(OSError):
+                        self.__wakeup_socketpair.wakeup_thread_and_signal_safe()
+                else:
                     self.__wakeup_socketpair.close()
 
     ################################################################################
@@ -951,6 +957,10 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
     @_utils.inherit_doc(_transports.BaseTransport)
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         return self.__thread_safe_listener.extra_attributes
+
+
+def _server_is_shutting_down_check(*, shutdown_requested: threading.Event, is_shutdown: threading.Event) -> bool:
+    return shutdown_requested.is_set() or is_shutdown.is_set()
 
 
 @dataclasses.dataclass(kw_only=True, eq=False, slots=True)

@@ -368,9 +368,17 @@ class BaseThreadedNetworkServerImpl[LowLevelServer: _SupportsShutdownClose, Addr
     @override
     @_utils.inherit_doc(AbstractNetworkServer)
     def shutdown(self, timeout: float | None = None) -> None:
-        with self.__server_activation_lock:
+        with self.__server_activation_lock, contextlib.ExitStack() as threads_stack:
             for i, server in enumerate(self.__servers):
-                _threading.Thread(target=server.shutdown, name=f"{self.__thread_name_prefix}-shutdown_{i}", daemon=True).start()
+                t = _threading.Thread(
+                    target=server.shutdown,
+                    name=f"{self.__thread_name_prefix}-shutdown_{i}",
+                    args=(timeout,),
+                    daemon=True,
+                )
+                t.start()
+                threads_stack.callback(t.join)
+
         self.__mainloop_stop.set()
         self.__is_shutdown.wait(timeout)
 

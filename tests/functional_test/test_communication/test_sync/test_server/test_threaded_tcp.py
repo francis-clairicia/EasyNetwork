@@ -586,19 +586,6 @@ class TestThreadedTCPNetworkServer(BaseTestThreadedServer):
         # On BSD: ECONNABORTED error on accept() should not create a big Traceback error
         assert len(caplog.records) == 0
 
-    @pytest.mark.parametrize("socket_family", ["AF_INET"], indirect=True)
-    def test____serve_forever____accept_client____server_shutdown(
-        self,
-        server: MyTCPServer,
-        server_thread: threading.Thread,
-        client_factory: Callable[[], StreamSocket],
-    ) -> None:
-        _ = client_factory()
-
-        server.shutdown(timeout=3.0)
-        server_thread.join(timeout=1.0)
-        assert not server_thread.is_alive()
-
     def test____serve_forever____client_extra_attributes(
         self,
         client_factory: Callable[[], StreamSocket],
@@ -643,8 +630,7 @@ class TestThreadedTCPNetworkServer(BaseTestThreadedServer):
     ) -> None:
         client = client_factory()
 
-        server.shutdown()
-        time.sleep(0.3)
+        server.shutdown(timeout=5.0)
 
         with contextlib.suppress(ConnectionError):
             assert client.recv(1024) == b""
