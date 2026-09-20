@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import gc
 import logging
+import os
 import pathlib
 import ssl
 import sys
@@ -251,6 +252,7 @@ def main() -> None:
     print(f"Python version: {sys.version}")
     print(f"GC enabled: {gc.isenabled()}")
     print(f"GIL enabled: {getattr(sys, "_is_gil_enabled", lambda: True)()}")
+    print(f"PID: {os.getpid()}")
 
     with create_tcp_server(
         port=args.port,

@@ -36,7 +36,7 @@ import threading as _threading
 from abc import abstractmethod
 from collections.abc import Awaitable, Callable, Mapping, Sequence, Sized
 from types import TracebackType
-from typing import TYPE_CHECKING, Any, Literal, NoReturn, Protocol, Self, final, override
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, NoReturn, Protocol, Self, final, override
 
 from ..exceptions import ClientClosedError, ServerAlreadyRunning, ServerClosedError
 from ..lowlevel import _utils, constants
@@ -273,8 +273,17 @@ class BaseThreadedNetworkServerImpl[LowLevelServer: _SupportsShutdownClose, Addr
         "__mainloop_stop",
         "__server_tasks",
         "__active_tasks",
+        "__thread_name_prefix",
         "__logger",
     )
+
+    # Used to assign unique thread names when thread_name_prefix is not supplied.
+    _counter: ClassVar[Callable[[], int]]
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        if not hasattr(cls, "_counter"):  # pragma: no branch
+            cls._counter = itertools.count().__next__
 
     def __init__(
         self,
@@ -283,6 +292,7 @@ class BaseThreadedNetworkServerImpl[LowLevelServer: _SupportsShutdownClose, Addr
         initialize_service: Callable[[contextlib.ExitStack], None],
         lowlevel_serve: Callable[[LowLevelServer, concurrent.futures.ThreadPoolExecutor], None],
         max_nb_workers: int | None,
+        thread_name_prefix: str,
         logger: logging.Logger,
     ) -> None:
         super().__init__()
@@ -301,6 +311,7 @@ class BaseThreadedNetworkServerImpl[LowLevelServer: _SupportsShutdownClose, Addr
         self.__mainloop_stop.set()
         self.__server_tasks: list[concurrent.futures.Future[Any]] = []
         self.__active_tasks = _utils.AtomicUIntCounter()
+        self.__thread_name_prefix = f"{thread_name_prefix}-srv-{self.__class__._counter()}"
         self.__logger: logging.Logger = logger
 
     @override
@@ -399,11 +410,17 @@ class BaseThreadedNetworkServerImpl[LowLevelServer: _SupportsShutdownClose, Addr
                 server_exit_stack.callback(self.__server_tasks.clear)
                 server_exit_stack.callback(self.__check_server_health)
                 requests_executor = server_exit_stack.enter_context(
-                    concurrent.futures.ThreadPoolExecutor(thread_name_prefix="req-hdlr", max_workers=self.__max_nb_workers)
+                    concurrent.futures.ThreadPoolExecutor(
+                        thread_name_prefix=f"{self.__thread_name_prefix}-req-hdlr",
+                        max_workers=self.__max_nb_workers,
+                    )
                 )
                 server_exit_stack.callback(requests_executor.shutdown, wait=False, cancel_futures=True)
                 listeners_executor = server_exit_stack.enter_context(
-                    concurrent.futures.ThreadPoolExecutor(thread_name_prefix="listener", max_workers=len(self.__servers))
+                    concurrent.futures.ThreadPoolExecutor(
+                        thread_name_prefix=f"{self.__thread_name_prefix}-listener",
+                        max_workers=len(self.__servers),
+                    )
                 )
                 server_exit_stack.callback(self.__logger.info, "Server loop break, waiting for remaining tasks...")
                 ##################

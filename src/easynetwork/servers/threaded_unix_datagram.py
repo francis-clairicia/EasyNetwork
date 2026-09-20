@@ -120,6 +120,7 @@ else:
                 initialize_service=_utils.weak_method_proxy(self.__initialize_service),
                 lowlevel_serve=_utils.weak_method_proxy(self.__lowlevel_serve),
                 max_nb_workers=max_nb_workers,
+                thread_name_prefix="unix-dg",
                 logger=logger or logging.getLogger(__name__),
             )
 
