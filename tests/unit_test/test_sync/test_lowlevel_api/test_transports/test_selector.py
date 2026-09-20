@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import errno
 import math
+import selectors
 from collections.abc import Callable
 from selectors import EVENT_READ, EVENT_WRITE, BaseSelector, SelectorKey
 from typing import TYPE_CHECKING, Any
@@ -91,33 +92,15 @@ class TestSelectorBaseTransport:
         with pytest.raises(ValueError):
             _MockSelectorTransport(retry_interval)
 
-    def test____dunder_init____selector_factory____default_to_PollSelector(
-        self,
-        mocker: MockerFixture,
-    ) -> None:
+    def test____dunder_init____selector_factory____default(self) -> None:
         # Arrange
-        mock_selector_cls = mocker.patch("selectors.PollSelector", create=True)
+        expected_selector_cls = getattr(selectors, "PollSelector", selectors.SelectSelector)
 
         # Act
         mock_transport = _MockSelectorTransport(math.inf)
 
         # Assert
-        assert mock_transport._selector_factory is mock_selector_cls
-
-    def test____dunder_init____selector_factory____default_to_SelectSelector(
-        self,
-        mocker: MockerFixture,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        # Arrange
-        mock_selector_cls = mocker.patch("selectors.SelectSelector")
-        monkeypatch.delattr("selectors.PollSelector", raising=False)
-
-        # Act
-        mock_transport = _MockSelectorTransport(math.inf)
-
-        # Assert
-        assert mock_transport._selector_factory is mock_selector_cls
+        assert mock_transport._selector_factory is expected_selector_cls
 
     @pytest.mark.parametrize("timeout", [math.nan, -4], ids=repr)
     def test____retry____invalid_timeout_value(

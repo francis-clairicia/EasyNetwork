@@ -6,6 +6,8 @@ from collections.abc import Callable, Generator
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any
 
+from easynetwork.lowlevel.api_sync.transports.base_selector import _can_use_selector
+
 import pytest
 
 
@@ -38,41 +40,16 @@ def schedule_call_in_thread(
     return schedule_call_in_thread
 
 
-def _can_use_selector(method: str) -> bool:
-    import select
-
-    """Check if we can use the selector depending upon the
-    operating system. """
-    # Implementation based upon https://github.com/sethmlarson/selectors2/blob/master/selectors2.py
-    selector = getattr(select, method, None)
-    if selector is None:
-        # select module does not implement method
-        return False
-    # check if the OS and Kernel actually support the method. Call may fail with
-    # OSError: [Errno 38] Function not implemented
-    try:
-        selector_obj = selector()
-        if method == "poll":
-            # check that poll actually works
-            selector_obj.poll(0)
-        else:
-            # close epoll, kqueue, and devpoll fd
-            selector_obj.close()
-        return True
-    except OSError:
-        return False
-
-
 _AVAILABLE_SELECTORS: dict[str, Callable[[], selectors.BaseSelector] | None] = {
-    "select": selectors.SelectSelector,
-    "poll": getattr(selectors, "PollSelector") if _can_use_selector("poll") else None,
+    "kqueue": getattr(selectors, "KqueueSelector") if _can_use_selector("kqueue") else None,
     "epoll": getattr(selectors, "EpollSelector") if _can_use_selector("epoll") else None,
     "devpoll": getattr(selectors, "DevpollSelector") if _can_use_selector("devpoll") else None,
-    "kqueue": getattr(selectors, "KqueueSelector") if _can_use_selector("kqueue") else None,
+    "poll": getattr(selectors, "PollSelector") if _can_use_selector("poll") else None,
+    "select": selectors.SelectSelector,
 }
 
 
-@pytest.fixture(params=sorted([s for s in _AVAILABLE_SELECTORS if _AVAILABLE_SELECTORS[s]]))
+@pytest.fixture(params=[s for s in _AVAILABLE_SELECTORS if _AVAILABLE_SELECTORS[s]])
 def selector_factory(request: pytest.FixtureRequest) -> Callable[[], selectors.BaseSelector]:
     if request.param == "default":
         return selectors.DefaultSelector
