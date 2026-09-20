@@ -21,6 +21,7 @@ from __future__ import annotations
 
 __all__: list[str] = []
 
+import selectors
 import socket as _socket
 import sys
 from typing import TYPE_CHECKING
@@ -79,6 +80,7 @@ else:
             "__unnamed_addresses_behavior",
             "__receive_ancillary_data",
             "__ancillary_bufsize",
+            "__selector_factory",
         )
 
         def __init__(
@@ -92,6 +94,7 @@ else:
             receive_ancillary_data: bool = False,
             ancillary_bufsize: int | None = None,
             max_nb_workers: int | None = None,
+            selector_factory: Callable[[], selectors.BaseSelector] | None = None,
             logger: logging.Logger | None = None,
         ) -> None:
             """
@@ -113,6 +116,8 @@ else:
                 receive_ancillary_data: ask the socket to read the ancillary data sent along with a datagram.
                 ancillary_bufsize: read buffer size for ancillary data. Defaults to ~8KiB.
                 max_nb_workers: Use a pool of at most the given value.
+                selector_factory: If given, the callable object to use to create a new :class:`selectors.BaseSelector` instance.
+                                  Otherwise, the selector used by default is :class:`selectors.DefaultSelector`.
                 logger: If given, the logger instance to use.
             """
             super().__init__(
@@ -161,6 +166,7 @@ else:
             self.__unnamed_addresses_behavior = unnamed_addresses_behavior
             self.__receive_ancillary_data = receive_ancillary_data
             self.__ancillary_bufsize = ancillary_bufsize
+            self.__selector_factory: Callable[[], selectors.BaseSelector] | None = selector_factory
 
         @classmethod
         def __create_unix_datagram_listener(
@@ -192,7 +198,7 @@ else:
             if (path := local_name.as_pathname()) is not None:
                 self.__unix_socket_to_delete.register(path)
 
-            server = _datagram_server.SelectorDatagramServer(listener, self.__protocol)
+            server = _datagram_server.SelectorDatagramServer(listener, self.__protocol, selector_factory=self.__selector_factory)
             return [server]
 
         def __initialize_service(self, server_exit_stack: contextlib.ExitStack) -> None:

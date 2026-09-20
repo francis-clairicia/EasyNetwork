@@ -24,6 +24,7 @@ __all__ = ["ThreadedUDPNetworkServer"]
 import concurrent.futures
 import contextlib
 import logging
+import selectors
 import socket as _socket
 import threading
 import weakref
@@ -61,6 +62,7 @@ class ThreadedUDPNetworkServer[Request, Response](
         "__request_handler",
         "__service_available",
         "__service_close_lock",
+        "__selector_factory",
     )
 
     def __init__(
@@ -72,6 +74,7 @@ class ThreadedUDPNetworkServer[Request, Response](
         *,
         reuse_port: bool = False,
         max_nb_workers: int | None = None,
+        selector_factory: Callable[[], selectors.BaseSelector] | None = None,
         logger: logging.Logger | None = None,
     ) -> None:
         """
@@ -89,6 +92,8 @@ class ThreadedUDPNetworkServer[Request, Response](
                         This option is not supported on Windows and some Unixes.
                         If the SO_REUSEPORT constant is not defined then this capability is unsupported.
             max_nb_workers: Use a pool of at most the given value.
+            selector_factory: If given, the callable object to use to create a new :class:`selectors.BaseSelector` instance.
+                              Otherwise, the selector used by default is :class:`selectors.DefaultSelector`.
             logger: If given, the logger instance to use.
         """
         super().__init__(
@@ -116,6 +121,7 @@ class ThreadedUDPNetworkServer[Request, Response](
         self.__request_handler: BlockingDatagramRequestHandler[Request, Response] = request_handler
         self.__service_available = threading.Event()
         self.__service_close_lock = _lock.RWLock()
+        self.__selector_factory: Callable[[], selectors.BaseSelector] | None = selector_factory
 
     @classmethod
     def __create_udp_listeners(
@@ -139,7 +145,14 @@ class ThreadedUDPNetworkServer[Request, Response](
         return [SocketDatagramListener(sock) for sock in sockets]
 
     def __activate_listeners(self) -> list[_datagram_server.SelectorDatagramServer[Request, Response, tuple[Any, ...]]]:
-        return [_datagram_server.SelectorDatagramServer(listener, self.__protocol) for listener in self.__listeners_factory()]
+        return [
+            _datagram_server.SelectorDatagramServer(
+                listener,
+                self.__protocol,
+                selector_factory=self.__selector_factory,
+            )
+            for listener in self.__listeners_factory()
+        ]
 
     def __initialize_service(self, server_exit_stack: contextlib.ExitStack) -> None:
         self.__request_handler.service_init(

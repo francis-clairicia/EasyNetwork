@@ -26,6 +26,7 @@ import contextlib
 import errno as _errno
 import functools
 import logging
+import selectors
 import socket as _socket
 import threading
 import weakref
@@ -71,6 +72,7 @@ class ThreadedTCPNetworkServer[Request, Response](
         "__request_handler",
         "__max_recv_size",
         "__worker_strategy",
+        "__selector_factory",
         "__client_connection_log_level",
     )
 
@@ -90,6 +92,7 @@ class ThreadedTCPNetworkServer[Request, Response](
         max_recv_size: int | None = None,
         max_nb_workers: int | None = None,
         worker_strategy: Literal["clients", "requests"] = "requests",
+        selector_factory: Callable[[], selectors.BaseSelector] | None = None,
         log_client_connection: bool | None = None,
         logger: logging.Logger | None = None,
     ) -> None:
@@ -131,6 +134,8 @@ class ThreadedTCPNetworkServer[Request, Response](
                 * ``"clients"``: Each thread is reserved for a single connection. Therefore, the maximum number of simultaneous
                   connections is restricted to the size of the pool, but handling requests is much faster.
 
+            selector_factory: If given, the callable object to use to create a new :class:`selectors.BaseSelector` instance.
+                              Otherwise, the selector used by default is :class:`selectors.DefaultSelector`.
             log_client_connection: If :data:`True` (default), log clients connection/disconnection in :data:`~logging.INFO` level.
                                    (This log will always be available in :data:`~logging.DEBUG` level.)
             logger: If given, the logger instance to use.
@@ -199,6 +204,7 @@ class ThreadedTCPNetworkServer[Request, Response](
         self.__request_handler: BlockingStreamRequestHandler[Request, Response] = request_handler
         self.__max_recv_size: int = max_recv_size
         self.__worker_strategy: Literal["clients", "requests"] = worker_strategy
+        self.__selector_factory: Callable[[], selectors.BaseSelector] | None = selector_factory
         self.__client_connection_log_level: int = logging.INFO if log_client_connection else logging.DEBUG
 
     @classmethod
@@ -273,6 +279,7 @@ class ThreadedTCPNetworkServer[Request, Response](
                 listener,
                 self.__protocol,
                 max_recv_size=self.__max_recv_size,
+                selector_factory=self.__selector_factory,
             )
             for listener in self.__listeners_factory()
         ]

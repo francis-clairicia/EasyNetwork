@@ -891,7 +891,7 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
                 case _SelectorServerKeyData(ready_for_reading=ready_for_reading):
                     ready_for_reading.set()
                 case _:
-                    continue
+                    raise AssertionError(f"Expected code to be unreachable, but got: {key.data}")
 
     def __attach_server(self) -> None:
         self.__active_tasks.increment()

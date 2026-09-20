@@ -21,6 +21,7 @@ from __future__ import annotations
 
 __all__: list[str] = []
 
+import selectors
 import socket as _socket
 import sys
 from typing import TYPE_CHECKING, cast
@@ -72,6 +73,7 @@ else:
             "__max_recv_size",
             "__ancillary_bufsize",
             "__worker_strategy",
+            "__selector_factory",
             "__client_connection_log_level",
             "__unix_socket_to_delete",
         )
@@ -88,6 +90,7 @@ else:
             ancillary_bufsize: int | None = None,
             max_nb_workers: int | None = None,
             worker_strategy: Literal["clients", "requests"] = "requests",
+            selector_factory: Callable[[], selectors.BaseSelector] | None = None,
             log_client_connection: bool | None = None,
             logger: logging.Logger | None = None,
         ) -> None:
@@ -110,6 +113,8 @@ else:
                     * ``"clients"``: Each thread is reserved for a single connection. Therefore, the maximum number of
                       simultaneous connections is restricted to the size of the pool, but handling requests is much faster.
 
+                selector_factory: If given, the callable object to use to create a new :class:`selectors.BaseSelector` instance.
+                                  Otherwise, the selector used by default is :class:`selectors.DefaultSelector`.
                 log_client_connection: If :data:`True` (default), log clients connection/disconnection in :data:`~logging.INFO` level.
                                        (This log will always be available in :data:`~logging.DEBUG` level.)
                 logger: If given, the logger instance to use.
@@ -157,6 +162,7 @@ else:
             self.__max_recv_size: int = max_recv_size
             self.__ancillary_bufsize: int = ancillary_bufsize
             self.__worker_strategy: Literal["clients", "requests"] = worker_strategy
+            self.__selector_factory: Callable[[], selectors.BaseSelector] | None = selector_factory
             self.__client_connection_log_level: int = logging.INFO if log_client_connection else logging.DEBUG
             self.__unix_socket_to_delete = _base.UnixSocketPathCleaner()
 
@@ -200,6 +206,7 @@ else:
                 listener,
                 self.__protocol,
                 max_recv_size=self.__max_recv_size,
+                selector_factory=self.__selector_factory,
             )
             return [server]
 
