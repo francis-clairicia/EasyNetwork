@@ -50,6 +50,7 @@ from ..lowlevel.socket import (
 )
 from ..protocol import AnyStreamProtocolType
 from . import _base
+from .abc import SupportsEventSet
 from .handlers import BlockingStreamClient, BlockingStreamRequestHandler, INETClientAttribute
 from .misc import build_lowlevel_blocking_stream_server_handler
 
@@ -294,6 +295,7 @@ class ThreadedTCPNetworkServer[Request, Response](
         self,
         server: _stream_server.SelectorStreamServer[Request, Response],
         executor: concurrent.futures.ThreadPoolExecutor,
+        is_up_event: SupportsEventSet,
     ) -> None:
         def disconnect_error_filter(exc: Exception) -> bool:
             match exc:
@@ -312,6 +314,7 @@ class ThreadedTCPNetworkServer[Request, Response](
             executor,
             worker_strategy=self.__worker_strategy,
             disconnect_error_filter=disconnect_error_filter,
+            is_up_event=is_up_event,
         )
 
     @contextlib.contextmanager

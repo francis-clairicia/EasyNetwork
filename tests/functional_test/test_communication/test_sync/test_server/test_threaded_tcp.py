@@ -9,7 +9,7 @@ import threading
 import time
 from collections.abc import Callable, Generator
 from socket import IPPROTO_TCP, TCP_NODELAY
-from typing import Any
+from typing import Any, Literal
 from weakref import WeakValueDictionary
 
 from easynetwork.exceptions import (
@@ -350,6 +350,12 @@ class TestThreadedTCPNetworkServer(BaseTestThreadedServer):
     def ssl_standard_compatible(request: pytest.FixtureRequest) -> bool | None:
         return getattr(request, "param", None)
 
+    @pytest.fixture(params=["clients", "requests"])
+    @staticmethod
+    def worker_strategy(request: pytest.FixtureRequest) -> Literal["clients", "requests"]:
+        assert request.param in ("clients", "requests")
+        return request.param
+
     @pytest.fixture
     @staticmethod
     def log_client_connection(request: pytest.FixtureRequest) -> bool | None:
@@ -390,6 +396,7 @@ class TestThreadedTCPNetworkServer(BaseTestThreadedServer):
         server_ssl_context: ssl.SSLContext | None,
         ssl_handshake_timeout: float | None,
         ssl_standard_compatible: bool | None,
+        # worker_strategy: Literal["clients", "requests"],
         log_client_connection: bool | None,
     ) -> Generator[MyTCPServer]:
         with MyTCPServer(
@@ -402,6 +409,7 @@ class TestThreadedTCPNetworkServer(BaseTestThreadedServer):
             ssl_handshake_timeout=ssl_handshake_timeout,
             ssl_standard_compatible=ssl_standard_compatible,
             selector_factory=selector_factory,
+            # worker_strategy=worker_strategy,
             log_client_connection=log_client_connection,
             logger=LOGGER,
         ) as server:
@@ -413,7 +421,8 @@ class TestThreadedTCPNetworkServer(BaseTestThreadedServer):
     @pytest.fixture
     @staticmethod
     def server_address(run_server: threading.Event, server: MyTCPServer) -> tuple[str, int]:
-        run_server.wait(1.0)
+        if not run_server.wait(timeout=1.0):
+            raise TimeoutError("run_server")
         assert server.is_serving()
         server_addresses = server.get_addresses()
         assert len(server_addresses) == 1
@@ -496,7 +505,8 @@ class TestThreadedTCPNetworkServer(BaseTestThreadedServer):
         run_server: threading.Event,
         request_handler: MyStreamRequestHandler,
     ) -> None:
-        run_server.wait()
+        if not run_server.wait(timeout=1.0):
+            raise TimeoutError("run_server")
         assert request_handler.server == server
 
     @pytest.mark.parametrize(
@@ -553,7 +563,6 @@ class TestThreadedTCPNetworkServer(BaseTestThreadedServer):
     @pytest.mark.parametrize("socket_family", ["AF_INET"], indirect=True)
     def test____serve_forever____accept_client____client_sent_RST_packet_right_after_accept(
         self,
-        server: MyTCPServer,
         server_address: tuple[str, int],
         caplog: pytest.LogCaptureFixture,
     ) -> None:
@@ -581,17 +590,14 @@ class TestThreadedTCPNetworkServer(BaseTestThreadedServer):
     def test____serve_forever____accept_client____server_shutdown(
         self,
         server: MyTCPServer,
-        server_address: tuple[str, int],
-        request_handler: MyStreamRequestHandler,
+        server_thread: threading.Thread,
+        client_factory: Callable[[], StreamSocket],
     ) -> None:
-        from socket import socket as SocketType
+        _ = client_factory()
 
-        with SocketType() as socket:
-            socket.connect(server_address)
-            client_address: tuple[Any, ...] = socket.getsockname()
-            assert client_address not in request_handler.connected_clients
-
-            server.shutdown(timeout=1.0)
+        server.shutdown(timeout=3.0)
+        server_thread.join(timeout=1.0)
+        assert not server_thread.is_alive()
 
     def test____serve_forever____client_extra_attributes(
         self,
@@ -977,7 +983,6 @@ class TestThreadedTCPNetworkServer(BaseTestThreadedServer):
     @pytest.mark.parametrize("request_handler", [ErrorBeforeYieldHandler], indirect=True)
     def test____serve_forever____request_handler_crashed_before_yield(
         self,
-        server: MyTCPServer,
         caplog: pytest.LogCaptureFixture,
         logger_crash_maximum_nb_lines: dict[str, int],
         client_factory: Callable[[], StreamSocket],

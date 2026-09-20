@@ -261,6 +261,14 @@ class BaseStandaloneNetworkServerImpl[AsyncServer: AbstractAsyncNetworkServer](A
             backend.bootstrap(serve_forever, runner_options=runner_options)
 
 
+class _EventLikeBarrier:
+    def __init__(self, barrier: _threading.Barrier) -> None:
+        self._barrier: _threading.Barrier = barrier
+
+    def set(self) -> None:
+        self._barrier.wait()
+
+
 class BaseThreadedNetworkServerImpl[LowLevelServer: _SupportsShutdownClose, Address](AbstractNetworkServer):
     __slots__ = (
         "__servers",
@@ -290,7 +298,7 @@ class BaseThreadedNetworkServerImpl[LowLevelServer: _SupportsShutdownClose, Addr
         *,
         servers_factory: Callable[[], Sequence[LowLevelServer]],
         initialize_service: Callable[[contextlib.ExitStack], None],
-        lowlevel_serve: Callable[[LowLevelServer, concurrent.futures.ThreadPoolExecutor], None],
+        lowlevel_serve: Callable[[LowLevelServer, concurrent.futures.ThreadPoolExecutor, SupportsEventSet], None],
         max_nb_workers: int | None,
         thread_name_prefix: str,
         logger: logging.Logger,
@@ -299,7 +307,9 @@ class BaseThreadedNetworkServerImpl[LowLevelServer: _SupportsShutdownClose, Addr
 
         self.__servers_factory_cb: Callable[[], Sequence[LowLevelServer]] | None = servers_factory
         self.__initialize_service_cb: Callable[[contextlib.ExitStack], None] = initialize_service
-        self.__lowlevel_serve_cb: Callable[[LowLevelServer, concurrent.futures.ThreadPoolExecutor], None] = lowlevel_serve
+        self.__lowlevel_serve_cb: Callable[[LowLevelServer, concurrent.futures.ThreadPoolExecutor, SupportsEventSet], None] = (
+            lowlevel_serve
+        )
 
         self.__max_nb_workers: int | None = max_nb_workers
         self.__server_activation_lock = _threading.RLock()
@@ -349,34 +359,20 @@ class BaseThreadedNetworkServerImpl[LowLevelServer: _SupportsShutdownClose, Addr
     @override
     @_utils.inherit_doc(AbstractNetworkServer)
     def server_close(self) -> None:
-        with contextlib.ExitStack() as exit_stack:
-            lock_stack = exit_stack.enter_context(contextlib.ExitStack())
-
-            with self.__server_activation_lock:
-                self.__servers_factory_cb = None
-                exit_stack.callback(self.__servers.clear)
-                for server in self.__servers:
-                    server.shutdown(0)
-                    exit_stack.enter_context(contextlib.closing(server))
-
-                # Take the lock before closing servers
-                exit_stack.callback(lock_stack.enter_context, self.__server_activation_lock)
-                server_tasks = self.__server_tasks.copy()
-
-            concurrent.futures.wait(server_tasks)
+        with self.__server_activation_lock, contextlib.ExitStack() as exit_stack:
+            self.__servers_factory_cb = None
+            exit_stack.callback(self.__servers.clear)
+            for server in self.__servers:
+                exit_stack.enter_context(contextlib.closing(server))
 
     @override
     @_utils.inherit_doc(AbstractNetworkServer)
     def shutdown(self, timeout: float | None = None) -> None:
-        with contextlib.ExitStack() as exit_stack:
-            with self.__server_activation_lock:
-                executor = concurrent.futures.ThreadPoolExecutor(max_workers=len(self.__servers) or 1)
-                exit_stack.enter_context(executor)
-                for server in self.__servers:
-                    executor.submit(server.shutdown, timeout)
-                executor.shutdown(wait=False, cancel_futures=False)
-            self.__mainloop_stop.set()
-            self.__is_shutdown.wait(timeout)
+        with self.__server_activation_lock:
+            for i, server in enumerate(self.__servers):
+                _threading.Thread(target=server.shutdown, name=f"{self.__thread_name_prefix}-shutdown_{i}", daemon=True).start()
+        self.__mainloop_stop.set()
+        self.__is_shutdown.wait(timeout)
 
     @_utils.inherit_doc(AbstractNetworkServer)
     def serve_forever(self, *, is_up_event: SupportsEventSet | None = None) -> None:
@@ -386,10 +382,14 @@ class BaseThreadedNetworkServerImpl[LowLevelServer: _SupportsShutdownClose, Addr
                 # Wake up server
                 if not self.__is_shutdown.is_set():
                     raise ServerAlreadyRunning("Server is already running")
+                if self.__servers_factory_cb is None:
+                    raise ServerClosedError("Closed server")
                 self.__is_shutdown = is_shutdown = _threading.Event()
                 server_exit_stack.callback(is_shutdown.set)
                 self.__mainloop_stop = mainloop_stop = _threading.Event()
                 server_exit_stack.callback(mainloop_stop.set)
+                if is_up_event is not None:
+                    server_exit_stack.callback(is_up_event.set)
                 ################
 
                 # Bind and activate
@@ -426,16 +426,17 @@ class BaseThreadedNetworkServerImpl[LowLevelServer: _SupportsShutdownClose, Addr
                 ##################
 
                 # Enable listener
+                listeners_barrier = _threading.Barrier(
+                    parties=len(self.__servers),
+                    # Server is up when all listeners have notified.
+                    action=is_up_event.set if is_up_event is not None else None,
+                )
                 self.__server_tasks = [
-                    listeners_executor.submit(self.__serve, server, requests_executor) for server in self.__servers
+                    listeners_executor.submit(self.__serve, server, requests_executor, listeners_barrier)
+                    for server in self.__servers
                 ]
                 self.__logger.info("Start serving at %s", ", ".join(map(str, self.get_addresses())))
                 #################
-
-            # Server is up
-            if is_up_event is not None:
-                is_up_event.set()
-            ##############
 
             # Main loop
             try:
@@ -462,10 +463,11 @@ class BaseThreadedNetworkServerImpl[LowLevelServer: _SupportsShutdownClose, Addr
         self,
         server: LowLevelServer,
         executor: concurrent.futures.ThreadPoolExecutor,
+        barrier: _threading.Barrier,
     ) -> None:
         lowlevel_serve = self.__lowlevel_serve_cb
         with _BindServer(self.__attach_server, self.__detach_server):
-            lowlevel_serve(server, executor)
+            lowlevel_serve(server, executor, _EventLikeBarrier(barrier))
 
     def __attach_server(self) -> None:
         self.__active_tasks.increment()

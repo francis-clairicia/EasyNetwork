@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import logging
 import threading
 import time
 from collections.abc import Generator
@@ -34,8 +35,12 @@ class BaseTestThreadedServer:
         event = threading.Event()
 
         def serve_forever(server: AbstractNetworkServer, event: threading.Event) -> None:
-            with contextlib.suppress(ServerClosedError):
-                server.serve_forever(is_up_event=event)
+            try:
+                with contextlib.suppress(ServerClosedError):
+                    server.serve_forever(is_up_event=event)
+            except BaseException:
+                logger: logging.Logger = getattr(server, "logger", None) or logging.getLogger(__name__)
+                logger.exception("serve_forever() crash")
 
         thread = threading.Thread(target=serve_forever, args=(server, event), daemon=True)
 
@@ -43,7 +48,7 @@ class BaseTestThreadedServer:
         threading.Timer(0.1, thread.start).start()
 
         yield _ServerBootstrapInfo(thread, event)
-        server.shutdown()
+        server.shutdown(timeout=5.0)
 
     @pytest.fixture  # DO NOT SET autouse=True
     @staticmethod
@@ -66,7 +71,8 @@ class BaseTestThreadedServer:
         run_server: threading.Event,
         server_thread: threading.Thread,
     ) -> None:
-        run_server.wait()
+        if not run_server.wait(timeout=1.0):
+            raise TimeoutError("run_server")
         server.server_close()
         server_thread.join(timeout=1)
 
@@ -80,7 +86,8 @@ class BaseTestThreadedServer:
         run_server: threading.Event,
         server: AbstractNetworkServer,
     ) -> None:
-        run_server.wait()
+        if not run_server.wait(timeout=1.0):
+            raise TimeoutError("run_server")
         with pytest.raises(ServerAlreadyRunning):
             server.serve_forever()
 
@@ -113,7 +120,8 @@ class BaseTestThreadedServer:
         run_server: threading.Event,
     ) -> None:
         if server_is_up:
-            run_server.wait()
+            if not run_server.wait(timeout=1.0):
+                raise TimeoutError("run_server")
 
         with ThreadPoolExecutor() as executor:
             for _ in range(10):

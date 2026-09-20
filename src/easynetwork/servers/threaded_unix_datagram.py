@@ -53,6 +53,7 @@ else:
     from ..lowlevel.socket import SocketAncillary, SocketProxy, UnixSocketAddress, UNIXSocketAttribute
     from ..protocol import DatagramProtocol
     from . import _base
+    from .abc import SupportsEventSet
     from .handlers import BlockingDatagramClient, BlockingDatagramRequestHandler, UNIXClientAttribute
     from .misc import build_lowlevel_blocking_datagram_server_handler
 
@@ -214,6 +215,7 @@ else:
             self,
             server: _datagram_server.SelectorDatagramServer[Request, Response, UnixSocketAddress],
             executor: concurrent.futures.ThreadPoolExecutor,
+            is_up_event: SupportsEventSet,
         ) -> None:
             handler = build_lowlevel_blocking_datagram_server_handler(
                 self.__client_initializer,
@@ -221,9 +223,15 @@ else:
                 weakref.WeakValueDictionary(),
             )
             if self.__receive_ancillary_data:
-                server.serve_with_ancillary(handler, executor, self.__ancillary_bufsize, self.__ancillary_data_unused)
+                server.serve_with_ancillary(
+                    handler,
+                    executor,
+                    self.__ancillary_bufsize,
+                    self.__ancillary_data_unused,
+                    is_up_event=is_up_event,
+                )
             else:
-                server.serve(handler, executor)
+                server.serve(handler, executor, is_up_event=is_up_event)
 
         def __ancillary_data_unused(self, raw_ancdata: Any, client_address: UnixSocketAddress, /) -> None:
             if raw_ancdata:

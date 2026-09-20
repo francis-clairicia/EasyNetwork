@@ -40,6 +40,7 @@ from ..lowlevel.api_sync.transports.socket import SocketDatagramListener
 from ..lowlevel.socket import INETSocketAttribute, SocketAddress, SocketProxy, new_socket_address
 from ..protocol import DatagramProtocol
 from . import _base
+from .abc import SupportsEventSet
 from .handlers import BlockingDatagramClient, BlockingDatagramRequestHandler, INETClientAttribute
 from .misc import build_lowlevel_blocking_datagram_server_handler
 
@@ -167,13 +168,14 @@ class ThreadedUDPNetworkServer[Request, Response](
         self,
         server: _datagram_server.SelectorDatagramServer[Request, Response, tuple[Any, ...]],
         executor: concurrent.futures.ThreadPoolExecutor,
+        is_up_event: SupportsEventSet,
     ) -> None:
         handler = build_lowlevel_blocking_datagram_server_handler(
             self.__client_initializer,
             self.__request_handler,
             weakref.WeakValueDictionary(),
         )
-        server.serve(handler, executor)
+        server.serve(handler, executor, is_up_event=is_up_event)
 
     def __client_initializer(
         self,

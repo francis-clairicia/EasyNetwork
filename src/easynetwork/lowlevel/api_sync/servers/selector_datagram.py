@@ -38,13 +38,24 @@ import weakref
 from collections.abc import Callable, Generator, Hashable, Mapping
 from queue import Empty as _QueueEmpty, SimpleQueue as _Queue
 from time import perf_counter as _get_current_time
-from typing import Any, NamedTuple, Self
+from typing import Any, NamedTuple, Protocol, Self
 
 from ....exceptions import DatagramProtocolParseError, UnsupportedOperation
 from ....protocol import DatagramProtocol
 from ... import _lock, _utils, _wakeup_socketpair
 from ...request_handler import RecvAncillaryDataParams, RecvParams
 from ..transports import abc as _transports, base_selector as _selector_transports
+
+
+class _SupportsEventSet(Protocol):
+
+    def set(self) -> None:
+        """
+        Notifies that the event has happened.
+
+        This method MUST be idempotent.
+        """
+        ...
 
 
 @dataclasses.dataclass(frozen=True, unsafe_hash=True, slots=True, weakref_slot=True)
@@ -241,6 +252,8 @@ class SelectorDatagramServer[Request, Response, Address: Hashable](_transports.B
         self,
         datagram_received_cb: Callable[[DatagramClientContext[Response, Address]], Generator[RecvParams | None, Request]],
         executor: concurrent.futures.Executor,
+        *,
+        is_up_event: _SupportsEventSet | None = None,
     ) -> None:
         """
         Receive incoming datagrams as they come in and start tasks to handle them.
@@ -260,8 +273,9 @@ class SelectorDatagramServer[Request, Response, Address: Hashable](_transports.B
         Parameters:
             datagram_received_cb: a callable that will be used to handle each received datagram.
             executor: will be used to start tasks for handling each accepted connection.
+            is_up_event: If given, will be triggered when the server is ready to receive datagrams.
         """
-        return self.__serve_impl(datagram_received_cb, executor)
+        return self.__serve_impl(datagram_received_cb, executor, is_up_event=is_up_event)
 
     def serve_with_ancillary(
         self,
@@ -269,6 +283,8 @@ class SelectorDatagramServer[Request, Response, Address: Hashable](_transports.B
         executor: concurrent.futures.Executor,
         ancillary_bufsize: int,
         ancillary_data_unused: Callable[[Any, Address], object] | None = None,
+        *,
+        is_up_event: _SupportsEventSet | None = None,
     ) -> None:
         """
         Receive incoming datagrams as they come in and start tasks to handle them.
@@ -290,6 +306,7 @@ class SelectorDatagramServer[Request, Response, Address: Hashable](_transports.B
             executor: will be used to start tasks for handling each accepted connection.
             ancillary_bufsize: the maximum buffer size for ancillary data.
             ancillary_data_unused: Action to perform if the request handler did not claim the received ancillary data.
+            is_up_event: If given, will be triggered when the server is ready to receive datagrams.
         """
         if not isinstance(ancillary_bufsize, int) or ancillary_bufsize <= 0:
             raise ValueError("ancillary_bufsize must be a strictly positive integer")
@@ -297,6 +314,7 @@ class SelectorDatagramServer[Request, Response, Address: Hashable](_transports.B
         return self.__serve_impl(
             datagram_received_cb,
             executor,
+            is_up_event=is_up_event,
             server_ancillary_data_params=_ServerAncillaryDataParams(
                 bufsize=ancillary_bufsize,
                 data_unused=ancillary_data_unused,
@@ -307,6 +325,7 @@ class SelectorDatagramServer[Request, Response, Address: Hashable](_transports.B
         self,
         datagram_received_cb: Callable[[DatagramClientContext[Response, Address]], Generator[RecvParams | None, Request]],
         executor: concurrent.futures.Executor,
+        is_up_event: _SupportsEventSet | None,
         server_ancillary_data_params: _ServerAncillaryDataParams[Address] | None = None,
     ) -> None:
         with self.__serve_guard, contextlib.ExitStack() as stack:
@@ -324,6 +343,7 @@ class SelectorDatagramServer[Request, Response, Address: Hashable](_transports.B
                     datagram_received_cb=datagram_received_cb,
                     executor=executor,
                     server_ancillary_data_params=server_ancillary_data_params,
+                    is_up_event=is_up_event,
                 )
             finally:
                 self.__is_shut_down.set()
@@ -342,6 +362,7 @@ class SelectorDatagramServer[Request, Response, Address: Hashable](_transports.B
         datagram_received_cb: Callable[[DatagramClientContext[Response, Address]], Generator[RecvParams | None, Request]],
         executor: concurrent.futures.Executor,
         server_ancillary_data_params: _ServerAncillaryDataParams[Address] | None,
+        is_up_event: _SupportsEventSet | None,
     ) -> None:
         with (
             _SelectorToken(selector=selector) as selector_token,
@@ -375,6 +396,7 @@ class SelectorDatagramServer[Request, Response, Address: Hashable](_transports.B
                     client_handler_token=client_handler_token,
                     listener_recv_noblock_from=operator.methodcaller("recv_noblock_from"),
                     handler=handler,
+                    is_up_event=is_up_event,
                 )
             else:
                 self.__serve_forever_impl(
@@ -385,6 +407,7 @@ class SelectorDatagramServer[Request, Response, Address: Hashable](_transports.B
                         server_ancillary_data_params.bufsize,
                     ),
                     handler=lambda datagram, ancillary_data, address: handler(datagram, address, ancillary_data),  # type: ignore[misc]
+                    is_up_event=is_up_event,
                 )
 
     def __serve_requests__start_new_client_task(
@@ -740,12 +763,17 @@ class SelectorDatagramServer[Request, Response, Address: Hashable](_transports.B
         client_handler_token: _ClientHandlerToken[Request, Response, Address],
         listener_recv_noblock_from: Callable[[_selector_transports.SelectorDatagramListener[Address]], tuple[*P]],
         handler: Callable[[*P], None],
+        is_up_event: _SupportsEventSet | None,
     ) -> None:
         selector = selector_token.selector
         listener = self.__thread_safe_listener
         shutdown_requested = self.__shutdown_request.is_set
 
         listener.register(selector)
+
+        if is_up_event is not None:
+            is_up_event.set()
+
         while not shutdown_requested():
             listener.receive_datagrams(listener_recv_noblock_from, handler)
 

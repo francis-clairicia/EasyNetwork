@@ -37,13 +37,24 @@ import weakref
 from collections.abc import Callable, Generator, Mapping
 from queue import Empty as _QueueEmpty, SimpleQueue as _Queue
 from time import perf_counter as _get_current_time
-from typing import Any, Literal, NamedTuple, Self, assert_never
+from typing import Any, Literal, NamedTuple, Protocol, Self, assert_never
 
 from ....exceptions import UnsupportedOperation
 from ....protocol import AnyStreamProtocolType
 from ... import _lock, _stream, _utils, _wakeup_socketpair, constants
 from ...request_handler import RecvAncillaryDataParams, RecvParams
 from ..transports import abc as _transports, base_selector as _selector_transports
+
+
+class _SupportsEventSet(Protocol):
+
+    def set(self) -> None:
+        """
+        Notifies that the event has happened.
+
+        This method MUST be idempotent.
+        """
+        ...
 
 
 class ConnectedStreamClient[Response](_transports.BaseTransport):
@@ -301,6 +312,7 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
         worker_strategy: Literal["clients", "requests"] = "requests",
         disconnect_error_filter: Callable[[Exception], bool] | None = None,
         ancillary_bufsize: int | None = None,
+        is_up_event: _SupportsEventSet | None = None,
     ) -> None:
         """
         Accept incoming connections as they come in and start tasks to handle them.
@@ -318,6 +330,7 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
             disconnect_error_filter: a callable that returns :data:`True` if the exception is the result of a pipe disconnect.
             ancillary_bufsize: the maximum buffer size for ancillary data.
                                If :data:`None`, using :class:`.RecvAncillaryDataParams` will raise :exc:`.UnsupportedOperation`.
+            is_up_event: If given, will be triggered when the server is ready to accept new clients.
         """
         if ancillary_bufsize is not None:
             if not isinstance(ancillary_bufsize, int) or ancillary_bufsize <= 0:
@@ -345,6 +358,7 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
                             disconnect_error_filter=disconnect_error_filter,
                             ancillary_bufsize=ancillary_bufsize,
                             server_is_shutting_down=server_is_shutting_down.is_set,
+                            is_up_event=is_up_event,
                         )
                     case "requests":
                         self.__serve_requests(
@@ -354,6 +368,7 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
                             disconnect_error_filter=disconnect_error_filter,
                             ancillary_bufsize=ancillary_bufsize,
                             server_is_shutting_down=server_is_shutting_down.is_set,
+                            is_up_event=is_up_event,
                         )
                     case _:
                         assert_never(worker_strategy)
@@ -376,6 +391,7 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
         disconnect_error_filter: Callable[[Exception], bool] | None,
         ancillary_bufsize: int | None,
         server_is_shutting_down: Callable[[], bool],
+        is_up_event: _SupportsEventSet | None,
     ) -> None:
         with (
             _SelectorToken(selector=selector) as selector_token,
@@ -396,6 +412,7 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
                 client_handler_token=client_handler_token,
                 handler=handler,
                 executor=executor,
+                is_up_event=is_up_event,
             )
 
     def __serve_requests__start_new_client(
@@ -640,6 +657,7 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
         disconnect_error_filter: Callable[[Exception], bool] | None,
         ancillary_bufsize: int | None,
         server_is_shutting_down: Callable[[], bool],
+        is_up_event: _SupportsEventSet | None,
     ) -> None:
         with (
             _SelectorToken(selector=selector) as selector_token,
@@ -667,6 +685,7 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
                 client_handler_token=client_handler_token,
                 handler=client_task,
                 executor=executor,
+                is_up_event=is_up_event,
             )
 
     def __serve_clients__client_task(
@@ -840,10 +859,14 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
         client_handler_token: _ClientHandlerToken,
         handler: Callable[[_selector_transports.SelectorStreamTransport], None],
         executor: concurrent.futures.Executor,
+        is_up_event: _SupportsEventSet | None,
     ) -> None:
         selector = selector_token.selector
         listener = self.__thread_safe_listener
         shutdown_requested = self.__shutdown_request.is_set
+
+        if is_up_event is not None:
+            is_up_event.set()
 
         while not shutdown_requested():
             if (accept_future := listener.try_accepting_new_connection(selector, handler, executor)) is not None:
