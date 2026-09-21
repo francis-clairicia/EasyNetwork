@@ -1,0 +1,1412 @@
+# mypy: disable_error_code=override
+
+from __future__ import annotations
+
+import collections
+import contextlib
+import errno
+import logging
+import os
+import stat
+import sys
+import threading
+import time
+from collections.abc import Callable, Generator
+from typing import TYPE_CHECKING, Any, Literal
+from weakref import WeakValueDictionary
+
+import pytest
+
+from .....fixtures.socket import SO_PASSCRED_or_None
+from .....tools import PlatformMarkers
+from ..socket import StreamSocket
+from .base import BaseTestThreadedServer
+
+if TYPE_CHECKING:
+    from pytest_mock import MockerFixture
+
+
+if sys.platform != "win32":
+    from socket import AF_UNIX
+
+    from easynetwork.exceptions import (
+        BaseProtocolParseError,
+        ClientClosedError,
+        IncrementalDeserializeError,
+        StreamProtocolParseError,
+    )
+    from easynetwork.lowlevel._utils import remove_traceback_frames_in_place
+    from easynetwork.lowlevel.request_handler import RecvAncillaryDataParams, RecvParams
+    from easynetwork.lowlevel.socket import (
+        SocketAncillary,
+        SocketProxy,
+        UnixSocketAddress,
+        enable_socket_linger,
+    )
+    from easynetwork.protocol import AnyStreamProtocolType
+    from easynetwork.servers.handlers import (
+        BlockingStreamClient,
+        BlockingStreamRequestHandler,
+        UNIXClientAttribute,
+    )
+    from easynetwork.servers.threaded_unix_stream import ThreadedUnixStreamServer
+
+    if TYPE_CHECKING:
+        from .....pytest_plugins.unix_sockets import UnixSocketPathFactory
+
+    def fetch_client_address(client: BlockingStreamClient[Any]) -> str | bytes:
+        return client.extra(UNIXClientAttribute.peer_name).as_raw()
+
+    class RandomError(Exception):
+        pass
+
+    LOGGER = logging.getLogger(__name__)
+
+    class MyStreamRequestHandler(BlockingStreamRequestHandler[str, str]):
+        connected_clients: WeakValueDictionary[str | bytes, BlockingStreamClient[str]]
+        request_received: collections.defaultdict[str | bytes, list[str]]
+        request_count: collections.Counter[str | bytes]
+        bad_request_received: collections.defaultdict[str | bytes, list[BaseProtocolParseError]]
+        eof_request_received: collections.defaultdict[str | bytes, list[EOFError]]
+        milk_handshake: bool = True
+        close_all_clients_on_connection: bool = False
+        close_client_after_n_request: int = -1
+        server: ThreadedUnixStreamServer[str, str]
+        fail_on_disconnection: bool = False
+        use_recvmsg_by_default: bool = False
+        use_sendmsg_by_default: bool = False
+        send_raw_ancillary: bool = True
+
+        def service_init(self, exit_stack: contextlib.ExitStack, server: ThreadedUnixStreamServer[str, str]) -> None:
+            super().service_init(exit_stack, server)
+            self.server = server
+            assert isinstance(self.server, ThreadedUnixStreamServer)
+
+            self.connected_clients = WeakValueDictionary()
+            exit_stack.callback(self.connected_clients.clear)
+
+            self.request_received = collections.defaultdict(list)
+            exit_stack.callback(self.request_received.clear)
+
+            self.request_count = collections.Counter()
+            exit_stack.callback(self.request_count.clear)
+
+            self.bad_request_received = collections.defaultdict(list)
+            exit_stack.callback(self.bad_request_received.clear)
+
+            self.eof_request_received = collections.defaultdict(list)
+            exit_stack.callback(self.eof_request_received.clear)
+
+            exit_stack.callback(self.service_quit)
+
+        def service_quit(self) -> None:
+            pass
+
+        def on_connection(self, client: BlockingStreamClient[str]) -> None:
+            assert fetch_client_address(client) not in self.connected_clients
+            self.connected_clients[fetch_client_address(client)] = client
+            if self.use_recvmsg_by_default:
+                SO_PASSCRED: tuple[int, int] | None = SO_PASSCRED_or_None()
+                if SO_PASSCRED is not None:
+                    client.extra(UNIXClientAttribute.socket).setsockopt(*SO_PASSCRED, True)
+            if self.milk_handshake:
+                self._send_response_to_client(client, "milk")
+            if self.close_all_clients_on_connection:
+                time.sleep(0.1)
+                client.close()
+
+        def on_disconnection(self, client: BlockingStreamClient[str]) -> None:
+            del self.connected_clients[fetch_client_address(client)]
+            del self.request_count[fetch_client_address(client)]
+            if self.fail_on_disconnection:
+                raise ConnectionError("Trying to use the client in a disconnected state")
+
+        def handle(self, client: BlockingStreamClient[str]) -> Generator[RecvParams | None, str]:
+            if (
+                self.close_client_after_n_request >= 0
+                and self.request_count[fetch_client_address(client)] >= self.close_client_after_n_request
+            ):
+                client.close()
+            request: str
+            if self.use_recvmsg_by_default:
+                ancillary = SocketAncillary()
+                request = yield from self.handle_bad_requests(
+                    client,
+                    RecvParams(recv_with_ancillary=RecvAncillaryDataParams(ancillary.update_from_raw)),
+                )
+                ancillary.clear()
+            else:
+                request = yield from self.handle_bad_requests(client)
+            self.request_count[fetch_client_address(client)] += 1
+            match request:
+                case "__error__":
+                    raise RandomError("Sorry man!")
+                case "__error_excgrp__":
+                    raise ExceptionGroup("RandomError", [RandomError("Sorry man!")])
+                case "__close__":
+                    client.close()
+                    assert client.is_closing()
+                    with pytest.raises(ClientClosedError):
+                        self._send_response_to_client(client, "something never sent")
+                case "__closed_client_error__":
+                    client.close()
+                    self._send_response_to_client(client, "something never sent")
+                case "__closed_client_error_excgrp__":
+                    client.close()
+                    try:
+                        self._send_response_to_client(client, "something never sent")
+                    except Exception as exc:
+                        raise ExceptionGroup("ClosedClientError", [exc]) from None
+                case "__connection_error__":
+                    client.close()  # Close before for graceful close
+                    raise ConnectionResetError("Because why not?")
+                case "__os_error__":
+                    raise OSError("Server issue.")
+                case "__stop_listening__":
+                    self.server.server_close()
+                    self._send_response_to_client(client, "successfully stop listening")
+                case "__wait__":
+                    request = yield from self.handle_bad_requests(client)
+                    self.request_received[fetch_client_address(client)].append(request)
+                    self._send_response_to_client(client, f"After wait: {request}")
+                case "__recvmsg__":
+                    ancillary = SocketAncillary()
+                    request = yield from self.handle_bad_requests(
+                        client,
+                        RecvParams(recv_with_ancillary=RecvAncillaryDataParams(ancillary.update_from_raw)),
+                    )
+                    assert request == "fds"
+                    fds = list(ancillary.iter_fds())
+                    for fd in fds:
+                        os.close(fd)
+                    self._send_response_to_client(client, f"Received {len(fds)} file descriptors.")
+                case "__sendmsg__":
+                    ancillary = SocketAncillary()
+                    with contextlib.ExitStack() as files:
+                        ancillary.add_fds(files.enter_context(open(os.devnull, "rb", buffering=0)).fileno() for _ in range(3))
+                        self._send_response_to_client(client, "fds", ancillary)
+                case _:
+                    self.request_received[fetch_client_address(client)].append(request)
+                    try:
+                        self._send_response_to_client(client, request.upper())
+                    except Exception as exc:
+                        msg = f"{exc.__class__.__name__}: {exc}"
+                        if exc.__cause__:
+                            msg = f"{msg} (caused by {exc.__cause__.__class__.__name__}: {exc.__cause__})"
+                        LOGGER.error(msg, exc_info=exc)
+                        client.close()
+
+        def _send_response_to_client(
+            self,
+            client: BlockingStreamClient[str],
+            response: str,
+            ancillary_data: SocketAncillary | None = None,
+        ) -> None:
+            if ancillary_data is None and self.use_sendmsg_by_default:
+                ancillary_data = SocketAncillary()
+
+            if ancillary_data:
+                if self.send_raw_ancillary:
+                    client.send_packet_with_ancillary(response, ancillary_data.as_raw())
+                else:
+                    client.send_packet_with_ancillary(response, ancillary_data)
+            else:
+                client.send_packet(response)
+
+        def handle_bad_requests(
+            self,
+            client: BlockingStreamClient[str],
+            recv_params: RecvParams | None = None,
+        ) -> Generator[RecvParams | None, str, str]:
+            while True:
+                try:
+                    return (yield recv_params)
+                except StreamProtocolParseError as exc:
+                    remove_traceback_frames_in_place(exc, 1)
+                    self.bad_request_received[fetch_client_address(client)].append(exc)
+                    client.send_packet("wrong encoding man.")
+                except EOFError as exc:
+                    remove_traceback_frames_in_place(exc, 1)
+                    self.eof_request_received[fetch_client_address(client)].append(exc)
+                    client.send_packet("EOF while reading request.")
+
+    class TimeoutYieldedRequestHandler(BlockingStreamRequestHandler[str, str]):
+        request_timeout: float = 1.0
+        timeout_on_second_yield: bool = False
+        use_recvmsg: bool = False
+
+        def on_connection(self, client: BlockingStreamClient[str]) -> None:
+            client.send_packet("milk")
+
+        def handle(self, client: BlockingStreamClient[str]) -> Generator[RecvParams | None, str]:
+            if self.timeout_on_second_yield:
+                request = yield None
+                client.send_packet(request)
+            try:
+                with pytest.raises(TimeoutError):
+                    if self.use_recvmsg:
+                        yield RecvParams(
+                            timeout=self.request_timeout,
+                            recv_with_ancillary=RecvAncillaryDataParams(lambda _: None),
+                        )
+                    else:
+                        yield RecvParams(timeout=self.request_timeout)
+                client.send_packet("successfully timed out")
+            finally:
+                self.request_timeout = 1.0  # Force reset to 1 second in order not to overload the server
+
+    class InitialHandshakeRequestHandler(BlockingStreamRequestHandler[str, str]):
+        bypass_handshake: bool = False
+        handshake_2fa: bool = False
+        check_sent_credential: bool = False
+
+        def on_connection(self, client: BlockingStreamClient[str]) -> Generator[RecvParams | None, str]:
+            if self.check_sent_credential:
+                SO_PASSCRED: tuple[int, int] | None = SO_PASSCRED_or_None()
+                if SO_PASSCRED is None:
+                    raise AssertionError("SO_PASSCRED is not defined")
+                client.extra(UNIXClientAttribute.socket).setsockopt(*SO_PASSCRED, True)
+            client.send_packet("milk")
+            if self.bypass_handshake:
+                return
+            try:
+                if self.check_sent_credential:
+                    ancillary = SocketAncillary()
+                    password = yield RecvParams(
+                        timeout=1.0,
+                        recv_with_ancillary=RecvAncillaryDataParams(ancillary.update_from_raw),
+                    )
+                    credential_is_valid: bool = False
+                    received_credentials: list[Any] = []
+                    if sys.platform != "darwin":
+                        from easynetwork.lowlevel.socket import SCMCredentials
+
+                        for msg in ancillary.messages():
+                            if isinstance(msg, SCMCredentials):
+                                cred = next(msg.credentials)
+                                received_credentials.append(cred)
+                                credential_is_valid |= (cred.uid, cred.gid) == (os.getuid(), os.getgid())
+                    if not credential_is_valid:
+                        client.send_packet(f"Invalid socket credential. {received_credentials=!r}")
+                        client.close()
+                        return
+                    ancillary.clear()
+                else:
+                    password = yield RecvParams(timeout=1.0)
+
+                if password != "chocolate":
+                    client.send_packet("wrong password")
+                    client.close()
+                    return
+
+                if self.handshake_2fa:
+                    client.send_packet("2FA code needed")
+                    code = yield RecvParams(timeout=1.0)
+
+                    if code != "42":
+                        client.send_packet("wrong code")
+                        client.close()
+                        return
+
+            except TimeoutError:
+                client.send_packet("timeout error")
+                client.close()
+                return
+
+            client.send_packet("you can enter")
+
+        def handle(self, client: BlockingStreamClient[str]) -> Generator[None, str]:
+            request = yield
+            client.send_packet(request)
+
+    class RequestRefusedHandler(BlockingStreamRequestHandler[str, str]):
+        refuse_after: int = 2**64
+
+        def service_init(self, exit_stack: contextlib.AsyncExitStack, server: Any) -> None:
+            self.request_count: collections.Counter[BlockingStreamClient[str]] = collections.Counter()
+            exit_stack.callback(self.request_count.clear)
+
+        def on_connection(self, client: BlockingStreamClient[str]) -> None:
+            client.send_packet("milk")
+
+        def on_disconnection(self, client: BlockingStreamClient[str]) -> None:
+            self.request_count.pop(client, None)
+
+        def handle(self, client: BlockingStreamClient[str]) -> Generator[None, str]:
+            if self.request_count[client] >= self.refuse_after:
+                time.sleep(0.2)
+                return
+            request = yield
+            self.request_count[client] += 1
+            client.send_packet(request)
+
+    class ErrorInRequestHandler(BlockingStreamRequestHandler[str, str]):
+        mute_thrown_exception: bool = False
+        read_on_connection: bool = False
+        use_recvmsg: bool = False
+        ancillary_data_callback: Callable[[Any], None] = staticmethod(lambda _: None)
+
+        def on_connection(self, client: BlockingStreamClient[str]) -> Generator[RecvParams | None, str]:
+            client.send_packet("milk")
+            if not self.read_on_connection:
+                return
+            try:
+                if self.use_recvmsg:
+                    request = yield RecvParams(
+                        timeout=None,
+                        recv_with_ancillary=RecvAncillaryDataParams(self.ancillary_data_callback),
+                    )
+                else:
+                    request = yield None
+            except Exception as exc:
+                msg = f"{exc.__class__.__name__}: {exc}"
+                if exc.__cause__:
+                    msg = f"{msg} (caused by {exc.__cause__.__class__.__name__}: {exc.__cause__})"
+                client.send_packet(msg)
+                if not self.mute_thrown_exception:
+                    raise
+            else:
+                client.send_packet(request)
+
+        def handle(self, client: BlockingStreamClient[str]) -> Generator[RecvParams | None, str]:
+            try:
+                if self.use_recvmsg:
+                    request = yield RecvParams(
+                        timeout=None,
+                        recv_with_ancillary=RecvAncillaryDataParams(self.ancillary_data_callback),
+                    )
+                else:
+                    request = yield None
+            except Exception as exc:
+                msg = f"{exc.__class__.__name__}: {exc}"
+                if exc.__cause__:
+                    msg = f"{msg} (caused by {exc.__cause__.__class__.__name__}: {exc.__cause__})"
+                client.send_packet(msg)
+                if not self.mute_thrown_exception:
+                    raise
+            else:
+                client.send_packet(request)
+
+    class ErrorBeforeYieldHandler(BlockingStreamRequestHandler[str, str]):
+        def on_connection(self, client: BlockingStreamClient[str]) -> None:
+            client.send_packet("milk")
+
+        def handle(self, client: BlockingStreamClient[str]) -> Generator[None, str]:
+            time.sleep(0.2)
+            raise RandomError("An error occurred")
+            request = yield  # type: ignore[unreachable]
+            client.send_packet(request)
+
+    class MyUnixStreamServer(ThreadedUnixStreamServer[str, str]):
+        __slots__ = ()
+
+    _UnixAddressTypeLiteral = Literal["PATHNAME", "ABSTRACT"]
+    _RecvMethodLiteral = Literal["RECV", "RECVMSG"]
+    _SendMethodLiteral = Literal["SEND", "SENDMSG"]
+
+    @pytest.mark.flaky(retries=3, delay=0.1)
+    class TestThreadedUnixStreamServer(BaseTestThreadedServer):
+        @pytest.fixture(autouse=True)
+        @staticmethod
+        def set_default_logger_level(
+            caplog: pytest.LogCaptureFixture,
+            logger_crash_threshold_level: dict[str, int],
+        ) -> None:
+            caplog.set_level(logging.WARNING, LOGGER.name)
+            logger_crash_threshold_level[LOGGER.name] = logging.WARNING
+
+        @pytest.fixture
+        @staticmethod
+        def server_backlog(request: pytest.FixtureRequest) -> int | None:
+            backlog = getattr(request, "param", 1)
+            return int(backlog) if backlog is not None else None
+
+        @pytest.fixture(
+            params=[
+                pytest.param("PATHNAME"),
+                pytest.param("ABSTRACT", marks=PlatformMarkers.supports_abstract_sockets),
+            ]
+        )
+        @staticmethod
+        def use_unix_address_type(request: pytest.FixtureRequest) -> _UnixAddressTypeLiteral:
+            match request.param:
+                case "PATHNAME" | "ABSTRACT" as param:
+                    return param
+                case _:
+                    pytest.fail(f"Invalid use_unix_address_type parameter: {request.param}")
+
+        @pytest.fixture(params=["RECV"])
+        @staticmethod
+        def server_recv_method(request: pytest.FixtureRequest) -> _RecvMethodLiteral:
+            match request.param:
+                case "RECV" | "RECVMSG" as param:
+                    return param
+                case _:
+                    pytest.fail(f"Invalid server_recv_method parameter: {request.param}")
+
+        @pytest.fixture(params=["SEND"])
+        @staticmethod
+        def server_send_method(request: pytest.FixtureRequest) -> _SendMethodLiteral:
+            match request.param:
+                case "SEND" | "SENDMSG" as param:
+                    return param
+                case _:
+                    pytest.fail(f"Invalid server_send_method parameter: {request.param}")
+
+        @pytest.fixture
+        @staticmethod
+        def request_handler(
+            request: pytest.FixtureRequest,
+            server_recv_method: _RecvMethodLiteral,
+            server_send_method: _SendMethodLiteral,
+        ) -> BlockingStreamRequestHandler[str, str]:
+            request_handler_cls: type[BlockingStreamRequestHandler[str, str]] = getattr(request, "param", MyStreamRequestHandler)
+            request_handler = request_handler_cls()
+            match request_handler:
+                case MyStreamRequestHandler() if server_recv_method == "RECVMSG":
+                    request_handler.use_recvmsg_by_default = True
+                case TimeoutYieldedRequestHandler() if server_recv_method == "RECVMSG":
+                    request_handler.use_recvmsg = True
+                case ErrorInRequestHandler() if server_recv_method == "RECVMSG":
+                    request_handler.use_recvmsg = True
+                case _ if server_recv_method == "RECVMSG":
+                    pytest.fail(f"{request_handler_cls.__name__} will ignore {server_recv_method=} parameter.")
+                case _:
+                    pass
+
+            match request_handler:
+                case MyStreamRequestHandler() if server_send_method == "SENDMSG":
+                    request_handler.use_sendmsg_by_default = True
+                case _ if server_send_method == "SENDMSG":
+                    pytest.fail(f"{request_handler_cls.__name__} will ignore {server_send_method=} parameter.")
+                case _:
+                    pass
+
+            return request_handler
+
+        @pytest.fixture(params=["clients", "requests"])
+        @staticmethod
+        def worker_strategy(request: pytest.FixtureRequest) -> Literal["clients", "requests"]:
+            assert request.param in ("clients", "requests")
+            return request.param
+
+        @pytest.fixture
+        @staticmethod
+        def log_client_connection(request: pytest.FixtureRequest) -> bool | None:
+            return getattr(request, "param", None)
+
+        @pytest.fixture
+        @staticmethod
+        def server_not_activated(
+            request_handler: MyStreamRequestHandler,
+            unix_socket_path_factory: UnixSocketPathFactory,
+            stream_protocol: AnyStreamProtocolType[str, str],
+            server_backlog: int,
+        ) -> Generator[MyUnixStreamServer]:
+            server = MyUnixStreamServer(
+                unix_socket_path_factory(),
+                stream_protocol,
+                request_handler,
+                backlog=server_backlog,
+                logger=LOGGER,
+            )
+            try:
+                assert not server.is_listening()
+                assert not server.get_sockets()
+                assert not server.get_addresses()
+                yield server
+            finally:
+                server.server_close()
+
+        @pytest.fixture
+        @staticmethod
+        def server(
+            use_unix_address_type: _UnixAddressTypeLiteral,
+            request_handler: MyStreamRequestHandler,
+            unix_socket_path_factory: UnixSocketPathFactory,
+            stream_protocol: AnyStreamProtocolType[str, str],
+            server_backlog: int,
+            worker_strategy: Literal["clients", "requests"],
+            log_client_connection: bool | None,
+        ) -> Generator[MyUnixStreamServer]:
+            if use_unix_address_type == "ABSTRACT":
+                # Let the kernel assign us an abstract socket address.
+                path = ""
+            else:
+                path = unix_socket_path_factory()
+            with MyUnixStreamServer(
+                path,
+                stream_protocol,
+                request_handler,
+                backlog=server_backlog,
+                worker_strategy=worker_strategy,
+                log_client_connection=log_client_connection,
+                logger=LOGGER,
+            ) as server:
+                assert server.is_listening()
+                assert server.get_sockets()
+                assert server.get_addresses()
+                yield server
+
+        @pytest.fixture
+        @staticmethod
+        def server_address(run_server: threading.Event, server: MyUnixStreamServer) -> UnixSocketAddress:
+            if not run_server.wait(timeout=1.0):
+                raise TimeoutError("run_server")
+            assert server.is_serving()
+            server_addresses = server.get_addresses()
+            assert len(server_addresses) == 1
+            return server_addresses[0]
+
+        @pytest.fixture
+        @staticmethod
+        def client_factory_no_handshake(
+            use_unix_address_type: _UnixAddressTypeLiteral,
+            unix_socket_path_factory: UnixSocketPathFactory,
+            server_address: UnixSocketAddress,
+        ) -> Generator[Callable[[], StreamSocket]]:
+            with contextlib.ExitStack() as stack:
+
+                def factory() -> StreamSocket:
+                    # By default, a Unix socket does not have a local name when connecting to a listener.
+                    # We need an identifier to recognize them in test cases.
+                    if use_unix_address_type == "ABSTRACT":
+                        # Let the kernel assign us an abstract socket address.
+                        local_path = ""
+                    else:
+                        # We must assign it to a filepath, even if it will never be used.
+                        local_path = unix_socket_path_factory()
+
+                    sock = StreamSocket.open_unix_connection(server_address.as_raw(), local_path=local_path, connect_timeout=10)
+                    stack.enter_context(sock)
+                    sock.set_timeout(10.0)
+                    return sock
+
+                yield factory
+
+        @pytest.fixture
+        @staticmethod
+        def client_factory(
+            client_factory_no_handshake: Callable[[], StreamSocket],
+        ) -> Callable[[], StreamSocket]:
+            def factory() -> StreamSocket:
+                sock = client_factory_no_handshake()
+                assert sock.readline() == b"milk\n"
+                return sock
+
+            return factory
+
+        @staticmethod
+        def _wait_client_disconnected(client: StreamSocket) -> None:
+            client.close()
+            time.sleep(0.1)
+
+        def test____server_close____while_server_is_running(
+            self,
+            server: MyUnixStreamServer,
+            run_server: threading.Event,
+            server_thread: threading.Thread,
+            server_address: UnixSocketAddress,
+        ) -> None:
+            unix_socket_path = server_address.as_pathname()
+            if unix_socket_path:
+                assert unix_socket_path.exists()
+
+            super().test____server_close____while_server_is_running(server, run_server, server_thread)
+
+            if unix_socket_path:
+                # Unix socket has been unlinked.
+                assert not unix_socket_path.exists()
+
+        @pytest.mark.parametrize("use_unix_address_type", ["PATHNAME"], indirect=True)
+        def test____server_close____unix_socket_already_removed(
+            self,
+            server: MyUnixStreamServer,
+            caplog: pytest.LogCaptureFixture,
+        ) -> None:
+            caplog.set_level(logging.WARNING, LOGGER.name)
+
+            unix_socket_path = server.get_addresses()[0].as_pathname()
+            assert unix_socket_path is not None and unix_socket_path.exists()
+
+            os.unlink(unix_socket_path)
+            assert not unix_socket_path.exists()
+
+            server.server_close()
+            assert len(caplog.records) == 0
+
+        @pytest.mark.parametrize("use_unix_address_type", ["PATHNAME"], indirect=True)
+        def test____server_close____unix_socket_removed_then_reused(
+            self,
+            server: MyUnixStreamServer,
+            caplog: pytest.LogCaptureFixture,
+        ) -> None:
+            caplog.set_level(logging.WARNING, LOGGER.name)
+
+            unix_socket_path = server.get_addresses()[0].as_pathname()
+            assert unix_socket_path is not None and unix_socket_path.exists()
+
+            os.unlink(unix_socket_path)
+            unix_socket_path.touch()
+            assert stat.S_ISREG(unix_socket_path.stat().st_mode)
+
+            server.server_close()
+            assert len(caplog.records) == 0
+            assert unix_socket_path.exists()
+
+        @pytest.mark.parametrize("use_unix_address_type", ["PATHNAME"], indirect=True)
+        @pytest.mark.parametrize("func_with_error", ["os.stat", "os.unlink"])
+        def test____server_close____unix_socket_cannot_be_removed(
+            self,
+            func_with_error: str,
+            server: MyUnixStreamServer,
+            caplog: pytest.LogCaptureFixture,
+            logger_crash_maximum_nb_lines: dict[str, int],
+            mocker: MockerFixture,
+        ) -> None:
+            caplog.set_level(logging.WARNING, LOGGER.name)
+            logger_crash_maximum_nb_lines[LOGGER.name] = 1
+
+            unix_socket_path = server.get_addresses()[0].as_pathname()
+            assert unix_socket_path is not None and unix_socket_path.exists()
+
+            mocked_func = mocker.patch(func_with_error, autospec=True, side_effect=OSError(errno.EPERM, os.strerror(errno.EPERM)))
+            try:
+                server.server_close()
+            finally:
+                mocker.stop(mocked_func)
+
+            assert len(caplog.records) == 1
+            assert (
+                caplog.records[0].getMessage()
+                == f"Unable to clean up listening Unix socket {os.fspath(unix_socket_path)!r}: [Errno 1] Operation not permitted"
+            )
+            assert caplog.records[0].levelno == logging.ERROR
+            assert unix_socket_path.exists()
+
+        def test____serve_forever____server_assignment(
+            self,
+            server: MyUnixStreamServer,
+            run_server: threading.Event,
+            request_handler: MyStreamRequestHandler,
+        ) -> None:
+            run_server.wait()
+            assert request_handler.server == server
+
+        @pytest.mark.parametrize(
+            "log_client_connection",
+            [True, False, None],
+            ids=lambda p: f"log_client_connection__{p}",
+            indirect=True,
+        )
+        @pytest.mark.parametrize(
+            "server_backlog",
+            [None, 1, 0],
+            ids=lambda p: f"server_backlog__{p}",
+            indirect=True,
+        )
+        @pytest.mark.parametrize("server_recv_method", ["RECV", "RECVMSG"], indirect=True)
+        @pytest.mark.parametrize("server_send_method", ["SEND", "SENDMSG"], indirect=True)
+        def test____serve_forever____accept_client(
+            self,
+            log_client_connection: bool | None,
+            client_factory: Callable[[], StreamSocket],
+            request_handler: MyStreamRequestHandler,
+            caplog: pytest.LogCaptureFixture,
+        ) -> None:
+            caplog.set_level(logging.DEBUG, LOGGER.name)
+            if log_client_connection is None:
+                # Should be True by default
+                log_client_connection = True
+            client = client_factory()
+            client_address = UnixSocketAddress.from_raw(client.getsockname())
+            assert not client_address.is_unnamed()
+
+            assert client_address.as_raw() in request_handler.connected_clients
+
+            client.send_all(b"hello, world.\n")
+            assert client.readline() == b"HELLO, WORLD.\n"
+
+            assert request_handler.request_received[client_address.as_raw()] == ["hello, world."]
+
+            self._wait_client_disconnected(client)
+            assert client_address not in request_handler.connected_clients
+
+            expected_accept_message = f"Accepted new connection (address = {client_address})"
+            expected_disconnect_message = f"{client_address} disconnected"
+            expected_log_level: int = logging.INFO if log_client_connection else logging.DEBUG
+
+            accept_record = next((record for record in caplog.records if record.getMessage() == expected_accept_message), None)
+            disconnect_record = next(
+                (record for record in caplog.records if record.getMessage() == expected_disconnect_message), None
+            )
+
+            assert accept_record is not None and accept_record.levelno == expected_log_level
+            assert disconnect_record is not None and disconnect_record.levelno == expected_log_level
+
+        def test____serve_forever____accept_client____client_closed_right_after_accept(
+            self,
+            server: MyUnixStreamServer,
+            server_address: UnixSocketAddress,
+            caplog: pytest.LogCaptureFixture,
+        ) -> None:
+            from socket import socket as SocketType
+
+            caplog.set_level(logging.WARNING, LOGGER.name)
+
+            socket = SocketType(AF_UNIX)
+
+            # See this thread about SO_LINGER option with null timeout: https://stackoverflow.com/q/3757289
+            enable_socket_linger(socket, timeout=0)
+
+            socket.connect(server_address.as_raw())
+            socket.close()
+
+            # *This does not happen on all OS*
+            # The server will accept a socket which is already in a "Not connected" state
+            # and will fail at client initialization when calling socket.getpeername() (errno.ENOTCONN will be raised)
+            time.sleep(0.1)
+
+            assert len(caplog.records) == 0
+
+        def test____serve_forever____client_extra_attributes(
+            self,
+            client_factory: Callable[[], StreamSocket],
+            request_handler: MyStreamRequestHandler,
+        ) -> None:
+
+            all_clients: list[StreamSocket] = [client_factory() for _ in range(3)]
+            assert len(request_handler.connected_clients) == 3
+
+            for client in all_clients:
+                client_address: str | bytes = client.getsockname()
+                connected_client: BlockingStreamClient[str] = request_handler.connected_clients[client_address]
+
+                assert isinstance(connected_client.extra(UNIXClientAttribute.socket), SocketProxy)
+                assert connected_client.extra(UNIXClientAttribute.peer_name).as_raw() == client_address
+                assert connected_client.extra(UNIXClientAttribute.local_name).as_raw() == client.getpeername()
+
+                peer_credentials = connected_client.extra(UNIXClientAttribute.peer_credentials)
+
+                if sys.platform.startswith(("darwin", "linux", "openbsd", "netbsd")):
+                    assert peer_credentials.pid == os.getpid()
+                else:
+                    assert peer_credentials.pid is None
+                assert peer_credentials.uid == os.geteuid()
+                assert peer_credentials.gid == os.getegid()
+
+                # Credentials should be retrieved once.
+                assert connected_client.extra(UNIXClientAttribute.peer_credentials) is peer_credentials
+
+        def test____serve_forever____shutdown_during_loop____kill_client_tasks(
+            self,
+            server: MyUnixStreamServer,
+            client_factory: Callable[[], StreamSocket],
+        ) -> None:
+            client = client_factory()
+
+            server.shutdown()
+            time.sleep(0.3)
+
+            with contextlib.suppress(ConnectionError):
+                assert client.recv(1024) == b""
+
+        @pytest.mark.parametrize("server_recv_method", ["RECV", "RECVMSG"], indirect=True)
+        def test____serve_forever____partial_request(
+            self,
+            server_recv_method: _RecvMethodLiteral,
+            client_factory: Callable[[], StreamSocket],
+            request_handler: MyStreamRequestHandler,
+        ) -> None:
+            client = client_factory()
+            client_address: str | bytes = client.getsockname()
+
+            client.send_all(b"hello")
+            time.sleep(0.1)
+
+            if server_recv_method == "RECVMSG":
+                assert client.readline() == b"EOF while reading request.\n"
+                assert request_handler.request_received[client_address] == []
+                assert request_handler.bad_request_received[client_address] == []
+                assert len(request_handler.eof_request_received[client_address]) == 1
+                return
+
+            client.send_all(b", world!\n")
+
+            assert client.readline() == b"HELLO, WORLD!\n"
+            assert request_handler.request_received[client_address] == ["hello, world!"]
+
+        @pytest.mark.parametrize("server_recv_method", ["RECV", "RECVMSG"], indirect=True)
+        def test____serve_forever____several_requests_at_same_time(
+            self,
+            client_factory: Callable[[], StreamSocket],
+            request_handler: MyStreamRequestHandler,
+        ) -> None:
+            client = client_factory()
+            client_address: str | bytes = client.getsockname()
+
+            client.send_all(b"hello\nworld\n")
+
+            assert client.readline() == b"HELLO\n"
+            assert client.readline() == b"WORLD\n"
+            assert request_handler.request_received[client_address] == ["hello", "world"]
+
+        @pytest.mark.parametrize("server_recv_method", ["RECV", "RECVMSG"], indirect=True)
+        def test____serve_forever____several_requests_at_same_time____close_between(
+            self,
+            client_factory: Callable[[], StreamSocket],
+            request_handler: MyStreamRequestHandler,
+        ) -> None:
+            client = client_factory()
+            client_address: str | bytes = client.getsockname()
+            request_handler.close_client_after_n_request = 1
+
+            client.send_all(b"hello\nworld\n")
+
+            assert client.readline() == b"HELLO\n"
+            assert client.recv(1024) == b""
+            assert request_handler.request_received[client_address] == ["hello"]
+
+        @pytest.mark.parametrize("server_recv_method", ["RECV", "RECVMSG"], indirect=True)
+        def test____serve_forever____save_request_handler_context(
+            self,
+            client_factory: Callable[[], StreamSocket],
+            request_handler: MyStreamRequestHandler,
+        ) -> None:
+            client = client_factory()
+            client_address: str | bytes = client.getsockname()
+
+            client.send_all(b"__wait__\nhello, world!\n")
+
+            assert client.readline() == b"After wait: hello, world!\n"
+            assert request_handler.request_received[client_address] == ["hello, world!"]
+
+        def test____serve_forever____recv_with_ancillary_data(
+            self,
+            client_factory: Callable[[], StreamSocket],
+        ) -> None:
+            client = client_factory()
+
+            with contextlib.ExitStack() as files:
+                client.send_all(b"__recvmsg__\n")
+                # FIXME: Should work without it.
+                time.sleep(0.01)
+                ancillary = SocketAncillary()
+                ancillary.add_fds(files.enter_context(open(os.devnull, "rb", buffering=0)).fileno() for _ in range(3))
+                client.sendmsg([b"fds\n"], ancillary.as_raw())
+                assert client.readline() == b"Received 3 file descriptors.\n"
+
+        @pytest.mark.parametrize("send_raw_ancillary", [False, True], ids=lambda p: f"send_raw_ancillary__{p}")
+        def test____serve_forever____send_with_ancillary_data(
+            self,
+            send_raw_ancillary: bool,
+            request_handler: MyStreamRequestHandler,
+            client_factory: Callable[[], StreamSocket],
+        ) -> None:
+            client = client_factory()
+            request_handler.send_raw_ancillary = send_raw_ancillary
+
+            with contextlib.ExitStack() as files:
+                client.send_all(b"__sendmsg__\n")
+                msg, ancillary = client.recvmsg()
+                assert msg == b"fds\n"
+                fds = list(ancillary.iter_fds())
+                for fd in fds:
+                    files.callback(os.close, fd)
+                assert len(fds) == 3
+
+        @pytest.mark.parametrize("server_recv_method", ["RECV", "RECVMSG"], indirect=True)
+        def test____serve_forever____bad_request(
+            self,
+            client_factory: Callable[[], StreamSocket],
+            request_handler: MyStreamRequestHandler,
+        ) -> None:
+            client = client_factory()
+            client_address: str | bytes = client.getsockname()
+
+            client.send_all("\u00e9\n".encode("latin-1"))  # StringSerializer does not accept unicode
+
+            assert client.readline() == b"wrong encoding man.\n"
+            assert request_handler.request_received[client_address] == []
+            assert request_handler.eof_request_received[client_address] == []
+            assert isinstance(request_handler.bad_request_received[client_address][0], StreamProtocolParseError)
+            assert isinstance(request_handler.bad_request_received[client_address][0].error, IncrementalDeserializeError)
+
+        @pytest.mark.parametrize(
+            "request_handler",
+            [
+                pytest.param(
+                    MyStreamRequestHandler,
+                    id="during_handle",
+                    marks=[pytest.mark.parametrize("server_recv_method", ["RECV", "RECVMSG"], indirect=True)],
+                ),
+                pytest.param(InitialHandshakeRequestHandler, id="during_on_connection_hook"),
+            ],
+            indirect=True,
+        )
+        def test____serve_forever____connection_reset_error(
+            self,
+            client_factory: Callable[[], StreamSocket],
+            caplog: pytest.LogCaptureFixture,
+        ) -> None:
+            caplog.set_level(logging.WARNING, LOGGER.name)
+            client = client_factory()
+
+            enable_socket_linger(client, timeout=0)
+
+            self._wait_client_disconnected(client)
+
+            # ECONNRESET not logged
+            assert len(caplog.records) == 0
+
+        @pytest.mark.parametrize("mute_thrown_exception", [False, True], ids=lambda p: f"mute_thrown_exception__{p}")
+        @pytest.mark.parametrize("read_on_connection", [False, True], ids=lambda p: f"read_on_connection__{p}")
+        @pytest.mark.parametrize("request_handler", [ErrorInRequestHandler], indirect=True)
+        @pytest.mark.parametrize("server_recv_method", ["RECV", "RECVMSG"], indirect=True)
+        @pytest.mark.parametrize(
+            "stream_protocol",
+            [
+                pytest.param("invalid", id="serializer_crash"),
+                pytest.param("invalid_buffered", id="buffered_serializer_crash"),
+            ],
+            indirect=True,
+        )
+        def test____serve_forever____internal_error(
+            self,
+            mute_thrown_exception: bool,
+            read_on_connection: bool,
+            request_handler: ErrorInRequestHandler,
+            client_factory: Callable[[], StreamSocket],
+            caplog: pytest.LogCaptureFixture,
+            logger_crash_maximum_nb_lines: dict[str, int],
+        ) -> None:
+            caplog.set_level(logging.ERROR, LOGGER.name)
+            if not mute_thrown_exception:
+                logger_crash_maximum_nb_lines[LOGGER.name] = 3
+            request_handler.mute_thrown_exception = mute_thrown_exception
+            request_handler.read_on_connection = read_on_connection
+            client = client_factory()
+
+            expected_messages = {
+                b"RuntimeError: protocol.build_packet_from_buffer() crashed (caused by SystemError: CRASH)\n",
+                b"RuntimeError: protocol.build_packet_from_chunks() crashed (caused by SystemError: CRASH)\n",
+            }
+
+            client.send_all(b"something\n")
+
+            if mute_thrown_exception:
+                assert client.readline() in expected_messages
+                client.send_all(b"something\n")
+                assert client.readline() in expected_messages
+                time.sleep(0.1)
+                assert len(caplog.records) == 0  # After two attempts
+            else:
+                with contextlib.suppress(ConnectionError):
+                    assert client.readline() in expected_messages
+                    assert client.recv(1024) == b""
+                time.sleep(0.1)
+                assert len(caplog.records) == 3
+                assert caplog.records[1].exc_info is not None
+                assert type(caplog.records[1].exc_info[1]) is RuntimeError
+
+        @pytest.mark.parametrize("mute_thrown_exception", [False, True], ids=lambda p: f"mute_thrown_exception__{p}")
+        @pytest.mark.parametrize("read_on_connection", [False, True], ids=lambda p: f"read_on_connection__{p}")
+        @pytest.mark.parametrize("request_handler", [ErrorInRequestHandler], indirect=True)
+        @pytest.mark.parametrize("server_recv_method", ["RECVMSG"], indirect=True)
+        def test____serve_forever____internal_error____ancillary_data_callback(
+            self,
+            mute_thrown_exception: bool,
+            read_on_connection: bool,
+            request_handler: ErrorInRequestHandler,
+            client_factory: Callable[[], StreamSocket],
+            caplog: pytest.LogCaptureFixture,
+            logger_crash_maximum_nb_lines: dict[str, int],
+            mocker: MockerFixture,
+        ) -> None:
+            caplog.set_level(logging.ERROR, LOGGER.name)
+            if not mute_thrown_exception:
+                logger_crash_maximum_nb_lines[LOGGER.name] = 3
+            request_handler.ancillary_data_callback = mocker.MagicMock(side_effect=SystemError("CRASH"))
+            request_handler.mute_thrown_exception = mute_thrown_exception
+            request_handler.read_on_connection = read_on_connection
+            client = client_factory()
+
+            expected_message = b"RuntimeError: RecvAncillaryDataParams.data_received() crashed (caused by SystemError: CRASH)\n"
+
+            client.send_all(b"something\n")
+
+            if mute_thrown_exception:
+                assert client.readline() == expected_message
+                client.send_all(b"something\n")
+                assert client.readline() == expected_message
+                time.sleep(0.1)
+                assert len(caplog.records) == 0  # After two attempts
+            else:
+                with contextlib.suppress(ConnectionError):
+                    assert client.readline() == expected_message
+                    assert client.recv(1024) == b""
+                time.sleep(0.1)
+                assert len(caplog.records) == 3
+                assert caplog.records[1].exc_info is not None
+                assert type(caplog.records[1].exc_info[1]) is RuntimeError
+
+        @pytest.mark.parametrize("excgrp", [False, True], ids=lambda p: f"exception_group_raised__{p}")
+        def test____serve_forever____unexpected_error_during_process(
+            self,
+            excgrp: bool,
+            client_factory: Callable[[], StreamSocket],
+            caplog: pytest.LogCaptureFixture,
+            logger_crash_maximum_nb_lines: dict[str, int],
+        ) -> None:
+            caplog.set_level(logging.ERROR, LOGGER.name)
+            logger_crash_maximum_nb_lines[LOGGER.name] = 3
+            client = client_factory()
+
+            if excgrp:
+                client.send_all(b"__error_excgrp__\n")
+            else:
+                client.send_all(b"__error__\n")
+            with contextlib.suppress(ConnectionError):
+                assert client.recv(1024) == b""
+            time.sleep(0.1)
+
+            assert len(caplog.records) == 3
+            assert caplog.records[1].exc_info is not None
+            if excgrp:
+                assert type(caplog.records[1].exc_info[1]) is ExceptionGroup
+                assert type(caplog.records[1].exc_info[1].exceptions[0]) is RandomError
+            else:
+                assert type(caplog.records[1].exc_info[1]) is RandomError
+
+        @pytest.mark.parametrize("stream_protocol", [pytest.param("bad_serialize", id="serializer_crash")], indirect=True)
+        @pytest.mark.parametrize("server_send_method", ["SEND", "SENDMSG"], indirect=True)
+        def test____serve_forever____unexpected_error_during_response_serialization(
+            self,
+            client_factory_no_handshake: Callable[[], StreamSocket],
+            caplog: pytest.LogCaptureFixture,
+            logger_crash_maximum_nb_lines: dict[str, int],
+            request_handler: MyStreamRequestHandler,
+        ) -> None:
+            request_handler.milk_handshake = False
+            caplog.set_level(logging.ERROR, LOGGER.name)
+            logger_crash_maximum_nb_lines[LOGGER.name] = 1
+            client = client_factory_no_handshake()
+
+            while not request_handler.connected_clients:
+                time.sleep(0.1)
+
+            client.send_all(b"request\n")
+            assert client.recv(1024) == b""
+            time.sleep(0.1)
+
+            assert len(caplog.records) == 1
+            assert (
+                caplog.records[0].getMessage()
+                == "RuntimeError: protocol.generate_chunks() crashed (caused by SystemError: CRASH)"
+            )
+            assert caplog.records[0].levelno == logging.ERROR
+
+        def test____serve_forever____os_error(
+            self,
+            caplog: pytest.LogCaptureFixture,
+            logger_crash_maximum_nb_lines: dict[str, int],
+            client_factory: Callable[[], StreamSocket],
+        ) -> None:
+            caplog.set_level(logging.ERROR, LOGGER.name)
+            logger_crash_maximum_nb_lines[LOGGER.name] = 3
+            client = client_factory()
+
+            client.send_all(b"__os_error__\n")
+            with contextlib.suppress(ConnectionError):
+                assert client.recv(1024) == b""
+            time.sleep(0.1)
+
+            assert len(caplog.records) == 3
+            assert caplog.records[1].exc_info is not None
+            assert type(caplog.records[1].exc_info[1]) is OSError
+
+        @pytest.mark.parametrize("excgrp", [False, True], ids=lambda p: f"exception_group_raised__{p}")
+        @pytest.mark.parametrize("server_send_method", ["SEND", "SENDMSG"], indirect=True)
+        def test____serve_forever____use_of_a_closed_client_in_request_handler(
+            self,
+            excgrp: bool,
+            client_factory: Callable[[], StreamSocket],
+            caplog: pytest.LogCaptureFixture,
+            logger_crash_maximum_nb_lines: dict[str, int],
+        ) -> None:
+            caplog.set_level(logging.WARNING, LOGGER.name)
+            logger_crash_maximum_nb_lines[LOGGER.name] = 1
+            client = client_factory()
+
+            if excgrp:
+                client.send_all(b"__closed_client_error_excgrp__\n")
+            else:
+                client.send_all(b"__closed_client_error__\n")
+            assert client.recv(1024) == b""
+            self._wait_client_disconnected(client)
+
+            assert len(caplog.records) == 1
+            assert caplog.records[0].message.startswith("There have been attempts to do operation on closed client")
+            assert caplog.records[0].levelno == logging.WARNING
+
+        def test____serve_forever____connection_error_in_request_handler(
+            self,
+            client_factory: Callable[[], StreamSocket],
+            caplog: pytest.LogCaptureFixture,
+        ) -> None:
+            caplog.set_level(logging.WARNING, LOGGER.name)
+            client = client_factory()
+
+            client.send_all(b"__connection_error__\n")
+            assert client.recv(1024) == b""
+            time.sleep(0.1)
+
+            assert len(caplog.records) == 0
+
+        def test____serve_forever____connection_error_in_disconnect_hook(
+            self,
+            client_factory: Callable[[], StreamSocket],
+            request_handler: MyStreamRequestHandler,
+            caplog: pytest.LogCaptureFixture,
+            logger_crash_maximum_nb_lines: dict[str, int],
+        ) -> None:
+            caplog.set_level(logging.WARNING, LOGGER.name)
+            logger_crash_maximum_nb_lines[LOGGER.name] = 1
+            client = client_factory()
+            request_handler.fail_on_disconnection = True
+
+            self._wait_client_disconnected(client)
+
+            # ECONNRESET not logged
+            assert len(caplog.records) == 1
+            assert caplog.records[0].getMessage() == "ConnectionError raised in request_handler.on_disconnection()"
+            assert caplog.records[0].levelno == logging.WARNING
+
+        @pytest.mark.parametrize("server_send_method", ["SEND", "SENDMSG"], indirect=True)
+        def test____serve_forever____explicitly_closed_by_request_handler(
+            self,
+            client_factory: Callable[[], StreamSocket],
+        ) -> None:
+            client = client_factory()
+
+            client.send_all(b"__close__\n")
+
+            assert client.recv(1024) == b""
+
+        def test____serve_forever____request_handler_ask_to_stop_accepting_new_connections(
+            self,
+            client_factory: Callable[[], StreamSocket],
+            server_thread: threading.Thread,
+            server: MyUnixStreamServer,
+        ) -> None:
+            client = client_factory()
+
+            client.send_all(b"__stop_listening__\n")
+
+            assert client.readline() == b"successfully stop listening\n"
+            time.sleep(0.1)
+
+            assert not server.is_serving()
+
+            # Unix socket path -> FileNotFoundError
+            # Abstract Unix socket -> ConnectionRefusedError
+            with pytest.raises((FileNotFoundError, ConnectionError)):
+                client_factory()
+
+            client.close()
+            server_thread.join(timeout=5.0)
+            assert not server_thread.is_alive()
+
+        def test____serve_forever____close_client_on_connection_hook(
+            self,
+            client_factory: Callable[[], StreamSocket],
+            request_handler: MyStreamRequestHandler,
+        ) -> None:
+            request_handler.close_all_clients_on_connection = True
+            client = client_factory()
+
+            assert client.recv(1024) == b""
+
+        @pytest.mark.parametrize("request_handler", [TimeoutYieldedRequestHandler], indirect=True)
+        @pytest.mark.parametrize("server_recv_method", ["RECV", "RECVMSG"], indirect=True)
+        @pytest.mark.parametrize("request_timeout", [0.0, 1.0], ids=lambda p: f"timeout__{p}")
+        @pytest.mark.parametrize("timeout_on_second_yield", [False, True], ids=lambda p: f"timeout_on_second_yield__{p}")
+        def test____serve_forever____throw_cancelled_error(
+            self,
+            request_timeout: float,
+            timeout_on_second_yield: bool,
+            request_handler: TimeoutYieldedRequestHandler,
+            client_factory: Callable[[], StreamSocket],
+        ) -> None:
+            request_handler.request_timeout = request_timeout
+            request_handler.timeout_on_second_yield = timeout_on_second_yield
+            client = client_factory()
+
+            if timeout_on_second_yield:
+                client.send_all(b"something\n")
+                assert client.readline() == b"something\n"
+
+            assert client.readline() == b"successfully timed out\n"
+
+        @pytest.mark.parametrize("request_handler", [ErrorBeforeYieldHandler], indirect=True)
+        def test____serve_forever____request_handler_crashed_before_yield(
+            self,
+            server: MyUnixStreamServer,
+            caplog: pytest.LogCaptureFixture,
+            logger_crash_maximum_nb_lines: dict[str, int],
+            client_factory: Callable[[], StreamSocket],
+        ) -> None:
+            caplog.set_level(logging.ERROR, LOGGER.name)
+            logger_crash_maximum_nb_lines[LOGGER.name] = 3
+
+            with contextlib.suppress(ConnectionError):
+                client = client_factory()
+                assert client.recv(1024) == b""
+            time.sleep(0.1)
+            assert len(caplog.records) == 3
+            assert caplog.records[1].exc_info is not None
+            assert type(caplog.records[1].exc_info[1]) is RandomError
+
+        @pytest.mark.parametrize("request_handler", [RequestRefusedHandler], indirect=True)
+        @pytest.mark.parametrize("refuse_after", [0, 5], ids=lambda p: f"refuse_after__{p}")
+        def test____serve_forever____request_handler_did_not_yield(
+            self,
+            refuse_after: int,
+            server: MyUnixStreamServer,
+            request_handler: RequestRefusedHandler,
+            caplog: pytest.LogCaptureFixture,
+            client_factory: Callable[[], StreamSocket],
+        ) -> None:
+            request_handler.refuse_after = refuse_after
+            caplog.set_level(logging.ERROR, LOGGER.name)
+
+            with contextlib.suppress(ConnectionError):
+                # If refuse after is equal to zero, client_factory() can raise ConnectionResetError
+                client = client_factory()
+
+                for _ in range(refuse_after):
+                    client.send_all(b"something\n")
+                    assert client.readline() == b"something\n"
+
+                assert client.recv(1024) == b""
+
+            time.sleep(0.1)
+            assert len(caplog.records) == 0
+
+        @pytest.mark.parametrize("request_handler", [InitialHandshakeRequestHandler], indirect=True)
+        @pytest.mark.parametrize("handshake_2fa", [True, False], ids=lambda p: f"handshake_2fa__{p}")
+        @pytest.mark.parametrize(
+            "check_sent_credential",
+            [
+                pytest.param(
+                    True,
+                    marks=[
+                        PlatformMarkers.supports_sending_unix_credentials,
+                        PlatformMarkers.skipif_platform_freebsd_because("the socket with SO_PASSCRED option reads corrupted data"),  # fmt: skip
+                    ],
+                ),
+                False,
+            ],
+            ids=lambda p: f"check_sent_credential__{p}",
+        )
+        def test____serve_forever____request_handler_on_connection_is_async_gen(
+            self,
+            client_factory: Callable[[], StreamSocket],
+            handshake_2fa: bool,
+            check_sent_credential: bool,
+            request_handler: InitialHandshakeRequestHandler,
+        ) -> None:
+            request_handler.handshake_2fa = handshake_2fa
+            request_handler.check_sent_credential = check_sent_credential
+            client = client_factory()
+
+            client.send_all(b"chocolate\n")
+            if handshake_2fa:
+                assert client.readline() == b"2FA code needed\n"
+                client.send_all(b"42\n")
+
+            assert client.readline() == b"you can enter\n"
+            client.send_all(b"something\n")
+            assert client.readline() == b"something\n"
+
+        @pytest.mark.parametrize("request_handler", [InitialHandshakeRequestHandler], indirect=True)
+        @pytest.mark.parametrize("handshake_2fa", [True, False], ids=lambda p: f"handshake_2fa__{p}")
+        @pytest.mark.parametrize(
+            "check_sent_credential",
+            [
+                pytest.param(
+                    True,
+                    marks=[
+                        PlatformMarkers.supports_sending_unix_credentials,
+                        PlatformMarkers.skipif_platform_freebsd_because("the socket with SO_PASSCRED option reads corrupted data"),  # fmt: skip
+                    ],
+                ),
+                False,
+            ],
+            ids=lambda p: f"check_sent_credential__{p}",
+        )
+        def test____serve_forever____request_handler_on_connection_is_async_gen____close_connection(
+            self,
+            client_factory: Callable[[], StreamSocket],
+            handshake_2fa: bool,
+            check_sent_credential: bool,
+            request_handler: InitialHandshakeRequestHandler,
+        ) -> None:
+            request_handler.handshake_2fa = handshake_2fa
+            request_handler.check_sent_credential = check_sent_credential
+            client = client_factory()
+
+            if handshake_2fa:
+                client.send_all(b"chocolate\n")
+                assert client.readline() == b"2FA code needed\n"
+                client.send_all(b"123\n")
+                assert client.readline() == b"wrong code\n"
+            else:
+                client.send_all(b"something_else\n")
+                assert client.readline() == b"wrong password\n"
+            assert client.recv(1024) == b""
+
+        @pytest.mark.parametrize("request_handler", [InitialHandshakeRequestHandler], indirect=True)
+        @pytest.mark.parametrize("handshake_2fa", [True, False], ids=lambda p: f"handshake_2fa__{p}")
+        @pytest.mark.parametrize(
+            "check_sent_credential",
+            [
+                pytest.param(
+                    True,
+                    marks=[
+                        PlatformMarkers.supports_sending_unix_credentials,
+                        PlatformMarkers.skipif_platform_freebsd_because("the socket with SO_PASSCRED option reads corrupted data"),  # fmt: skip
+                    ],
+                ),
+                False,
+            ],
+            ids=lambda p: f"check_sent_credential__{p}",
+        )
+        def test____serve_forever____request_handler_on_connection_is_async_gen____throw_cancel_error_within_generator(
+            self,
+            client_factory: Callable[[], StreamSocket],
+            handshake_2fa: bool,
+            check_sent_credential: bool,
+            request_handler: InitialHandshakeRequestHandler,
+        ) -> None:
+            request_handler.handshake_2fa = handshake_2fa
+            request_handler.check_sent_credential = check_sent_credential
+            client = client_factory()
+
+            if handshake_2fa:
+                client.send_all(b"chocolate\n")
+                assert client.readline() == b"2FA code needed\n"
+
+            assert client.readline() == b"timeout error\n"
+
+        @pytest.mark.parametrize("request_handler", [InitialHandshakeRequestHandler], indirect=True)
+        def test____serve_forever____request_handler_on_connection_is_async_gen____exit_before_first_yield(
+            self,
+            request_handler: InitialHandshakeRequestHandler,
+            client_factory: Callable[[], StreamSocket],
+        ) -> None:
+            request_handler.bypass_handshake = True
+            client = client_factory()
+
+            client.send_all(b"something_else\n")
+            assert client.readline() == b"something_else\n"

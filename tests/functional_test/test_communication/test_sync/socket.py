@@ -2,11 +2,39 @@ from __future__ import annotations
 
 import socket
 import ssl
-from typing import Any, Self, overload
+import sys
+from collections.abc import Iterable
+from typing import TYPE_CHECKING, Any, Self, overload
+
+if sys.platform != "win32":
+    from socket import MSG_CTRUNC, MSG_TRUNC, MsgFlag
+
+    from easynetwork.lowlevel.socket import SocketAncillary
+
+    try:
+        from socket import CMSG_SPACE
+    except ImportError:
+        from socket import CMSG_LEN as CMSG_SPACE
+
+    if TYPE_CHECKING:
+        from _socket import _CMSGArg, _RetAddress
+
+    _MAX_ANCDATA_SIZE = 8192
+
+    def _check_recvmsg_return_flags(flags: int) -> None:
+        assert (flags & (MSG_TRUNC | MSG_CTRUNC)) == 0, f"messages truncated (flags=={MsgFlag(flags)})"
+
+    def _sock_recvmsg(sock: socket.SocketType, bufsize: int) -> tuple[bytes, SocketAncillary, _RetAddress]:
+        data, cmsgs, flags, address = sock.recvmsg(bufsize, CMSG_SPACE(_MAX_ANCDATA_SIZE))
+        _check_recvmsg_return_flags(flags)
+        ancillary = SocketAncillary()
+        ancillary.update_from_raw(cmsgs)
+        return data, ancillary, address
 
 
 class StreamSocket:
     def __init__(self, sock: socket.socket) -> None:
+        assert sock.type == socket.SOCK_STREAM
         self.__sock: socket.socket = sock
         self.__read_buf = sock.makefile("rb")
 
@@ -31,7 +59,32 @@ class StreamSocket:
         except BaseException:
             sock.close()
             raise
+        sock.settimeout(socket.getdefaulttimeout())
         return cls(sock)
+
+    if sys.platform != "win32":
+
+        @classmethod
+        def open_unix_connection(
+            cls,
+            path: str | bytes,
+            *,
+            connect_timeout: float | None = None,
+            local_path: str | bytes | None = None,
+        ) -> Self:
+            if connect_timeout is None:
+                connect_timeout = socket.getdefaulttimeout()
+            sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            try:
+                if local_path is not None:
+                    sock.bind(local_path)
+                sock.settimeout(connect_timeout)
+                sock.connect(path)
+            except BaseException:
+                sock.close()
+                raise
+            sock.settimeout(socket.getdefaulttimeout())
+            return cls(sock)
 
     def __del__(self) -> None:
         self.__sock.close()
@@ -67,8 +120,21 @@ class StreamSocket:
     def readline(self) -> bytes:
         return self.__read_buf.readline()
 
+    if sys.platform != "win32":
+
+        def recvmsg(self, bufsize: int = 1024) -> tuple[bytes, SocketAncillary]:
+            data, ancillary, _ = _sock_recvmsg(self.__sock, bufsize)
+            return data, ancillary
+
     def send_all(self, data: bytes | bytearray | memoryview) -> None:
         self.__sock.sendall(data)
+
+    if sys.platform != "win32":
+
+        def sendmsg(self, data: Iterable[bytes | bytearray | memoryview], ancdata: Iterable[_CMSGArg]) -> None:
+            data = list(data)
+            ancdata = list(ancdata)
+            self.__sock.sendmsg(data, ancdata)
 
     def send_eof(self) -> None:
         self.__sock.shutdown(socket.SHUT_WR)
