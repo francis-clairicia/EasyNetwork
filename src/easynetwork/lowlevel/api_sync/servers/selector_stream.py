@@ -347,11 +347,8 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
                     selector.register(self.__wakeup_socketpair, selectors.EVENT_READ)
                     self.__wakeup_socketpair.drain()
 
-                server_is_shutting_down = _utils.make_callback(
-                    _server_is_shutting_down_check,
-                    shutdown_requested=self.__shutdown_request,
-                    is_shutdown=self.__is_shut_down,
-                )
+                server_is_shutting_down = threading.Event()
+                stack.callback(server_is_shutting_down.set)
 
                 match worker_strategy:
                     case "clients":
@@ -361,7 +358,7 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
                             executor=executor,
                             disconnect_error_filter=disconnect_error_filter,
                             ancillary_bufsize=ancillary_bufsize,
-                            server_is_shutting_down=server_is_shutting_down,
+                            server_is_shutting_down=server_is_shutting_down.is_set,
                             is_up_event=is_up_event,
                         )
                     case "requests":
@@ -371,7 +368,7 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
                             executor=executor,
                             disconnect_error_filter=disconnect_error_filter,
                             ancillary_bufsize=ancillary_bufsize,
-                            server_is_shutting_down=server_is_shutting_down,
+                            server_is_shutting_down=server_is_shutting_down.is_set,
                             is_up_event=is_up_event,
                         )
                     case _:
@@ -762,6 +759,8 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
                             first_recv_try: bool = True
                             while True:
                                 try:
+                                    if server_is_shutting_down():
+                                        raise StopIteration
                                     if recv_params.recv_with_ancillary is None:
                                         request = request_receiver.next(first_try=first_recv_try)
                                     else:
@@ -785,14 +784,11 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
                                         return
                                     selector.register(fileno, event)
                                     try:
-                                        if timeout == math.inf:
-                                            selector.select()
-                                        else:
-                                            deadline: float = _get_current_time() + timeout
-                                            available = bool(selector.select(timeout))
-                                            timeout = max(deadline - _get_current_time(), 0.0)
-                                            if not available and not timeout:
-                                                raise _utils.error_from_errno(_errno.ETIMEDOUT)
+                                        deadline: float = _get_current_time() + timeout
+                                        available = bool(selector.select(_get_selector_timeout(deadline)))
+                                        timeout = max(deadline - _get_current_time(), 0.0)
+                                        if not available and not timeout:
+                                            raise _utils.error_from_errno(_errno.ETIMEDOUT)
                                     except TimeoutError as exc:
                                         exc.with_traceback(None)
                                         raise
@@ -856,8 +852,8 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
     def __ask_server_shutdown(self) -> None:
         if not self.__is_shut_down.is_set():
             self.__shutdown_request.set()
-            with contextlib.suppress(OSError):
-                self.__wakeup_socketpair.wakeup_thread_and_signal_safe()
+        with contextlib.suppress(OSError):
+            self.__wakeup_socketpair.wakeup_thread_and_signal_safe()
 
     def __serve_forever_impl(
         self,
@@ -883,14 +879,7 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
             selector_token.add_pending_register(client_handler_token.pending_register)
             selector_wait_deadline = min(listener.ready_at_deadline(), selector_token.get_min_deadline())
 
-            selector_wait_timeout: float = selector_wait_deadline - _get_current_time()
-            if selector_wait_timeout < 0:
-                selector_wait_timeout = 0.0
-            else:
-                # Do not wait more than 24h.
-                selector_wait_timeout = min(selector_wait_timeout, 86400.0)
-
-            ready = selector.select(selector_wait_timeout)
+            ready = selector.select(_get_selector_timeout(selector_wait_deadline))
 
             # shutdown() called during select(), exit immediately.
             if shutdown_requested():
@@ -958,10 +947,6 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
     @_utils.inherit_doc(_transports.BaseTransport)
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         return self.__thread_safe_listener.extra_attributes
-
-
-def _server_is_shutting_down_check(*, shutdown_requested: threading.Event, is_shutdown: threading.Event) -> bool:
-    return shutdown_requested.is_set() or is_shutdown.is_set()
 
 
 @dataclasses.dataclass(kw_only=True, eq=False, slots=True)
@@ -1456,6 +1441,11 @@ class _BufferedRequestReceiver[Request](_BaseRequestReceiver):
 
 
 type _AnyRequestReceiver[Request] = _RequestReceiver[Request] | _BufferedRequestReceiver[Request]
+
+
+def _get_selector_timeout(deadline: float) -> float:
+    # Do not wait more than 24h.
+    return _utils.keep_value_in_range(deadline - _get_current_time(), 0.0, 86400.0)
 
 
 def _cancel_future_and_notify(f: concurrent.futures.Future[Any]) -> None:

@@ -753,8 +753,8 @@ class SelectorDatagramServer[Request, Response, Address: Hashable](_transports.B
     def __ask_server_shutdown(self) -> None:
         if not self.__is_shut_down.is_set():
             self.__shutdown_request.set()
-            with contextlib.suppress(OSError):
-                self.__wakeup_socketpair.wakeup_thread_and_signal_safe()
+        with contextlib.suppress(OSError):
+            self.__wakeup_socketpair.wakeup_thread_and_signal_safe()
 
     def __serve_forever_impl[*P](
         self,
@@ -777,14 +777,7 @@ class SelectorDatagramServer[Request, Response, Address: Hashable](_transports.B
         while not shutdown_requested():
             listener.receive_datagrams(listener_recv_noblock_from, handler)
 
-            selector_wait_timeout: float
-            if (selector_wait_timeout := client_handler_token.get_min_deadline() - _get_current_time()) < 0:
-                selector_wait_timeout = 0.0
-            else:
-                # Do not wait more than 24h.
-                selector_wait_timeout = min(selector_wait_timeout, 86400.0)
-
-            ready = selector.select(selector_wait_timeout)
+            ready = selector.select(_get_selector_timeout(client_handler_token.get_min_deadline()))
 
             # shutdown() called during select(), exit immediately.
             if shutdown_requested():
@@ -993,6 +986,9 @@ class _ThreadSafeListener[Address](_transports.BaseTransport):
         listener_recv_noblock_from: Callable[[_selector_transports.SelectorDatagramListener[Address]], tuple[*P]],
         handler: Callable[[*P], None],
     ) -> None:
+        if not self.__ready_for_reading.is_set():
+            return
+
         with self.__close_lock:
             self.__ready_for_reading.clear()
             if self.__listener.is_closed():
@@ -1249,6 +1245,11 @@ class _ClientData:
         msg = "The server has created too many tasks and ends up in an inconsistent state."
         note = "Please fill an issue (https://github.com/francis-clairicia/EasyNetwork/issues)"
         return _utils.exception_with_notes(RuntimeError(msg), note)
+
+
+def _get_selector_timeout(deadline: float) -> float:
+    # Do not wait more than 24h.
+    return _utils.keep_value_in_range(deadline - _get_current_time(), 0.0, 86400.0)
 
 
 def _cancel_future_and_notify(f: concurrent.futures.Future[Any]) -> None:

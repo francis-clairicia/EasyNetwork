@@ -288,6 +288,8 @@ def pytest_runtest_call(item: pytest.Item) -> Generator[None]:
         if record.levelno < threshold_level:
             continue
         logs.append(record.getMessage())
+        if record.exc_text:
+            logs[-1] += "\n" + record.exc_text
         if record.name in failure_caught or record.name in expected_failure_caught:
             continue
         log_line_counter[record.name] += 1

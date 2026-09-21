@@ -278,7 +278,6 @@ class BaseThreadedNetworkServerImpl[LowLevelServer: _SupportsShutdownClose, Addr
         "__max_nb_workers",
         "__server_activation_lock",
         "__is_shutdown",
-        "__mainloop_stop",
         "__server_tasks",
         "__active_tasks",
         "__thread_name_prefix",
@@ -317,8 +316,6 @@ class BaseThreadedNetworkServerImpl[LowLevelServer: _SupportsShutdownClose, Addr
         self.__servers: list[LowLevelServer] = []
         self.__is_shutdown = _threading.Event()
         self.__is_shutdown.set()
-        self.__mainloop_stop = _threading.Event()
-        self.__mainloop_stop.set()
         self.__server_tasks: list[concurrent.futures.Future[Any]] = []
         self.__active_tasks = _utils.AtomicUIntCounter()
         self.__thread_name_prefix = f"{thread_name_prefix}-srv-{self.__class__._counter()}"
@@ -368,19 +365,12 @@ class BaseThreadedNetworkServerImpl[LowLevelServer: _SupportsShutdownClose, Addr
     @override
     @_utils.inherit_doc(AbstractNetworkServer)
     def shutdown(self, timeout: float | None = None) -> None:
-        with self.__server_activation_lock, contextlib.ExitStack() as threads_stack:
-            for i, server in enumerate(self.__servers):
-                t = _threading.Thread(
-                    target=server.shutdown,
-                    name=f"{self.__thread_name_prefix}-shutdown_{i}",
-                    args=(timeout,),
-                    daemon=True,
-                )
-                t.start()
-                threads_stack.callback(t.join)
+        with self.__server_activation_lock, contextlib.ExitStack() as exit_stack:
+            for server in self.__servers:
+                exit_stack.callback(server.shutdown, 0.0)
+            is_shutdown = self.__is_shutdown
 
-        self.__mainloop_stop.set()
-        self.__is_shutdown.wait(timeout)
+        is_shutdown.wait(timeout)
 
     @_utils.inherit_doc(AbstractNetworkServer)
     def serve_forever(self, *, is_up_event: SupportsEventSet | None = None) -> None:
@@ -394,8 +384,6 @@ class BaseThreadedNetworkServerImpl[LowLevelServer: _SupportsShutdownClose, Addr
                     raise ServerClosedError("Closed server")
                 self.__is_shutdown = is_shutdown = _threading.Event()
                 server_exit_stack.callback(is_shutdown.set)
-                self.__mainloop_stop = mainloop_stop = _threading.Event()
-                server_exit_stack.callback(mainloop_stop.set)
                 if is_up_event is not None:
                     server_exit_stack.callback(is_up_event.set)
                 ################
@@ -423,7 +411,17 @@ class BaseThreadedNetworkServerImpl[LowLevelServer: _SupportsShutdownClose, Addr
                         max_workers=self.__max_nb_workers,
                     )
                 )
-                server_exit_stack.callback(requests_executor.shutdown, wait=False, cancel_futures=True)
+
+                @server_exit_stack.push
+                def _(exc_type: type[BaseException] | None, *_args: Any) -> None:
+                    if exc_type is not None:
+                        self.shutdown(0)
+                    try:
+                        requests_executor.shutdown(cancel_futures=True)
+                    except BaseException:
+                        self.shutdown(0)
+                        raise
+
                 listeners_executor = server_exit_stack.enter_context(
                     concurrent.futures.ThreadPoolExecutor(
                         thread_name_prefix=f"{self.__thread_name_prefix}-listener",
@@ -448,8 +446,8 @@ class BaseThreadedNetworkServerImpl[LowLevelServer: _SupportsShutdownClose, Addr
 
             # Main loop
             try:
-                mainloop_stop.wait()
-            except BaseException:
+                concurrent.futures.wait(self.__server_tasks)
+            except KeyboardInterrupt:  # pragma: no cover
                 self.shutdown(0)
                 raise
 
@@ -481,8 +479,7 @@ class BaseThreadedNetworkServerImpl[LowLevelServer: _SupportsShutdownClose, Addr
         self.__active_tasks.increment()
 
     def __detach_server(self) -> None:
-        if self.__active_tasks.decrement() == 0:
-            self.__mainloop_stop.set()
+        self.__active_tasks.decrement()
 
     def __check_server_health(self) -> None:
         errors: list[BaseException] = [exc for task in self.__server_tasks if (exc := task.exception()) is not None]

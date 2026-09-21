@@ -396,7 +396,7 @@ class TestThreadedTCPNetworkServer(BaseTestThreadedServer):
         server_ssl_context: ssl.SSLContext | None,
         ssl_handshake_timeout: float | None,
         ssl_standard_compatible: bool | None,
-        # worker_strategy: Literal["clients", "requests"],
+        worker_strategy: Literal["clients", "requests"],
         log_client_connection: bool | None,
     ) -> Generator[MyTCPServer]:
         with MyTCPServer(
@@ -409,7 +409,7 @@ class TestThreadedTCPNetworkServer(BaseTestThreadedServer):
             ssl_handshake_timeout=ssl_handshake_timeout,
             ssl_standard_compatible=ssl_standard_compatible,
             selector_factory=selector_factory,
-            # worker_strategy=worker_strategy,
+            worker_strategy=worker_strategy,
             log_client_connection=log_client_connection,
             logger=LOGGER,
         ) as server:

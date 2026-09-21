@@ -39,6 +39,7 @@ from easynetwork.lowlevel._utils import (
     is_ssl_socket,
     iter_bytes,
     iterate_exceptions,
+    keep_value_in_range,
     lock_with_timeout,
     make_callback,
     missing_extra_deps,
@@ -635,6 +636,71 @@ def test____validate_optional_timeout_delay____None_value(positive_check: bool) 
 
     # Act & Assert
     assert validate_optional_timeout_delay(None, positive_check=positive_check) == math.inf
+
+
+def test____keep_value_in_range____value_in_range() -> None:
+    # Arrange
+    value = 1
+    range_min = 0
+    range_max = 2
+
+    # Act
+    final_value = keep_value_in_range(value, range_min, range_max)
+
+    # Assert
+    assert final_value == 1
+
+
+def test____keep_value_in_range____value_in_range____range_min() -> None:
+    # Arrange
+    value = 0
+    range_min = 0
+    range_max = 2
+
+    # Act
+    final_value = keep_value_in_range(value, range_min, range_max)
+
+    # Assert
+    assert final_value == 0
+
+
+def test____keep_value_in_range____value_in_range____range_max() -> None:
+    # Arrange
+    value = 2
+    range_min = 0
+    range_max = 2
+
+    # Act
+    final_value = keep_value_in_range(value, range_min, range_max)
+
+    # Assert
+    assert final_value == 2
+
+
+def test____keep_value_in_range____value_out_of_range____range_min() -> None:
+    # Arrange
+    value = -30
+    range_min = 0
+    range_max = 2
+
+    # Act
+    final_value = keep_value_in_range(value, range_min, range_max)
+
+    # Assert
+    assert final_value == 0
+
+
+def test____keep_value_in_range____value_out_of_range____range_max() -> None:
+    # Arrange
+    value = 30
+    range_min = 0
+    range_max = 2
+
+    # Act
+    final_value = keep_value_in_range(value, range_min, range_max)
+
+    # Assert
+    assert final_value == 2
 
 
 def test____iter_bytes____iterate_over_bytes_returning_one_byte() -> None:

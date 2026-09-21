@@ -28,7 +28,7 @@ from .socket import set_tcp_nodelay
 
 # Originally come from Trio
 # https://github.com/python-trio/trio/blob/v0.29.0/src/trio/_core/_wakeup_socketpair.py
-class WakeupSocketPair:
+class WakeupSocketPair:  # pragma: no cover
     __slots__ = ("_receive", "_send")
 
     def __init__(self) -> None:
@@ -58,7 +58,7 @@ class WakeupSocketPair:
         self._receive.close()
 
     def wakeup_thread_and_signal_safe(self) -> None:
-        with contextlib.suppress(BlockingIOError, InterruptedError, BrokenPipeError):
+        with contextlib.suppress(BlockingIOError, InterruptedError):
             self._send.send(b"\x00")
 
     def drain(self) -> None:

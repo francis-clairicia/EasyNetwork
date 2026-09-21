@@ -33,6 +33,7 @@ __all__ = [
     "is_ssl_eof_error",
     "is_ssl_socket",
     "iterate_exceptions",
+    "keep_value_in_range",
     "lock_with_timeout",
     "make_callback",
     "missing_extra_deps",
@@ -230,6 +231,23 @@ def check_socket_no_ssl(socket: _socket.socket) -> None:
         raise TypeError("ssl.SSLSocket instances are forbidden")
 
 
+def is_ssl_eof_error(exc: BaseException) -> TypeGuard[_SSLError]:
+    if ssl is None:
+        return False
+
+    match exc:
+        case ssl.SSLEOFError():
+            return True
+        case ssl.SSLError() if hasattr(exc, "strerror") and "UNEXPECTED_EOF_WHILE_READING" in exc.strerror:
+            # From Trio project:
+            # There appears to be a bug on Python 3.10, where SSLErrors
+            # aren't properly translated into SSLEOFErrors.
+            # This stringly-typed error check is borrowed from the AnyIO
+            # project.
+            return True
+    return False
+
+
 def validate_timeout_delay(delay: float, *, positive_check: bool) -> float:
     if math.isnan(delay):
         raise ValueError("Invalid delay: NaN (not a number)")
@@ -246,21 +264,13 @@ def validate_optional_timeout_delay(delay: float | None, *, positive_check: bool
             return validate_timeout_delay(delay, positive_check=positive_check)
 
 
-def is_ssl_eof_error(exc: BaseException) -> TypeGuard[_SSLError]:
-    if ssl is None:
-        return False
-
-    match exc:
-        case ssl.SSLEOFError():
-            return True
-        case ssl.SSLError() if hasattr(exc, "strerror") and "UNEXPECTED_EOF_WHILE_READING" in exc.strerror:
-            # From Trio project:
-            # There appears to be a bug on Python 3.10, where SSLErrors
-            # aren't properly translated into SSLEOFErrors.
-            # This stringly-typed error check is borrowed from the AnyIO
-            # project.
-            return True
-    return False
+def keep_value_in_range[Value: (int, float)](value: Value, range_min: Value, range_max: Value) -> Value:
+    assert range_min <= range_max  # nosec assert_used
+    if value > range_max:
+        return range_max
+    if value < range_min:
+        return range_min
+    return value
 
 
 def iter_bytes(b: bytes | bytearray | memoryview) -> Iterator[bytes]:
