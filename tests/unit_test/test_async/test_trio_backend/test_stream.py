@@ -1107,17 +1107,16 @@ class TestTrioListenerSocketAdapter(BaseTestTrioSocketStream):
     ) -> None:
         # Arrange
         caplog.set_level(logging.ERROR)
-        exc = OSError()
-        mock_trio_socket_listener.accept.side_effect = exc
+        exc_side_effect = OSError()
+        mock_trio_socket_listener.accept.side_effect = exc_side_effect
 
         # Act
         async with trio_backend.create_task_group() as task_group:
-            with pytest.raises(OSError) as exc_info:
+            with pytest.raises(OSError, check=lambda exc: exc is exc_side_effect):
                 await listener.serve(handler, task_group)
 
         # Assert
         assert len(caplog.records) == 0
-        assert exc_info.value is exc
 
     async def test____get_backend____returns_linked_instance(
         self,

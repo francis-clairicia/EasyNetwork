@@ -29,6 +29,7 @@ import errno as _errno
 import functools
 import logging
 import math
+import os
 import selectors
 import threading
 import types
@@ -986,6 +987,8 @@ class _ThreadSafeListener(_transports.BaseTransport):
         "__finalizer",
     )
 
+    logger = logging.getLogger(__name__)
+
     def __init__(
         self,
         listener: _selector_transports.SelectorListener[_selector_transports.SelectorStreamTransport],
@@ -1060,6 +1063,13 @@ class _ThreadSafeListener(_transports.BaseTransport):
                 return None
             except OSError as exc:
                 if exc.errno in constants.ACCEPT_CAPACITY_ERRNOS:
+                    self.logger.error(
+                        "accept returned %s (%s); retrying in %s seconds",
+                        _errno.errorcode[exc.errno],
+                        os.strerror(exc.errno),
+                        constants.ACCEPT_CAPACITY_ERROR_SLEEP_TIME,
+                        exc_info=exc,
+                    )
                     with self.__reader_condvar:
                         self.__ready_for_reading.set()
                         self.__ready_at_deadline = _get_current_time() + constants.ACCEPT_CAPACITY_ERROR_SLEEP_TIME

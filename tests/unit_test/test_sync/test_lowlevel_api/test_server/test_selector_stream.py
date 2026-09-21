@@ -7,7 +7,9 @@ import dataclasses
 import errno
 import logging
 import math
+import os
 import threading
+import time
 from collections.abc import Callable, Generator, Iterable
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any, Literal
@@ -22,10 +24,12 @@ from easynetwork.lowlevel.api_sync.transports.base_selector import (
     SelectorStreamWriteTransport,
     WouldBlockOnRead,
 )
+from easynetwork.lowlevel.constants import ACCEPT_CAPACITY_ERRNOS
 from easynetwork.lowlevel.request_handler import RecvAncillaryDataParams, RecvParams
 
 import pytest
 
+from .....tools import PlatformMarkers
 from ...._utils import (
     make_recv_noblock_into_side_effect,
     make_recv_noblock_with_ancillary_into_side_effect,
@@ -699,6 +703,72 @@ class TestSelectorStreamServer(BaseTestWithStreamProtocol):
 
         client_connected_cb.assert_called_once()
         assert not caplog.records
+
+    @PlatformMarkers.skipif_platform_win32_because("test failures are all too frequent on CI", skip_only_on_ci=True)
+    @PlatformMarkers.skipif_platform_bsd_because("test failures are all too frequent on CI", skip_only_on_ci=True)
+    @pytest.mark.parametrize("errno_value", sorted(ACCEPT_CAPACITY_ERRNOS), ids=errno.errorcode.__getitem__)
+    @pytest.mark.flaky(retries=3, delay=0.1)
+    def test____serve____accept_capacity_error(
+        self,
+        request: pytest.FixtureRequest,
+        errno_value: int,
+        server: SelectorStreamServer[Any, Any],
+        mock_listener: MagicMock,
+        mocker: MockerFixture,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        # Arrange
+        caplog.set_level(logging.WARNING)
+        mock_listener.accept_noblock.side_effect = OSError(errno_value, os.strerror(errno_value))
+
+        @stub_decorator(mocker)
+        def client_connected_cb(_: Any) -> Generator[RecvParams | None, Any]:
+            yield None
+
+        # Act
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            handle = self._start_server(
+                request,
+                server,
+                lambda server: server.serve(client_connected_cb, executor),
+            )
+            # It retries every 100 ms, so in 900 ms it will retry at 0, 100, ..., 900
+            # = 10 times total
+            time.sleep(0.910)
+            handle.stop()
+
+        # Assert
+        assert len(caplog.records) in {9, 10}
+        for record in caplog.records:
+            assert record.levelno == logging.ERROR
+            assert "retrying" in record.message
+            assert (
+                record.exc_info is not None
+                and isinstance(record.exc_info[1], OSError)
+                and record.exc_info[1].errno == errno_value
+            )
+
+    def test____accept____reraise_other_OSErrors(
+        self,
+        server: SelectorStreamServer[Any, Any],
+        mock_listener: MagicMock,
+        mocker: MockerFixture,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        # Arrange
+        caplog.set_level(logging.WARNING)
+        mock_listener.accept_noblock.side_effect = exc_side_effect = OSError()
+
+        @stub_decorator(mocker)
+        def client_connected_cb(_: Any) -> Generator[RecvParams | None, Any]:
+            yield None
+
+        # Act
+        with ThreadPoolExecutor(max_workers=1) as executor, pytest.raises(OSError, check=lambda exc: exc is exc_side_effect):
+            server.serve(client_connected_cb, executor)
+
+        # Assert
+        assert len(caplog.records) == 0
 
     @pytest.mark.parametrize("recv_with_ancillary", [False, True], ids=lambda p: f"recv_with_ancillary__{p}")
     def test____serve____unhandled_exception____from_system(
