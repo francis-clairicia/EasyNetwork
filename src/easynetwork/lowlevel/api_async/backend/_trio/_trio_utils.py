@@ -135,13 +135,13 @@ class FastFIFOLock:
 
 
 async def connect_sock_to_resolved_address(sock: _socket.socket, address: _socket._Address) -> None:
-    await trio.lowlevel.checkpoint_if_cancelled()
+    await _trio_checkpoint_if_cancelled()
     try:
         sock.connect(address)
     except BlockingIOError:
         pass
     else:
-        await trio.lowlevel.cancel_shielded_checkpoint()
+        await _trio_cancel_shielded_checkpoint()
         return
 
     await trio.lowlevel.wait_writable(sock)

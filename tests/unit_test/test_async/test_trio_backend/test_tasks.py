@@ -27,7 +27,7 @@ class TestTask:
         import trio
 
         mock = mocker.NonCallableMagicMock(spec=trio.lowlevel.Task)
-        mock.name = "mock_asyncio_task"
+        mock.name = "mock_trio_task"
         mock.coro = mocker.NonCallableMagicMock(spec=Coroutine)
         return mock
 
@@ -75,7 +75,7 @@ class TestTask:
 
         # Assert
         assert isinstance(task_info, TaskInfo)
-        assert task_info.name == "mock_asyncio_task"
+        assert task_info.name == "mock_trio_task"
         assert task_info.id == id(mock_trio_task)
         assert task_info.coro is mock_trio_task.coro
 

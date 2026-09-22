@@ -38,8 +38,6 @@ class TestTask:
     ) -> None:
         # Arrange
         task: Task[Any] = Task(mock_asyncio_task)
-        mock_asyncio_task.get_name.assert_not_called()
-        mock_asyncio_task.get_coro.assert_not_called()
 
         # Act
         task_info = task.info
@@ -47,6 +45,24 @@ class TestTask:
         # Assert
         assert isinstance(task_info, TaskInfo)
         assert task_info.name == "mock_asyncio_task"
+        assert task_info.id == id(mock_asyncio_task)
+        assert task_info.coro is mock_asyncio_task.get_coro.return_value
+
+    def test____info_property____asyncio_task_introspection____task_renamed(
+        self,
+        mock_asyncio_task: AsyncMock,
+    ) -> None:
+        # Arrange
+        task: Task[Any] = Task(mock_asyncio_task)
+        task_info = task.info
+        assert task_info.name == "mock_asyncio_task"
+        mock_asyncio_task.get_name.return_value = "mock_asyncio_task_renamed"
+
+        # Act
+        task_info = task.info
+
+        # Assert
+        assert task_info.name == "mock_asyncio_task_renamed"
         assert task_info.id == id(mock_asyncio_task)
         assert task_info.coro is mock_asyncio_task.get_coro.return_value
 

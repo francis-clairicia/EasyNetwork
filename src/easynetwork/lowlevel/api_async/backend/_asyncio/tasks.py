@@ -19,6 +19,7 @@ from __future__ import annotations
 __all__ = ["CancelScope", "Task", "TaskGroup", "TaskUtils"]
 
 import asyncio
+import dataclasses
 import enum
 import math
 import types
@@ -36,10 +37,11 @@ from ..abc import CancelScope as AbstractCancelScope, Task as AbstractTask, Task
 @final
 @runtime_final_class
 class Task[R](AbstractTask[R]):
-    __slots__ = ("__task", "__h")
+    __slots__ = ("__task", "__task_info", "__h")
 
     def __init__(self, task: asyncio.Task[R]) -> None:
         self.__task: asyncio.Task[R] = task
+        self.__task_info: TaskInfo = TaskUtils.create_task_info(self.__task)
         self.__h: int | None = None
 
     def __repr__(self) -> str:
@@ -57,7 +59,11 @@ class Task[R](AbstractTask[R]):
 
     @property
     def info(self) -> TaskInfo:
-        return TaskUtils.create_task_info(self.__task)
+        current_name = self.__task.get_name()
+        if current_name != self.__task_info.name:
+            # asyncio.Task.set_name() has been called.
+            self.__task_info = dataclasses.replace(self.__task_info, name=current_name)
+        return self.__task_info
 
     def done(self) -> bool:
         return self.__task.done()
@@ -225,6 +231,7 @@ class CancelScope(AbstractCancelScope):
         "__deadline",
         "__timeout_handle",
         "__cancel_handle",
+        "__cancel_reason",
         "__delayed_cancellation_on_enter",
     )
 
@@ -238,6 +245,7 @@ class CancelScope(AbstractCancelScope):
         self.__host_task_cancel_calls: int = 0
         self.__state: _ScopeState = _ScopeState.CREATED
         self.__cancel_called: bool = False
+        self.__cancel_reason: str | None = None
         self.__cancelled_caught: bool = False
         self.__deadline: float = math.inf
         self.__timeout_handle: asyncio.Handle | None = None
@@ -314,7 +322,7 @@ class CancelScope(AbstractCancelScope):
                 should_suppress = all(is_my_cancellation)
 
             delayed_task_cancel: _DelayedCancel | None = self.__delayed_task_cancel_dict.get(host_task, None)
-            if delayed_task_cancel is not None and delayed_task_cancel.message == self.__cancellation_id():
+            if delayed_task_cancel is not None and delayed_task_cancel.message == self.__cancel_reason:
                 del self.__delayed_task_cancel_dict[host_task]
                 delayed_task_cancel.handle.cancel()
                 delayed_task_cancel = None
@@ -327,7 +335,7 @@ class CancelScope(AbstractCancelScope):
         # From https://github.com/agronholm/anyio/pull/790
         # Look at the previous ones in __context__ too for a matching cancel message.
         while True:
-            if self.__cancellation_id() in exc.args:
+            if self.__cancel_reason in exc.args:
                 return True
 
             if isinstance(exc.__context__, asyncio.CancelledError):
@@ -344,12 +352,12 @@ class CancelScope(AbstractCancelScope):
         should_retry: bool = False
         if self.__host_task in self.__delayed_task_cancel_dict:
             delayed_task_cancel: _DelayedCancel = self.__delayed_task_cancel_dict[self.__host_task]
-            if delayed_task_cancel.message == self.__cancellation_id():
+            if delayed_task_cancel.message == self.__cancel_reason:
                 should_retry = True
         else:
             should_retry = True
             if not self.__task_must_cancel(self.__host_task) and self.__host_task is not asyncio.current_task():
-                self.__host_task.cancel(msg=self.__cancellation_id())
+                self.__host_task.cancel(msg=self.__cancel_reason)
                 self.__host_task_cancel_calls += 1
 
         if should_retry:
@@ -357,12 +365,14 @@ class CancelScope(AbstractCancelScope):
         else:
             self.__cancel_handle = None
 
-    def __cancellation_id(self) -> str:
-        return f"Cancelled by cancel scope {id(self):x}"
-
-    def cancel(self) -> None:
+    def cancel(self, reason: str | None = None) -> None:
         if not self.__cancel_called:
             self.__cancel_called = True
+            self.__cancel_reason = f"Cancelled via cancel scope {id(self):x}"
+            if task := asyncio.current_task():
+                self.__cancel_reason += f" by {task}"
+            if reason:
+                self.__cancel_reason += f"; reason: {reason}"
             if self.__timeout_handle:
                 self.__timeout_handle.cancel()
                 self.__timeout_handle = None
@@ -391,10 +401,11 @@ class CancelScope(AbstractCancelScope):
         if self.__deadline != math.inf:
             assert self.__host_task is not None  # nosec assert_used
             loop = self.__host_task.get_loop()
+            cancel_reason = "deadline exceeded"
             if loop.time() >= self.__deadline:
-                self.cancel()
+                self.cancel(cancel_reason)
             else:
-                self.__timeout_handle = loop.call_at(self.__deadline, self.cancel)
+                self.__timeout_handle = loop.call_at(self.__deadline, self.cancel, cancel_reason)
 
     @classmethod
     def _inner_to_outer_task_scopes(cls, task: asyncio.Task[Any]) -> Iterable[CancelScope]:

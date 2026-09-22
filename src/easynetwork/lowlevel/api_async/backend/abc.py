@@ -328,7 +328,7 @@ class CancelScope(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    def cancel(self) -> None:
+    def cancel(self, reason: str | None = ...) -> None:
         """
         Request the Task to be cancelled.
 
@@ -337,6 +337,12 @@ class CancelScope(metaclass=ABCMeta):
 
         :meth:`CancelScope.cancel` does not guarantee that the Task will be cancelled,
         although suppressing cancellation completely is not common and is actively discouraged.
+
+        .. versionchanged:: NEXT_VERSION
+            Added `reason` parameter.
+
+        Parameters:
+            reason: a message describing the reason for the cancellation.
         """
         raise NotImplementedError
 
