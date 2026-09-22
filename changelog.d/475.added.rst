@@ -1,0 +1,1 @@
+Low-level API: Added ``reason`` parameter to ``CancelScope.cancel()``.
