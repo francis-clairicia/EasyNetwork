@@ -61,7 +61,7 @@ msgpack = [
     "msgpack>=1.1.0,<2",
 ]
 trio = [
-    "trio>=0.26,<1",
+    "trio>=0.34,<1",
     "outcome~=1.3",
 ]
 

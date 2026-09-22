@@ -273,6 +273,23 @@ class TestTrioBackend:
         with pytest.raises(ValueError):
             _ = backend.open_cancel_scope(deadline=float("nan"))
 
+    async def test____open_cancel_scope____cancel_reason(
+        self,
+        backend: AsyncBackend,
+    ) -> None:
+        import trio
+
+        error_message: str = ""
+        with backend.open_cancel_scope() as scope:
+            scope.cancel("TEST REASON MSG")
+            try:
+                await backend.sleep_forever()
+            except trio.Cancelled as exc:
+                error_message = str(exc)
+                raise
+
+        assert "TEST REASON MSG" in error_message
+
     async def test____gather____no_parameters(
         self,
         backend: AsyncBackend,

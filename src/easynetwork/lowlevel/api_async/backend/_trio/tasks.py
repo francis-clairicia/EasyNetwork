@@ -40,19 +40,21 @@ class Task[R](AbstractTask[R]):
         "__task",
         "__scope",
         "__outcome",
+        "__task_info",
     )
 
     def __init__(self, *, task: trio.lowlevel.Task, scope: trio.CancelScope, outcome: _OutcomeCell[R]) -> None:
         self.__task: trio.lowlevel.Task = task
         self.__scope: trio.CancelScope = scope
         self.__outcome: _OutcomeCell[R] = outcome
+        self.__task_info: TaskInfo = TaskUtils.create_task_info(task)
 
     def __repr__(self) -> str:
         return repr(self.__task)
 
     @property
     def info(self) -> TaskInfo:
-        return TaskUtils.create_task_info(self.__task)
+        return self.__task_info
 
     def done(self) -> bool:
         return self.__outcome.peek() is not None
@@ -238,8 +240,8 @@ class CancelScope(AbstractCancelScope):
         finally:
             del exc_val, exc_tb, scope, self
 
-    def cancel(self) -> None:
-        return self.__scope.cancel()
+    def cancel(self, reason: str | None = None) -> None:
+        return self.__scope.cancel(reason)
 
     def cancel_called(self) -> bool:
         return self.__scope.cancel_called

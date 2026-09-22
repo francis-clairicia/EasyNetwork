@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import re
 import time
 import warnings
 from collections.abc import AsyncGenerator, Awaitable, Callable
@@ -517,6 +518,21 @@ class TestAsyncioBackend:
             ):
                 stack.close()
             stack.pop_all()
+
+    async def test____open_cancel_scope____cancel_reason(
+        self,
+        backend: AsyncBackend,
+    ) -> None:
+        error_message: str = ""
+        with backend.open_cancel_scope() as scope:
+            scope.cancel("TEST REASON MSG")
+            try:
+                await backend.sleep_forever()
+            except asyncio.CancelledError as exc:
+                error_message = str(exc)
+                raise
+
+        assert re.match(r"^Cancelled via cancel scope .+; reason: TEST REASON MSG$", error_message)
 
     async def test____gather____no_parameters(
         self,
@@ -1789,7 +1805,7 @@ class TestAsyncioBackendShieldedCancellation:
                     raise BaseExceptionGroup("group to skip", exceptions)
 
             assert exc_info.group_contains(KeyError, match=r"key")
-            assert exc_info.group_contains(asyncio.CancelledError, match=r"Cancelled by cancel scope .+")
+            assert exc_info.group_contains(asyncio.CancelledError, match=r"Cancelled via cancel scope .+")
             assert outer_scope.cancelled_caught(), "outer_scope should consider cancellation as caught even if not suppressed."
             assert not current_task.cancelling()
 
