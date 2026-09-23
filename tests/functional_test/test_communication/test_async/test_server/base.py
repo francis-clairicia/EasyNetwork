@@ -27,8 +27,9 @@ class BaseTestAsyncServer:
 
     @pytest.fixture(autouse=True)
     @staticmethod
-    def logger_crash_enable(logger_crash_enable: Event) -> Event:
+    def logger_crash_enable(logger_crash_enable: Event, caplog: pytest.LogCaptureFixture) -> Event:
         logger_crash_enable.set()
+        caplog.set_level(logging.WARNING, "easynetwork")
         return logger_crash_enable
 
     @pytest.fixture  # DO NOT SET autouse=True

@@ -24,13 +24,19 @@ class BaseTestThreadedServer:
 
     @pytest.fixture(autouse=True)
     @staticmethod
-    def logger_crash_enable(logger_crash_enable: Event) -> Event:
+    def logger_crash_enable(logger_crash_enable: Event, caplog: pytest.LogCaptureFixture) -> Event:
         logger_crash_enable.set()
+        caplog.set_level(logging.WARNING, "easynetwork")
         return logger_crash_enable
+
+    @pytest.fixture
+    @staticmethod
+    def server_bootstrap_delay(request: pytest.FixtureRequest) -> float:
+        return float(getattr(request, "param", 0))
 
     @pytest.fixture  # DO NOT SET autouse=True
     @staticmethod
-    def _bootstrap_server(server: AbstractNetworkServer) -> Generator[_ServerBootstrapInfo]:
+    def _bootstrap_server(server: AbstractNetworkServer, server_bootstrap_delay: float) -> Generator[_ServerBootstrapInfo]:
 
         event = threading.Event()
 
@@ -39,16 +45,20 @@ class BaseTestThreadedServer:
                 with contextlib.suppress(ServerClosedError):
                     server.serve_forever(is_up_event=event)
             except BaseException:
-                logger: logging.Logger = getattr(server, "logger", None) or logging.getLogger(__name__)
+                logger: logging.Logger = getattr(server, "logger", None) or logging.getLogger("easynetwork")
                 logger.exception("serve_forever() crash")
 
         thread = threading.Thread(target=serve_forever, args=(server, event), daemon=True)
 
-        # In order to make actions possible before serve_forever() call, delay the thread start by 100ms
-        threading.Timer(0.1, thread.start).start()
+        if server_bootstrap_delay > 0:
+            # In order to make actions possible before serve_forever() call, delay the thread start by 100ms
+            threading.Timer(server_bootstrap_delay, thread.start).start()
+        else:
+            assert server_bootstrap_delay == 0
+            thread.start()
 
         yield _ServerBootstrapInfo(thread, event)
-        server.shutdown(timeout=5.0)
+        server.shutdown(timeout=2.0)
 
     @pytest.fixture  # DO NOT SET autouse=True
     @staticmethod
@@ -113,6 +123,7 @@ class BaseTestThreadedServer:
         server.shutdown()
 
     @pytest.mark.parametrize("server_is_up", [False, True], ids=lambda p: f"server_is_up__{p}")
+    @pytest.mark.parametrize("server_bootstrap_delay", [pytest.param(0.1, id=pytest.HIDDEN_PARAM)], indirect=True)
     def test____serve_forever____concurrent_shutdown(
         self,
         server_is_up: bool,
