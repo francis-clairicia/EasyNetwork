@@ -7,6 +7,7 @@ import contextlib
 import errno
 import logging
 import os
+import selectors
 import stat
 import sys
 import threading
@@ -521,6 +522,7 @@ if sys.platform != "win32":
         @pytest.fixture
         @staticmethod
         def server(
+            selector_factory: Callable[[], selectors.BaseSelector],
             use_unix_address_type: _UnixAddressTypeLiteral,
             request_handler: MyStreamRequestHandler,
             unix_socket_path_factory: UnixSocketPathFactory,
@@ -540,6 +542,7 @@ if sys.platform != "win32":
                 request_handler,
                 backlog=server_backlog,
                 worker_strategy=worker_strategy,
+                selector_factory=selector_factory,
                 log_client_connection=log_client_connection,
                 logger=LOGGER,
             ) as server:
