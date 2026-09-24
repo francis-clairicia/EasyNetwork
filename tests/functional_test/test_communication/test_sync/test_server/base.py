@@ -137,3 +137,11 @@ class BaseTestThreadedServer:
         with ThreadPoolExecutor() as executor:
             for _ in range(10):
                 executor.submit(server.shutdown)
+
+    def test____server_activate____server_closed(
+        self,
+        server_not_activated: AbstractNetworkServer,
+    ) -> None:
+        server_not_activated.server_close()
+        with pytest.raises(ServerClosedError):
+            server_not_activated.server_activate()

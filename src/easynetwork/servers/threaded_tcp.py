@@ -323,7 +323,6 @@ class ThreadedTCPNetworkServer[Request, Response](
         lowlevel_client: _stream_server.ConnectedStreamClient[Response],
     ) -> Generator[BlockingStreamClient[Response] | None]:
         with contextlib.ExitStack() as client_exit_stack:
-            client_exit_stack.enter_context(self._bind_server())
 
             client_address = lowlevel_client.extra(INETSocketAttribute.peername, None)
             if client_address is None:

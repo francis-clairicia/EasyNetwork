@@ -27,14 +27,13 @@ __all__ = [
 
 import concurrent.futures
 import contextlib
-import dataclasses
 import itertools
 import logging
 import socket as _socket
 import sys
 import threading as _threading
 from abc import abstractmethod
-from collections.abc import Awaitable, Callable, Mapping, Sequence, Sized
+from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence, Sized
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, NoReturn, Protocol, Self, final, override
 
@@ -64,23 +63,6 @@ class _SupportsShutdownClose(Protocol):
     def is_closed(self) -> bool: ...
     @abstractmethod
     def close(self) -> object: ...
-
-
-@dataclasses.dataclass(repr=False, eq=False, frozen=True, slots=True)
-class _BindServer(contextlib.AbstractContextManager[None, None]):
-    attach: Callable[[], None]
-    detach: Callable[[], None]
-
-    def __enter__(self) -> None:
-        self.attach()
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_value: BaseException | None,
-        traceback: TracebackType | None,
-    ) -> None:
-        self.detach()
 
 
 ##############################################################################################################
@@ -279,7 +261,6 @@ class BaseThreadedNetworkServerImpl[LowLevelServer: _SupportsShutdownClose, Addr
         "__server_activation_lock",
         "__is_shutdown",
         "__server_tasks",
-        "__active_tasks",
         "__thread_name_prefix",
         "__logger",
     )
@@ -317,7 +298,6 @@ class BaseThreadedNetworkServerImpl[LowLevelServer: _SupportsShutdownClose, Addr
         self.__is_shutdown = _threading.Event()
         self.__is_shutdown.set()
         self.__server_tasks: list[concurrent.futures.Future[Any]] = []
-        self.__active_tasks = _utils.AtomicUIntCounter()
         self.__thread_name_prefix = f"{thread_name_prefix}-srv-{self.__class__._counter()}"
         self.__logger: logging.Logger = logger
 
@@ -402,14 +382,10 @@ class BaseThreadedNetworkServerImpl[LowLevelServer: _SupportsShutdownClose, Addr
                 initialize_service(server_exit_stack)
                 ############################
 
-                # Setup task groups
-                server_exit_stack.callback(self.__server_tasks.clear)
-                server_exit_stack.callback(self.__check_server_health)
-                requests_executor = server_exit_stack.enter_context(
-                    concurrent.futures.ThreadPoolExecutor(
-                        thread_name_prefix=f"{self.__thread_name_prefix}-req-hdlr",
-                        max_workers=self.__max_nb_workers,
-                    )
+                # Setup requests executor
+                requests_executor = concurrent.futures.ThreadPoolExecutor(
+                    thread_name_prefix=f"{self.__thread_name_prefix}-req-hdlr",
+                    max_workers=self.__max_nb_workers,
                 )
 
                 @server_exit_stack.push
@@ -417,37 +393,48 @@ class BaseThreadedNetworkServerImpl[LowLevelServer: _SupportsShutdownClose, Addr
                     if exc_type is not None:
                         self.shutdown(0)
                     try:
-                        requests_executor.shutdown(cancel_futures=True)
-                    except BaseException:
+                        requests_executor.shutdown(wait=(exc_type is None), cancel_futures=(exc_type is not None))
+                    except KeyboardInterrupt:
                         self.shutdown(0)
+                        requests_executor.shutdown(wait=False, cancel_futures=True)
                         raise
 
-                listeners_executor = server_exit_stack.enter_context(
-                    concurrent.futures.ThreadPoolExecutor(
-                        thread_name_prefix=f"{self.__thread_name_prefix}-listener",
-                        max_workers=len(self.__servers),
-                    )
-                )
                 server_exit_stack.callback(self.__logger.info, "Server loop break, waiting for remaining tasks...")
                 ##################
 
-                # Enable listener
+                # Enable listeners
+                listeners_executor = concurrent.futures.ThreadPoolExecutor(
+                    thread_name_prefix=f"{self.__thread_name_prefix}-listener",
+                    max_workers=len(self.__servers),
+                )
                 listeners_barrier = _threading.Barrier(
                     parties=len(self.__servers),
                     # Server is up when all listeners have notified.
                     action=is_up_event.set if is_up_event is not None else None,
                 )
                 self.__server_tasks = [
-                    listeners_executor.submit(self.__serve, server, requests_executor, listeners_barrier)
+                    listeners_executor.submit(
+                        self.__lowlevel_serve_cb,
+                        server,
+                        requests_executor,
+                        _EventLikeBarrier(listeners_barrier),
+                    )
                     for server in self.__servers
                 ]
+                server_exit_stack.callback(self.__server_tasks.clear)
+                server_exit_stack.callback(self.__check_server_health)
+                for t in self.__server_tasks:
+                    t.add_done_callback(self.__shutdown_on_server_exception)
+                    del t
+                # Directly shut down the executor because all tasks are in place.
+                listeners_executor.shutdown(wait=False)
                 self.__logger.info("Start serving at %s", ", ".join(map(str, self.get_addresses())))
                 #################
 
             # Main loop
             try:
-                concurrent.futures.wait(self.__server_tasks)
-            except KeyboardInterrupt:  # pragma: no cover
+                concurrent.futures.wait(self.__server_tasks, return_when=concurrent.futures.FIRST_EXCEPTION)
+            except KeyboardInterrupt:
                 self.shutdown(0)
                 raise
 
@@ -462,32 +449,20 @@ class BaseThreadedNetworkServerImpl[LowLevelServer: _SupportsShutdownClose, Addr
         """
         raise NotImplementedError
 
-    def _bind_server(self) -> _BindServer:
-        return _BindServer(self.__attach_server, self.__detach_server)
-
-    def __serve(
-        self,
-        server: LowLevelServer,
-        executor: concurrent.futures.ThreadPoolExecutor,
-        barrier: _threading.Barrier,
-    ) -> None:
-        lowlevel_serve = self.__lowlevel_serve_cb
-        with _BindServer(self.__attach_server, self.__detach_server):
-            lowlevel_serve(server, executor, _EventLikeBarrier(barrier))
-
-    def __attach_server(self) -> None:
-        self.__active_tasks.increment()
-
-    def __detach_server(self) -> None:
-        self.__active_tasks.decrement()
+    def __shutdown_on_server_exception(self, task: concurrent.futures.Future[Any], /) -> None:
+        if not task.cancelled() and task.exception() is not None:
+            self.shutdown(0)
 
     def __check_server_health(self) -> None:
-        errors: list[BaseException] = [exc for task in self.__server_tasks if (exc := task.exception()) is not None]
-        if errors:
+        def safe_exception_unwrap(task: concurrent.futures.Future[Any]) -> BaseException | None:
             try:
-                raise BaseExceptionGroup("server exceptions", errors)
-            finally:
-                errors.clear()
+                return task.exception(timeout=1.0)
+            except (TimeoutError, concurrent.futures.CancelledError):
+                return None
+
+        errors: list[BaseException] = [exc for task in self.__server_tasks if (exc := safe_exception_unwrap(task)) is not None]
+        if errors:
+            raise BaseExceptionGroup("server exceptions", errors)
 
     def _with_lowlevel_servers[R](self, f: Callable[[Sequence[LowLevelServer]], R]) -> R:
         with self.__server_activation_lock:
@@ -520,7 +495,6 @@ class BaseAsyncNetworkServerImpl[LowLevelServer: _SupportsAclose, Address](Abstr
         "__is_shutdown",
         "__server_tasks",
         "__server_run_scope",
-        "__active_tasks",
         "__logger",
     )
 
@@ -530,7 +504,7 @@ class BaseAsyncNetworkServerImpl[LowLevelServer: _SupportsAclose, Address](Abstr
         backend: AsyncBackend | BuiltinAsyncBackendLiteral | None,
         servers_factory: Callable[[], Awaitable[Sequence[LowLevelServer]]],
         initialize_service: Callable[[contextlib.AsyncExitStack], Awaitable[None]],
-        lowlevel_serve: Callable[[LowLevelServer, TaskGroup], Awaitable[NoReturn]],
+        lowlevel_serve: Callable[[LowLevelServer, TaskGroup], Coroutine[Any, Any, NoReturn]],
         logger: logging.Logger,
     ) -> None:
         super().__init__()
@@ -540,7 +514,7 @@ class BaseAsyncNetworkServerImpl[LowLevelServer: _SupportsAclose, Address](Abstr
         self.__backend: AsyncBackend = backend
         self.__servers_factory_cb: Callable[[], Awaitable[Sequence[LowLevelServer]]] | None = servers_factory
         self.__initialize_service_cb: Callable[[contextlib.AsyncExitStack], Awaitable[None]] = initialize_service
-        self.__lowlevel_serve_cb: Callable[[LowLevelServer, TaskGroup], Awaitable[NoReturn]] = lowlevel_serve
+        self.__lowlevel_serve_cb: Callable[[LowLevelServer, TaskGroup], Coroutine[Any, Any, NoReturn]] = lowlevel_serve
 
         self.__servers_factory_scope: CancelScope | None = None
         self.__server_run_scope: CancelScope | None = None
@@ -553,7 +527,6 @@ class BaseAsyncNetworkServerImpl[LowLevelServer: _SupportsAclose, Address](Abstr
         self.__is_shutdown.set()
         self.__server_tasks: list[Task[NoReturn]] = []
         self.__logger: logging.Logger = logger
-        self.__active_tasks: int = 0
 
     @override
     @_utils.inherit_doc(AbstractAsyncNetworkServer)
@@ -663,17 +636,17 @@ class BaseAsyncNetworkServerImpl[LowLevelServer: _SupportsAclose, Address](Abstr
                 await initialize_service(server_exit_stack)
                 ############################
 
-                # Setup task groups
-                self.__active_tasks = 0
-                server_exit_stack.callback(self.__server_tasks.clear)
+                # Setup requests executor
                 requests_task_group = await server_exit_stack.enter_async_context(self.__backend.create_task_group())
-                listeners_task_group = await server_exit_stack.enter_async_context(self.__backend.create_task_group())
                 server_exit_stack.callback(self.__logger.info, "Server loop break, waiting for remaining tasks...")
                 ##################
 
-                # Enable listener
+                # Enable listeners
+                server_exit_stack.callback(self.__server_tasks.clear)
+                listeners_task_group = await server_exit_stack.enter_async_context(self.__backend.create_task_group())
                 self.__server_tasks[:] = [
-                    await listeners_task_group.start(self.__serve, server, requests_task_group) for server in self.__servers
+                    await listeners_task_group.start(self.__lowlevel_serve_cb, server, requests_task_group)
+                    for server in self.__servers
                 ]
                 self.__logger.info("Start serving at %s", ", ".join(map(str, self.get_addresses())))
                 #################
@@ -682,12 +655,6 @@ class BaseAsyncNetworkServerImpl[LowLevelServer: _SupportsAclose, Address](Abstr
             if is_up_event is not None:
                 is_up_event.set()
             ##############
-
-            # Main loop
-            try:
-                await self.__backend.sleep_forever()
-            finally:
-                reset_scope()
 
     @abstractmethod
     def get_addresses(self) -> Sequence[Address]:
@@ -699,28 +666,6 @@ class BaseAsyncNetworkServerImpl[LowLevelServer: _SupportsAclose, Address](Abstr
             If the server is not serving (:meth:`is_serving` returns :data:`False`), an empty sequence is returned.
         """
         raise NotImplementedError
-
-    def _bind_server(self) -> _BindServer:
-        return _BindServer(self.__attach_server, self.__detach_server)
-
-    async def __serve(
-        self,
-        server: LowLevelServer,
-        task_group: TaskGroup,
-    ) -> NoReturn:
-        lowlevel_serve = self.__lowlevel_serve_cb
-        with _BindServer(self.__attach_server, self.__detach_server):
-            await lowlevel_serve(server, task_group)
-
-    def __attach_server(self) -> None:
-        self.__active_tasks += 1
-
-    def __detach_server(self) -> None:
-        self.__active_tasks -= 1
-        if self.__active_tasks < 0:
-            raise AssertionError("self.__active_tasks < 0")
-        if not self.__active_tasks and self.__server_run_scope is not None:
-            self.__server_run_scope.cancel()
 
     def _with_lowlevel_servers[R](self, f: Callable[[Sequence[LowLevelServer]], R]) -> R:
         servers = tuple(self.__servers)

@@ -128,6 +128,14 @@ class BaseTestAsyncServer:
 
         await backend.gather(*[server.shutdown() for _ in range(10)])
 
+    async def test____server_activate____server_closed(
+        self,
+        server_not_activated: AbstractAsyncNetworkServer,
+    ) -> None:
+        await server_not_activated.server_close()
+        with pytest.raises(ServerClosedError):
+            await server_not_activated.server_activate()
+
     async def test____server_activate____server_close_during_activation(
         self,
         server_not_activated: AbstractAsyncNetworkServer,

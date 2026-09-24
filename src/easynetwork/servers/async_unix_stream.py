@@ -217,7 +217,6 @@ else:
             lowlevel_client: _stream_server.ConnectedStreamClient[Response],
         ) -> AsyncGenerator[AsyncStreamClient[Response] | None]:
             async with contextlib.AsyncExitStack() as client_exit_stack:
-                client_exit_stack.enter_context(self._bind_server())
 
                 client_address_raw = lowlevel_client.extra(UNIXSocketAttribute.peername, None)
                 if client_address_raw is None:
