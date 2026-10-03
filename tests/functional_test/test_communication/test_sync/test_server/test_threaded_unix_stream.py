@@ -499,7 +499,7 @@ if sys.platform != "win32":
         @pytest.fixture
         @staticmethod
         def server_not_activated(
-            request_handler: MyStreamRequestHandler,
+            request_handler: BlockingStreamRequestHandler[str, str],
             unix_socket_path_factory: UnixSocketPathFactory,
             stream_protocol: AnyStreamProtocolType[str, str],
             server_backlog: int,
@@ -524,7 +524,7 @@ if sys.platform != "win32":
         def server(
             selector_factory: Callable[[], selectors.BaseSelector],
             use_unix_address_type: _UnixAddressTypeLiteral,
-            request_handler: MyStreamRequestHandler,
+            request_handler: BlockingStreamRequestHandler[str, str],
             unix_socket_path_factory: UnixSocketPathFactory,
             stream_protocol: AnyStreamProtocolType[str, str],
             server_backlog: int,

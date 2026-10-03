@@ -364,7 +364,7 @@ class TestThreadedTCPNetworkServer(BaseTestThreadedServer):
     @pytest.fixture
     @staticmethod
     def server_not_activated(
-        request_handler: MyStreamRequestHandler,
+        request_handler: BlockingStreamRequestHandler[str, str],
         localhost_ip: str,
         stream_protocol: AnyStreamProtocolType[str, str],
         server_backlog: int,
@@ -389,7 +389,7 @@ class TestThreadedTCPNetworkServer(BaseTestThreadedServer):
     @staticmethod
     def server(
         selector_factory: Callable[[], selectors.BaseSelector],
-        request_handler: MyStreamRequestHandler,
+        request_handler: BlockingStreamRequestHandler[str, str],
         localhost_ip: str,
         stream_protocol: AnyStreamProtocolType[str, str],
         server_backlog: int,

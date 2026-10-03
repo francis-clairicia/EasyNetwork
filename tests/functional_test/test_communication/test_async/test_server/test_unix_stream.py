@@ -1414,7 +1414,7 @@ if sys.platform != "win32":
         @pytest_asyncio.fixture
         @staticmethod
         async def server_not_activated(
-            request_handler: MyStreamRequestHandler,
+            request_handler: AsyncStreamRequestHandler[str, str],
             unix_socket_path_factory: UnixSocketPathFactory,
             stream_protocol: AnyStreamProtocolType[str, str],
             server_backlog: int,
@@ -1439,7 +1439,7 @@ if sys.platform != "win32":
         @staticmethod
         async def server(
             use_unix_address_type: _UnixAddressTypeLiteral,
-            request_handler: MyStreamRequestHandler,
+            request_handler: AsyncStreamRequestHandler[str, str],
             unix_socket_path_factory: UnixSocketPathFactory,
             stream_protocol: AnyStreamProtocolType[str, str],
             server_backlog: int,
@@ -1507,7 +1507,7 @@ if sys.platform != "win32":
         @trio_fixture
         @staticmethod
         async def server_not_activated(
-            request_handler: MyStreamRequestHandler,
+            request_handler: AsyncStreamRequestHandler[str, str],
             unix_socket_path_factory: UnixSocketPathFactory,
             stream_protocol: AnyStreamProtocolType[str, str],
             server_backlog: int,
@@ -1532,7 +1532,7 @@ if sys.platform != "win32":
         @staticmethod
         async def server(
             use_unix_address_type: _UnixAddressTypeLiteral,
-            request_handler: MyStreamRequestHandler,
+            request_handler: AsyncStreamRequestHandler[str, str],
             unix_socket_path_factory: UnixSocketPathFactory,
             stream_protocol: AnyStreamProtocolType[str, str],
             server_backlog: int,

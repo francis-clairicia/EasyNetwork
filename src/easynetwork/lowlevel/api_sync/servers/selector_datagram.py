@@ -49,7 +49,7 @@ from ..transports import abc as _transports, base_selector as _selector_transpor
 
 class _SupportsEventSet(Protocol):
 
-    def set(self) -> None:
+    def set(self) -> None:  # pragma: no cover
         """
         Notifies that the event has happened.
 
@@ -777,7 +777,9 @@ class SelectorDatagramServer[Request, Response, Address: Hashable](_transports.B
         while not shutdown_requested():
             listener.receive_datagrams(listener_recv_noblock_from, handler)
 
-            ready = selector.select(_get_selector_timeout(client_handler_token.get_min_deadline()))
+            selector_wait_deadline = min(listener.ready_at_deadline(), client_handler_token.get_min_deadline())
+
+            ready = selector.select(_get_selector_timeout(selector_wait_deadline))
 
             # shutdown() called during select(), exit immediately.
             if shutdown_requested():
@@ -980,6 +982,9 @@ class _ThreadSafeListener[Address](_transports.BaseTransport):
             )
             selector.register(self.__listener.read_fileno(), selectors.EVENT_READ, key_data)
             self.__reader_done.clear()
+
+    def ready_at_deadline(self) -> float:
+        return 0 if self.__ready_for_reading.is_set() else math.inf
 
     def receive_datagrams[*P](
         self,

@@ -49,7 +49,7 @@ from ..transports import abc as _transports, base_selector as _selector_transpor
 
 class _SupportsEventSet(Protocol):
 
-    def set(self) -> None:
+    def set(self) -> None:  # pragma: no cover
         """
         Notifies that the event has happened.
 
