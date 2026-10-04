@@ -60,6 +60,20 @@ impl StreamClient {
         {
             let socket = UnixStream::connect(path)?;
 
+            #[cfg(target_os = "linux")]
+            unsafe {
+                use std::os::fd::AsRawFd;
+
+                let mut addr: libc::sockaddr_un = std::mem::zeroed();
+                addr.sun_family = libc::AF_UNIX as libc::sa_family_t;
+
+                let addr_len: libc::socklen_t = std::mem::offset_of!(libc::sockaddr_un, sun_path) as libc::socklen_t;
+
+                if libc::bind(socket.as_raw_fd(), (&raw const addr) as *const _, addr_len) != 0 {
+                    return Err(io::Error::last_os_error());
+                }
+            }
+
             Ok(Self { inner: Box::new(socket) })
         }
 
