@@ -321,6 +321,14 @@ class TestThreadedUDPNetworkServer(BaseTestThreadedServer):
         run_server.wait()
         assert request_handler.server == server
 
+    @pytest.mark.parametrize("selector_factory", [pytest.param("invalid", id=pytest.HIDDEN_PARAM)], indirect=True)
+    def test____serve_forever____system_error_into_server_shutdown(
+        self,
+        server: MyUDPServer,
+    ) -> None:
+        with pytest.RaisesGroup(OSError):
+            server.serve_forever()
+
     def test____serve_forever____handle_request(
         self,
         client_factory: Callable[[], DatagramSocket],

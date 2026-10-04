@@ -884,6 +884,46 @@ class TestSelectorStreamServer(BaseTestWithStreamProtocol):
         assert isinstance(caplog.records[0].exc_info[1], ValueError)
         assert caplog.records[0].getMessage() == "Unhandled exception: something bad happened"
 
+    def test____serve____unhandled_exception____system_error_into_server_shutdown(
+        self,
+        worker_strategy: _WorkerStrategy,
+        server: SelectorStreamServer[Any, Any],
+        mock_stream_transport: MagicMock,
+        mock_listener: MagicMock,
+        caplog: pytest.LogCaptureFixture,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        caplog.set_level(logging.ERROR)
+
+        error_task: Future[Any] = Future()
+        error_task.set_exception(KeyError("test"))
+        mock_executor = mocker.NonCallableMagicMock(spec=ThreadPoolExecutor)
+        mock_executor.submit.side_effect = [error_task, RuntimeError("cannot schedule new futures after shutdown")]
+
+        mock_listener.accept_noblock.side_effect = _selector_accept_side_effect([mock_stream_transport])
+        mock_stream_transport.recv_noblock.side_effect = [b"packet\n"]
+        mock_stream_transport.recv_noblock_into.side_effect = make_recv_noblock_into_side_effect([b"packet\n"])
+        mock_stream_transport.recv_noblock_with_ancillary.side_effect = [(b"packet\n", mocker.sentinel.ancdata)]
+        mock_stream_transport.recv_noblock_with_ancillary_into.side_effect = make_recv_noblock_with_ancillary_into_side_effect(
+            [(b"packet\n", mocker.sentinel.ancdata)]
+        )
+
+        @stub_decorator(mocker)
+        def client_connected_cb(_: Any) -> Generator[None, Any]:
+            yield
+
+        # Act & Assert
+        server.serve(
+            client_connected_cb,
+            mock_executor,
+            worker_strategy=worker_strategy,
+        )
+
+        client_connected_cb.assert_not_called()
+        assert len(caplog.records) == 1 and caplog.records[0].exc_info is not None
+        assert caplog.records[0].exc_info[1] is error_task.exception()
+
     @pytest.mark.parametrize("ancillary_bufsize", [0, -42, 3.14])
     def test____serve____recv_with_ancillary____invalid_bufsize(
         self,

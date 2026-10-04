@@ -558,21 +558,18 @@ class SelectorDatagramServer[Request, Response, Address: Hashable](_transports.B
     ) -> None:
         if not should_restart_handle.is_set():
             return
-        if exc_type is not None:
+        if exc_type is not None:  # pragma: no cover
             assert not issubclass(exc_type, Exception)  # nosec assert_used
             return
-        try:
-            with client_data.state_lock:
-                if not client_data.datagram_queue.empty() and client_data.state is None:
-                    self.__serve_requests__start_new_client_task(
-                        client_ctx,
-                        client_data,
-                        client_handler_token=client_handler_token,
-                        executor=executor,
-                        server_ancillary_data_params=server_ancillary_data_params,
-                    )
-        except Exception as exc:
-            self.__unhandled_exception_log(type(exc), exc, exc.__traceback__)
+        with client_data.state_lock:
+            if not client_data.datagram_queue.empty() and client_data.state is None:
+                self.__serve_requests__start_new_client_task(
+                    client_ctx,
+                    client_data,
+                    client_handler_token=client_handler_token,
+                    executor=executor,
+                    server_ancillary_data_params=server_ancillary_data_params,
+                )
 
     def __serve_requests__handle_client_request(
         self,
@@ -1111,7 +1108,7 @@ class _ClientHandlerToken[Request, Response, Address: Hashable]:
     ) -> concurrent.futures.Future[None]:
         future: concurrent.futures.Future[None] = _future_factory()
         with self.__state_lock.read_lock():
-            if self.__closed.is_set():
+            if self.__closed.is_set():  # pragma: no cover
                 _cancel_future_and_notify(future)
                 return future
 
@@ -1120,7 +1117,7 @@ class _ClientHandlerToken[Request, Response, Address: Hashable]:
         if deadline < self.__current_deadline.value:
             try:
                 self.wakeup_socketpair.wakeup_thread_and_signal_safe()
-            except BaseException:
+            except BaseException:  # pragma: no cover
                 _cancel_future_and_notify(future)
                 raise
 

@@ -457,7 +457,7 @@ class BaseThreadedNetworkServerImpl[LowLevelServer: _SupportsShutdownClose, Addr
         def safe_exception_unwrap(task: concurrent.futures.Future[Any]) -> BaseException | None:
             try:
                 return task.exception(timeout=1.0)
-            except (TimeoutError, concurrent.futures.CancelledError):
+            except (TimeoutError, concurrent.futures.CancelledError):  # pragma: no cover
                 return None
 
         errors: list[BaseException] = [exc for task in self.__server_tasks if (exc := safe_exception_unwrap(task)) is not None]

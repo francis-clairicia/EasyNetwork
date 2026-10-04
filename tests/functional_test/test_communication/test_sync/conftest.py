@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import errno
 import selectors
 import time
 from collections.abc import Callable, Generator
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any
 
+from easynetwork.lowlevel._errno import error_from_errno
 from easynetwork.lowlevel.api_sync.transports.base_selector import _can_use_selector
 
 import pytest
@@ -49,10 +51,18 @@ _AVAILABLE_SELECTORS: dict[str, Callable[[], selectors.BaseSelector] | None] = {
 }
 
 
+class BadSelector(selectors.SelectSelector):
+
+    def select(self, timeout: float | None = None) -> list[tuple[selectors.SelectorKey, int]]:
+        raise error_from_errno(errno.EINVAL)
+
+
 @pytest.fixture(params=[s for s in _AVAILABLE_SELECTORS if _AVAILABLE_SELECTORS[s]])
 def selector_factory(request: pytest.FixtureRequest) -> Callable[[], selectors.BaseSelector]:
     if request.param == "default":
         return selectors.DefaultSelector
+    if request.param == "invalid":
+        return BadSelector
     assert request.param in _AVAILABLE_SELECTORS
     selector_factory: Callable[[], selectors.BaseSelector] | None = _AVAILABLE_SELECTORS[request.param]
     if selector_factory is None:

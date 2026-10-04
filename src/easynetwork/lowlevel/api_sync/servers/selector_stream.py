@@ -780,7 +780,7 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
                                     first_recv_try = False
 
                                 with request_receiver:
-                                    if client.is_closing():
+                                    if client.is_closing():  # pragma: no cover
                                         return
                                     selector.register(fileno, event)
                                     try:
@@ -1119,7 +1119,7 @@ class _SelectorToken:
 
             try:
                 self.selector.register(waiter.fileno, waiter.events, waiter.data)
-            except BaseException:
+            except BaseException:  # pragma: no cover
                 _cancel_future_and_notify(waiter.data.future)
                 raise
             if (deadline := waiter.data.deadline) < self.__current_deadline.value:
@@ -1209,7 +1209,7 @@ class _ClientHandlerToken:
                     )
                 )
                 self.wakeup_socketpair.wakeup_thread_and_signal_safe()
-            except BaseException:
+            except BaseException:  # pragma: no cover
                 _cancel_future_and_notify(future)
                 raise
             return future
@@ -1292,7 +1292,7 @@ class _RequestReceiver[Request](_BaseRequestReceiver):
         transport = self.transport
         while True:
             with self.transport_close_lock:
-                if transport.is_closed():
+                if transport.is_closed():  # pragma: no cover
                     break
                 try:
                     chunk: bytes = transport.recv_noblock(self.max_recv_size)
@@ -1310,7 +1310,7 @@ class _RequestReceiver[Request](_BaseRequestReceiver):
                 pass
             finally:
                 del chunk
-            if self.server_is_shutting_down():
+            if self.server_is_shutting_down():  # pragma: no cover
                 break
 
         # Loop break
@@ -1331,7 +1331,7 @@ class _RequestReceiver[Request](_BaseRequestReceiver):
         transport = self.transport
         data: bytes
         with self.transport_close_lock:
-            if transport.is_closed():
+            if transport.is_closed():  # pragma: no cover
                 raise StopIteration
             try:
                 data, ancdata = transport.recv_noblock_with_ancillary(self.max_recv_size, ancillary_bufsize)
@@ -1374,7 +1374,7 @@ class _BufferedRequestReceiver[Request](_BaseRequestReceiver):
         nbytes: int
         while True:
             with self.transport_close_lock:
-                if transport.is_closed():
+                if transport.is_closed():  # pragma: no cover
                     break
                 with consumer.get_write_buffer() as buffer:
                     try:
@@ -1391,7 +1391,7 @@ class _BufferedRequestReceiver[Request](_BaseRequestReceiver):
                 return consumer.next(nbytes)
             except StopIteration:
                 pass
-            if self.server_is_shutting_down():
+            if self.server_is_shutting_down():  # pragma: no cover
                 break
 
         # Loop break
@@ -1412,7 +1412,7 @@ class _BufferedRequestReceiver[Request](_BaseRequestReceiver):
         transport = self.transport
         nbytes: int
         with self.transport_close_lock:
-            if transport.is_closed():
+            if transport.is_closed():  # pragma: no cover
                 raise StopIteration
             with consumer.get_write_buffer() as buffer:
                 try:

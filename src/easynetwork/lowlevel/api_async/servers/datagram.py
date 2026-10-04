@@ -337,24 +337,19 @@ class AsyncDatagramServer[Request, Response, Address: Hashable](_transports.Asyn
         datagram: bytes
         ancillary_data: Any | None = None
         try:
-            datagram, ancillary_data = client_data.pop_datagram_no_wait()
-            recv_params = await anext(request_handler_generator)
+            try:
+                datagram, ancillary_data = client_data.pop_datagram_no_wait()
+                recv_params = await anext(request_handler_generator)
+            except BaseException:
+                self.__handle_ancillary_data(
+                    ancillary_data=ancillary_data,
+                    recv_with_ancillary=None,
+                    server_ancillary_data_params=server_ancillary_data_params,
+                    client_address=client_address,
+                )
+                raise
         except StopAsyncIteration:
-            self.__handle_ancillary_data(
-                ancillary_data=ancillary_data,
-                recv_with_ancillary=None,
-                server_ancillary_data_params=server_ancillary_data_params,
-                client_address=client_address,
-            )
             return
-        except BaseException:
-            self.__handle_ancillary_data(
-                ancillary_data=ancillary_data,
-                recv_with_ancillary=None,
-                server_ancillary_data_params=server_ancillary_data_params,
-                client_address=client_address,
-            )
-            raise
         else:
             request: Request | None
             try:

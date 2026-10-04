@@ -696,6 +696,14 @@ if sys.platform != "win32":
             run_server.wait()
             assert request_handler.server == server
 
+        @pytest.mark.parametrize("selector_factory", [pytest.param("invalid", id=pytest.HIDDEN_PARAM)], indirect=True)
+        def test____serve_forever____system_error_into_server_shutdown(
+            self,
+            server: MyUnixStreamServer,
+        ) -> None:
+            with pytest.RaisesGroup(OSError):
+                server.serve_forever()
+
         @pytest.mark.parametrize(
             "log_client_connection",
             [True, False, None],
@@ -749,7 +757,6 @@ if sys.platform != "win32":
 
         def test____serve_forever____accept_client____client_closed_right_after_accept(
             self,
-            server: MyUnixStreamServer,
             server_address: UnixSocketAddress,
             caplog: pytest.LogCaptureFixture,
         ) -> None:

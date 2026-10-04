@@ -617,6 +617,14 @@ if sys.platform != "win32":
             run_server.wait()
             assert request_handler.server == server
 
+        @pytest.mark.parametrize("selector_factory", [pytest.param("invalid", id=pytest.HIDDEN_PARAM)], indirect=True)
+        def test____serve_forever____system_error_into_server_shutdown(
+            self,
+            server: MyUnixDatagramServer,
+        ) -> None:
+            with pytest.RaisesGroup(OSError):
+                server.serve_forever()
+
         @parametrize_all_recv_combinations
         @pytest.mark.parametrize("server_send_method", ["SEND", "SENDMSG"], indirect=True)
         def test____serve_forever____handle_request(

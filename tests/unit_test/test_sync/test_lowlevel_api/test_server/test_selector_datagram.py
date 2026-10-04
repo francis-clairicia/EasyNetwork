@@ -434,6 +434,39 @@ class TestSelectorDatagramServer(BaseTestWithDatagramProtocol):
         assert isinstance(caplog.records[0].exc_info[1], ValueError)
         assert caplog.records[0].getMessage() == "Unhandled exception: something bad happened"
 
+    @pytest.mark.parametrize("recv_with_ancillary", [False, True], ids=lambda p: f"recv_with_ancillary__{p}")
+    def test____serve____unhandled_exception____system_error_into_server_shutdown(
+        self,
+        recv_with_ancillary: bool,
+        server: SelectorDatagramServer[Any, Any, Any],
+        mock_datagram_listener: MagicMock,
+        caplog: pytest.LogCaptureFixture,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        caplog.set_level(logging.ERROR)
+
+        error_task: Future[Any] = Future()
+        error_task.set_exception(KeyError("test"))
+        mock_executor = mocker.NonCallableMagicMock(spec=ThreadPoolExecutor)
+        mock_executor.submit.side_effect = [error_task, RuntimeError("cannot schedule new futures after shutdown")]
+
+        _set_selector_recv_side_effect(mock_datagram_listener, [(b"packet", mocker.sentinel.ancdata, mocker.sentinel.address)])
+
+        @stub_decorator(mocker)
+        def datagram_received_cb(_: Any) -> Generator[None, Any]:
+            yield
+
+        # Act & Assert
+        if recv_with_ancillary:
+            server.serve_with_ancillary(datagram_received_cb, mock_executor, 1024, None)
+        else:
+            server.serve(datagram_received_cb, mock_executor)
+
+        datagram_received_cb.assert_not_called()
+        assert len(caplog.records) == 1 and caplog.records[0].exc_info is not None
+        assert caplog.records[0].exc_info[1] is error_task.exception()
+
     @pytest.mark.parametrize("after_first_yield", [False, True], ids=lambda p: f"after_first_yield__{p}")
     def test____serve____ancillary_data_asked_while_unsupported(
         self,
