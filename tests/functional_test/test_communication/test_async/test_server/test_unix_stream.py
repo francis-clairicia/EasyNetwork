@@ -262,18 +262,22 @@ if sys.platform != "win32":
     class TimeoutContextRequestHandler(AsyncStreamRequestHandler[str, str]):
         request_timeout: float = 1.0
         timeout_on_second_yield: bool = False
+        use_recvmsg: bool = False
 
         async def on_connection(self, client: AsyncStreamClient[str]) -> None:
             await client.send_packet("milk")
 
-        async def handle(self, client: AsyncStreamClient[str]) -> AsyncGenerator[None, str]:
+        async def handle(self, client: AsyncStreamClient[str]) -> AsyncGenerator[RecvParams | None, str]:
             if self.timeout_on_second_yield:
-                request = yield
+                request = yield None
                 await client.send_packet(request)
             try:
                 with pytest.raises(TimeoutError):
                     with client.backend().timeout(self.request_timeout):
-                        yield
+                        if self.use_recvmsg:
+                            yield RecvParams(recv_with_ancillary=RecvAncillaryDataParams(lambda _: None))
+                        else:
+                            yield None
                 await client.send_packet("successfully timed out")
             finally:
                 self.request_timeout = 1.0  # Force reset to 1 second in order not to overload the server
@@ -497,7 +501,7 @@ if sys.platform != "win32":
             match request_handler:
                 case MyStreamRequestHandler() if server_recv_method == "RECVMSG":
                     request_handler.use_recvmsg_by_default = True
-                case TimeoutYieldedRequestHandler() if server_recv_method == "RECVMSG":
+                case TimeoutYieldedRequestHandler() | TimeoutContextRequestHandler() if server_recv_method == "RECVMSG":
                     request_handler.use_recvmsg = True
                 case ErrorInRequestHandler() if server_recv_method == "RECVMSG":
                     request_handler.use_recvmsg = True
@@ -903,11 +907,7 @@ if sys.platform != "win32":
         @pytest.mark.parametrize(
             "request_handler",
             [
-                pytest.param(
-                    MyStreamRequestHandler,
-                    id="during_handle",
-                    marks=[pytest.mark.parametrize("server_recv_method", ["RECV", "RECVMSG"], indirect=True)],
-                ),
+                pytest.param(MyStreamRequestHandler, id="during_handle"),
                 pytest.param(InitialHandshakeRequestHandler, id="during_on_connection_hook"),
             ],
             indirect=True,
@@ -1200,17 +1200,8 @@ if sys.platform != "win32":
 
             assert await client.recv(1024) == b""
 
-        @pytest.mark.parametrize(
-            "request_handler",
-            [
-                pytest.param(
-                    TimeoutYieldedRequestHandler,
-                    marks=[pytest.mark.parametrize("server_recv_method", ["RECV", "RECVMSG"], indirect=True)],
-                ),
-                TimeoutContextRequestHandler,
-            ],
-            indirect=True,
-        )
+        @pytest.mark.parametrize("request_handler", [TimeoutYieldedRequestHandler, TimeoutContextRequestHandler], indirect=True)
+        @pytest.mark.parametrize("server_recv_method", ["RECV", "RECVMSG"], indirect=True)
         @pytest.mark.parametrize("request_timeout", [0.0, 1.0], ids=lambda p: f"timeout__{p}")
         @pytest.mark.parametrize("timeout_on_second_yield", [False, True], ids=lambda p: f"timeout_on_second_yield__{p}")
         async def test____serve_forever____throw_cancelled_error(

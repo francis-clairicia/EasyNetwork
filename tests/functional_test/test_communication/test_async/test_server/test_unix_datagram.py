@@ -32,6 +32,7 @@ if sys.platform != "win32":
         DeserializeError,
         TypedAttributeLookupError,
     )
+    from easynetwork.lowlevel._unix_utils import close_fds_in_socket_ancillary
     from easynetwork.lowlevel._utils import remove_traceback_frames_in_place
     from easynetwork.lowlevel.api_async.backend.abc import IEvent
     from easynetwork.lowlevel.request_handler import RecvAncillaryDataParams, RecvParams
@@ -103,8 +104,10 @@ if sys.platform != "win32":
                 async with self.handle_bad_requests(client):
                     if self.use_recvmsg_by_default:
                         ancillary = SocketAncillary()
-                        request = yield RecvParams(recv_with_ancillary=RecvAncillaryDataParams(ancillary.update_from_raw))
-                        ancillary.clear()
+                        try:
+                            request = yield RecvParams(recv_with_ancillary=RecvAncillaryDataParams(ancillary.update_from_raw))
+                        finally:
+                            close_fds_in_socket_ancillary(ancillary)
                     else:
                         request = yield None
                     break
@@ -228,16 +231,20 @@ if sys.platform != "win32":
     class TimeoutContextRequestHandler(AsyncDatagramRequestHandler[str, str]):
         request_timeout: float = 1.0
         timeout_on_third_yield: bool = False
+        use_recvmsg: bool = False
 
-        async def handle(self, client: AsyncDatagramClient[str]) -> AsyncGenerator[None, str]:
-            assert (yield) == "something"
+        async def handle(self, client: AsyncDatagramClient[str]) -> AsyncGenerator[RecvParams | None, str]:
+            assert (yield None) == "something"
             if self.timeout_on_third_yield:
-                request = yield
+                request = yield None
                 await client.send_packet(request)
             try:
                 with pytest.raises(TimeoutError):
                     with client.backend().timeout(self.request_timeout):
-                        yield
+                        if self.use_recvmsg:
+                            yield RecvParams(recv_with_ancillary=RecvAncillaryDataParams(lambda _: None))
+                        else:
+                            yield None
                 await client.send_packet("successfully timed out")
             except BaseException:
                 await client.send_packet("error occurred")
@@ -418,7 +425,7 @@ if sys.platform != "win32":
             match request_handler:
                 case MyDatagramRequestHandler() if server_recv_method == "RECVMSG":
                     request_handler.use_recvmsg_by_default = True
-                case TimeoutYieldedRequestHandler() if server_recv_method == "RECVMSG":
+                case TimeoutYieldedRequestHandler() | TimeoutContextRequestHandler() if server_recv_method == "RECVMSG":
                     request_handler.use_recvmsg = True
                 case ErrorInRequestHandler() if server_recv_method == "RECVMSG":
                     request_handler.use_recvmsg = True
@@ -453,6 +460,16 @@ if sys.platform != "win32":
             with endpoint.backend().timeout(1):
                 pong, _ = await endpoint.recvfrom()
                 assert pong == b"pong"
+
+        parametrize_all_recv_combinations = pytest.mark.parametrize(
+            ["server_mode", "server_recv_method"],
+            [
+                pytest.param("SERVE", "RECV"),
+                pytest.param("SERVE_WITH_CMSG", "RECV"),
+                pytest.param("SERVE_WITH_CMSG", "RECVMSG"),
+            ],
+            indirect=True,
+        )
 
         async def test____server_close____while_server_is_running(
             self,
@@ -561,7 +578,7 @@ if sys.platform != "win32":
             await run_server.wait()
             assert request_handler.server == server
 
-        @pytest.mark.parametrize("server_recv_method", ["RECV", "RECVMSG"], indirect=True)
+        @parametrize_all_recv_combinations
         @pytest.mark.parametrize("server_send_method", ["SEND", "SENDMSG"], indirect=True)
         async def test____serve_forever____handle_request(
             self,
@@ -592,6 +609,7 @@ if sys.platform != "win32":
             with endpoint.backend().timeout(1):
                 await server.shutdown()
 
+        @parametrize_all_recv_combinations
         @pytest.mark.parametrize("client_factory", ["CLIENT_UNBOUND"], indirect=True)
         @pytest.mark.parametrize(
             "unnamed_addresses_behavior",
@@ -599,7 +617,6 @@ if sys.platform != "win32":
             indirect=True,
             ids=lambda p: f"unnamed_addresses_behavior__{p!r}",
         )
-        @pytest.mark.parametrize("server_recv_method", ["RECV", "RECVMSG"], indirect=True)
         @pytest.mark.parametrize("server_send_method", ["SEND", "SENDMSG"], indirect=True)
         async def test____serve_forever____handle_request____from_unbound_socket(
             self,
@@ -692,7 +709,7 @@ if sys.platform != "win32":
                 await endpoint.sendto(b"__cache__", None)
                 assert (await endpoint.recvfrom())[0] == b"True"
 
-        @pytest.mark.parametrize("server_recv_method", ["RECV", "RECVMSG"], indirect=True)
+        @parametrize_all_recv_combinations
         async def test____serve_forever____save_request_handler_context(
             self,
             client_factory: Callable[[], Awaitable[AsyncDatagramSocket]],
@@ -708,7 +725,7 @@ if sys.platform != "win32":
 
             assert request_handler.request_received[client_address] == ["hello, world."]
 
-        @pytest.mark.parametrize("server_recv_method", ["RECV", "RECVMSG"], indirect=True)
+        @parametrize_all_recv_combinations
         async def test____serve_forever____save_request_handler_context____extra_datagram_are_rescheduled(
             self,
             client_factory: Callable[[], Awaitable[AsyncDatagramSocket]],
@@ -726,7 +743,7 @@ if sys.platform != "win32":
 
             assert set(request_handler.request_received[client_address]) == {"hello, world.", "Test 2."}
 
-        @pytest.mark.parametrize("server_recv_method", ["RECV", "RECVMSG"], indirect=True)
+        @parametrize_all_recv_combinations
         async def test____serve_forever____save_request_handler_context____server_shutdown(
             self,
             server: MyAsyncUnixDatagramServer,
@@ -798,7 +815,7 @@ if sys.platform != "win32":
 
                 assert mock_os_close.call_count == 3
 
-        @pytest.mark.parametrize("server_recv_method", ["RECV", "RECVMSG"], indirect=True)
+        @parametrize_all_recv_combinations
         async def test____serve_forever____bad_request(
             self,
             client_factory: Callable[[], Awaitable[AsyncDatagramSocket]],
@@ -817,9 +834,9 @@ if sys.platform != "win32":
             assert isinstance(request_handler.bad_request_received[client_address][0], DatagramProtocolParseError)
             assert isinstance(request_handler.bad_request_received[client_address][0].error, DeserializeError)
 
+        @parametrize_all_recv_combinations
         @pytest.mark.parametrize("mute_thrown_exception", [False, True])
         @pytest.mark.parametrize("request_handler", [ErrorInRequestHandler], indirect=True)
-        @pytest.mark.parametrize("server_recv_method", ["RECV", "RECVMSG"], indirect=True)
         @pytest.mark.parametrize("datagram_protocol", [pytest.param("invalid", id="serializer_crash")], indirect=True)
         async def test____serve_forever____internal_error(
             self,
@@ -976,17 +993,8 @@ if sys.platform != "win32":
             assert caplog.records[0].message.startswith("There have been attempts to do operation on closed client")
             assert caplog.records[0].levelno == logging.WARNING
 
-        @pytest.mark.parametrize(
-            "request_handler",
-            [
-                pytest.param(
-                    TimeoutYieldedRequestHandler,
-                    marks=[pytest.mark.parametrize("server_recv_method", ["RECV", "RECVMSG"], indirect=True)],
-                ),
-                TimeoutContextRequestHandler,
-            ],
-            indirect=True,
-        )
+        @parametrize_all_recv_combinations
+        @pytest.mark.parametrize("request_handler", [TimeoutYieldedRequestHandler, TimeoutContextRequestHandler], indirect=True)
         @pytest.mark.parametrize("request_timeout", [0.0, 1.0], ids=lambda p: f"timeout__{p}")
         @pytest.mark.parametrize("timeout_on_third_yield", [False, True], ids=lambda p: f"timeout_on_third_yield__{p}")
         async def test____serve_forever____throw_cancelled_error(
@@ -1072,8 +1080,8 @@ if sys.platform != "win32":
             await endpoint.sendto(b"hello world", None)
             assert (await endpoint.recvfrom())[0] == b"hello world"
 
+        @parametrize_all_recv_combinations
         @pytest.mark.parametrize("request_handler", [ConcurrencyTestRequestHandler], indirect=True)
-        @pytest.mark.parametrize("server_recv_method", ["RECV", "RECVMSG"], indirect=True)
         async def test____serve_forever____datagram_while_request_handle_is_performed(
             self,
             request_handler: ConcurrencyTestRequestHandler,
@@ -1087,9 +1095,9 @@ if sys.platform != "win32":
             with endpoint.backend().timeout(5):
                 assert (await endpoint.recvfrom())[0] == b"After wait: hello, world."
 
+        @parametrize_all_recv_combinations
         @pytest.mark.parametrize("request_handler", [ConcurrencyTestRequestHandler], indirect=True)
         @pytest.mark.parametrize("ignore_cancellation", [False, True], ids=lambda p: f"ignore_cancellation__{p}")
-        @pytest.mark.parametrize("server_recv_method", ["RECV", "RECVMSG"], indirect=True)
         async def test____serve_forever____datagram_while_request_handle_is_performed____server_shutdown(
             self,
             server: MyAsyncUnixDatagramServer,
@@ -1111,9 +1119,9 @@ if sys.platform != "win32":
             with endpoint.backend().timeout(1):
                 await server.shutdown()
 
+        @parametrize_all_recv_combinations
         @pytest.mark.parametrize("request_handler", [ConcurrencyTestRequestHandler], indirect=True)
         @pytest.mark.parametrize("recreate_generator", [False, True], ids=lambda p: f"recreate_generator__{p}")
-        @pytest.mark.parametrize("server_recv_method", ["RECV", "RECVMSG"], indirect=True)
         async def test____serve_forever____too_many_datagrams_while_request_handle_is_performed(
             self,
             recreate_generator: bool,

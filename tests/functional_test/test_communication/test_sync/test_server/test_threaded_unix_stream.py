@@ -938,11 +938,7 @@ if sys.platform != "win32":
         @pytest.mark.parametrize(
             "request_handler",
             [
-                pytest.param(
-                    MyStreamRequestHandler,
-                    id="during_handle",
-                    marks=[pytest.mark.parametrize("server_recv_method", ["RECV", "RECVMSG"], indirect=True)],
-                ),
+                pytest.param(MyStreamRequestHandler, id="during_handle"),
                 pytest.param(InitialHandshakeRequestHandler, id="during_on_connection_hook"),
             ],
             indirect=True,
