@@ -22,8 +22,8 @@ def dummy_lock_with_timeout(lock: Lock, timeout: float | None, *args: Any, **kwa
         if timeout is None:
             stack.enter_context(lock)
         else:
-            timeout = validate_timeout_delay(timeout, positive_check=False)
-            if lock.acquire(blocking=True, timeout=timeout):
+            validate_timeout_delay(timeout, positive_check=False)
+            if lock.acquire(blocking=False):
                 stack.push(lock)
             else:
                 raise TimeoutError()
