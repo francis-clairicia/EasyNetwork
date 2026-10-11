@@ -320,8 +320,6 @@ class TestSelectorStreamServer(BaseTestWithStreamProtocol):
         mock_listener: MagicMock,
         mock_stream_protocol: MagicMock,
         max_recv_size: int,
-        dummy_lock_cls: tuple[Any, Any],
-        mocker: MockerFixture,
     ) -> Generator[SelectorStreamServer[Any, Any]]:
         server: SelectorStreamServer[Any, Any] = SelectorStreamServer(
             mock_listener,
@@ -331,8 +329,6 @@ class TestSelectorStreamServer(BaseTestWithStreamProtocol):
         )
 
         with contextlib.closing(server):
-            mocker.stop(dummy_lock_cls[0])
-            mocker.stop(dummy_lock_cls[1])
             yield server
             server.shutdown(timeout=5)
 

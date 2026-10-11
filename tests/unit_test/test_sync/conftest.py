@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def dummy_lock_cls(mocker: MockerFixture) -> tuple[Any, Any]:
     from .._utils import DummyLock, DummyRLock
 

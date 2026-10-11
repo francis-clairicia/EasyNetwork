@@ -85,8 +85,6 @@ class TestSelectorDatagramServer(BaseTestWithDatagramProtocol):
     def server(
         mock_datagram_listener: MagicMock,
         mock_datagram_protocol: MagicMock,
-        dummy_lock_cls: tuple[Any, Any],
-        mocker: MockerFixture,
     ) -> Generator[SelectorDatagramServer[Any, Any, Any]]:
         server: SelectorDatagramServer[Any, Any, Any] = SelectorDatagramServer(
             mock_datagram_listener,
@@ -94,8 +92,6 @@ class TestSelectorDatagramServer(BaseTestWithDatagramProtocol):
             selector_factory=FakeSelector,
         )
         with contextlib.closing(server):
-            mocker.stop(dummy_lock_cls[0])
-            mocker.stop(dummy_lock_cls[1])
             yield server
             server.shutdown(timeout=5)
 

@@ -1052,7 +1052,7 @@ class _ThreadSafeListener(_transports.BaseTransport):
         with self.__close_lock:
             self.__ready_for_reading.clear()
             try:
-                if self.__listener.is_closed():
+                if self.__listener.is_closed():  # pragma: no cover
                     # server.close() called in another thread.
                     # keep flag to False forever.
                     return None
@@ -1062,6 +1062,7 @@ class _ThreadSafeListener(_transports.BaseTransport):
                 return None
             except OSError as exc:
                 if exc.errno in constants.ACCEPT_CAPACITY_ERRNOS:
+                    next_deadline = _get_current_time() + constants.ACCEPT_CAPACITY_ERROR_SLEEP_TIME
                     self.logger.error(
                         "accept returned %s (%s); retrying in %s seconds",
                         _errno.errorcode[exc.errno],
@@ -1071,7 +1072,7 @@ class _ThreadSafeListener(_transports.BaseTransport):
                     )
                     with self.__reader_condvar:
                         self.__ready_for_reading.set()
-                        self.__ready_at_deadline = _get_current_time() + constants.ACCEPT_CAPACITY_ERROR_SLEEP_TIME
+                        self.__ready_at_deadline = next_deadline
                         selector.unregister(self.__listener.read_fileno())
                         self.__reader_done.set()
                         self.__reader_condvar.notify_all()
