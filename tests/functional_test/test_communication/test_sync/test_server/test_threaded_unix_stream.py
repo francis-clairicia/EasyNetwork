@@ -231,6 +231,9 @@ if sys.platform != "win32":
                     self.eof_request_received[fetch_client_address(client)].append(exc)
                     client.send_packet("EOF while reading request.")
 
+        def in_other_thread__close_client_objects(self, client_address: str | bytes) -> None:
+            self.connected_clients[client_address].close()
+
     class TimeoutYieldedRequestHandler(BlockingStreamRequestHandler[str, str]):
         request_timeout: float = 1.0
         timeout_on_second_yield: bool = False
@@ -1196,6 +1199,26 @@ if sys.platform != "win32":
             client = client_factory()
 
             client.send_all(b"__close__\n")
+
+            assert client.recv(1024) == b""
+
+        def test____serve_forever____explicitly_closed_by_other_thread(
+            self,
+            request_handler: MyStreamRequestHandler,
+            client_factory: Callable[[], StreamSocket],
+        ) -> None:
+            client = client_factory()
+            client_address: str | bytes = client.getsockname()
+
+            time.sleep(0.1)
+            assert client_address in request_handler.connected_clients
+
+            t = threading.Thread(
+                target=request_handler.in_other_thread__close_client_objects,
+                args=(client_address,),
+                daemon=True,
+            )
+            t.start()
 
             assert client.recv(1024) == b""
 

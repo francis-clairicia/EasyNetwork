@@ -453,7 +453,7 @@ class _ConnectedClientAPI[Response](BlockingStreamClient[Response]):
 
     @override
     def send_packet(self, packet: Response, /, *, timeout: float | None = None) -> None:
-        with self.__send_lock:
+        with _utils.lock_with_timeout(self.__send_lock, timeout) as timeout:
             if self.__closing.is_set():
                 raise ClientClosedError("Closed client")
             self.__client.send_packet(packet, timeout=timeout)

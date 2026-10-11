@@ -180,10 +180,10 @@ class TestConnectedClientAPI(BaseTestIPv4v6SocketTransport):
         # Arrange
 
         # Act
-        client.send_packet(mocker.sentinel.packet, timeout=mocker.sentinel.timeout)
+        client.send_packet(mocker.sentinel.packet, timeout=123456789)
 
         # Assert
-        mock_connected_stream_client.send_packet.assert_called_once_with(mocker.sentinel.packet, timeout=mocker.sentinel.timeout)
+        mock_connected_stream_client.send_packet.assert_called_once_with(mocker.sentinel.packet, timeout=123456789)
         ## This client object should not check SO_ERROR
         mock_tcp_socket.getsockopt.assert_not_called()
 

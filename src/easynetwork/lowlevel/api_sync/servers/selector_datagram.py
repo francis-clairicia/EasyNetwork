@@ -968,7 +968,9 @@ class _ThreadSafeListener[Address](_transports.BaseTransport):
             return self.__listener.send_with_ancillary_to(data, ancillary_data, address, timeout)
 
     def register(self, selector: selectors.BaseSelector) -> None:
-        with self.__reader_condvar:
+        with self.__close_lock, self.__reader_condvar:
+            if self.__closing_event.is_set():  # pragma: no cover
+                return
             if not self.__reader_done.is_set():
                 raise AssertionError(f"{self.__class__.__name__}.register() called twice")
             key_data = _SelectorServerKeyData(

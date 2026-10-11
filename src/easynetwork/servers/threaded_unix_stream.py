@@ -374,7 +374,7 @@ else:
 
         @override
         def send_packet(self, packet: Response, /, *, timeout: float | None = None) -> None:
-            with self.__send_lock:
+            with _utils.lock_with_timeout(self.__send_lock, timeout) as timeout:
                 if self.__closing.is_set():
                     raise ClientClosedError("Closed client")
                 self.__client.send_packet(packet, timeout=timeout)
@@ -383,7 +383,7 @@ else:
         def send_packet_with_ancillary(self, packet: Response, ancillary_data: Any, *, timeout: float | None = None) -> None:
             if isinstance(ancillary_data, SocketAncillary):
                 ancillary_data = ancillary_data.as_raw()
-            with self.__send_lock:
+            with _utils.lock_with_timeout(self.__send_lock, timeout) as timeout:
                 if self.__closing.is_set():
                     raise ClientClosedError("Closed client")
                 self.__client.send_packet_with_ancillary(packet, ancillary_data, timeout=timeout)

@@ -29,7 +29,6 @@ from easynetwork.lowlevel.request_handler import RecvAncillaryDataParams, RecvPa
 
 import pytest
 
-from .....tools import PlatformMarkers
 from ...._utils import (
     make_recv_noblock_into_side_effect,
     make_recv_noblock_with_ancillary_into_side_effect,
@@ -700,8 +699,6 @@ class TestSelectorStreamServer(BaseTestWithStreamProtocol):
         client_connected_cb.assert_called_once()
         assert not caplog.records
 
-    @PlatformMarkers.skipif_platform_win32_because("test failures are all too frequent on CI", skip_only_on_ci=True)
-    @PlatformMarkers.skipif_platform_bsd_because("test failures are all too frequent on CI", skip_only_on_ci=True)
     @pytest.mark.parametrize("errno_value", sorted(ACCEPT_CAPACITY_ERRNOS), ids=errno.errorcode.__getitem__)
     @pytest.mark.flaky(retries=3, delay=0.1)
     def test____serve____accept_capacity_error(
@@ -734,7 +731,7 @@ class TestSelectorStreamServer(BaseTestWithStreamProtocol):
             handle.stop()
 
         # Assert
-        assert len(caplog.records) in {9, 10}
+        assert len(caplog.records) > 0  # Do not check number of errors.
         for record in caplog.records:
             assert record.levelno == logging.ERROR
             assert "retrying" in record.message

@@ -248,7 +248,7 @@ class _EventLikeBarrier:
         self._barrier: _threading.Barrier = barrier
 
     def set(self) -> None:
-        self._barrier.wait()
+        self._barrier.wait(timeout=3.0)
 
 
 class BaseThreadedNetworkServerImpl[LowLevelServer: _SupportsShutdownClose, Address](AbstractNetworkServer):
@@ -336,11 +336,12 @@ class BaseThreadedNetworkServerImpl[LowLevelServer: _SupportsShutdownClose, Addr
     @override
     @_utils.inherit_doc(AbstractNetworkServer)
     def server_close(self) -> None:
-        with self.__server_activation_lock, contextlib.ExitStack() as exit_stack:
-            self.__servers_factory_cb = None
-            exit_stack.callback(self.__servers.clear)
-            for server in self.__servers:
-                exit_stack.enter_context(contextlib.closing(server))
+        with contextlib.ExitStack() as exit_stack:
+            with self.__server_activation_lock:
+                self.__servers_factory_cb = None
+                for server in self.__servers:
+                    exit_stack.enter_context(contextlib.closing(server))
+                self.__servers.clear()
 
     @override
     @_utils.inherit_doc(AbstractNetworkServer)

@@ -452,13 +452,10 @@ if sys.platform != "win32":
             # Arrange
 
             # Act
-            client.send_packet(mocker.sentinel.packet, timeout=mocker.sentinel.timeout)
+            client.send_packet(mocker.sentinel.packet, timeout=123456789)
 
             # Assert
-            mock_connected_stream_client.send_packet.assert_called_once_with(
-                mocker.sentinel.packet,
-                timeout=mocker.sentinel.timeout,
-            )
+            mock_connected_stream_client.send_packet.assert_called_once_with(mocker.sentinel.packet, timeout=123456789)
             mock_connected_stream_client.send_packet_with_ancillary.assert_not_called()
             ## This client object should not check SO_ERROR
             mock_unix_stream_socket.getsockopt.assert_not_called()
@@ -495,13 +492,13 @@ if sys.platform != "win32":
             # Arrange
 
             # Act
-            client.send_packet_with_ancillary(mocker.sentinel.packet, mocker.sentinel.ancdata, timeout=mocker.sentinel.timeout)
+            client.send_packet_with_ancillary(mocker.sentinel.packet, mocker.sentinel.ancdata, timeout=123456789)
 
             # Assert
             mock_connected_stream_client.send_packet_with_ancillary.assert_called_once_with(
                 mocker.sentinel.packet,
                 mocker.sentinel.ancdata,
-                timeout=mocker.sentinel.timeout,
+                timeout=123456789,
             )
             mock_connected_stream_client.send_packet.assert_not_called()
             ## This client object should not check SO_ERROR

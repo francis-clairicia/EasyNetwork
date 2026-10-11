@@ -161,7 +161,7 @@ class ConnectedStreamClient[Response](_transports.BaseTransport):
         Raises:
             TimeoutError: the send operation does not end up after `timeout` seconds.
         """
-        with self.__send_lock:
+        with _utils.lock_with_timeout(self.__send_lock, timeout) as timeout:
             if timeout is None:
                 timeout = math.inf
             self.__transport.send_all_from_iterable(self.__producer.generate(packet), timeout)
@@ -188,7 +188,7 @@ class ConnectedStreamClient[Response](_transports.BaseTransport):
             OSError: Data too big to be sent at once.
             UnsupportedOperation: This transport does not have ancillary data support.
         """
-        with self.__send_lock:
+        with _utils.lock_with_timeout(self.__send_lock, timeout) as timeout:
             if timeout is None:
                 timeout = math.inf
             self.__transport.send_all_with_ancillary(self.__producer.generate(packet), ancillary_data, timeout)
@@ -882,6 +882,8 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
         listener = self.__thread_safe_listener
         shutdown_requested = self.__shutdown_request.is_set
 
+        listener.register(selector)
+
         if is_up_event is not None:
             is_up_event.set()
 
@@ -995,7 +997,7 @@ class _ThreadSafeListener(_transports.BaseTransport):
         detach_server: Callable[[], None],
     ) -> None:
         self.__listener: _selector_transports.SelectorListener[_selector_transports.SelectorStreamTransport] = listener
-        self.__close_lock = threading.Lock()
+        self.__close_lock = threading.RLock()
         self.__closing_event = threading.Event()
         self.__ready_for_reading = threading.Event()
         self.__ready_for_reading.set()
@@ -1029,6 +1031,21 @@ class _ThreadSafeListener(_transports.BaseTransport):
     def ready_at_deadline(self) -> float:
         return self.__ready_at_deadline if self.__ready_for_reading.is_set() else math.inf
 
+    def register(self, selector: selectors.BaseSelector) -> None:
+        with self.__close_lock, self.__reader_condvar:
+            if self.__closing_event.is_set():  # pragma: no cover
+                return
+            if not self.__reader_done.is_set():
+                raise AssertionError(f"{self.__class__.__name__}.register() called twice")
+            key_data = _SelectorServerKeyData(
+                is_closing=self.is_closing,
+                reader_condvar=self.__reader_condvar,
+                reader_done=self.__reader_done,
+                ready_for_reading=self.__ready_for_reading,
+            )
+            selector.register(self.__listener.read_fileno(), selectors.EVENT_READ, key_data)
+            self.__reader_done.clear()
+
     def try_accepting_new_connection[R](
         self,
         selector: selectors.BaseSelector,
@@ -1038,21 +1055,15 @@ class _ThreadSafeListener(_transports.BaseTransport):
         if not self.__ready_for_reading.is_set() or _get_current_time() < self.__ready_at_deadline:
             return None
 
-        with self.__reader_condvar:
-            if self.__reader_done.is_set():
-                key_data = _SelectorServerKeyData(
-                    is_closing=self.is_closing,
-                    reader_condvar=self.__reader_condvar,
-                    reader_done=self.__reader_done,
-                    ready_for_reading=self.__ready_for_reading,
-                )
-                selector.register(self.__listener.read_fileno(), selectors.EVENT_READ, key_data)
-                self.__reader_done.clear()
-
         with self.__close_lock:
+
+            with self.__reader_condvar:
+                if self.__reader_done.is_set():
+                    self.register(selector)
+
             self.__ready_for_reading.clear()
             try:
-                if self.__listener.is_closed():  # pragma: no cover
+                if self.__closing_event.is_set() or self.__listener.is_closed():  # pragma: no cover
                     # server.close() called in another thread.
                     # keep flag to False forever.
                     return None

@@ -19,12 +19,10 @@ class BaseTestClient(BaseTestSocket):
 @contextlib.contextmanager
 def dummy_lock_with_timeout(lock: Lock, timeout: float | None, *args: Any, **kwargs: Any) -> Generator[float | None]:
     with contextlib.ExitStack() as stack:
-        if timeout is None:
-            stack.enter_context(lock)
-        else:
+        if timeout is not None:
             validate_timeout_delay(timeout, positive_check=False)
-            if lock.acquire(blocking=False):
-                stack.push(lock)
-            else:
-                raise TimeoutError()
+        if lock.acquire(blocking=False):
+            stack.push(lock)
+        else:
+            raise TimeoutError()
         yield timeout
