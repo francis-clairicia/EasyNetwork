@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import random
+import sys
 from typing import TYPE_CHECKING
 
 import pytest
@@ -22,9 +23,10 @@ def _get_coverage_instance(config: pytest.Config) -> Coverage | None:
 def pytest_report_header(config: pytest.Config) -> list[str]:
     from .tools import RUNNING_ON_CI
 
-    headers: list[str] = []
-    addopts: str = os.environ.get("PYTEST_ADDOPTS", "")
-    if addopts:
+    headers: list[str] = [
+        f"GIL enabled: {getattr(sys, "_is_gil_enabled", lambda: True)()}",
+    ]
+    if addopts := os.environ.get("PYTEST_ADDOPTS", ""):
         headers.append(f"PYTEST_ADDOPTS: {addopts}")
     if config.pluginmanager.has_plugin("xdist") and config.getoption("numprocesses", 0):
         headers.append(f"distribution: {config.getoption('dist', 'no')}")
@@ -46,6 +48,7 @@ pytest_plugins = [
     f"{PYTEST_PLUGINS_PACKAGE}.extra_features",
     f"{PYTEST_PLUGINS_PACKAGE}.flaky_tests",
     f"{PYTEST_PLUGINS_PACKAGE}.runtest_call",
+    f"{PYTEST_PLUGINS_PACKAGE}.selector_factory",
     f"{PYTEST_PLUGINS_PACKAGE}.ssl_module",
     f"{PYTEST_PLUGINS_PACKAGE}.unix_sockets",
     f"{PYTEST_PLUGINS_PACKAGE}.xdist_for_vscode",
@@ -61,6 +64,7 @@ if TYPE_CHECKING:
         extra_features as extra_features,
         flaky_tests as flaky_tests,
         runtest_call as runtest_call,
+        selector_factory as selector_factory,
         ssl_module as ssl_module,
         unix_sockets as unix_sockets,
         xdist_for_vscode as xdist_for_vscode,
