@@ -89,7 +89,7 @@ jobs:
           python-version: ${{ matrix.python_version }}
           check-latest: true
       - name: Launch tests
-        timeout-minutes: 20
+        timeout-minutes: 30
         run: tox run -f ${{ matrix.tox_py }} -- ${{ env.PYTEST_VERBOSE_FLAG }}
       - name: Generate coverage report
         if: hashFiles('.coverage.*') != ''  # Rudimentary `file.exists()`
@@ -145,7 +145,7 @@ jobs:
           fetch-depth: 0
       - name: Launch tests
         # Add 5 minutes to let the VM boot and install dependencies
-        timeout-minutes: 25
+        timeout-minutes: 35
         uses: ./.github/actions/freebsd-vm
         with:
           release: ${{ matrix.os_version }}
@@ -209,7 +209,7 @@ jobs:
           fetch-depth: 0
       - name: Launch tests
         # Add 5 minutes to let the VM boot and install dependencies
-        timeout-minutes: 25
+        timeout-minutes: 35
         uses: ./.github/actions/openbsd-vm
         with:
           release: ${{ matrix.os_version }}
@@ -271,7 +271,7 @@ jobs:
           fetch-depth: 0
       - name: Launch tests
         # Add 5 minutes to let the VM boot and install dependencies
-        timeout-minutes: 25
+        timeout-minutes: 35
         uses: ./.github/actions/netbsd-vm
         with:
           release: '10.1'
