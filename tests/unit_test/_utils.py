@@ -3,11 +3,14 @@ from __future__ import annotations
 import contextlib
 import functools
 import inspect
+import math
+import sys
 import threading
 from collections.abc import Awaitable, Callable, Coroutine, Generator, Iterable, Sequence
+from concurrent.futures import Future
 from socket import AF_INET, AF_INET6, IPPROTO_TCP, IPPROTO_UDP, SOCK_DGRAM, SOCK_STREAM
 from types import TracebackType
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 
 import pytest
 
@@ -19,6 +22,8 @@ if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
 _DEFAULT_FAMILIES: Sequence[int] = (AF_INET6, AF_INET)
+
+SHOULD_REUSE_ADDRESS_ON_CURRENT_PLATFORM: Final[bool] = sys.platform != "win32"
 
 
 class _LockMixin:
@@ -82,6 +87,9 @@ class DummyRLock(DummyLock):
 
     def _get_requester_id(self) -> object:
         return threading.get_ident()
+
+    def _is_owned(self) -> bool:
+        return self._owner == self._get_requester_id()
 
 
 class AsyncDummyLock(_LockMixin):
@@ -241,10 +249,33 @@ def make_recv_with_ancillary_into_side_effect(
 def make_recv_noblock_into_side_effect(to_write: bytes | list[bytes]) -> Callable[[bytearray | memoryview], int]:
     write_in_buffer = __make_write_in_buffer_side_effect(to_write)
 
-    def recv_into_side_effect(buffer: bytearray | memoryview) -> int:
+    def recv_noblock_into_side_effect(buffer: bytearray | memoryview) -> int:
         return write_in_buffer(buffer)
 
-    return recv_into_side_effect
+    return recv_noblock_into_side_effect
+
+
+def make_recv_noblock_with_ancillary_into_side_effect(
+    to_write: tuple[bytes, Any] | list[tuple[bytes, Any]],
+) -> Callable[[bytearray | memoryview, int], tuple[int, Any]]:
+    match to_write:
+        case list():
+            write_in_buffer = __make_write_in_buffer_side_effect([b[0] for b in to_write])
+            ancdata_iter = iter([b[1] for b in to_write])
+
+            def recv_noblock_into_side_effect(buffer: bytearray | memoryview, ancbufsize: int) -> tuple[int, Any]:
+                return write_in_buffer(buffer), next(ancdata_iter)
+
+        case (bytes_to_write, ancdata):
+            write_in_buffer = __make_write_in_buffer_side_effect(bytes_to_write)
+
+            def recv_noblock_into_side_effect(buffer: bytearray | memoryview, ancbufsize: int) -> tuple[int, Any]:
+                return write_in_buffer(buffer), ancdata
+
+        case _:
+            pytest.fail("Invalid setup")
+
+    return recv_noblock_into_side_effect
 
 
 def make_async_recv_into_side_effect(to_write: bytes | list[bytes]) -> Callable[[bytearray | memoryview], Awaitable[int]]:
@@ -282,7 +313,7 @@ def make_async_recv_with_ancillary_into_side_effect(
 def stub_decorator(mocker: MockerFixture, name: str | None = None) -> Callable[[Callable[..., Any]], MagicMock]:
 
     def decorator(f: Callable[..., Any]) -> MagicMock:
-        stub = mocker.stub(name)
+        stub = mocker.stub(name or f.__name__)
         stub.side_effect = f
         return stub
 
@@ -297,11 +328,25 @@ def async_stub_decorator(
     def decorator(f: Callable[..., Coroutine[Any, Any, Any]]) -> AsyncMock:
         if not inspect.iscoroutinefunction(f):
             raise TypeError("decorated function must be a coroutine function")
-        stub = mocker.async_stub(name)
+        stub = mocker.async_stub(name or f.__name__)
         stub.side_effect = f
         return stub
 
     return decorator
+
+
+def return_values_and_then_side_effect(mocker: MockerFixture, values: Iterable[Any], side_effect: Any) -> Callable[..., Any]:
+    side_effect = mocker.MagicMock(side_effect=side_effect)
+    values = iter(values)
+
+    def return_values_and_then_side_effect(*args: Any, **kwargs: Any) -> Any:
+        try:
+            return next(values)
+        except StopIteration:
+            pass
+        return side_effect(*args, **kwargs)
+
+    return return_values_and_then_side_effect
 
 
 @contextlib.contextmanager
@@ -320,3 +365,51 @@ def temporary_mock_side_effect(mock: MagicMock, side_effect: Any) -> Generator[N
     with restore_mock_side_effect(mock):
         mock.side_effect = side_effect
         yield
+
+
+def _call_submitted_function(f: Future[Any], func: Callable[..., Any], /, *args: Any, **kwargs: Any) -> None:
+    if not f.set_running_or_notify_cancel():
+        return
+    try:
+        result = func(*args, **kwargs)
+    except BaseException as exc:
+        f.set_exception(exc)
+    else:
+        f.set_result(result)
+    finally:
+        del f, func, args, kwargs
+
+
+def executor_submit_default_side_effect(func: Callable[..., Any], /, *args: Any, **kwargs: Any) -> Future[Any]:
+    f: Future[Any] = Future()
+    _call_submitted_function(f, func, *args, **kwargs)
+    return f
+
+
+def make_executor_submit_side_effect(
+    request: pytest.FixtureRequest,
+    *,
+    interval: float,
+    cancelled_after_delay: float | None = None,
+) -> Callable[..., Future[Any]]:
+
+    def _on_future_done(f: Future[Any], *, _timer: threading.Timer) -> None:
+        if f.cancelled():
+            _timer.cancel()
+
+    def submit_side_effect(func: Callable[..., Any], /, *args: Any, **kwargs: Any) -> Future[Any]:
+        f: Future[Any] = Future()
+        if interval != math.inf:
+            timer = threading.Timer(interval, _call_submitted_function, args=(f, func, *args), kwargs=kwargs)
+            timer.daemon = True
+            request.addfinalizer(timer.cancel)
+            timer.start()
+            f.add_done_callback(functools.partial(_on_future_done, _timer=timer))
+        if cancelled_after_delay is not None:
+            cancel_timer = threading.Timer(cancelled_after_delay, f.cancel)
+            cancel_timer.daemon = True
+            request.addfinalizer(cancel_timer.cancel)
+            cancel_timer.start()
+        return f
+
+    return submit_side_effect

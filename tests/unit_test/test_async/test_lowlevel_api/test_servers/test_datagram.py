@@ -189,8 +189,6 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
 
         async def serve_side_effect(handler: Callable[[bytes, Any], Coroutine[Any, Any, None]], task_group: Any) -> NoReturn:
             packet = b"packet"
-            if after_first_yield:
-                task_group.start_soon(handler, packet, mocker.sentinel.address)
             await handler(packet, mocker.sentinel.address)
             raise asyncio.CancelledError("serve_side_effect")
 
@@ -200,8 +198,6 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
             task_group: Any,
         ) -> NoReturn:
             packet = b"packet"
-            if after_first_yield:
-                task_group.start_soon(handler, packet, mocker.sentinel.ancdata, mocker.sentinel.address)
             await handler(packet, mocker.sentinel.ancdata, mocker.sentinel.address)
             raise asyncio.CancelledError("serve_side_effect")
 
@@ -213,10 +209,11 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
             ancillary_data_received = mocker.stub("ancillary_data_received")
             if after_first_yield:
                 if recv_with_ancillary:
-                    yield RecvParams(timeout=1.0, recv_with_ancillary=RecvAncillaryDataParams(ancillary_data_received))
+                    packet = yield RecvParams(timeout=1.0, recv_with_ancillary=RecvAncillaryDataParams(ancillary_data_received))
                     ancillary_data_received.assert_called_once_with(mocker.sentinel.ancdata)
                 else:
-                    yield RecvParams(timeout=1.0)
+                    packet = yield RecvParams(timeout=1.0)
+                assert packet is mocker.sentinel.packet
             with pytest.raises(TypeError, match=r"^Expected a 'RecvParams' object, got 1234.0 instead\.$"):
                 yield 1234.0
 
@@ -228,6 +225,7 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
                 else:
                     await server.serve(datagram_received_cb, tg)
 
+        datagram_received_cb.assert_called_once()
         assert not caplog.records
         if recv_with_ancillary and not after_first_yield:
             ancillary_data_unused.assert_called_once_with(mocker.sentinel.ancdata, mocker.sentinel.address)
@@ -254,9 +252,6 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
             task_group: TaskGroup,
         ) -> NoReturn:
             packet = b"packet"
-
-            if invalid_timeout_after_first_yield:
-                task_group.start_soon(handler, packet, mocker.sentinel.address)
             await handler(packet, mocker.sentinel.address)
             raise asyncio.CancelledError("serve_side_effect")
 
@@ -266,9 +261,6 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
             task_group: TaskGroup,
         ) -> NoReturn:
             packet = b"packet"
-
-            if invalid_timeout_after_first_yield:
-                task_group.start_soon(handler, packet, mocker.sentinel.ancdata, mocker.sentinel.address)
             await handler(packet, mocker.sentinel.ancdata, mocker.sentinel.address)
             raise asyncio.CancelledError("serve_side_effect")
 
@@ -306,6 +298,7 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
                 else:
                     await server.serve(datagram_received_cb, tg)
 
+        datagram_received_cb.assert_called_once()
         assert not caplog.records
 
     @pytest.mark.parametrize("recv_with_ancillary", [False, True], ids=lambda p: f"recv_with_ancillary__{p}")
@@ -358,6 +351,7 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
                 else:
                     await server.serve(datagram_received_cb, tg)
 
+        datagram_received_cb.assert_called_once()
         assert len(caplog.records) == 1 and caplog.records[0].exc_info is not None
         assert isinstance(caplog.records[0].exc_info[1], DatagramProtocolParseError)
         assert caplog.records[0].getMessage().startswith("Unhandled exception:")
@@ -404,6 +398,7 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
                 else:
                     await server.serve(datagram_received_cb, tg)
 
+        datagram_received_cb.assert_called_once()
         assert len(caplog.records) == 1 and caplog.records[0].exc_info is not None
         assert isinstance(caplog.records[0].exc_info[1], ValueError)
         assert caplog.records[0].getMessage() == "Unhandled exception: something bad happened"
@@ -426,9 +421,6 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
             task_group: TaskGroup,
         ) -> NoReturn:
             packet = b"packet"
-
-            if after_first_yield:
-                task_group.start_soon(handler, packet, mocker.sentinel.address)
             await handler(packet, mocker.sentinel.address)
             raise asyncio.CancelledError("serve_side_effect")
 
@@ -450,6 +442,7 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
             with pytest.raises(asyncio.CancelledError, match=r"^serve_side_effect$"):
                 await server.serve(datagram_received_cb, tg)
 
+        datagram_received_cb.assert_called_once()
         assert not caplog.records
 
     @pytest.mark.parametrize("after_first_yield", [False, True], ids=lambda p: f"after_first_yield__{p}")
@@ -498,11 +491,17 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
             with pytest.raises(asyncio.CancelledError, match=r"^serve_side_effect$"):
                 await server.serve_with_ancillary(datagram_received_cb, 1024, None, tg)
 
+        datagram_received_cb.assert_called_once()
         assert not caplog.records
 
-    @pytest.mark.parametrize("ancillary_data_unused", [False, True], ids=lambda p: f"ancillary_data_unused__{p}", indirect=True)
     @pytest.mark.parametrize(
-        "ancillary_data_unused_callback_crash", [False, True], ids=lambda p: f"ancillary_data_unused_callback_crash__{p}"
+        ["ancillary_data_unused", "ancillary_data_unused_callback_crash"],
+        [
+            pytest.param(False, False, id="ancillary_data_unused__False-ancillary_data_unused_callback_crash__False"),
+            pytest.param(True, False, id="ancillary_data_unused__True-ancillary_data_unused_callback_crash__False"),
+            pytest.param(True, True, id="ancillary_data_unused__True-ancillary_data_unused_callback_crash__True"),
+        ],
+        indirect=["ancillary_data_unused"],
     )
     @pytest.mark.parametrize("after_first_yield", [None, False, True], ids=lambda p: f"after_first_yield__{p}")
     async def test____serve____recv_with_ancillary____ancillary_data_unused(
@@ -531,7 +530,7 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
         ) -> NoReturn:
             packet = b"packet"
 
-            if after_first_yield and not ancillary_data_unused_callback_crash:
+            if after_first_yield:
                 task_group.start_soon(handler, packet, mocker.sentinel.ancdata_2, mocker.sentinel.address)
             await handler(packet, mocker.sentinel.ancdata_1, mocker.sentinel.address)
             raise asyncio.CancelledError("serve_side_effect")
@@ -552,26 +551,26 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
             with pytest.raises(asyncio.CancelledError, match=r"^serve_side_effect$"):
                 await server.serve_with_ancillary(datagram_received_cb, 1024, ancillary_data_unused, tg)
 
+        datagram_received_cb.assert_called_once()
         if ancillary_data_unused_callback_crash:
             assert ancillary_data_unused is not None
-            assert len(caplog.records) == 1 and caplog.records[0].exc_info is not None
-            assert isinstance(caplog.records[0].exc_info[1], RuntimeError)
-            assert caplog.records[0].getMessage() == "Unhandled exception: ancillary_data_unused() crashed"
-            assert caplog.records[0].exc_info[1].__cause__ is ancillary_data_unused.side_effect
-            ancillary_data_unused.assert_called_once_with(mocker.sentinel.ancdata_1, mocker.sentinel.address)
+            assert len(caplog.records) == (2 if after_first_yield else 1)
+            for r in caplog.records:
+                assert r.exc_info is not None
+                assert isinstance(r.exc_info[1], RuntimeError)
+                assert r.getMessage() == "Unhandled exception: ancillary_data_unused() crashed"
+                assert r.exc_info[1].__cause__ is ancillary_data_unused.side_effect
         else:
             assert not caplog.records
-            if ancillary_data_unused is not None:
-                match after_first_yield:
-                    case None | False:
-                        assert ancillary_data_unused.mock_calls == [
-                            mocker.call(mocker.sentinel.ancdata_1, mocker.sentinel.address)
-                        ]
-                    case _:
-                        assert ancillary_data_unused.mock_calls == [
-                            mocker.call(mocker.sentinel.ancdata_1, mocker.sentinel.address),
-                            mocker.call(mocker.sentinel.ancdata_2, mocker.sentinel.address),
-                        ]
+        if ancillary_data_unused is not None:
+            match after_first_yield:
+                case None | False:
+                    assert ancillary_data_unused.mock_calls == [mocker.call(mocker.sentinel.ancdata_1, mocker.sentinel.address)]
+                case _:
+                    assert ancillary_data_unused.mock_calls == [
+                        mocker.call(mocker.sentinel.ancdata_1, mocker.sentinel.address),
+                        mocker.call(mocker.sentinel.ancdata_2, mocker.sentinel.address),
+                    ]
 
     @pytest.mark.parametrize("after_first_yield", [None, False, True], ids=lambda p: f"after_first_yield__{p}")
     @pytest.mark.parametrize("try_to_handle_ancillary_data", [False, True], ids=lambda p: f"try_to_handle_ancillary_data__{p}")
@@ -624,6 +623,7 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
             with pytest.raises(asyncio.CancelledError, match=r"^serve_side_effect$"):
                 await server.serve_with_ancillary(datagram_received_cb, 1024, ancillary_data_unused, tg)
 
+        datagram_received_cb.assert_called_once()
         assert not caplog.records
         ancillary_data_unused.assert_not_called()
 
@@ -651,6 +651,7 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
         with pytest.raises(ValueError, match=r"^ancillary_bufsize must be a strictly positive integer$"):
             await server.serve_with_ancillary(datagram_received_cb, ancillary_bufsize=ancillary_bufsize)
 
+        datagram_received_cb.assert_not_called()
         assert not caplog.records
         mock_datagram_listener.serve_with_ancillary.assert_not_called()
 

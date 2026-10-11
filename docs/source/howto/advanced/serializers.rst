@@ -179,7 +179,7 @@ And now ``serialize()`` and ``deserialize()`` use them instead:
 The Purpose Of ``incremental_serialize()``
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-:meth:`~.AbstractIncrementalPacketSerializer.incremental_serialize` must be a :term:`generator` function
+:meth:`~.AbstractIncrementalPacketSerializer.incremental_serialize` must be a :term:`generator function`
 (or at least return a :term:`generator iterator`) that yields all the parts of the serialized packet.
 It must also add any useful metadata to help :meth:`~.AbstractIncrementalPacketSerializer.incremental_deserialize` find the end of the packet.
 
@@ -207,7 +207,7 @@ Most of the time, you will have a single :keyword:`yield`. The goal is: each :ke
 The Purpose Of ``incremental_deserialize()``
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-:meth:`~.AbstractIncrementalPacketSerializer.incremental_deserialize` must be a :term:`generator` function
+:meth:`~.AbstractIncrementalPacketSerializer.incremental_deserialize` must be a :term:`generator function`
 (or at least return a :term:`generator iterator`) that yields :data:`None` until all the data parts of the packet have been retrieved and parsed.
 
 This generator must return a pair of ``(packet, remainder)`` where ``packet`` is the deserialized packet and ``remainder`` is any

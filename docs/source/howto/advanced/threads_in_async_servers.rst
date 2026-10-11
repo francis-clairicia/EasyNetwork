@@ -1,6 +1,6 @@
-**********************************************
-How-to — Multithreading Integration In Servers
-**********************************************
+***********************************************************
+How-to — Multithreading Integration In Asynchronous Servers
+***********************************************************
 
 .. include:: ../../_include/sync-async-variants.rst
 

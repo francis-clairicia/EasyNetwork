@@ -545,16 +545,15 @@ class TestListenerSocketAdapter(BaseTestSocketTransport, BaseTestAsyncSocket):
     ) -> None:
         # Arrange
         caplog.set_level(logging.WARNING)
-        exc = OSError()
-        mock_stream_listener_socket.accept.side_effect = exc
+        exc_side_effect = OSError()
+        mock_stream_listener_socket.accept.side_effect = exc_side_effect
 
         # Act
-        with pytest.raises(OSError) as exc_info:
+        with pytest.raises(OSError, check=lambda exc: exc is exc_side_effect):
             await listener._serve_raw(handler)
 
         # Assert
         assert len(caplog.records) == 0
-        assert exc_info.value is exc
 
     async def test____accept____busy(
         self,

@@ -39,7 +39,6 @@ else:
     import inspect
     import logging
     import os
-    import pathlib
     import weakref
     from collections.abc import Callable, Coroutine, Mapping, Sequence
     from types import TracebackType
@@ -162,39 +161,25 @@ else:
             self.__protocol: DatagramProtocol[Response, Request] = protocol
             self.__request_handler: AsyncDatagramRequestHandler[Request, Response] = request_handler
             self.__service_available = _utils.Flag()
-            self.__unix_socket_to_delete: dict[pathlib.Path, int] = {}
+            self.__unix_socket_to_delete = _base.UnixSocketPathCleaner()
             self.__unnamed_addresses_behavior = unnamed_addresses_behavior
             self.__receive_ancillary_data = receive_ancillary_data
             self.__ancillary_bufsize = ancillary_bufsize
 
         async def server_close(self) -> None:
-            unix_socket_to_delete = self.__unix_socket_to_delete
-            self.__unix_socket_to_delete = {}
             try:
                 await super().server_close()
             except self.backend().get_cancelled_exc_class():
-                if unix_socket_to_delete:
+                if self.__unix_socket_to_delete:
                     await self.backend().ignore_cancellation(
-                        self.backend().run_in_thread(self.__cleanup_unix_socket, unix_socket_to_delete, self.logger)
+                        self.backend().run_in_thread(self.__unix_socket_to_delete.clean_all, self.logger)
                     )
                 raise
             else:
-                if unix_socket_to_delete:
+                if self.__unix_socket_to_delete:
                     await self.backend().ignore_cancellation(
-                        self.backend().run_in_thread(self.__cleanup_unix_socket, unix_socket_to_delete, self.logger)
+                        self.backend().run_in_thread(self.__unix_socket_to_delete.clean_all, self.logger)
                     )
-
-        @staticmethod
-        def __cleanup_unix_socket(unix_socket_to_delete: dict[pathlib.Path, int], logger: logging.Logger) -> None:
-            while unix_socket_to_delete:
-                path, prev_ino = unix_socket_to_delete.popitem()
-                try:
-                    if os.stat(path).st_ino == prev_ino:
-                        os.unlink(path)
-                except FileNotFoundError:
-                    pass
-                except OSError as exc:
-                    logger.error("Unable to clean up listening Unix socket %r: %s", os.fspath(path), exc)
 
         async def __activate_listeners(
             self,
@@ -203,7 +188,7 @@ else:
 
             local_name = UnixSocketAddress.from_raw(listener.extra(UNIXSocketAttribute.sockname))
             if (path := local_name.as_pathname()) is not None:
-                self.__unix_socket_to_delete[path] = os.stat(path).st_ino
+                self.__unix_socket_to_delete.register(path)
 
             server = _datagram_server.AsyncDatagramServer(_UnixDatagramListener(listener), self.__protocol)
             return [server]

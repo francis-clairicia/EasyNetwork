@@ -1,6 +1,7 @@
 use std::{
     io,
-    sync::{mpsc::channel, Arc, Barrier},
+    num::NonZero,
+    sync::{Arc, Barrier, mpsc::channel},
     time::{Duration, Instant},
 };
 
@@ -12,8 +13,8 @@ use clap::{Parser, ValueEnum};
 
 #[derive(Debug, Parser, Clone)]
 struct Args {
-    #[arg(long = "msize", default_value_t = 1024, help = "message size in bytes")]
-    message_size: usize,
+    #[arg(long = "msize", default_value_t = NonZero::new(1024).unwrap(), help = "message size in bytes")]
+    message_size: NonZero<usize>,
 
     #[arg(long, default_value_t = 30, help = "duration of test in seconds")]
     duration: u64,
@@ -21,8 +22,8 @@ struct Args {
     #[arg(long, default_value_t = 2, help = "socket timeout in seconds")]
     timeout: u32,
 
-    #[arg(long = "concurrency", default_value_t = 3, help = "number of workers")]
-    workers: usize,
+    #[arg(long = "concurrency", default_value_t = NonZero::new(3).unwrap(), help = "number of workers")]
+    workers: NonZero<usize>,
 
     #[arg(long, default_value_t = String::from("127.0.0.1:25000"), help = "address:port of echoserver")]
     addr: String,
@@ -55,21 +56,21 @@ fn client_from_args(args: &Args, worker_id: u64) -> io::Result<DatagramClient> {
 }
 
 fn start_workers(args: &Args) -> io::Result<std::sync::mpsc::Receiver<RequestReport>> {
-    let barrier = Arc::new(Barrier::new(args.workers));
+    let barrier = Arc::new(Barrier::new(args.workers.get()));
     let (sender, receiver) = channel::<RequestReport>();
 
-    for worker_id in 0..args.workers {
+    for worker_id in 0..args.workers.get() {
         let barrier = barrier.clone();
         let sender = sender.clone();
         let mut client = client_from_args(args, worker_id as u64)?;
 
-        let request = "x".repeat(args.message_size);
+        let request = "x".repeat(args.message_size.get());
         let duration = Duration::from_secs(args.duration);
 
         std::thread::spawn(move || {
             client.send(b"ping").unwrap();
-            if *client.recv_owned(128).unwrap() != *b"ping" {
-                panic!("socket read")
+            if *client.recv_owned(128).unwrap().to_ascii_lowercase() != *b"ping" {
+                panic!("socket read");
             }
 
             let mut recv_buffer: Vec<u8> = vec![0; request.len()];
@@ -77,12 +78,21 @@ fn start_workers(args: &Args) -> io::Result<std::sync::mpsc::Receiver<RequestRep
             barrier.wait();
 
             let mut current_test_duration = Duration::ZERO;
+            let mut try_count: usize = 0;
 
             while current_test_duration < duration {
                 let request_start_time = Instant::now();
                 client.send(request.as_bytes()).unwrap();
-                client.recv(&mut recv_buffer).unwrap();
+                let result = client.recv(&mut recv_buffer);
                 let request_duration = request_start_time.elapsed();
+                if let Err(e) = &result
+                    && e.kind() == io::ErrorKind::WouldBlock
+                {
+                    try_count += 1;
+                    eprintln!("Worker {worker_id}: timed out {try_count} time(s)");
+                } else {
+                    result.unwrap();
+                }
                 current_test_duration += request_duration;
                 sender.send(RequestReport::new(request_duration, worker_id)).unwrap();
             }
@@ -94,7 +104,7 @@ fn start_workers(args: &Args) -> io::Result<std::sync::mpsc::Receiver<RequestRep
 
 fn main() -> io::Result<()> {
     let args = Args::parse();
-    const MESSAGES_PER_REQUEST: usize = 1;
+    const MESSAGES_PER_REQUEST: NonZero<usize> = NonZero::new(1).unwrap();
 
     let mut report_builder = TestReport::new(Duration::from_secs(args.duration), MESSAGES_PER_REQUEST, args.message_size);
 

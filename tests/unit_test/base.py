@@ -114,7 +114,7 @@ class BaseTestSocketTransport(BaseTestSocket):
     @pytest.fixture(params=["AF_INET", "AF_UNIX"])
     @staticmethod
     def socket_family_name(request: pytest.FixtureRequest) -> str:
-        assert request.param in ("AF_INET", "AF_UNIX")
+        assert request.param in INET_FAMILIES + UNIX_FAMILIES
         return request.param
 
     @pytest.fixture
@@ -126,7 +126,7 @@ class BaseTestSocketTransport(BaseTestSocket):
     @staticmethod
     def local_address(socket_family_name: str) -> tuple[str, int] | bytes:
         match socket_family_name:
-            case "AF_INET":
+            case "AF_INET" | "AF_INET6":
                 return ("local_address", 11111)
             case "AF_UNIX":
                 return b"local_address"
@@ -137,12 +137,27 @@ class BaseTestSocketTransport(BaseTestSocket):
     @staticmethod
     def remote_address(socket_family_name: str) -> tuple[str, int] | bytes:
         match socket_family_name:
-            case "AF_INET":
+            case "AF_INET" | "AF_INET6":
                 return ("remote_address", 12345)
             case "AF_UNIX":
                 return b"remote_address"
             case _:
                 pytest.fail(f"Invalid param: {socket_family_name!r}")
+
+
+class BaseTestIPv4OnlySocketTransport(BaseTestSocketTransport):
+    @pytest.fixture
+    @staticmethod
+    def socket_family_name() -> str:
+        return "AF_INET"
+
+
+class BaseTestIPv4v6SocketTransport(BaseTestSocketTransport):
+    @pytest.fixture(params=INET_FAMILIES)
+    @staticmethod
+    def socket_family_name(request: pytest.FixtureRequest) -> str:
+        assert request.param in INET_FAMILIES
+        return request.param
 
 
 class BaseTestUnixSocketTransport(BaseTestSocketTransport):

@@ -1,0 +1,528 @@
+from __future__ import annotations
+
+import pathlib
+import sys
+import threading
+from typing import TYPE_CHECKING, Any, Literal
+
+import pytest
+
+from .....tools import PlatformMarkers
+from ....base import BaseTestUnixSocketTransport
+from ...mock_tools import make_transport_mock
+
+if TYPE_CHECKING:
+    from unittest.mock import MagicMock
+
+    from pytest_mock import MockerFixture
+
+
+if sys.platform != "win32":
+    from easynetwork.exceptions import ClientClosedError
+    from easynetwork.lowlevel._lock import RWLock
+    from easynetwork.lowlevel.socket import SocketAncillary, SocketProxy, UnixSocketAddress, UNIXSocketAttribute
+    from easynetwork.servers.handlers import UNIXClientAttribute
+    from easynetwork.servers.threaded_unix_datagram import ThreadedUnixDatagramServer, _ClientAPI
+
+    class TestThreadedUnixDatagramServer:
+
+        @pytest.mark.parametrize(
+            "valid_path",
+            [
+                "/path/to/sock",
+                b"/path/to/sock",
+                pathlib.Path("/path/to/sock"),
+                UnixSocketAddress.from_pathname("/path/to/sock"),
+            ],
+            ids=repr,
+        )
+        def test____dunder_init____path____valid_value(
+            self,
+            valid_path: str | bytes | pathlib.Path | UnixSocketAddress,
+            mock_datagram_protocol: MagicMock,
+            mock_datagram_request_handler: MagicMock,
+        ) -> None:
+            # Arrange
+
+            # Act & Assert
+            _ = ThreadedUnixDatagramServer(
+                valid_path,
+                mock_datagram_protocol,
+                mock_datagram_request_handler,
+            )
+
+        if sys.platform == "linux":
+
+            @pytest.mark.parametrize(
+                "valid_path",
+                [
+                    b"\0abstract",
+                    "\0abstract",
+                    UnixSocketAddress.from_abstract_name(b"abstract"),
+                ],
+                ids=repr,
+            )
+            def test____dunder_init____path____valid_value____abstract_sockets(
+                self,
+                valid_path: str | bytes,
+                mock_datagram_protocol: MagicMock,
+                mock_datagram_request_handler: MagicMock,
+            ) -> None:
+                # Arrange
+
+                # Act & Assert
+                _ = ThreadedUnixDatagramServer(valid_path, mock_datagram_protocol, mock_datagram_request_handler)
+
+        @pytest.mark.parametrize(
+            "valid_path",
+            # Indicates the kernel to give an arbitrary abstract Unix address.
+            [b"", "", UnixSocketAddress()],
+            ids=repr,
+        )
+        def test____dunder_init____path____automatic_socket_bind(
+            self,
+            valid_path: str | bytes | UnixSocketAddress,
+            mock_datagram_protocol: MagicMock,
+            mock_datagram_request_handler: MagicMock,
+        ) -> None:
+            # Arrange
+            from easynetwork.lowlevel._unix_utils import platform_supports_automatic_socket_bind
+
+            # Act & Assert
+            if platform_supports_automatic_socket_bind():
+                _ = ThreadedUnixDatagramServer(valid_path, mock_datagram_protocol, mock_datagram_request_handler)
+            else:
+                with pytest.raises(
+                    ValueError,
+                    match=r"^path parameter is required on this platform and cannot be an empty string",
+                ):
+                    _ = ThreadedUnixDatagramServer(valid_path, mock_datagram_protocol, mock_datagram_request_handler)
+
+        def test____dunder_init____path____invalid_value____unknown_type(
+            self,
+            mock_datagram_protocol: MagicMock,
+            mock_datagram_request_handler: MagicMock,
+            mocker: MockerFixture,
+        ) -> None:
+            # Arrange
+            invalid_path = mocker.NonCallableMagicMock(spec=object)
+
+            # Act & Assert
+            with pytest.raises(TypeError, match=r"^expected str, bytes or os.PathLike object"):
+                _ = ThreadedUnixDatagramServer(invalid_path, mock_datagram_protocol, mock_datagram_request_handler)
+
+        @pytest.mark.parametrize(
+            "invalid_path",
+            [
+                pytest.param("/path/with/\0/bytes", id="byte in middle"),
+                pytest.param(
+                    "\0/path/with/nul/bytes", id="byte at beginning", marks=[PlatformMarkers.abstract_sockets_unsupported]
+                ),
+            ],
+        )
+        def test____dunder_init____path____invalid_value____null_bytes_in_path(
+            self,
+            invalid_path: str,
+            mock_datagram_protocol: MagicMock,
+            mock_datagram_request_handler: MagicMock,
+        ) -> None:
+            # Arrange
+
+            # Act & Assert
+            with pytest.raises(ValueError, match=r"^paths must not contain interior null bytes$"):
+                _ = ThreadedUnixDatagramServer(invalid_path, mock_datagram_protocol, mock_datagram_request_handler)
+
+        def test____dunder_init____protocol____invalid_value(
+            self,
+            mock_stream_protocol: MagicMock,
+            mock_datagram_request_handler: MagicMock,
+        ) -> None:
+            # Arrange
+
+            # Act & Assert
+            with pytest.raises(TypeError, match=r"^Expected a DatagramProtocol object, got .*$"):
+                _ = ThreadedUnixDatagramServer("/path/to/sock", mock_stream_protocol, mock_datagram_request_handler)
+
+        def test____dunder_init____request_handler____invalid_value(
+            self,
+            mock_datagram_protocol: MagicMock,
+            mock_stream_request_handler: MagicMock,
+        ) -> None:
+            # Arrange
+
+            # Act & Assert
+            with pytest.raises(TypeError, match=r"^Expected a BlockingDatagramRequestHandler object, got .*$"):
+                _ = ThreadedUnixDatagramServer("/path/to/sock", mock_datagram_protocol, mock_stream_request_handler)
+
+        def test____dunder_init____unnamed_address_behavior____invalid_value(
+            self,
+            mock_datagram_protocol: MagicMock,
+            mock_datagram_request_handler: MagicMock,
+        ) -> None:
+            # Arrange
+
+            # Act & Assert
+            with pytest.raises(ValueError, match=r"^Invalid unnamed_addresses_behavior value, got 'unknown'$"):
+                _ = ThreadedUnixDatagramServer(
+                    "/path/to/sock",
+                    mock_datagram_protocol,
+                    mock_datagram_request_handler,
+                    unnamed_addresses_behavior="unknown",  # type: ignore[arg-type]
+                )
+
+        def test____dunder_init____ancillary_bufsize____receive_ancillary_data_is_false(
+            self,
+            mock_datagram_protocol: MagicMock,
+            mock_datagram_request_handler: MagicMock,
+        ) -> None:
+            # Arrange
+
+            # Act & Assert
+            with pytest.raises(
+                ValueError,
+                match=r"^ancillary_bufsize is only meaningful with receive_ancillary_data set to True$",
+            ):
+                _ = ThreadedUnixDatagramServer(
+                    "/path/to/sock",
+                    mock_datagram_protocol,
+                    mock_datagram_request_handler,
+                    receive_ancillary_data=False,
+                    ancillary_bufsize=1234,
+                )
+
+        @pytest.mark.parametrize("invalid_bufsize", [0, -42, 3.14])
+        def test____dunder_init____ancillary_bufsize____invalid_value(
+            self,
+            invalid_bufsize: Any,
+            mock_datagram_protocol: MagicMock,
+            mock_datagram_request_handler: MagicMock,
+        ) -> None:
+            # Arrange
+
+            # Act & Assert
+            with pytest.raises(
+                ValueError,
+                match=r"^ancillary_bufsize must be a strictly positive integer$",
+            ):
+                _ = ThreadedUnixDatagramServer(
+                    "/path/to/sock",
+                    mock_datagram_protocol,
+                    mock_datagram_request_handler,
+                    receive_ancillary_data=True,
+                    ancillary_bufsize=invalid_bufsize,
+                )
+
+        @pytest.mark.parametrize("valid_bufsize", [1, 8192, 2**16])
+        def test____dunder_init____ancillary_bufsize____valid_value(
+            self,
+            valid_bufsize: Any,
+            mock_datagram_protocol: MagicMock,
+            mock_datagram_request_handler: MagicMock,
+        ) -> None:
+            # Arrange
+
+            # Act & Assert
+            _ = ThreadedUnixDatagramServer(
+                "/path/to/sock",
+                mock_datagram_protocol,
+                mock_datagram_request_handler,
+                receive_ancillary_data=True,
+                ancillary_bufsize=valid_bufsize,
+            )
+
+    class TestClientAPI(BaseTestUnixSocketTransport):
+        @pytest.fixture
+        @staticmethod
+        def local_address() -> str:
+            return "/path/to/server.sock"
+
+        @pytest.fixture(
+            params=[
+                pytest.param("NAMED"),
+                pytest.param("ABSTRACT", marks=PlatformMarkers.supports_abstract_sockets),
+                pytest.param("UNNAMED"),
+            ]
+        )
+        @staticmethod
+        def remote_address(request: pytest.FixtureRequest) -> str | bytes:
+            match request.param:
+                case "NAMED":
+                    return "/path/to/client.sock"
+                case "ABSTRACT":
+                    return b"\0remote_address"
+                case "UNNAMED":
+                    return ""
+                case _:
+                    pytest.fail(f"Invalid remote_address parameter: {request.param}")
+
+        @pytest.fixture
+        @staticmethod
+        def service_available() -> threading.Event:
+            return threading.Event()
+
+        @pytest.fixture
+        @staticmethod
+        def service_close_lock() -> RWLock:
+            return RWLock()
+
+        @pytest.fixture
+        @classmethod
+        def mock_datagram_server(
+            cls,
+            local_address: str,
+            mock_unix_datagram_socket: MagicMock,
+            mocker: MockerFixture,
+        ) -> MagicMock:
+            from easynetwork.lowlevel.api_sync.servers.selector_datagram import SelectorDatagramServer
+            from easynetwork.lowlevel.socket import _get_socket_extra
+
+            cls.set_local_address_to_socket_mock(mock_unix_datagram_socket, mock_unix_datagram_socket.family, local_address)
+            cls.configure_socket_mock_to_raise_ENOTCONN(mock_unix_datagram_socket)
+            mock_datagram_server = make_transport_mock(mocker=mocker, spec=SelectorDatagramServer)
+            mock_datagram_server.extra_attributes = {
+                **_get_socket_extra(mock_unix_datagram_socket, wrap_in_proxy=False),
+                # Used to ensure that AsyncDatagramServer specific attributes are *NOT* merged.
+                mocker.sentinel.custom_attribute: lambda: mocker.sentinel.custom_value,
+            }
+            return mock_datagram_server
+
+        @pytest.fixture
+        @staticmethod
+        def client(
+            remote_address: str | bytes,
+            service_available: threading.Event,
+            service_close_lock: RWLock,
+            mock_unix_datagram_socket: MagicMock,
+            mock_datagram_server: MagicMock,
+        ) -> _ClientAPI[Any]:
+            from easynetwork.lowlevel.api_sync.servers.selector_datagram import DatagramClientContext
+
+            service_available.set()
+            client: _ClientAPI[Any] = _ClientAPI(
+                DatagramClientContext(
+                    address=UnixSocketAddress.from_raw(remote_address),
+                    server=mock_datagram_server,
+                ),
+                service_available,
+                service_close_lock,
+            )
+            mock_unix_datagram_socket.reset_mock()
+            return client
+
+        def test____dunder_init____initialize_inner_client(
+            self,
+            local_address: str,
+            remote_address: str | bytes,
+            service_available: threading.Event,
+            service_close_lock: RWLock,
+            mock_unix_datagram_socket: MagicMock,
+            mock_datagram_server: MagicMock,
+            mocker: MockerFixture,
+        ) -> None:
+            # Arrange
+            from socket import AF_UNIX
+
+            from easynetwork.lowlevel.api_sync.servers.selector_datagram import DatagramClientContext
+
+            service_available.set()
+
+            # Act
+            client: _ClientAPI[Any] = _ClientAPI(
+                DatagramClientContext(
+                    address=UnixSocketAddress.from_raw(remote_address),
+                    server=mock_datagram_server,
+                ),
+                service_available,
+                service_close_lock,
+            )
+
+            # Assert
+            assert mock_unix_datagram_socket.setsockopt.mock_calls == []
+            assert isinstance(client.extra(UNIXClientAttribute.socket), SocketProxy)
+            assert client.extra(UNIXClientAttribute.local_name).as_raw() == local_address
+            assert client.extra(UNIXClientAttribute.peer_name).as_raw() == remote_address
+            assert client.extra(UNIXSocketAttribute.family) == AF_UNIX
+            assert client.extra(mocker.sentinel.custom_attribute, mocker.sentinel.lookup_failed) is mocker.sentinel.lookup_failed
+
+        def test____uniqueness____using_hash_and_eq(
+            self,
+            remote_address: str | bytes,
+            service_available: threading.Event,
+            service_close_lock: RWLock,
+            mock_datagram_server: MagicMock,
+        ) -> None:
+            # Arrange
+            from easynetwork.lowlevel.api_sync.servers.selector_datagram import DatagramClientContext
+
+            service_available.set()
+            client_1: _ClientAPI[Any] = _ClientAPI(
+                DatagramClientContext(
+                    address=UnixSocketAddress.from_raw(remote_address),
+                    server=mock_datagram_server,
+                ),
+                service_available,
+                service_close_lock,
+            )
+            client_2: _ClientAPI[Any] = _ClientAPI(
+                DatagramClientContext(
+                    address=UnixSocketAddress.from_raw(remote_address),
+                    server=mock_datagram_server,
+                ),
+                service_available,
+                service_close_lock,
+            )
+            client_3: _ClientAPI[Any] = _ClientAPI(
+                DatagramClientContext(
+                    address=UnixSocketAddress.from_raw("/path/to/other.sock"),
+                    server=mock_datagram_server,
+                ),
+                service_available,
+                service_close_lock,
+            )
+
+            # Act & Assert
+            assert hash(client_1) == hash(client_2)
+            assert hash(client_1) != hash(client_3)
+            assert hash(client_2) != hash(client_3)
+            assert client_1 == client_2
+            assert client_1 != client_3
+            assert client_2 != client_3
+            assert client_1 != object()
+            assert client_2 != object()
+            assert client_3 != object()
+
+        def test____send_packet____send_bytes_to_socket(
+            self,
+            remote_address: str | bytes,
+            client: _ClientAPI[Any],
+            mock_datagram_server: MagicMock,
+            mocker: MockerFixture,
+        ) -> None:
+            # Arrange
+
+            # Act
+            client.send_packet(mocker.sentinel.packet)
+
+            # Assert
+            mock_datagram_server.send_packet_to.assert_called_once_with(
+                mocker.sentinel.packet,
+                UnixSocketAddress.from_raw(remote_address),
+                timeout=None,
+            )
+            mock_datagram_server.send_packet_with_ancillary_to.assert_not_called()
+
+        def test____send_packet____send_bytes_to_socket____with_timeout(
+            self,
+            remote_address: str | bytes,
+            client: _ClientAPI[Any],
+            mock_datagram_server: MagicMock,
+            mocker: MockerFixture,
+        ) -> None:
+            # Arrange
+
+            # Act
+            client.send_packet(mocker.sentinel.packet, timeout=mocker.sentinel.timeout)
+
+            # Assert
+            mock_datagram_server.send_packet_to.assert_called_once_with(
+                mocker.sentinel.packet,
+                UnixSocketAddress.from_raw(remote_address),
+                timeout=mocker.sentinel.timeout,
+            )
+            mock_datagram_server.send_packet_with_ancillary_to.assert_not_called()
+
+        def test____send_packet_with_ancillary____send_bytes_to_socket(
+            self,
+            remote_address: str | bytes,
+            client: _ClientAPI[Any],
+            mock_datagram_server: MagicMock,
+            mocker: MockerFixture,
+        ) -> None:
+            # Arrange
+
+            # Act
+            client.send_packet_with_ancillary(mocker.sentinel.packet, mocker.sentinel.ancdata)
+
+            # Assert
+            mock_datagram_server.send_packet_with_ancillary_to.assert_called_once_with(
+                mocker.sentinel.packet,
+                mocker.sentinel.ancdata,
+                UnixSocketAddress.from_raw(remote_address),
+                timeout=None,
+            )
+            mock_datagram_server.send_packet_to.assert_not_called()
+
+        def test____send_packet_with_ancillary____send_bytes_to_socket____with_timeout(
+            self,
+            remote_address: str | bytes,
+            client: _ClientAPI[Any],
+            mock_datagram_server: MagicMock,
+            mocker: MockerFixture,
+        ) -> None:
+            # Arrange
+
+            # Act
+            client.send_packet_with_ancillary(mocker.sentinel.packet, mocker.sentinel.ancdata, timeout=mocker.sentinel.timeout)
+
+            # Assert
+            mock_datagram_server.send_packet_with_ancillary_to.assert_called_once_with(
+                mocker.sentinel.packet,
+                mocker.sentinel.ancdata,
+                UnixSocketAddress.from_raw(remote_address),
+                timeout=mocker.sentinel.timeout,
+            )
+            mock_datagram_server.send_packet_to.assert_not_called()
+
+        def test____send_packet_with_ancillary____socket_ancillary(
+            self,
+            remote_address: str | bytes,
+            client: _ClientAPI[Any],
+            mock_datagram_server: MagicMock,
+            mocker: MockerFixture,
+        ) -> None:
+            # Arrange
+            mock_socket_ancillary = mocker.NonCallableMagicMock(spec=SocketAncillary)
+            mock_socket_ancillary.as_raw.return_value = mocker.sentinel.ancdata
+
+            # Act
+            client.send_packet_with_ancillary(mocker.sentinel.packet, mock_socket_ancillary)
+
+            # Assert
+            mock_datagram_server.send_packet_with_ancillary_to.assert_called_once_with(
+                mocker.sentinel.packet,
+                mocker.sentinel.ancdata,
+                UnixSocketAddress.from_raw(remote_address),
+                timeout=mocker.ANY,
+            )
+            mock_datagram_server.send_packet_to.assert_not_called()
+            assert mock_socket_ancillary.mock_calls == [mocker.call.as_raw()]
+
+        @pytest.mark.parametrize("method", ["server_close", "service_shutdown"])
+        @pytest.mark.parametrize("with_ancillary_data", [False, True], ids=lambda p: f"with_ancillary_data__{p}")
+        def test____send_packet____closed_client(
+            self,
+            method: Literal["server_close", "service_shutdown"],
+            with_ancillary_data: bool,
+            client: _ClientAPI[Any],
+            mock_datagram_server: MagicMock,
+            service_available: threading.Event,
+            mocker: MockerFixture,
+        ) -> None:
+            # Arrange
+            match method:
+                case "server_close":
+                    mock_datagram_server.close()
+                case "service_shutdown":
+                    service_available.clear()
+            assert client.is_closing()
+
+            # Act
+            with pytest.raises(ClientClosedError):
+                if with_ancillary_data:
+                    client.send_packet_with_ancillary(mocker.sentinel.packet, mocker.sentinel.ancdata)
+                else:
+                    client.send_packet(mocker.sentinel.packet)
+
+            # Assert
+            mock_datagram_server.send_packet_to.assert_not_called()
+            mock_datagram_server.send_packet_with_ancillary_to.assert_not_called()

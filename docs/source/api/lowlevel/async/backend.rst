@@ -269,6 +269,6 @@ Useful tools
    :members:
 
    .. py:type:: BuiltinAsyncBackendLiteral
-      :canonical: = Literal["asyncio", "trio"]
+      :canonical: Literal["asyncio", "trio"]
 
       Supported asynchronous framework names.

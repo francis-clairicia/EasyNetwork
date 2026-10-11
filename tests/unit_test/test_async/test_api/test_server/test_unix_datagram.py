@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import pytest
 
 from .....tools import PlatformMarkers
-from ....base import BaseTestSocket
+from ....base import BaseTestUnixSocketTransport
 from ...mock_tools import make_transport_mock
 
 if TYPE_CHECKING:
@@ -17,8 +17,6 @@ if TYPE_CHECKING:
 
 
 if sys.platform != "win32":
-    from socket import AF_UNIX
-
     from easynetwork.exceptions import ClientClosedError
     from easynetwork.lowlevel._utils import Flag
     from easynetwork.lowlevel.socket import SocketAncillary, SocketProxy, UnixSocketAddress, UNIXSocketAttribute
@@ -277,7 +275,7 @@ if sys.platform != "win32":
             assert server.backend() is mock_backend
 
     @pytest.mark.asyncio
-    class TestClientAPI(BaseTestSocket):
+    class TestClientAPI(BaseTestUnixSocketTransport):
         @pytest.fixture
         @staticmethod
         def local_address() -> str:
@@ -319,7 +317,7 @@ if sys.platform != "win32":
             from easynetwork.lowlevel.api_async.servers.datagram import AsyncDatagramServer
             from easynetwork.lowlevel.socket import _get_socket_extra
 
-            cls.set_local_address_to_socket_mock(mock_unix_datagram_socket, AF_UNIX, local_address)
+            cls.set_local_address_to_socket_mock(mock_unix_datagram_socket, mock_unix_datagram_socket.family, local_address)
             cls.configure_socket_mock_to_raise_ENOTCONN(mock_unix_datagram_socket)
             mock_datagram_server = make_transport_mock(mocker=mocker, spec=AsyncDatagramServer, backend=mock_backend)
             mock_datagram_server.extra_attributes = {
@@ -361,6 +359,8 @@ if sys.platform != "win32":
             mocker: MockerFixture,
         ) -> None:
             # Arrange
+            from socket import AF_UNIX
+
             from easynetwork.lowlevel.api_async.servers.datagram import DatagramClientContext
 
             service_available.set()

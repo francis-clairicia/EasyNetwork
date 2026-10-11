@@ -6,18 +6,15 @@ import contextvars
 import logging
 import traceback
 from collections.abc import AsyncGenerator
-from socket import SO_PASSCRED, SOL_SOCKET
 from typing import ClassVar
 
 import trio
 
 from easynetwork.exceptions import DatagramProtocolParseError
-from easynetwork.lowlevel.request_handler import RecvAncillaryDataParams, RecvParams
-from easynetwork.lowlevel.socket import SCMCredentials, SCMRights, SocketAncillary, UnixSocketAddress
-from easynetwork.protocol import DatagramProtocol
-from easynetwork.serializers import JSONSerializer
-from easynetwork.servers.async_unix_datagram import AsyncUnixDatagramServer
-from easynetwork.servers.handlers import AsyncDatagramClient, AsyncDatagramRequestHandler, UNIXClientAttribute
+from easynetwork.lowlevel.request_handler import RecvParams
+from easynetwork.lowlevel.socket import SocketAddress
+from easynetwork.servers import AsyncUDPNetworkServer
+from easynetwork.servers.handlers import AsyncDatagramClient, AsyncDatagramRequestHandler, INETClientAttribute
 
 
 class Request: ...
@@ -197,7 +194,7 @@ class TimeoutYieldedRequestHandler(AsyncDatagramRequestHandler[Request, Response
     ) -> AsyncGenerator[RecvParams | None, Request]:
         # It is *never* useful to have a timeout for the 1st datagram
         # because the datagram is already in the queue.
-        # The yielded value is simply ignored.
+        # The yielded timeout is simply ignored.
         request: Request = yield None
 
         ...
@@ -213,70 +210,16 @@ class TimeoutYieldedRequestHandler(AsyncDatagramRequestHandler[Request, Response
             await client.send_packet(Response())
 
 
-class SCMSendRequestHandler(AsyncDatagramRequestHandler[Request, Response]):
-    async def handle(
-        self,
-        client: AsyncDatagramClient[Response],
-    ) -> AsyncGenerator[None, Request]:
-        request: Request = yield
-
-        ancillary = SocketAncillary()
-        ancillary.add_fds([4])
-        await client.send_packet_with_ancillary(Response(), ancillary)
-
-
-class SCMRecvRequestHandler(AsyncDatagramRequestHandler[Request, Response]):
-    async def handle(
-        self,
-        client: AsyncDatagramClient[Response],
-    ) -> AsyncGenerator[RecvParams | None, Request]:
-        ancillary = SocketAncillary()
-        request: Request = yield RecvParams(recv_with_ancillary=RecvAncillaryDataParams(ancillary.update_from_raw))
-
-        for message in ancillary.messages():
-            match message:
-                case SCMRights(fds):
-                    for fd in fds:
-                        print(f"Received file descriptor: {fd}")
-                case SCMCredentials(credentials):
-                    for ucred in credentials:
-                        print(f"Received unix credential: {ucred}")
-
-    @staticmethod
-    async def receive_ancillary_data() -> None:
-        # [start]
-        server = AsyncUnixDatagramServer(
-            "/var/run/app.sock",
-            DatagramProtocol(JSONSerializer()),
-            SCMRecvRequestHandler(),
-            receive_ancillary_data=True,
-        )
-
-    @staticmethod
-    async def example_custom_ancillary_bufsize() -> None:
-        # [start]
-        from socket import CMSG_LEN
-
-        max_fds = 128
-        server = AsyncUnixDatagramServer(
-            "/var/run/app.sock",
-            DatagramProtocol(JSONSerializer()),
-            SCMRecvRequestHandler(),
-            receive_ancillary_data=True,
-            ancillary_bufsize=CMSG_LEN(max_fds * 4),
-        )
-
-
 class ClientExtraAttributesRequestHandler(AsyncDatagramRequestHandler[Request, Response]):
     async def handle(
         self,
         client: AsyncDatagramClient[Response],
     ) -> AsyncGenerator[None, Request]:
-        client_address = client.extra(UNIXClientAttribute.peer_name)
+        client_address = client.extra(INETClientAttribute.remote_address)
 
         request: Request = yield
 
-        print(f"{client_address} sent {request}")
+        print(f"{client_address.host} sent {request}")
 
         await client.send_packet(Response())
 
@@ -285,7 +228,7 @@ class ServiceInitializationHookRequestHandlerAsyncIO(AsyncDatagramRequestHandler
     async def service_init(
         self,
         exit_stack: contextlib.AsyncExitStack,
-        server: AsyncUnixDatagramServer[Request, Response],
+        server: AsyncUDPNetworkServer[Request, Response],
     ) -> None:
         exit_stack.callback(self._service_quit)
 
@@ -308,7 +251,7 @@ class ServiceInitializationHookRequestHandlerTrio(AsyncDatagramRequestHandler[Re
     async def service_init(
         self,
         exit_stack: contextlib.AsyncExitStack,
-        server: AsyncUnixDatagramServer[Request, Response],
+        server: AsyncUDPNetworkServer[Request, Response],
     ) -> None:
         exit_stack.callback(self._service_quit)
 
@@ -331,7 +274,7 @@ class ServiceInitializationHookRequestHandlerWithServerBackend(AsyncDatagramRequ
     async def service_init(
         self,
         exit_stack: contextlib.AsyncExitStack,
-        server: AsyncUnixDatagramServer[Request, Response],
+        server: AsyncUDPNetworkServer[Request, Response],
     ) -> None:
         exit_stack.callback(self._service_quit)
 
@@ -351,19 +294,8 @@ class ServiceInitializationHookRequestHandlerWithServerBackend(AsyncDatagramRequ
         print("Service stopped")
 
 
-class LowLevelSocketOperationsRequestHandler(AsyncDatagramRequestHandler[Request, Response]):
-    async def service_init(
-        self,
-        exit_stack: contextlib.AsyncExitStack,
-        server: AsyncUnixDatagramServer[Request, Response],
-    ) -> None:
-        for sock in server.get_sockets():
-            # Enable SO_PASSCRED in order to use SCMCredentials
-            sock.setsockopt(SOL_SOCKET, SO_PASSCRED, 1)
-
-
 class ClientContextRequestHandler(AsyncDatagramRequestHandler[Request, Response]):
-    client_addr_var: ClassVar[contextvars.ContextVar[UnixSocketAddress]]
+    client_addr_var: ClassVar[contextvars.ContextVar[SocketAddress]]
     client_addr_var = contextvars.ContextVar("client_addr")
 
     @classmethod
@@ -381,7 +313,7 @@ class ClientContextRequestHandler(AsyncDatagramRequestHandler[Request, Response]
         self,
         client: AsyncDatagramClient[Response],
     ) -> AsyncGenerator[None, Request]:
-        address = client.extra(UNIXClientAttribute.peer_name)
+        address = client.extra(INETClientAttribute.remote_address)
         self.client_addr_var.set(address)
 
         # In any code that we call within "handle()" is now possible to get

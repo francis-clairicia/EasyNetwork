@@ -7,7 +7,7 @@ from easynetwork.serializers import JSONSerializer
 
 def main() -> None:
     protocol = StreamProtocol(JSONSerializer())
-    address = "/var/run/app/app.sock"
+    address = "/var/run/app.sock"
 
     try:
         client = UnixStreamClient(address, protocol, connect_timeout=30)

@@ -1139,7 +1139,7 @@ class TestAsyncTCPNetworkServerWithAsyncIO(_BaseTestAsyncTCPNetworkServer, BaseT
     @pytest_asyncio.fixture
     @staticmethod
     async def server_not_activated(
-        request_handler: MyStreamRequestHandler,
+        request_handler: AsyncStreamRequestHandler[str, str],
         localhost_ip: str,
         stream_protocol: AnyStreamProtocolType[str, str],
         server_backlog: int,
@@ -1164,7 +1164,7 @@ class TestAsyncTCPNetworkServerWithAsyncIO(_BaseTestAsyncTCPNetworkServer, BaseT
     @pytest_asyncio.fixture
     @staticmethod
     async def server(
-        request_handler: MyStreamRequestHandler,
+        request_handler: AsyncStreamRequestHandler[str, str],
         localhost_ip: str,
         stream_protocol: AnyStreamProtocolType[str, str],
         server_backlog: int,
@@ -1231,7 +1231,7 @@ class TestAsyncTCPNetworkServerWithTrio(_BaseTestAsyncTCPNetworkServer, BaseTest
     @trio_fixture
     @staticmethod
     async def server_not_activated(
-        request_handler: MyStreamRequestHandler,
+        request_handler: AsyncStreamRequestHandler[str, str],
         localhost_ip: str,
         stream_protocol: AnyStreamProtocolType[str, str],
         server_backlog: int,
@@ -1256,7 +1256,7 @@ class TestAsyncTCPNetworkServerWithTrio(_BaseTestAsyncTCPNetworkServer, BaseTest
     @trio_fixture
     @staticmethod
     async def server(
-        request_handler: MyStreamRequestHandler,
+        request_handler: AsyncStreamRequestHandler[str, str],
         localhost_ip: str,
         stream_protocol: AnyStreamProtocolType[str, str],
         server_backlog: int,

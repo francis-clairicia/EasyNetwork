@@ -9,7 +9,7 @@ import pytest
 
 from .....tools import PlatformMarkers
 from ...._utils import AsyncDummyLock
-from ....base import BaseTestSocket
+from ....base import BaseTestUnixSocketTransport
 from ...mock_tools import make_transport_mock
 
 if TYPE_CHECKING:
@@ -19,8 +19,6 @@ if TYPE_CHECKING:
 
 
 if sys.platform != "win32":
-    from socket import AF_UNIX
-
     from easynetwork.exceptions import ClientClosedError, TypedAttributeLookupError
     from easynetwork.lowlevel.socket import SocketAncillary, SocketProxy, UnixCredentials, UnixSocketAddress, UNIXSocketAttribute
     from easynetwork.servers.async_unix_stream import AsyncUnixStreamServer, _ConnectedClientAPI
@@ -251,7 +249,7 @@ if sys.platform != "win32":
             assert server.backend() is mock_backend
 
     @pytest.mark.asyncio
-    class TestConnectedClientAPI(BaseTestSocket):
+    class TestConnectedClientAPI(BaseTestUnixSocketTransport):
         @pytest.fixture
         @staticmethod
         def local_address() -> str:
@@ -291,8 +289,8 @@ if sys.platform != "win32":
             from easynetwork.lowlevel.api_async.servers.stream import ConnectedStreamClient
             from easynetwork.lowlevel.socket import _get_socket_extra
 
-            cls.set_local_address_to_socket_mock(mock_unix_stream_socket, AF_UNIX, local_address)
-            cls.set_remote_address_to_socket_mock(mock_unix_stream_socket, AF_UNIX, remote_address)
+            cls.set_local_address_to_socket_mock(mock_unix_stream_socket, mock_unix_stream_socket.family, local_address)
+            cls.set_remote_address_to_socket_mock(mock_unix_stream_socket, mock_unix_stream_socket.family, remote_address)
             mock_get_peer_credentials.side_effect = lambda sock: copy.copy(fake_ucred)
 
             mock_connected_stream_client = make_transport_mock(mocker=mocker, spec=ConnectedStreamClient, backend=mock_backend)
@@ -325,6 +323,7 @@ if sys.platform != "win32":
             mocker: MockerFixture,
         ) -> None:
             # Arrange
+            from socket import AF_UNIX
 
             # Act
             client: _ConnectedClientAPI[Any] = _ConnectedClientAPI(
@@ -409,7 +408,11 @@ if sys.platform != "win32":
 
             ## The call to bind(2) or the autobind feature happened.
             ## Should have cached the result
-            self.set_remote_address_to_socket_mock(mock_unix_stream_socket, AF_UNIX, b"/path/to/new_address")
+            self.set_remote_address_to_socket_mock(
+                mock_unix_stream_socket,
+                mock_unix_stream_socket.family,
+                b"/path/to/new_address",
+            )
             mock_unix_stream_socket.reset_mock()
             assert client.extra(UNIXClientAttribute.peer_name).as_pathname() == pathlib.Path("/path/to/new_address")
             for _ in range(3):

@@ -10,4 +10,5 @@ Low-level synchronous API
    :maxdepth: 2
 
    endpoints
+   servers
    transports

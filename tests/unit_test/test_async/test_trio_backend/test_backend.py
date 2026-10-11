@@ -13,6 +13,7 @@ from easynetwork.lowlevel.api_async.backend.abc import ILock
 import pytest
 
 from ....fixtures.socket import AF_UNIX_or_skip
+from ..._utils import SHOULD_REUSE_ADDRESS_ON_CURRENT_PLATFORM
 
 if TYPE_CHECKING:
     from unittest.mock import AsyncMock, MagicMock
@@ -551,7 +552,7 @@ class TestTrioBackend:
         )
         mock_open_listeners.assert_called_once_with(
             addrinfo_list,
-            reuse_address=mocker.ANY,  # Determined according to OS
+            reuse_address=SHOULD_REUSE_ADDRESS_ON_CURRENT_PLATFORM,
             reuse_port=mocker.sentinel.reuse_port,
             on_bind_success=mocker.ANY,
         )
@@ -643,7 +644,7 @@ class TestTrioBackend:
             )
         mock_open_listeners.assert_called_once_with(
             addrinfo_list,
-            reuse_address=mocker.ANY,  # Determined according to OS
+            reuse_address=SHOULD_REUSE_ADDRESS_ON_CURRENT_PLATFORM,
             reuse_port=mocker.sentinel.reuse_port,
             on_bind_success=mocker.ANY,
         )

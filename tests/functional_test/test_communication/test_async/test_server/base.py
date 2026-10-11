@@ -27,8 +27,9 @@ class BaseTestAsyncServer:
 
     @pytest.fixture(autouse=True)
     @staticmethod
-    def logger_crash_enable(logger_crash_enable: Event) -> Event:
+    def logger_crash_enable(logger_crash_enable: Event, caplog: pytest.LogCaptureFixture) -> Event:
         logger_crash_enable.set()
+        caplog.set_level(logging.WARNING, "easynetwork")
         return logger_crash_enable
 
     @pytest.fixture  # DO NOT SET autouse=True
@@ -126,6 +127,14 @@ class BaseTestAsyncServer:
             await run_server.wait()
 
         await backend.gather(*[server.shutdown() for _ in range(10)])
+
+    async def test____server_activate____server_closed(
+        self,
+        server_not_activated: AbstractAsyncNetworkServer,
+    ) -> None:
+        await server_not_activated.server_close()
+        with pytest.raises(ServerClosedError):
+            await server_not_activated.server_activate()
 
     async def test____server_activate____server_close_during_activation(
         self,

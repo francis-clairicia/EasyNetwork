@@ -61,33 +61,67 @@ Now that we have established the :term:`communication protocol`, we can create o
 Create Your Request Handler
 ---------------------------
 
-First, you must create a request handler class by subclassing the :class:`.AsyncStreamRequestHandler` class and overriding
-its :meth:`~.AsyncStreamRequestHandler.handle` method; this method will process incoming requests.
+.. tabs::
 
-.. literalinclude:: ../_include/examples/tutorials/echo_client_server_tcp/echo_request_handler.py
-   :linenos:
-   :caption: echo_request_handler.py
+   .. group-tab:: Synchronous
 
-.. note::
+      First, you must create a request handler class by subclassing the :class:`.BlockingStreamRequestHandler` class and overriding
+      its :meth:`~.BlockingStreamRequestHandler.handle` method; this method will process incoming requests.
 
-   Pay attention to :meth:`~.AsyncStreamRequestHandler.handle`, it is an :std:term:`asynchronous generator` function.
-   All requests sent by the client are literally injected into the generator via the :keyword:`yield` statement.
+      .. literalinclude:: ../_include/examples/tutorials/echo_client_server_tcp/echo_request_handler_blocking.py
+         :linenos:
+         :caption: echo_request_handler_blocking.py
 
-   .. literalinclude:: ../_include/examples/tutorials/echo_client_server_tcp/echo_request_handler.py
-      :start-at: async def handle
-      :end-at: return
-      :lineno-match:
-      :emphasize-lines: 6
-      :dedent:
+      .. note::
 
-   You can :keyword:`yield` several times if you want to wait for a new packet from the client in the same context.
+         Pay attention to :meth:`~.BlockingStreamRequestHandler.handle`, it is an :std:term:`generator function`.
+         All requests sent by the client are literally injected into the generator via the :keyword:`yield` statement.
 
-.. warning::
+         .. literalinclude:: ../_include/examples/tutorials/echo_client_server_tcp/echo_request_handler_blocking.py
+            :start-at: def handle
+            :end-at: return
+            :lineno-match:
+            :emphasize-lines: 6
+            :dedent:
 
-   Leaving the generator will *not* close the connection, a new generator will be created afterwards.
-   You may, however, explicitly close the connection if you want to::
+         You can :keyword:`yield` several times if you want to wait for a new packet from the client in the same context.
 
-      await client.aclose()
+      .. warning::
+
+         Leaving the generator will *not* close the connection, a new generator will be created afterwards.
+         You may, however, explicitly close the connection if you want to::
+
+            client.close()
+
+   .. group-tab:: Asynchronous
+
+      First, you must create a request handler class by subclassing the :class:`.AsyncStreamRequestHandler` class and overriding
+      its :meth:`~.AsyncStreamRequestHandler.handle` method; this method will process incoming requests.
+
+      .. literalinclude:: ../_include/examples/tutorials/echo_client_server_tcp/echo_request_handler_async.py
+         :linenos:
+         :caption: echo_request_handler_async.py
+
+      .. note::
+
+         Pay attention to :meth:`~.AsyncStreamRequestHandler.handle`, it is an :std:term:`asynchronous generator function`.
+         All requests sent by the client are literally injected into the generator via the :keyword:`yield` statement.
+
+         .. literalinclude:: ../_include/examples/tutorials/echo_client_server_tcp/echo_request_handler_async.py
+            :start-at: async def handle
+            :end-at: return
+            :lineno-match:
+            :emphasize-lines: 6
+            :dedent:
+
+         You can :keyword:`yield` several times if you want to wait for a new packet from the client in the same context.
+
+      .. warning::
+
+         Leaving the generator will *not* close the connection, a new generator will be created afterwards.
+         You may, however, explicitly close the connection if you want to::
+
+            await client.aclose()
 
 
 Start The Server
@@ -100,21 +134,25 @@ and the request handler instance.
 
    .. group-tab:: Synchronous
 
-      .. literalinclude:: ../_include/examples/tutorials/echo_client_server_tcp/server.py
+      .. literalinclude:: ../_include/examples/tutorials/echo_client_server_tcp/threaded_server.py
          :linenos:
          :caption: server.py
 
-   .. group-tab:: Asynchronous (asyncio)
+   .. group-tab:: Asynchronous
 
-      .. literalinclude:: ../_include/examples/tutorials/echo_client_server_tcp/async_server_asyncio.py
-         :linenos:
-         :caption: server.py
+      .. tabs::
 
-   .. group-tab:: Asynchronous (trio)
+         .. group-tab:: Using ``asyncio``
 
-      .. literalinclude:: ../_include/examples/tutorials/echo_client_server_tcp/async_server_trio.py
-         :linenos:
-         :caption: server.py
+            .. literalinclude:: ../_include/examples/tutorials/echo_client_server_tcp/async_server_asyncio.py
+               :linenos:
+               :caption: server.py
+
+         .. group-tab:: Using ``trio``
+
+            .. literalinclude:: ../_include/examples/tutorials/echo_client_server_tcp/async_server_trio.py
+               :linenos:
+               :caption: server.py
 
 .. note::
 
@@ -135,17 +173,21 @@ This is the client side:
          :linenos:
          :caption: client.py
 
-   .. group-tab:: Asynchronous (asyncio)
+   .. group-tab:: Asynchronous
 
-      .. literalinclude:: ../_include/examples/tutorials/echo_client_server_tcp/async_client_asyncio.py
-         :linenos:
-         :caption: client.py
+      .. tabs::
 
-   .. group-tab:: Asynchronous (trio)
+         .. group-tab:: Using ``asyncio``
 
-      .. literalinclude:: ../_include/examples/tutorials/echo_client_server_tcp/async_client_trio.py
-         :linenos:
-         :caption: client.py
+            .. literalinclude:: ../_include/examples/tutorials/echo_client_server_tcp/async_client_asyncio.py
+               :linenos:
+               :caption: client.py
+
+         .. group-tab:: Using ``trio``
+
+            .. literalinclude:: ../_include/examples/tutorials/echo_client_server_tcp/async_client_trio.py
+               :linenos:
+               :caption: client.py
 
 
 Outputs

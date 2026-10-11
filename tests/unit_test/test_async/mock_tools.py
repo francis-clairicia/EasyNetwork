@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import weakref
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.lowlevel._utils import weak_method_proxy
@@ -19,7 +20,12 @@ def make_transport_mock(*, mocker: MockerFixture, spec: Any, backend: AsyncBacke
     mock_transport = mocker.NonCallableMagicMock(spec=spec)
     mock_transport.is_closing.return_value = False
 
+    mock_transport_ref = weakref.ref(mock_transport)
+
     def close_side_effect() -> None:
+        mock_transport = mock_transport_ref()
+        if mock_transport is None:
+            return
         mock_transport.is_closing.return_value = True
 
     mock_transport.aclose.side_effect = close_side_effect

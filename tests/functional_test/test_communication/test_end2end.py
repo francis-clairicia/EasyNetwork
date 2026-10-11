@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 from collections.abc import AsyncGenerator, Generator
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from easynetwork.clients.async_tcp import AsyncTCPNetworkClient
 from easynetwork.clients.async_udp import AsyncUDPNetworkClient
@@ -16,24 +16,45 @@ from easynetwork.servers.handlers import (
     AsyncDatagramRequestHandler,
     AsyncStreamClient,
     AsyncStreamRequestHandler,
+    BlockingDatagramClient,
+    BlockingDatagramRequestHandler,
+    BlockingStreamClient,
+    BlockingStreamRequestHandler,
 )
 from easynetwork.servers.standalone_tcp import StandaloneTCPNetworkServer
 from easynetwork.servers.standalone_udp import StandaloneUDPNetworkServer
+from easynetwork.servers.threaded_tcp import ThreadedTCPNetworkServer
+from easynetwork.servers.threaded_udp import ThreadedUDPNetworkServer
 from easynetwork.servers.threads_helper import NetworkServerThread
 
 import pytest
 
 
-class EchoStreamRequestHandler(AsyncStreamRequestHandler[str, str]):
+class AsyncEchoStreamRequestHandler(AsyncStreamRequestHandler[str, str]):
     async def handle(self, client: AsyncStreamClient[str]) -> AsyncGenerator[None, str]:
         request = yield
         await client.send_packet(request)
 
 
-class EchoDatagramRequestHandler(AsyncDatagramRequestHandler[str, str]):
+class AsyncEchoDatagramRequestHandler(AsyncDatagramRequestHandler[str, str]):
     async def handle(self, client: AsyncDatagramClient[str]) -> AsyncGenerator[None, str]:
         request = yield
         await client.send_packet(request)
+
+
+class BlockingEchoStreamRequestHandler(BlockingStreamRequestHandler[str, str]):
+    def handle(self, client: BlockingStreamClient[str]) -> Generator[None, str]:
+        request = yield
+        client.send_packet(request)
+
+
+class BlockingEchoDatagramRequestHandler(BlockingDatagramRequestHandler[str, str]):
+    def handle(self, client: BlockingDatagramClient[str]) -> Generator[None, str]:
+        request = yield
+        client.send_packet(request)
+
+
+type _PossibleServerBackend = BuiltinAsyncBackendLiteral | Literal["threads_requests", "threads_clients"]
 
 
 @pytest.mark.flaky(retries=3, delay=0.1)
@@ -42,8 +63,10 @@ class BaseTestNetworkServer:
         params=[
             pytest.param("asyncio"),
             pytest.param("trio", marks=pytest.mark.feature_trio(async_test_auto_mark=False)),
+            pytest.param("threads_requests"),
+            pytest.param("threads_clients"),
         ],
-        ids=lambda p: f"server_backend__{p!r}",
+        ids=lambda p: f"server_backend__{p}",
     )
     @staticmethod
     def server_backend(request: pytest.FixtureRequest) -> BuiltinAsyncBackendLiteral:
@@ -54,7 +77,7 @@ class BaseTestNetworkServer:
             pytest.param("asyncio", marks=pytest.mark.asyncio),
             pytest.param("trio", marks=pytest.mark.feature_trio(async_test_auto_mark=True)),
         ],
-        ids=lambda p: f"async_client_backend__{p!r}",
+        ids=lambda p: f"async_client_backend__{p}",
     )
     @staticmethod
     def async_client_backend(request: pytest.FixtureRequest) -> BuiltinAsyncBackendLiteral:
@@ -78,10 +101,27 @@ class TestNetworkTCP(BaseTestNetworkServer):
     @pytest.fixture
     @staticmethod
     def server(
-        server_backend: BuiltinAsyncBackendLiteral,
         stream_protocol: AnyStreamProtocolType[str, str],
-    ) -> StandaloneTCPNetworkServer[str, str]:
-        return StandaloneTCPNetworkServer("127.0.0.1", 0, stream_protocol, EchoStreamRequestHandler(), backend=server_backend)
+        server_backend: _PossibleServerBackend,
+    ) -> StandaloneTCPNetworkServer[str, str] | ThreadedTCPNetworkServer[str, str]:
+        host: str = "127.0.0.1"
+        match server_backend:
+            case "threads_clients" | "threads_requests":
+                return ThreadedTCPNetworkServer(
+                    host,
+                    0,
+                    stream_protocol,
+                    BlockingEchoStreamRequestHandler(),
+                    worker_strategy="clients" if server_backend == "threads_clients" else "requests",
+                )
+            case _:
+                return StandaloneTCPNetworkServer(
+                    host,
+                    0,
+                    stream_protocol,
+                    AsyncEchoStreamRequestHandler(),
+                    backend=server_backend,
+                )
 
     @pytest.fixture
     @staticmethod
@@ -143,10 +183,28 @@ class TestNetworkUDP(BaseTestNetworkServer):
     @pytest.fixture
     @staticmethod
     def server(
-        server_backend: BuiltinAsyncBackendLiteral,
         datagram_protocol: DatagramProtocol[str, str],
-    ) -> StandaloneUDPNetworkServer[str, str]:
-        return StandaloneUDPNetworkServer("127.0.0.1", 0, datagram_protocol, EchoDatagramRequestHandler(), backend=server_backend)
+        server_backend: _PossibleServerBackend,
+    ) -> StandaloneUDPNetworkServer[str, str] | ThreadedUDPNetworkServer[str, str]:
+        host: str = "127.0.0.1"
+        match server_backend:
+            case "threads_clients":
+                pytest.skip("not implemented")
+            case "threads_requests":
+                return ThreadedUDPNetworkServer(
+                    host,
+                    0,
+                    datagram_protocol,
+                    BlockingEchoDatagramRequestHandler(),
+                )
+            case _:
+                return StandaloneUDPNetworkServer(
+                    host,
+                    0,
+                    datagram_protocol,
+                    AsyncEchoDatagramRequestHandler(),
+                    backend=server_backend,
+                )
 
     @pytest.fixture
     @staticmethod
@@ -211,6 +269,8 @@ if sys.platform != "win32":
     from easynetwork.clients.unix_stream import UnixStreamClient
     from easynetwork.servers.standalone_unix_datagram import StandaloneUnixDatagramServer
     from easynetwork.servers.standalone_unix_stream import StandaloneUnixStreamServer
+    from easynetwork.servers.threaded_unix_datagram import ThreadedUnixDatagramServer
+    from easynetwork.servers.threaded_unix_stream import ThreadedUnixStreamServer
 
     if TYPE_CHECKING:
         from ...pytest_plugins.unix_sockets import UnixSocketPathFactory
@@ -219,16 +279,25 @@ if sys.platform != "win32":
         @pytest.fixture
         @staticmethod
         def server(
-            unix_socket_path_factory: UnixSocketPathFactory,
-            server_backend: BuiltinAsyncBackendLiteral,
             stream_protocol: AnyStreamProtocolType[str, str],
-        ) -> StandaloneUnixStreamServer[str, str]:
-            return StandaloneUnixStreamServer(
-                unix_socket_path_factory(),
-                stream_protocol,
-                EchoStreamRequestHandler(),
-                backend=server_backend,
-            )
+            server_backend: _PossibleServerBackend,
+            unix_socket_path_factory: UnixSocketPathFactory,
+        ) -> StandaloneUnixStreamServer[str, str] | ThreadedUnixStreamServer[str, str]:
+            match server_backend:
+                case "threads_clients" | "threads_requests":
+                    return ThreadedUnixStreamServer(
+                        unix_socket_path_factory(),
+                        stream_protocol,
+                        BlockingEchoStreamRequestHandler(),
+                        worker_strategy="clients" if server_backend == "threads_clients" else "requests",
+                    )
+                case _:
+                    return StandaloneUnixStreamServer(
+                        unix_socket_path_factory(),
+                        stream_protocol,
+                        AsyncEchoStreamRequestHandler(),
+                        backend=server_backend,
+                    )
 
         @pytest.fixture
         @staticmethod
@@ -290,16 +359,26 @@ if sys.platform != "win32":
         @pytest.fixture
         @staticmethod
         def server(
-            unix_socket_path_factory: UnixSocketPathFactory,
-            server_backend: BuiltinAsyncBackendLiteral,
             datagram_protocol: DatagramProtocol[str, str],
-        ) -> StandaloneUnixDatagramServer[str, str]:
-            return StandaloneUnixDatagramServer(
-                unix_socket_path_factory(),
-                datagram_protocol,
-                EchoDatagramRequestHandler(),
-                backend=server_backend,
-            )
+            server_backend: _PossibleServerBackend,
+            unix_socket_path_factory: UnixSocketPathFactory,
+        ) -> StandaloneUnixDatagramServer[str, str] | ThreadedUnixDatagramServer[str, str]:
+            match server_backend:
+                case "threads_clients":
+                    pytest.skip("not implemented")
+                case "threads_requests":
+                    return ThreadedUnixDatagramServer(
+                        unix_socket_path_factory(),
+                        datagram_protocol,
+                        BlockingEchoDatagramRequestHandler(),
+                    )
+                case _:
+                    return StandaloneUnixDatagramServer(
+                        unix_socket_path_factory(),
+                        datagram_protocol,
+                        AsyncEchoDatagramRequestHandler(),
+                        backend=server_backend,
+                    )
 
         @pytest.fixture
         @staticmethod

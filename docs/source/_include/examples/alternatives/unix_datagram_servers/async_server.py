@@ -32,11 +32,11 @@ class ServerProtocol(DatagramProtocol[Response, Request]):
 
 
 async def main() -> None:
-    path = "/var/run/app/app.sock"
+    path = "/var/run/app.sock"
     protocol = ServerProtocol()
     handler = MyRequestHandler()
 
-    # Create the server, binding to /var/run/app/app.sock
+    # Create the server, binding to /var/run/app.sock
     async with AsyncUnixDatagramServer(path, protocol, handler) as server:
         # Activate the server; this will keep running until you
         # interrupt the program with Ctrl-C

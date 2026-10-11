@@ -18,16 +18,19 @@ from __future__ import annotations
 
 __all__ = [
     "BaseTransport",
+    "DatagramListener",
     "DatagramReadTransport",
     "DatagramTransport",
     "DatagramWriteTransport",
+    "Listener",
     "StreamReadTransport",
     "StreamTransport",
     "StreamWriteTransport",
 ]
 
+import concurrent.futures
 from abc import ABCMeta, abstractmethod
-from collections.abc import Buffer, Iterable
+from collections.abc import Buffer, Callable, Iterable
 from types import TracebackType
 from typing import Any, Self
 
@@ -47,6 +50,14 @@ class BaseTransport(typed_attr.TypedAttributeProvider, metaclass=ABCMeta):
     def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None) -> None:
         """
         Calls :meth:`close`.
+        """
+        self.close()
+
+    def abort(self) -> None:
+        """
+        Abruptly closes the transport.
+
+        .. versionadded:: NEXT_VERSION
         """
         self.close()
 
@@ -418,3 +429,135 @@ class DatagramTransport(DatagramWriteTransport, DatagramReadTransport):
     """
 
     __slots__ = ()
+
+
+class Listener[T](BaseTransport):
+    """
+    An interface for objects that let you accept incoming connections.
+
+    .. versionadded:: NEXT_VERSION
+    """
+
+    __slots__ = ()
+
+    @abstractmethod
+    def accept[R](
+        self,
+        handler: Callable[[T], R],
+        executor: concurrent.futures.Executor,
+        timeout: float,
+    ) -> concurrent.futures.Future[R]:
+        """
+        Accept incoming connections as they come in and start tasks to handle them.
+
+        Parameters:
+            handler: a callable that will be used to handle accepted connection.
+            executor: will be used to start task for handling accepted connection.
+            timeout: the allowed time (in seconds) for blocking operations. Can be set to :data:`math.inf`.
+
+        Raises:
+            ValueError: Negative `timeout`.
+            TimeoutError: Operation timed out.
+
+        Returns:
+            a :class:`~concurrent.futures.Future` for the spawned task.
+        """
+        raise NotImplementedError
+
+
+class DatagramListener[Address](BaseTransport):
+    """
+    An interface specialized for objects that let you handle incoming datagrams from anywhere.
+
+    .. versionadded:: NEXT_VERSION
+    """
+
+    __slots__ = ()
+
+    @abstractmethod
+    def recv_from(self, timeout: float) -> tuple[bytes, Address]:
+        """
+        Read and return the next available packet.
+
+        Important:
+            The implementation must ensure that datagrams are processed in the order in which they are received.
+
+        Parameters:
+            timeout: the allowed time (in seconds) for blocking operations. Can be set to :data:`math.inf`.
+
+        Raises:
+            ValueError: Negative `timeout`.
+            TimeoutError: Operation timed out.
+
+        Returns:
+            a tuple with some :class:`bytes` and the sender's address.
+        """
+        raise NotImplementedError
+
+    def recv_with_ancillary_from(self, ancillary_bufsize: int, timeout: float) -> tuple[bytes, Any | None, Address]:
+        """
+        Read and return the next available packet.
+
+        Important:
+            The implementation must ensure that datagrams are processed in the order in which they are received.
+
+        Parameters:
+            ancillary_bufsize: the maximum buffer size for ancillary data.
+            timeout: the allowed time (in seconds) for blocking operations. Can be set to :data:`math.inf`.
+
+        Raises:
+            ValueError: Negative `ancillary_bufsize`.
+            ValueError: Negative `timeout`.
+            TimeoutError: Operation timed out.
+            UnsupportedOperation: This transport does not have ancillary data support.
+
+        Returns:
+            a tuple with some :class:`bytes`, the ancillary data and the sender's address.
+            The ancillary data can be :data:`None` if there is none.
+        """
+        from ....exceptions import UnsupportedOperation
+
+        raise UnsupportedOperation("This transport does not have ancillary data support.")
+
+    @abstractmethod
+    def send_to(self, data: bytes | bytearray | memoryview, address: Address, timeout: float) -> None:
+        """
+        Send the `data` bytes to the remote peer `address`.
+
+        Parameters:
+            data: the bytes to send.
+            address: the remote peer.
+            timeout: the allowed time (in seconds) for blocking operations. Can be set to :data:`math.inf`.
+
+        Raises:
+            ValueError: Negative `timeout`.
+            TimeoutError: Operation timed out.
+            OSError: Data too big to be sent at once.
+        """
+        raise NotImplementedError
+
+    def send_with_ancillary_to(
+        self,
+        data: bytes | bytearray | memoryview,
+        ancillary_data: Any,
+        address: Address,
+        timeout: float,
+    ) -> None:  # pragma: no cover
+        """
+        Send the `data` bytes to the remote peer `address` with ancillary data.
+
+        Parameters:
+            data: the bytes to send.
+            ancillary_data: The ancillary data to send along with the message.
+            address: the remote peer.
+            timeout: the allowed time (in seconds) for blocking operations. Can be set to :data:`math.inf`.
+
+        Raises:
+            ValueError: Negative `timeout`.
+            TimeoutError: Operation timed out.
+            OSError: Data too big to be sent at once.
+            UnsupportedOperation: This transport does not have ancillary data support.
+        """
+        from ....exceptions import UnsupportedOperation
+
+        raise UnsupportedOperation("This transport does not have ancillary data support.")

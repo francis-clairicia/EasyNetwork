@@ -15,9 +15,12 @@
 from __future__ import annotations
 
 __all__ = [
+    "AtomicFloat",
+    "AtomicUIntCounter",
     "ElapsedTime",
     "Flag",
     "ResourceGuard",
+    "ThreadSafeResourceGuard",
     "WarnCallback",
     "adjust_leftover_buffer",
     "check_inet_socket_family",
@@ -30,6 +33,7 @@ __all__ = [
     "is_ssl_eof_error",
     "is_ssl_socket",
     "iterate_exceptions",
+    "keep_value_in_range",
     "lock_with_timeout",
     "make_callback",
     "missing_extra_deps",
@@ -48,7 +52,9 @@ import contextlib
 import errno as _errno
 import functools
 import math
+import os
 import socket as _socket
+import sys
 import threading
 import time
 import weakref
@@ -95,10 +101,23 @@ def weak_method_proxy[**P, R](weak_method: weakref.WeakMethod[Callable[P, R]], /
 
 
 @overload
+def weak_method_proxy[**P, R](weak_method: weakref.WeakMethod[Callable[P, R]], /, *, default: R) -> Callable[P, R]: ...
+
+
+@overload
 def weak_method_proxy[**P, R](weak_method: Callable[P, R], /) -> Callable[P, R]: ...
 
 
-def weak_method_proxy[**P, R](weak_method: weakref.WeakMethod[Callable[P, R]] | Callable[P, R], /) -> Callable[P, R]:
+@overload
+def weak_method_proxy[**P, R](weak_method: Callable[P, R], /, *, default: R) -> Callable[P, R]: ...
+
+
+def weak_method_proxy[**P, R](
+    weak_method: weakref.WeakMethod[Callable[P, R]] | Callable[P, R],
+    /,
+    *,
+    default: Any = ReferenceError,
+) -> Callable[P, R]:
     if not isinstance(weak_method, weakref.WeakMethod):
         weak_method = weakref.WeakMethod(weak_method)
 
@@ -106,6 +125,8 @@ def weak_method_proxy[**P, R](weak_method: weakref.WeakMethod[Callable[P, R]] | 
     def weak_method_proxy(*args: P.args, **kwargs: P.kwargs) -> R:
         method = weak_method()
         if method is None:
+            if default is not ReferenceError:
+                return default
             raise ReferenceError("weakly-referenced object no longer exists")
         return method(*args, **kwargs)
 
@@ -138,9 +159,11 @@ def prepend_argument[**P, Arg, R](
     return decorator
 
 
-def get_callable_name(func: Callable[..., Any]) -> str:
+def get_callable_name(func: Callable[..., Any], *, full_name: bool = True) -> str:
     while isinstance(func, functools.partial):
         func = func.func
+    if not full_name:
+        return getattr(func, "__name__", "")
     qualname: str | None = getattr(func, "__qualname__", None)
     if not qualname:
         qualname = getattr(func, "__name__", None)
@@ -208,6 +231,23 @@ def check_socket_no_ssl(socket: _socket.socket) -> None:
         raise TypeError("ssl.SSLSocket instances are forbidden")
 
 
+def is_ssl_eof_error(exc: BaseException) -> TypeGuard[_SSLError]:
+    if ssl is None:
+        return False
+
+    match exc:
+        case ssl.SSLEOFError():
+            return True
+        case ssl.SSLError() if hasattr(exc, "strerror") and "UNEXPECTED_EOF_WHILE_READING" in exc.strerror:
+            # From Trio project:
+            # There appears to be a bug on Python 3.10, where SSLErrors
+            # aren't properly translated into SSLEOFErrors.
+            # This stringly-typed error check is borrowed from the AnyIO
+            # project.
+            return True
+    return False
+
+
 def validate_timeout_delay(delay: float, *, positive_check: bool) -> float:
     if math.isnan(delay):
         raise ValueError("Invalid delay: NaN (not a number)")
@@ -224,21 +264,13 @@ def validate_optional_timeout_delay(delay: float | None, *, positive_check: bool
             return validate_timeout_delay(delay, positive_check=positive_check)
 
 
-def is_ssl_eof_error(exc: BaseException) -> TypeGuard[_SSLError]:
-    if ssl is None:
-        return False
-
-    match exc:
-        case ssl.SSLEOFError():
-            return True
-        case ssl.SSLError() if hasattr(exc, "strerror") and "UNEXPECTED_EOF_WHILE_READING" in exc.strerror:
-            # From Trio project:
-            # There appears to be a bug on Python 3.10, where SSLErrors
-            # aren't properly translated into SSLEOFErrors.
-            # This stringly-typed error check is borrowed from the AnyIO
-            # project.
-            return True
-    return False
+def keep_value_in_range[Value: (int, float)](value: Value, range_min: Value, range_max: Value) -> Value:
+    assert range_min <= range_max  # nosec assert_used
+    if value > range_max:
+        return range_max
+    if value < range_min:
+        return range_min
+    return value
 
 
 def iter_bytes(b: bytes | bytearray | memoryview) -> Iterator[bytes]:
@@ -296,6 +328,10 @@ def validate_listener_hosts(host: str | Sequence[str] | None) -> list[str | None
             return list(host)
         case _:
             raise TypeError(host)
+
+
+def should_listener_reuse_address_on_current_platform() -> bool:
+    return os.name not in ("nt", "cygwin") and sys.platform != "cygwin"
 
 
 def open_listener_sockets_from_getaddrinfo_result(
@@ -420,8 +456,8 @@ class WarnCallback(Protocol):
 class Flag:
     __slots__ = ("__value", "__weakref__")
 
-    def __init__(self) -> None:
-        self.__value: bool = False
+    def __init__(self, default_value: bool = False) -> None:
+        self.__value: bool = bool(default_value)
 
     def is_set(self) -> bool:
         return self.__value
@@ -470,22 +506,22 @@ class ElapsedTime:
         return new_timeout
 
 
-class lock_with_timeout(contextlib.AbstractContextManager[float | None, None]):
+class lock_with_timeout[LockTimeout: (float, None, float | None)](contextlib.AbstractContextManager[LockTimeout, None]):
     __slots__ = ("__lock", "__timeout")
 
-    def __init__(self, lock: threading.RLock | threading.Lock, timeout: float | None) -> None:
+    def __init__(self, lock: threading.RLock | threading.Lock, timeout: LockTimeout) -> None:
         if timeout is not None:
             timeout = validate_timeout_delay(timeout, positive_check=True)
         self.__lock = lock
-        self.__timeout = timeout
+        self.__timeout: LockTimeout = timeout
 
-    def __enter__(self) -> float | None:
-        lock = self.__lock
+    def __enter__(self) -> LockTimeout:
         match self.__timeout:
-            case None | math.inf as timeout:
-                lock.acquire()
+            case math.inf | None as timeout:
+                self.__lock.acquire()
                 return timeout
             case timeout:
+                lock = self.__lock
                 # Try to acquire without blocking first
                 if not lock.acquire(blocking=False):
                     if timeout == 0.0:
@@ -522,3 +558,61 @@ class ResourceGuard:
         if not self.__held:
             raise AssertionError("ResourceGuard released too many times")
         self.__held = False
+
+
+class ThreadSafeResourceGuard(ResourceGuard):
+    __slots__ = ("__lock",)
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.__lock = threading.Lock()
+
+    def __enter__(self) -> None:
+        with self.__lock:
+            return super().__enter__()
+
+    def __exit__(self, *args: Any) -> None:
+        with self.__lock:
+            return super().__exit__(*args)
+
+
+class AtomicUIntCounter:
+    __slots__ = ("__value", "__lock")
+
+    def __init__(self, *, value: int = 0) -> None:
+        self.__value: int = max(int(value), 0)
+        self.__lock = threading.Lock()
+
+    def increment(self) -> int:
+        with self.__lock:
+            self.__value += 1
+            return self.__value
+
+    def decrement(self) -> int:
+        with self.__lock:
+            if self.__value > 0:
+                self.__value -= 1
+            return self.__value
+
+    @property
+    def value(self) -> int:
+        with self.__lock:
+            return self.__value
+
+
+class AtomicFloat:
+    __slots__ = ("__value", "__lock")
+
+    def __init__(self, *, value: float = 0.0) -> None:
+        self.__value: float = float(value)
+        self.__lock = threading.Lock()
+
+    @property
+    def value(self) -> float:
+        with self.__lock:
+            return self.__value
+
+    @value.setter
+    def value(self, value: float) -> None:
+        with self.__lock:
+            self.__value = float(value)

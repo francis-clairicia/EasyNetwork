@@ -53,17 +53,16 @@ Interested ? Here is the documentation : https://easynetwork.readthedocs.io/
 ## Usage
 ### TCP Echo server with JSON data
 ```py
-import asyncio
 import logging
-from collections.abc import AsyncGenerator
+from collections.abc import Generator
 from typing import Any
 
 from easynetwork.protocol import StreamProtocol
 from easynetwork.serializers import JSONSerializer
-from easynetwork.servers import AsyncTCPNetworkServer
-from easynetwork.servers.handlers import AsyncStreamClient, AsyncStreamRequestHandler
+from easynetwork.servers import ThreadedTCPNetworkServer
+from easynetwork.servers.handlers import BlockingStreamClient, BlockingStreamRequestHandler
 
-# These TypeAliases are there to help you understand
+# These type aliases are there to help you understand
 # where requests and responses are used in the code
 type RequestType = Any
 type ResponseType = Any
@@ -74,29 +73,29 @@ class JSONProtocol(StreamProtocol[ResponseType, RequestType]):
         super().__init__(JSONSerializer())
 
 
-class EchoRequestHandler(AsyncStreamRequestHandler[RequestType, ResponseType]):
+class EchoRequestHandler(BlockingStreamRequestHandler[RequestType, ResponseType]):
     def __init__(self) -> None:
         self.logger: logging.Logger = logging.getLogger(self.__class__.__name__)
 
-    async def handle(
+    def handle(
         self,
-        client: AsyncStreamClient[ResponseType],
-    ) -> AsyncGenerator[None, RequestType]:
+        client: BlockingStreamClient[ResponseType],
+    ) -> Generator[None, RequestType]:
         # A JSON request has been sent by this client
         data: Any = yield
 
         self.logger.info(f"{client!r} sent {data!r}")
 
         # As a good echo handler, the request is sent back to the client
-        await client.send_packet(data)
+        client.send_packet(data)
 
         # Leaving the generator will NOT close the connection,
         # a new generator will be created afterwards.
         # You may manually close the connection if you want to:
-        # await client.aclose()
+        # client.close()
 
 
-async def main() -> None:
+def main() -> None:
     host = None  # Bind on all interfaces
     port = 9000
     protocol = JSONProtocol()
@@ -107,14 +106,14 @@ async def main() -> None:
         format="[ %(levelname)s ] [ %(name)s ] %(message)s",
     )
 
-    async with AsyncTCPNetworkServer(host, port, protocol, handler) as server:
-        await server.serve_forever()
+    with ThreadedTCPNetworkServer(host, port, protocol, handler) as server:
+        server.serve_forever()
 
 
 if __name__ == "__main__":
     try:
-        asyncio.run(main())
-    except* KeyboardInterrupt:
+        main()
+    except KeyboardInterrupt:
         pass
 ```
 

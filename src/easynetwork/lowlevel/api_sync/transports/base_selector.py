@@ -26,9 +26,11 @@ from __future__ import annotations
 
 __all__ = [
     "SelectorBaseTransport",
+    "SelectorDatagramListener",
     "SelectorDatagramReadTransport",
     "SelectorDatagramTransport",
     "SelectorDatagramWriteTransport",
+    "SelectorListener",
     "SelectorStreamReadTransport",
     "SelectorStreamTransport",
     "SelectorStreamWriteTransport",
@@ -36,9 +38,11 @@ __all__ = [
     "WouldBlockOnWrite",
 ]
 
+import concurrent.futures
 import errno as _errno
 import math
 import selectors
+import time
 from abc import abstractmethod
 from collections.abc import Buffer, Callable, Iterable
 from typing import Any
@@ -80,7 +84,7 @@ class SelectorBaseTransport(transports.BaseTransport):
         super().__init__()
 
         if selector_factory is None:
-            selector_factory = getattr(selectors, "PollSelector", selectors.SelectSelector)
+            selector_factory = _DefaultTransportSelector
         self.__selector_factory: Callable[[], selectors.BaseSelector] = selector_factory
 
         self.__retry_interval: float = _utils.validate_timeout_delay(retry_interval, positive_check=False)
@@ -129,7 +133,8 @@ class SelectorBaseTransport(transports.BaseTransport):
         retry_interval = self.__retry_interval
         event: int
         fileno: int
-        while True:
+        available: bool = True
+        while available:
             try:
                 return callback(), timeout
             except WouldBlockOnRead:
@@ -158,11 +163,9 @@ class SelectorBaseTransport(transports.BaseTransport):
                     if not available:
                         raise RuntimeError("timeout error with infinite timeout")
                 else:
-                    with _utils.ElapsedTime() as elapsed:
-                        available = bool(selector.select(wait_time))
-                    timeout = elapsed.recompute_timeout(timeout)
-                    if not available and not is_retry_interval:
-                        break
+                    deadline: float = time.perf_counter() + timeout
+                    available = bool(selector.select(wait_time)) or is_retry_interval
+                    timeout = max(deadline - time.perf_counter(), 0.0)
         raise _utils.error_from_errno(_errno.ETIMEDOUT)
 
     @property
@@ -553,3 +556,222 @@ class SelectorDatagramTransport(SelectorDatagramWriteTransport, SelectorDatagram
     """
 
     __slots__ = ()
+
+
+class SelectorListener[T](SelectorBaseTransport, transports.Listener[T]):
+    """
+    An interface for objects that let you accept incoming connections
+    using the :mod:`selectors` module for blocking operations polling.
+
+    .. versionadded:: NEXT_VERSION
+    """
+
+    __slots__ = ()
+
+    @abstractmethod
+    @_utils.inherit_doc(SelectorBaseTransport)
+    def read_fileno(self) -> int:
+        raise NotImplementedError
+
+    @abstractmethod
+    def accept_noblock[R](
+        self,
+        handler: Callable[[T], R],
+        executor: concurrent.futures.Executor,
+    ) -> concurrent.futures.Future[R]:
+        """
+        Accept incoming connections as they come in and start tasks to handle them.
+
+        Parameters:
+            handler: a callable that will be used to handle accepted connection.
+            executor: will be used to start task for handling accepted connection.
+
+        Raises:
+            WouldBlockOnRead: the operation would block when reading the pipe.
+
+        Returns:
+            a :class:`~concurrent.futures.Future` for the spawned task.
+        """
+        raise NotImplementedError
+
+    def accept[R](
+        self,
+        handler: Callable[[T], R],
+        executor: concurrent.futures.Executor,
+        timeout: float,
+    ) -> concurrent.futures.Future[R]:
+        """
+        Accept incoming connections as they come in and start tasks to handle them.
+
+        The default implementation will retry to call :meth:`accept_noblock` until it succeeds under the given `timeout`.
+        """
+        return self._retry(lambda: self.accept_noblock(handler, executor), timeout)[0]
+
+
+class SelectorDatagramListener[Address](SelectorBaseTransport, transports.DatagramListener[Address]):
+    """
+    An interface specialized for objects that let you handle incoming datagrams from anywhere
+    using the :mod:`selectors` module for blocking operations polling.
+
+    .. versionadded:: NEXT_VERSION
+    """
+
+    __slots__ = ()
+
+    @abstractmethod
+    @_utils.inherit_doc(SelectorBaseTransport)
+    def read_fileno(self) -> int:
+        raise NotImplementedError
+
+    @abstractmethod
+    @_utils.inherit_doc(SelectorBaseTransport)
+    def write_fileno(self) -> int:
+        raise NotImplementedError
+
+    @abstractmethod
+    def recv_noblock_from(self) -> tuple[bytes, Address]:
+        """
+        Read and return the next available packet.
+
+        Important:
+            The implementation must ensure that datagrams are processed in the order in which they are received.
+
+        Raises:
+            WouldBlockOnRead: the operation would block when reading the pipe.
+
+        Returns:
+            a tuple with some :class:`bytes` and the sender's address.
+        """
+        raise NotImplementedError
+
+    def recv_from(self, timeout: float) -> tuple[bytes, Address]:
+        """
+        Read and return the next available packet.
+
+        The default implementation will retry to call :meth:`recv_noblock_from` until it succeeds under the given `timeout`.
+        """
+        return self._retry(lambda: self.recv_noblock_from(), timeout)[0]
+
+    def recv_noblock_with_ancillary_from(self, ancillary_bufsize: int) -> tuple[bytes, Any | None, Address]:  # pragma: no cover
+        """
+        Read and return the next available packet.
+
+        Important:
+            The implementation must ensure that datagrams are processed in the order in which they are received.
+
+        Parameters:
+            ancillary_bufsize: the maximum buffer size for ancillary data.
+
+        Raises:
+            ValueError: Negative `ancillary_bufsize`.
+            WouldBlockOnRead: the operation would block when reading the pipe.
+            UnsupportedOperation: This transport does not have ancillary data support.
+
+        Returns:
+            a tuple with some :class:`bytes`, the ancillary data and the sender's address.
+            The ancillary data can be :data:`None` if there is none.
+        """
+        from ....exceptions import UnsupportedOperation
+
+        raise UnsupportedOperation("This transport does not have ancillary data support.")
+
+    def recv_with_ancillary_from(self, ancillary_bufsize: int, timeout: float) -> tuple[bytes, Any | None, Address]:
+        """
+        Read and return the next available packet.
+
+        The default implementation will retry to call :meth:`recv_noblock_with_ancillary_from` until it succeeds under
+        the given `timeout`.
+        """
+        return self._retry(lambda: self.recv_noblock_with_ancillary_from(ancillary_bufsize), timeout)[0]
+
+    @abstractmethod
+    def send_noblock_to(self, data: bytes | bytearray | memoryview, address: Address) -> None:
+        """
+        Send the `data` bytes to the remote peer `address`.
+
+        Parameters:
+            data: the bytes to send.
+            address: the remote peer.
+
+        Raises:
+            WouldBlockOnRead: the operation would block when reading the pipe.
+            WouldBlockOnWrite: the operation would block when writing on the pipe.
+        """
+        raise NotImplementedError
+
+    def send_to(self, data: bytes | bytearray | memoryview, address: Address, timeout: float) -> None:
+        """
+        Send the `data` bytes to the remote peer `address`.
+
+        The default implementation will retry to call :meth:`send_noblock_to` until it succeeds under the given `timeout`.
+        """
+        return self._retry(lambda: self.send_noblock_to(data, address), timeout)[0]
+
+    def send_noblock_with_ancillary_to(
+        self,
+        data: bytes | bytearray | memoryview,
+        ancillary_data: Any,
+        address: Address,
+    ) -> None:  # pragma: no cover
+        """
+        Send the `data` bytes to the remote peer `address` with ancillary data.
+
+        Parameters:
+            data: the bytes to send.
+            ancillary_data: The ancillary data to send along with the message.
+            address: the remote peer.
+
+        Raises:
+            WouldBlockOnRead: the operation would block when reading the pipe.
+            WouldBlockOnWrite: the operation would block when writing on the pipe.
+            OSError: Data too big to be sent at once.
+            UnsupportedOperation: This transport does not have ancillary data support.
+        """
+        from ....exceptions import UnsupportedOperation
+
+        raise UnsupportedOperation("This transport does not have ancillary data support.")
+
+    def send_with_ancillary_to(
+        self,
+        data: bytes | bytearray | memoryview,
+        ancillary_data: Any,
+        address: Address,
+        timeout: float,
+    ) -> None:
+        """
+        Send the `data` bytes to the remote peer `address` with ancillary data.
+
+        The default implementation will retry to call :meth:`send_noblock_with_ancillary_to` until it succeeds under
+        the given `timeout`.
+        """
+        return self._retry(lambda: self.send_noblock_with_ancillary_to(data, ancillary_data, address), timeout)[0]
+
+
+def _can_use_selector(method: str) -> bool:  # pragma: no cover
+    """Check if we can use the selector depending upon the
+    operating system."""
+    import select
+
+    # Implementation based upon https://github.com/sethmlarson/selectors2/blob/master/selectors2.py
+    selector = getattr(select, method, None)
+    if selector is None:
+        # select module does not implement method
+        return False
+    # check if the OS and Kernel actually support the method. Call may fail with
+    # OSError: [Errno 38] Function not implemented
+    try:
+        selector_obj = selector()
+        if method == "poll":
+            # check that poll actually works
+            selector_obj.poll(0)
+        else:
+            # close epoll, kqueue, and devpoll fd
+            selector_obj.close()
+        return True
+    except OSError:
+        return False
+
+
+_DefaultTransportSelector: Callable[[], selectors.BaseSelector] = (
+    getattr(selectors, "PollSelector") if _can_use_selector("poll") else selectors.SelectSelector
+)

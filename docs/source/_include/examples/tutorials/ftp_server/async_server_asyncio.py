@@ -7,7 +7,7 @@ from easynetwork.servers import AsyncTCPNetworkServer
 from ftp_reply import FTPReply
 from ftp_request import FTPRequest
 from ftp_server_protocol import FTPServerProtocol
-from ftp_server_request_handler import FTPRequestHandler
+from ftp_server_request_handler import AsyncFTPRequestHandler
 
 
 class AsyncFTPServer(AsyncTCPNetworkServer[FTPRequest, FTPReply]):
@@ -20,7 +20,7 @@ class AsyncFTPServer(AsyncTCPNetworkServer[FTPRequest, FTPReply]):
             host,
             port,
             FTPServerProtocol(),
-            FTPRequestHandler(),
+            AsyncFTPRequestHandler(),
         )
 
 

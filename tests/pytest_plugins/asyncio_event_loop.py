@@ -73,13 +73,20 @@ def _cached_event_loop_factories() -> MappingProxyType[str, LoopFactory]:
     )
 
 
-def _get_event_loop_factories_from_config(config: pytest.Config) -> Mapping[str, LoopFactory]:
+def _get_event_loop_factories_from_config(
+    config: pytest.Config,
+    *,
+    from_report_header: bool = False,
+) -> Mapping[str, LoopFactory]:
     needed_event_loops: list[EventLoop] = config.getoption(ASYNCIO_EVENT_LOOPS_OPTION, [])
     all_event_loops = _cached_event_loop_factories()
     if needed_event_loops:
         unknown_event_loops = set(needed_event_loops).difference(all_event_loops.keys())
         if unknown_event_loops:
-            raise pytest.UsageError(f"Event loop not available in this platform: {', '.join(sorted(unknown_event_loops))}")
+            error_message = f"Event loop not available on this platform: {', '.join(sorted(unknown_event_loops))}"
+            if from_report_header:
+                raise pytest.UsageError(error_message)
+            raise pytest.fail(error_message, pytrace=False)
         return {event_loop: all_event_loops[event_loop] for event_loop in needed_event_loops}
     return all_event_loops
 
@@ -90,7 +97,7 @@ def pytest_asyncio_loop_factories(config: pytest.Config) -> Mapping[str, LoopFac
 
 @pytest.hookimpl(tryfirst=True)
 def pytest_report_header(config: pytest.Config) -> list[str]:
-    event_loops = _get_event_loop_factories_from_config(config)
+    event_loops = _get_event_loop_factories_from_config(config, from_report_header=True)
     return [
         f"asyncio event-loop: {event_loop} ({loop_factory.__module__}.{loop_factory.__qualname__})"
         for event_loop, loop_factory in event_loops.items()

@@ -4,7 +4,7 @@ import trio
 
 from easynetwork.servers import AsyncUDPNetworkServer
 
-from echo_request_handler import EchoRequestHandler
+from echo_request_handler_async import EchoRequestHandler
 from json_protocol import JSONDatagramProtocol
 
 

@@ -11,7 +11,7 @@ from easynetwork.servers.handlers import INETClientAttribute
 import pytest
 
 from ...._utils import AsyncDummyLock
-from ....base import INET_FAMILIES, BaseTestSocket
+from ....base import BaseTestIPv4v6SocketTransport
 from ...mock_tools import make_transport_mock
 
 if TYPE_CHECKING:
@@ -134,24 +134,7 @@ class TestAsyncTCPNetworkServer:
 
 
 @pytest.mark.asyncio
-class TestConnectedClientAPI(BaseTestSocket):
-    @pytest.fixture
-    @staticmethod
-    def local_address() -> tuple[str, int]:
-        return ("local_address", 11111)
-
-    @pytest.fixture
-    @staticmethod
-    def remote_address() -> tuple[str, int]:
-        return ("remote_address", 12345)
-
-    @pytest.fixture(scope="class", params=INET_FAMILIES)
-    @staticmethod
-    def socket_family(request: pytest.FixtureRequest) -> int:
-        import socket
-
-        return getattr(socket, request.param)
-
+class TestConnectedClientAPI(BaseTestIPv4v6SocketTransport):
     @pytest.fixture
     @staticmethod
     def mock_tcp_socket(socket_family: int, mock_tcp_socket_factory: Callable[[int], MagicMock]) -> MagicMock:

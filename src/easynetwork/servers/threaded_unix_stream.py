@@ -1,0 +1,422 @@
+# Copyright 2021-2026, Francis Clairicia-Rose-Claire-Josephine
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+#
+"""Multi-threaded Unix stream server implementation module.
+
+.. versionadded:: NEXT_VERSION
+"""
+
+from __future__ import annotations
+
+__all__: list[str] = []
+
+import selectors
+import socket as _socket
+import sys
+from typing import TYPE_CHECKING, cast
+
+if sys.platform == "win32" or (not TYPE_CHECKING and not hasattr(_socket, "AF_UNIX")):
+    raise ImportError(f"UNIX sockets are not supported on {sys.platform}.")  # pragma: no cover
+else:
+    # The "else" is necessary for mypy not to check this part...
+    # Seems like a big "ImportError" is not enough.
+
+    __all__ += ["ThreadedUnixStreamServer"]
+
+    import concurrent.futures
+    import contextlib
+    import errno as _errno
+    import functools
+    import logging
+    import os
+    import threading
+    import weakref
+    from collections.abc import Callable, Generator, Mapping, Sequence
+    from types import MappingProxyType
+    from typing import Any, Literal, final, override
+
+    from ..exceptions import ClientClosedError
+    from ..lowlevel import _unix_utils, _utils
+    from ..lowlevel._final import runtime_final_class
+    from ..lowlevel.api_sync.servers import selector_stream as _stream_server
+    from ..lowlevel.api_sync.transports.socket import SocketStreamListener
+    from ..lowlevel.socket import SocketAncillary, SocketProxy, UnixCredentials, UnixSocketAddress, UNIXSocketAttribute
+    from ..protocol import AnyStreamProtocolType
+    from . import _base
+    from .abc import SupportsEventSet
+    from .handlers import BlockingStreamClient, BlockingStreamRequestHandler, UNIXClientAttribute
+    from .misc import build_lowlevel_blocking_stream_server_handler
+
+    class ThreadedUnixStreamServer[Request, Response](
+        _base.BaseThreadedNetworkServerImpl[_stream_server.SelectorStreamServer[Request, Response], UnixSocketAddress],
+    ):
+        """
+        A multi-threaded Unix stream server.
+
+        .. versionadded:: NEXT_VERSION
+        """
+
+        __slots__ = (
+            "__listener_factory",
+            "__protocol",
+            "__request_handler",
+            "__max_recv_size",
+            "__ancillary_bufsize",
+            "__worker_strategy",
+            "__selector_factory",
+            "__client_connection_log_level",
+            "__unix_socket_to_delete",
+        )
+
+        def __init__(
+            self,
+            path: str | os.PathLike[str] | bytes | UnixSocketAddress,
+            protocol: AnyStreamProtocolType[Response, Request],
+            request_handler: BlockingStreamRequestHandler[Request, Response],
+            *,
+            backlog: int | None = None,
+            mode: int | None = None,
+            max_recv_size: int | None = None,
+            ancillary_bufsize: int | None = None,
+            max_nb_workers: int | None = None,
+            worker_strategy: Literal["clients", "requests"] = "requests",
+            selector_factory: Callable[[], selectors.BaseSelector] | None = None,
+            log_client_connection: bool | None = None,
+            logger: logging.Logger | None = None,
+        ) -> None:
+            """
+            Parameters:
+                path: Path of the socket.
+                protocol: The :term:`protocol object` to use.
+                request_handler: The request handler to use.
+
+            Keyword Arguments:
+                backlog: is the maximum number of queued connections passed to :class:`~socket.socket.listen` (defaults to ``100``).
+                mode: Permissions to set on the socket.
+                max_recv_size: Read buffer size. If not given, a default reasonable value is used.
+                ancillary_bufsize: read buffer size for ancillary data. Defaults to ~8KiB.
+                max_nb_workers: Use a pool of at most the given value.
+                worker_strategy: Decides how to manage the executor:
+
+                    * ``"requests"``: The thread pool only manages request handlers (default).
+
+                    * ``"clients"``: Each thread is reserved for a single connection. Therefore, the maximum number of
+                      simultaneous connections is restricted to the size of the pool, but handling requests is much faster.
+
+                selector_factory: If given, the callable object to use to create a new :class:`selectors.BaseSelector` instance.
+                                  Otherwise, the selector used by default is :class:`selectors.DefaultSelector`.
+                log_client_connection: If :data:`True` (default), log clients connection/disconnection in :data:`~logging.INFO` level.
+                                       (This log will always be available in :data:`~logging.DEBUG` level.)
+                logger: If given, the logger instance to use.
+            """
+            super().__init__(
+                servers_factory=_utils.weak_method_proxy(self.__activate_listeners),
+                initialize_service=_utils.weak_method_proxy(self.__initialize_service),
+                lowlevel_serve=_utils.weak_method_proxy(self.__lowlevel_serve),
+                max_nb_workers=max_nb_workers,
+                thread_name_prefix="unix",
+                logger=logger or logging.getLogger(__name__),
+            )
+
+            from ..lowlevel._stream import _check_any_protocol
+
+            path = _unix_utils.convert_unix_socket_address(path)
+            if not path and not _unix_utils.platform_supports_automatic_socket_bind():
+                msg = "path parameter is required on this platform and cannot be an empty string."
+                note = "Automatic socket bind is not supported."
+                raise _utils.exception_with_notes(ValueError(msg), note)
+
+            _check_any_protocol(protocol)
+
+            if not isinstance(request_handler, BlockingStreamRequestHandler):
+                raise TypeError(f"Expected a BlockingStreamRequestHandler object, got {request_handler!r}")
+
+            if backlog is None:
+                backlog = 100
+
+            if log_client_connection is None:
+                log_client_connection = True
+
+            max_recv_size = _base.validate_max_recv_size(max_recv_size)
+            ancillary_bufsize = _base.validate_unix_socket_ancillary_buffer_size(ancillary_bufsize)
+
+            self.__listener_factory: Callable[[], SocketStreamListener] = _utils.make_callback(
+                self.__create_unix_stream_listener,
+                path,
+                backlog=backlog,
+                mode=mode,
+            )
+
+            self.__protocol: AnyStreamProtocolType[Response, Request] = protocol
+            self.__request_handler: BlockingStreamRequestHandler[Request, Response] = request_handler
+            self.__max_recv_size: int = max_recv_size
+            self.__ancillary_bufsize: int = ancillary_bufsize
+            self.__worker_strategy: Literal["clients", "requests"] = worker_strategy
+            self.__selector_factory: Callable[[], selectors.BaseSelector] | None = selector_factory
+            self.__client_connection_log_level: int = logging.INFO if log_client_connection else logging.DEBUG
+            self.__unix_socket_to_delete = _base.UnixSocketPathCleaner()
+
+        @classmethod
+        def __create_unix_stream_listener(
+            cls,
+            path: str | bytes,
+            *,
+            backlog: int,
+            mode: int | None,
+        ) -> SocketStreamListener:
+            socket = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM, 0)
+            try:
+                try:
+                    socket.bind(path)
+                except OSError as exc:
+                    raise _utils.convert_socket_bind_error(exc, path) from None
+                if mode is not None:
+                    os.chmod(path, mode)
+                socket.setblocking(False)
+                socket.listen(backlog)
+            except BaseException:
+                socket.close()
+                raise
+            return SocketStreamListener(socket)
+
+        def server_close(self) -> None:
+            try:
+                super().server_close()
+            finally:
+                self.__unix_socket_to_delete.clean_all(self.logger)
+
+        def __activate_listeners(self) -> list[_stream_server.SelectorStreamServer[Request, Response]]:
+            listener = self.__listener_factory()
+
+            local_name = UnixSocketAddress.from_raw(listener.extra(UNIXSocketAttribute.sockname))
+            if (path := local_name.as_pathname()) is not None:
+                self.__unix_socket_to_delete.register(path)
+
+            server = _stream_server.SelectorStreamServer(
+                listener,
+                self.__protocol,
+                max_recv_size=self.__max_recv_size,
+                selector_factory=self.__selector_factory,
+            )
+            return [server]
+
+        def __initialize_service(self, server_exit_stack: contextlib.ExitStack) -> None:
+            self.__request_handler.service_init(
+                server_exit_stack.enter_context(contextlib.ExitStack()),
+                weakref.proxy(self),
+            )
+
+        def __lowlevel_serve(
+            self,
+            server: _stream_server.SelectorStreamServer[Request, Response],
+            executor: concurrent.futures.ThreadPoolExecutor,
+            is_up_event: SupportsEventSet,
+        ) -> None:
+            def disconnect_error_filter(exc: Exception) -> bool:  # pragma: no cover
+                # Don't cover because theorically, socket.recv() should never get a BrokenPipeError.
+                # It is a fallback for a very very edge case.
+                return isinstance(exc, ConnectionError)
+
+            handler = build_lowlevel_blocking_stream_server_handler(
+                self.__client_initializer,
+                self.__request_handler,
+                logger=self.logger,
+            )
+            server.serve(
+                handler,
+                executor,
+                worker_strategy=self.__worker_strategy,
+                disconnect_error_filter=disconnect_error_filter,
+                ancillary_bufsize=self.__ancillary_bufsize,
+                is_up_event=is_up_event,
+            )
+
+        @contextlib.contextmanager
+        def __client_initializer(
+            self,
+            lowlevel_client: _stream_server.ConnectedStreamClient[Response],
+        ) -> Generator[BlockingStreamClient[Response] | None]:
+            with contextlib.ExitStack() as client_exit_stack:
+
+                client_address_raw = lowlevel_client.extra(UNIXSocketAttribute.peername, None)
+                if client_address_raw is None:
+                    yield None
+                    return
+
+                client = _ConnectedClientAPI(UnixSocketAddress.from_raw(client_address_raw), lowlevel_client)
+                del lowlevel_client, client_address_raw
+
+                client_exit_stack.enter_context(
+                    _base.ClientErrorHandler(
+                        logger=self.logger,
+                        client_address_cb=client.extra_attributes[UNIXClientAttribute.peer_name],
+                        suppress_errors=ConnectionError,
+                    )
+                )
+
+                self.logger.log(
+                    self.__client_connection_log_level,
+                    "Accepted new connection (address = %s)",
+                    client.extra(UNIXClientAttribute.peer_name, UnixSocketAddress()),
+                )
+                client_exit_stack.callback(
+                    self.__log_client_disconnection, self.logger, self.__client_connection_log_level, client
+                )
+                client_exit_stack.callback(client._on_disconnect)
+
+                try:
+                    yield client
+                except BaseException as exc:
+                    _utils.remove_traceback_frames_in_place(exc, 1)
+                    raise
+
+        @staticmethod
+        def __log_client_disconnection(logger: logging.Logger, level: int, client: _ConnectedClientAPI[Response]) -> None:
+            logger.log(level, "%s disconnected", client.extra(UNIXClientAttribute.peer_name, UnixSocketAddress()))
+
+        @override
+        @_utils.inherit_doc(_base.BaseAsyncNetworkServerImpl)
+        def get_addresses(self) -> Sequence[UnixSocketAddress]:
+            return self._with_lowlevel_servers(
+                lambda servers: tuple(
+                    UnixSocketAddress.from_raw(server.extra(UNIXSocketAttribute.sockname))
+                    for server in servers
+                    if not server.is_closed()
+                )
+            )
+
+        def get_sockets(self) -> Sequence[SocketProxy]:
+            """Gets the listeners sockets.
+
+            Returns:
+                a read-only sequence of :class:`.SocketProxy` objects.
+
+                If the server is not running, an empty sequence is returned.
+            """
+            return self._with_lowlevel_servers(
+                lambda servers: tuple(SocketProxy(server.extra(UNIXSocketAttribute.socket)) for server in servers)
+            )
+
+    @final
+    @runtime_final_class
+    class _ConnectedClientAPI[Response](BlockingStreamClient[Response]):
+        __slots__ = (
+            "__client",
+            "__closing",
+            "__send_lock",
+            "__proxy",
+            "__peer_name_cache",
+            "__peer_creds_cache",
+            "__extra_attributes_cache",
+        )
+
+        def __init__(
+            self,
+            initial_peer_name: UnixSocketAddress,
+            client: _stream_server.ConnectedStreamClient[Response],
+        ) -> None:
+            self.__client: _stream_server.ConnectedStreamClient[Response] = client
+            self.__closing = threading.Event()
+            self.__send_lock = threading.Lock()
+            self.__proxy: SocketProxy = SocketProxy(
+                client.extra(UNIXSocketAttribute.socket),
+                lock=self.__send_lock,
+                runner=functools.partial(
+                    self.__run_socket_method,
+                    client_is_closing=self.__closing,
+                ),
+            )
+            self.__peer_name_cache = initial_peer_name
+            self.__peer_creds_cache = _unix_utils.UnixCredsContainer(self.__proxy)
+
+            local_name = UnixSocketAddress.from_raw(client.extra(UNIXSocketAttribute.sockname, ""))
+
+            self.__extra_attributes_cache: Mapping[Any, Callable[[], Any]] = MappingProxyType(
+                {
+                    **client.extra_attributes,
+                    UNIXClientAttribute.socket: _utils.make_callback(self.__simple_attribute_return, self.__proxy),
+                    UNIXClientAttribute.local_name: _utils.make_callback(self.__simple_attribute_return, local_name),
+                    UNIXClientAttribute.peer_name: _utils.weak_method_proxy(self.__get_peer_name),
+                    UNIXClientAttribute.peer_credentials: _utils.weak_method_proxy(self.__get_peer_credentials),
+                }
+            )
+
+        def __repr__(self) -> str:
+            address = self.__get_peer_name()
+            return f"<client with address {address} at {id(self):#x}>"
+
+        @override
+        def is_closing(self) -> bool:
+            return self.__closing.is_set()
+
+        @override
+        def abort(self) -> None:
+            with self.__send_lock:
+                self.__closing.set()
+                self.__client.abort()
+
+        @override
+        def close(self) -> None:
+            with self.__send_lock:
+                self.__closing.set()
+                self.__client.close()
+
+        @override
+        def send_packet(self, packet: Response, /, *, timeout: float | None = None) -> None:
+            with _utils.lock_with_timeout(self.__send_lock, timeout) as timeout:
+                if self.__closing.is_set():
+                    raise ClientClosedError("Closed client")
+                self.__client.send_packet(packet, timeout=timeout)
+
+        @override
+        def send_packet_with_ancillary(self, packet: Response, ancillary_data: Any, *, timeout: float | None = None) -> None:
+            if isinstance(ancillary_data, SocketAncillary):
+                ancillary_data = ancillary_data.as_raw()
+            with _utils.lock_with_timeout(self.__send_lock, timeout) as timeout:
+                if self.__closing.is_set():
+                    raise ClientClosedError("Closed client")
+                self.__client.send_packet_with_ancillary(packet, ancillary_data, timeout=timeout)
+
+        def _on_disconnect(self) -> None:
+            with self.__send_lock:  # If self.send_packet() took the lock, wait for it to finish
+                self.__closing.set()
+
+        @staticmethod
+        def __run_socket_method[Return](method: Callable[[], Return], /, *, client_is_closing: threading.Event) -> Return:
+            if client_is_closing.is_set():
+                if _utils.get_callable_name(method, full_name=False) == "fileno":
+                    return cast(Return, -1)
+                raise _utils.error_from_errno(_errno.EBADF)
+            return method()
+
+        def __get_peer_name(self) -> UnixSocketAddress:
+            if (peer_name := self.__peer_name_cache).is_unnamed():
+                self.__peer_name_cache = peer_name = UnixSocketAddress.from_raw(self.__client.extra(UNIXSocketAttribute.peername))
+            return peer_name
+
+        def __get_peer_credentials(self) -> UnixCredentials:
+            try:
+                return self.__peer_creds_cache.get()
+            except (OSError, NotImplementedError) as exc:
+                from ..exceptions import TypedAttributeLookupError
+
+                raise TypedAttributeLookupError("credentials not available") from exc
+
+        @staticmethod
+        def __simple_attribute_return[T](value: T) -> T:
+            return value
+
+        @property
+        def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
+            return self.__extra_attributes_cache

@@ -36,7 +36,6 @@ else:
     import contextlib
     import logging
     import os
-    import pathlib
     import weakref
     from collections.abc import AsyncGenerator, Callable, Coroutine, Mapping, Sequence
     from types import MappingProxyType
@@ -153,43 +152,29 @@ else:
             self.__max_recv_size: int = max_recv_size
             self.__ancillary_bufsize: int = ancillary_bufsize
             self.__client_connection_log_level: int = logging.INFO if log_client_connection else logging.DEBUG
-            self.__unix_socket_to_delete: dict[pathlib.Path, int] = {}
+            self.__unix_socket_to_delete = _base.UnixSocketPathCleaner()
 
         async def server_close(self) -> None:
-            unix_socket_to_delete = self.__unix_socket_to_delete
-            self.__unix_socket_to_delete = {}
             try:
                 await super().server_close()
             except self.backend().get_cancelled_exc_class():
-                if unix_socket_to_delete:
+                if self.__unix_socket_to_delete:
                     await self.backend().ignore_cancellation(
-                        self.backend().run_in_thread(self.__cleanup_unix_socket, unix_socket_to_delete, self.logger)
+                        self.backend().run_in_thread(self.__unix_socket_to_delete.clean_all, self.logger)
                     )
                 raise
             else:
-                if unix_socket_to_delete:
+                if self.__unix_socket_to_delete:
                     await self.backend().ignore_cancellation(
-                        self.backend().run_in_thread(self.__cleanup_unix_socket, unix_socket_to_delete, self.logger)
+                        self.backend().run_in_thread(self.__unix_socket_to_delete.clean_all, self.logger)
                     )
-
-        @staticmethod
-        def __cleanup_unix_socket(unix_socket_to_delete: dict[pathlib.Path, int], logger: logging.Logger) -> None:
-            while unix_socket_to_delete:
-                path, prev_ino = unix_socket_to_delete.popitem()
-                try:
-                    if os.stat(path).st_ino == prev_ino:
-                        os.unlink(path)
-                except FileNotFoundError:
-                    pass
-                except OSError as exc:
-                    logger.error("Unable to clean up listening Unix socket %r: %s", os.fspath(path), exc)
 
         async def __activate_listeners(self) -> list[_stream_server.AsyncStreamServer[Request, Response]]:
             listener = await self.__listener_factory()
 
             local_name = UnixSocketAddress.from_raw(listener.extra(UNIXSocketAttribute.sockname))
             if (path := local_name.as_pathname()) is not None:
-                self.__unix_socket_to_delete[path] = os.stat(path).st_ino
+                self.__unix_socket_to_delete.register(path)
 
             server = _stream_server.AsyncStreamServer(
                 listener,
@@ -232,7 +217,6 @@ else:
             lowlevel_client: _stream_server.ConnectedStreamClient[Response],
         ) -> AsyncGenerator[AsyncStreamClient[Response] | None]:
             async with contextlib.AsyncExitStack() as client_exit_stack:
-                client_exit_stack.enter_context(self._bind_server())
 
                 client_address_raw = lowlevel_client.extra(UNIXSocketAttribute.peername, None)
                 if client_address_raw is None:

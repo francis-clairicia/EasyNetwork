@@ -213,7 +213,7 @@ class AsyncIOBackend(AbstractAsyncBackend):
     ) -> Sequence[AsyncListener[AsyncStreamTransport]]:
         from .stream.listener import AcceptedSocketFactory, ListenerSocketAdapter
 
-        reuse_address: bool = os.name not in ("nt", "cygwin") and sys.platform != "cygwin"
+        reuse_address: bool = _utils.should_listener_reuse_address_on_current_platform()
         hosts: Sequence[str | None] = _utils.validate_listener_hosts(host)
 
         del host

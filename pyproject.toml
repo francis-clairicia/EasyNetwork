@@ -30,6 +30,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: Free Threading :: 3 - Stable",
     "Topic :: Internet",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: System :: Networking",
@@ -209,7 +210,7 @@ extend_skip = [
 
 [tool.black]
 line-length = 130
-target-version = ["py312", "py313", "py314"]
+target-version = ["py312"]
 
 [tool.mypy]
 python_version = "3.12"
@@ -299,6 +300,7 @@ exclude_lines = [
 
     # Don't complain if non-runnable code isn't run:
     "if __name__ == .__main__.:",
+    "except KeyboardInterrupt:",
 
     # Don't complain about type hinting code:
     "if (typing\\.)?TYPE_CHECKING:",
