@@ -38,11 +38,13 @@ runs:
       with:
         python-version: ${{ inputs.python-version }}
         check-latest: ${{ inputs.check-latest }}
-        pip-install: -r .github/actions/requirements-tox.txt
         cache: 'pip'
         cache-dependency-path: |
           ./pylock.toml
           ${{ env.WORKFLOW_CACHE_KEY_FILE }}
+    - name: Install tox dependency
+      run: pip install -r .github/actions/requirements-tox.txt
+      shell: bash
     - name: Check dependencies
       run: |
         tox --version
