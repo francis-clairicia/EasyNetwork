@@ -552,7 +552,7 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
                                 case _selector_transports.WouldBlockOnRead():
                                     fileno = client_ctx.request_receiver.transport.read_fileno()
                                     event = selectors.EVENT_READ
-                                case _selector_transports.WouldBlockOnWrite():
+                                case _selector_transports.WouldBlockOnWrite():  # pragma: no cover
                                     fileno = client_ctx.request_receiver.transport.write_fileno()
                                     event = selectors.EVENT_WRITE
                                 case _:
@@ -756,44 +756,14 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
                         try:
                             recv_params = _rcv(recv_params)
                             timeout = _validate_timeout_delay(recv_params.timeout, positive_check=True)
-                            first_recv_try: bool = True
-                            while True:
-                                try:
-                                    if server_is_shutting_down():
-                                        raise StopIteration
-                                    if recv_params.recv_with_ancillary is None:
-                                        request = request_receiver.next(first_try=first_recv_try)
-                                    else:
-                                        request = request_receiver.next_with_ancillary(
-                                            recv_params.recv_with_ancillary,
-                                            first_try=first_recv_try,
-                                        )
-                                except _selector_transports.WouldBlockOnRead:
-                                    fileno = transport.read_fileno()
-                                    event = selectors.EVENT_READ
-                                except _selector_transports.WouldBlockOnWrite:
-                                    fileno = transport.write_fileno()
-                                    event = selectors.EVENT_WRITE
-                                else:
-                                    break
-                                finally:
-                                    first_recv_try = False
-
-                                with request_receiver:
-                                    if client.is_closing():  # pragma: no cover
-                                        return
-                                    selector.register(fileno, event)
-                                    try:
-                                        deadline: float = _get_current_time() + timeout
-                                        available = bool(selector.select(_get_selector_timeout(deadline)))
-                                        timeout = max(deadline - _get_current_time(), 0.0)
-                                        if not available and not timeout:
-                                            raise _utils.error_from_errno(_errno.ETIMEDOUT)
-                                    except TimeoutError as exc:
-                                        exc.with_traceback(None)
-                                        raise
-                                    finally:
-                                        selector.unregister(fileno)
+                            request = self.__serve_clients__client_task__receive_next_request(
+                                timeout=timeout,
+                                client=client,
+                                request_receiver=request_receiver,
+                                ancillary_data_params=recv_params.recv_with_ancillary,
+                                selector=selector,
+                                server_is_shutting_down=server_is_shutting_down,
+                            )
                         except StopIteration:
                             raise
                         except BaseException as exc:
@@ -811,6 +781,50 @@ class SelectorStreamServer[Request, Response](_transports.BaseTransport):
                     return
             finally:
                 request_handler_generator.close()
+
+    def __serve_clients__client_task__receive_next_request(
+        self,
+        *,
+        timeout: float,
+        client: ConnectedStreamClient[Response],
+        request_receiver: _AnyRequestReceiver[Request],
+        ancillary_data_params: RecvAncillaryDataParams | None,
+        selector: selectors.BaseSelector,
+        server_is_shutting_down: Callable[[], bool],
+    ) -> Request:
+        first_recv_try: bool = True
+        while True:
+            try:
+                if server_is_shutting_down():
+                    raise StopIteration
+                if ancillary_data_params is None:
+                    return request_receiver.next(first_try=first_recv_try)
+                else:
+                    return request_receiver.next_with_ancillary(ancillary_data_params, first_try=first_recv_try)
+            except _selector_transports.WouldBlockOnRead:
+                fileno = request_receiver.transport.read_fileno()
+                event = selectors.EVENT_READ
+            except _selector_transports.WouldBlockOnWrite:  # pragma: no cover
+                fileno = request_receiver.transport.write_fileno()
+                event = selectors.EVENT_WRITE
+            finally:
+                first_recv_try = False
+
+            with request_receiver:
+                if client.is_closing():  # pragma: no cover
+                    raise StopIteration
+                selector.register(fileno, event)
+                try:
+                    deadline: float = _get_current_time() + timeout
+                    available = bool(selector.select(_get_selector_timeout(deadline)))
+                    timeout = max(deadline - _get_current_time(), 0.0)
+                    if not available and not timeout:
+                        raise _utils.error_from_errno(_errno.ETIMEDOUT)
+                except TimeoutError as exc:
+                    exc.with_traceback(None)
+                    raise
+                finally:
+                    selector.unregister(fileno)
 
     #################################################################################
     ########################## common functions for server ##########################

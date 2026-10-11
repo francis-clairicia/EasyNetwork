@@ -1007,7 +1007,7 @@ class _ThreadSafeListener[Address](_transports.BaseTransport):
                     return
                 else:
                     handler(*datagram)
-            self.__ready_for_reading.set()
+            self.__ready_for_reading.set()  # pragma: no cover
 
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
